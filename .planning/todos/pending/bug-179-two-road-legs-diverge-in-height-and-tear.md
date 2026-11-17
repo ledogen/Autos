@@ -12,8 +12,9 @@ lane: Spare
 # BUG-179: Two road legs diverge in height quickly and the surface tears where they meet
 
 ## Next steps
-Owner picked option 1 (2026-11-17, DEC-366): building the chained fork on `land/bug-179` (worktree CarGame-machine).
-He signs off on 10 generated examples before it lands.
+Owner picked option 1 (2026-11-17, DEC-366); built on `land/bug-179` (worktree CarGame-machine). Waiting on his
+sign-off of the examples sheet `wip/bug-179/chained-forks-sheet.jpg` (owed card `bug179-chained-forks-look`). On a
+yes: land it. Open for him: the dead-end spur the chain leaves at a 3-leg junction (9 of 12 chains).
 
 ## Summary
 At one place on seed 1684703087 two road legs leave each other with rapidly different elevations, and there is a
@@ -71,7 +72,9 @@ Not BUG-171's root (that is the limb/tie terms inside one leg's carve; here two 
 - [x] Reproduced headlessly with the two legs named and the height gap measured along the interface
 - [x] Root cause found; same root as BUG-171 or a separate one, stated (separate: the merge plan's role rule)
 - [x] Owner picks a fix (DEC-366: option 1, the chained fork)
-- [ ] Fixed at the root, with a gate or census that fails before and passes after
+- [x] Fixed at the root, with a gate or census that fails before and passes after (`test/leg-overlap-tear.mjs`)
+- [x] 12 generated chains measured before → after, sheet made (`wip/bug-179/chained-forks-sheet.jpg`)
+- [ ] Owner signs off the chains (DEC-366) and rules on the dead-end spur
 - [ ] Owner looks at the spot on seed 1684703087
 
 ## Decisions
@@ -101,6 +104,11 @@ Capture: `Logs/autos-capture-1794791342440.json`. Possibly related: BUG-171 (dee
 `test/leg-overlap-census.mjs` (the class census; becomes a gate with the fix) · `test/replay.mjs`
 
 ## Log
+- 2026-11-17 (Lane B, land/bug-179 @ 08373870, no src change this round): 35 chain sites from 213 random seeds
+  (`wip/bug-179/sites-all.json`, `measure.mjs`): 12 fully built, 23 with one T declined (those 23 identical before/after).
+  Shared-pavement step (census measure) before → after: 4 tears fixed (6.12, 3.95, 14.87, 6.94 → ≤ 0.27), 0 new; worst
+  1 m step on pavement 21.5 → 0.64 m. The seed-4243617325 "25.3 m" was the box metric: an off-pavement cut wall between a
+  hairpin's two arms 40 m apart, 21 m before (one run, so unseen) → 27 m after. Affected gates 76/76 green (serial; play-area held back).
 - 2026-11-16 (Spare, land/bug-179 e53633e9+): root = merge-plan role rule drops the B×A cession, plane hold capped at
   30 m; census script added (not a gate: red at the capture seed until fixed). No src change, so no fingerprint or
   gate run needed (`run-all --list`: no gates cover it). Stopped for the owner's pick.
