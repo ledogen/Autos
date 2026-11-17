@@ -35,23 +35,23 @@ export const PAPER_ROUTE_INTRO = [
  */
 export const RUN_INTRO = [
     {
-        speaker: 'Uncle Larry',
+        speaker: 'Uncle Larry', phone: true,
         text: `Heyyo Billy, its your uncle Larry! Listen, I heard ol' <i>greasebeard</i> let you go. Just remember if you need a little cash `
             + `you can always sling a few papers on the route for me. If you prove you can deliver fast enough I can even expand the route.`,
     },
     {
-        speaker: 'Uncle Larry',
+        speaker: 'Uncle Larry', phone: true,
         text: `Speaking of work, I hear there's an expedition camp up at the old {dir} road. I think they're looking to make an new supply route. `
             + `I heard them say they'd take anyone with {deeds} good deeds to their name. Don't expect it to be easy if you join up with them, `
             + `but it might be the best way to get connected back up with the outside world`,
     },
     {
-        speaker: 'Uncle Larry',
+        speaker: 'Uncle Larry', phone: true,
         text: `Gettin' a good deed is as simple as taking delivery jobs and keeping the pace. Or sometimes getting the cargo there in one piece `
             + `is all that matters. Listen closely to the client because they'll tell ya exactly what they need.`,
     },
     {
-        speaker: 'Uncle Larry',
+        speaker: 'Uncle Larry', phone: true,
         text: `The client will also tell you the base pay ahead of time. Usually they tip better if you drive better. Some folks might even `
             + `throw in an item. Just be careful, you know how sometimes these roads can surprise ya.`,
     },
@@ -65,28 +65,37 @@ export const RUN_INTRO = [
  *  person, pulled over by your truck (DEC-345) with nothing drawn. One constant, so a rename is one edit. */
 const KATIE = 'Katie'
 
+/** DEC-354 (owner, 2026-11-16): the phone's framing cards — "a card that just says phone and then ring ring ring", and a
+ *  call ends on "<click>" in the caller's name. A card said over the phone carries `phone: true` (`answered`: the call
+ *  was already going, no ring; `holds`: the caller stays on the line into a later script, no click); src/dialogue.js
+ *  frames each call. In person (her door, Larry's house, the manager, Katie at the camp): no field, neither card. */
+export const PHONE = { ring: { speaker: 'Phone', text: `Ring ring ring` }, click: `&lt;click&gt;` }
+
 /** The firing: played over the camera's slow move round the burger joint (owner, 2026-11-05), at 07:00 (DEC-299). DEC-320:
  *  Billy arrives late on the phone with Katie, who wishes him luck with the boss; the boss fires him. DEC-307 → DEC-324: not a
  *  word about the paycheck. */
 export const FIRING = [
-    { speaker: KATIE, text: `Alright, you made it. I'll let you go. Good luck with your boss &mdash; I bet he's real upset with you.` },
+    { speaker: KATIE, phone: true, answered: true, text: `Alright, you made it. I'll let you go. Good luck with your boss &mdash; I bet he's real upset with you.` },
     { speaker: 'The manager', text: `Billy, I've had it! This is the last time you'll be coming to work late, because you're fired. I don't want to see you in my kitchen anymore.` },
 ]
 
 /** Mom's call, once the player chose the tutorial at the intro's card (FEAT-184): her reaction to the firing (DEC-321),
- *  then come by the house (DEC-304). */
+ *  then come by the house (DEC-304); FEAT-184's key card last (the truck sits dead after her call), so the call's click
+ *  comes after it (DEC-354). */
 export const MOM_CALL = [
-    { speaker: 'Mom', text: `Hey, how's everything going?` },
-    { speaker: 'Mom', text: `He what?&hellip; I can't believe it. Just like that, after all the time you've been there.` },
-    { speaker: 'Mom', text: `Come on by the house, honey. I've got something for you.` },
-    { speaker: 'Mom', text: `Press <span class="dlg-key">M</span> for the map if you forgot the way.` },
+    { speaker: 'Mom', phone: true, text: `Hey, how's everything going?` },
+    { speaker: 'Mom', phone: true, text: `He what?&hellip; I can't believe it. Just like that, after all the time you've been there.` },
+    { speaker: 'Mom', phone: true, text: `Come on by the house, honey. I've got something for you.` },
+    { speaker: 'Mom', phone: true, text: `Press <span class="dlg-key">M</span> for the map if you forgot the way.` },
+    { speaker: 'Mom', phone: true, text: `And honey &mdash; the truck won't start itself. `
+        + `<span class="kc-kb">Hold <span class="dlg-key">I</span></span><span class="kc-pad">Hold <span class="dlg-key">Y</span></span> to turn the key.` },
 ]
 
 /** DEC-326: Larry's call once the played tutorial's last paycheck is in hand — two cards, how to beat the game. A skip
  *  (which never meets Larry or hears Katie's call) gets RUN_INTRO's four instead. */
 export const LARRY_CALL = [
-    { speaker: 'Uncle Larry', text: `Heyyo Billy, its your uncle Larry! Take a look on the map and find yourself some work.` },
-    { speaker: 'Uncle Larry', text: `And collect those good deeds, so you can join up with the expedition camp and start looking for a new supply route.` },
+    { speaker: 'Uncle Larry', phone: true, text: `Heyyo Billy, its your uncle Larry! Take a look on the map and find yourself some work.` },
+    { speaker: 'Uncle Larry', phone: true, text: `And collect those good deeds, so you can join up with the expedition camp and start looking for a new supply route.` },
 ]
 
 /** FEAT-184 (DEC-153): the played tutorial's last act — parked at the burger joint the morning after, the last paycheck,
@@ -136,24 +145,27 @@ export const TUT = {
     // FEAT-184 (the worst day, stage 3): the key first — the truck sits dead after her call — then the pedals.
     // FEAT-229 (DEC-304): the order is the firing day's — to hers, Larry's, the station, a camping area, the trouble on the
     // way home, her bed — then the morning's drive to the paycheck.
-    'tut-key': [{ speaker: 'Mom', text: `And honey &mdash; the truck won't start itself. `
-        + `<span class="kc-kb">Hold <span class="dlg-key">I</span></span><span class="kc-pad">Hold <span class="dlg-key">Y</span></span> to turn the key.` }],
+    // (The key card is MOM_CALL's last, inside her call: DEC-354.)
     // FEAT-229 (DEC-345): parked at Larry's, his pack cards over, Katie calls — the picnic at the old McGill ranch is the
-    // reason for the snack and the camp. Her first and last cards are the owner's words; the middle one is a PLACEHOLDER.
+    // reason for the snack and the camp. DEC-355: her call opens "Hey Billy! How you doing? Sorry about yesterday..." (the
+    // owner's words: the firing was this same morning, kept as he wrote it) and names the bag of peanuts. The owner's
+    // words but the snack ask, a PLACEHOLDER.
     'tut-picnic': [
-        { speaker: KATIE, text: `Hey, since I know you got nothing going on today, why don't we go picnic out at the old McGill ranch. `
+        { speaker: KATIE, phone: true, text: `Hey Billy! How you doing? Sorry about yesterday&hellip;` },
+        { speaker: KATIE, phone: true, text: `Hey, since I know you got nothing going on today, why don't we go picnic out at the old McGill ranch. `
             + `I'll let you pick a spot and I'll meet you out there.` },
-        { speaker: KATIE, text: `[placeholder] Grab us a snack at the gas station on your way, would you? Park out front of the store, not at the pumps.` },
-        { speaker: KATIE, text: `You know where to go, I'll see you there!` },
+        { speaker: KATIE, phone: true, text: `[placeholder] Grab us a bag of peanuts at the gas station on your way, would you? Park out front of the store, not at the pumps.` },
+        { speaker: KATIE, phone: true, text: `You know where to go, I'll see you there!` },
     ],
     // …and the gauge, at the snack's station once the peanuts are bought, as you take the brake off to leave (main.js
-    // _evePump, DEC-306, DEC-323). DEC-345: mom calls, the owner's words; then the lesson (a PLACEHOLDER).
+    // _evePump, DEC-306, DEC-323). DEC-345: mom calls, the owner's words; then the lesson (a PLACEHOLDER). DEC-354: she
+    // stays on the line through the fill-up (`holds`), and her send-off (tut-snackcamp) hangs up.
     'tut-gas': [
-        { speaker: 'Mom', text: `Hey, is everything alright? I almost forgot, when I looked over the truck last night I noticed it was plumb outta gas.` },
-        { speaker: 'Mom', text: `[placeholder] You're right there, honey. Back out of that spot, pull up at a pump and fill her up.` },
+        { speaker: 'Mom', phone: true, text: `Hey, is everything alright? I almost forgot, when I looked over the truck last night I noticed it was plumb outta gas.` },
+        { speaker: 'Mom', phone: true, holds: true, text: `[placeholder] You're right there, honey. Back out of that spot, pull up at a pump and fill her up.` },
     ],
     // FEAT-184 (DEC-151): the handbrake held at the station's pump while money is left. PLACEHOLDER words.
-    'tut-fillup': [{ speaker: 'Mom', text: `Not yet, honey &mdash; fill it right up. Every last dollar: you won't get far on fumes.` }],
+    'tut-fillup': [{ speaker: 'Mom', phone: true, answered: true, holds: true, text: `Not yet, honey &mdash; fill it right up. Every last dollar: you won't get far on fumes.` }],
     // FEAT-184 stage 4, the worst day: the flat halfway home, the screen it shows on, the spare that's flat too, the tow,
     // and the shop it lands at (main.js _eveningBeats, _pickSpare, _toggleRecovery, _updateParkTriggers).
     'tut-flat': [{ speaker: 'Mom', text: `Was that a bang? That's a flat, honey. Pull over, set the handbrake, `
@@ -185,14 +197,14 @@ export const TUT = {
     'tut-moms': [
         { speaker: 'Mom', text: `You can always rest here. It's better than sleeping in the truck.` },
         { speaker: 'Mom', text: `When you're out late, find flat ground off the road and make camp. A nice spot rests you better than a bad one.` },
-        { speaker: 'Mom', text: `Sleep is how a day ends. Pick how long on the timer &mdash; the bar shows how rested you'll wake up.` },
+        { speaker: 'Mom', text: `Sleep is how a day ends. Set your alarm clock for {alarm} &mdash; the bar shows how rested you'll wake up.` },   // DEC-357
     ],
     // The morning: breakfast at hers (it feeds you), then Katie's word about the paycheck (DEC-326).
     // FEAT-184 stage 5: breakfast is yours to eat — one of her packed lunches, from the inventory.
     'tut-breakfast': [{ speaker: 'Mom', text: `Morning! Eat something before you go &mdash; you'll run out of steam early on an empty stomach. `
         + `<span class="dlg-key">Tab</span>, and pick one of the lunches I packed you.` }],
     // FEAT-184 (DEC-153, DEC-326): after breakfast, Katie's reminder — the last drive on rails, back to the joint for the check.
-    'tut-morning': [{ speaker: KATIE, text: `Morning, Billy! Don't forget, today's the day you go get your last paycheck.` }],
+    'tut-morning': [{ speaker: KATIE, phone: true, text: `Morning, Billy! Don't forget, today's the day you go get your last paycheck.` }],
     // FEAT-229 (DEC-305): parked at her door on the firing day, her hand-over — she tosses Larry's old pack out her front
     // door — then the pick-up lesson. The hand-over is the owner's words (tidied only in capitals and punctuation); "a
     // couple bucks" is the peanuts' price plus the gas money she does not mention (DEC-306). The pick-up lesson is a
@@ -203,26 +215,28 @@ export const TUT = {
         + `to load anything loose nearby. Then run it over to Larry's.` }],
     // FEAT-229 (DEC-346): the tank filled, mom sends you on your way (PLACEHOLDER words); the line already runs to the
     // camping area nearest the station (the old McGill ranch, DEC-345).
-    'tut-snackcamp': [{ speaker: 'Mom', text: `[placeholder] There, that's better. Go on and have fun with Katie, honey.` }],
+    'tut-snackcamp': [{ speaker: 'Mom', phone: true, answered: true, text: `[placeholder] There, that's better. Go on and have fun with Katie, honey.` }],
     // DEC-345/346: at the waypoint Katie calls (the owner's words), then she walks you through the camp: the camp menu, the
-    // vibe bar's four terrain segments (camp.js VIBE_W: flat, view, shade, water), then the snack. PLACEHOLDER words after
-    // her first card; the keys are the game's (Z / the pad's B hold, the camp's park; Tab the inventory).
+    // vibe bar's four terrain segments (camp.js VIBE_W: flat, view, shade, water), then the snack. Her camp instruction is
+    // the owner's (DEC-355; the keyboard's half names its own key, Z, as every line by input does, FEAT-174); she stays on
+    // the line through the hunt (`holds`) and the vibe cards hang up. The vibe cards are PLACEHOLDER words.
     'tut-ranch': [
-        { speaker: KATIE, text: `Oh, you're already there? I'm just a couple minutes out. Go ahead and find a good spot. I'll just pull over where I see your truck.` },
-        { speaker: KATIE, text: `[placeholder] <span class="kc-kb">Press <span class="dlg-key">Z</span></span><span class="kc-pad">Hold <span class="dlg-key">B</span> for the camp</span> `
-            + `to look for a campsite, then drive slow off the road and it grades the ground under you.` },
+        { speaker: KATIE, phone: true, text: `Oh, you're already there? I'm just a couple minutes out. Go ahead and find a good spot. I'll just pull over where I see your truck.` },
+        { speaker: KATIE, phone: true, holds: true, text: `<span class="kc-kb">Press <span class="dlg-key">Z</span></span><span class="kc-pad">Hold <span class="dlg-key">B</span> and select the camping menu</span> `
+            + `to look for a campsite. Then drive slowly down the road to find the best site nearby. Anything flat enough will do!` },
     ],
     'tut-vibe': [
-        { speaker: KATIE, text: `[placeholder] See that bar? That's the vibe. The yellow is how flat it is &mdash; that counts the most, you don't want to roll out of the tent.` },
-        { speaker: KATIE, text: `[placeholder] Purple is the view, green is shade from the trees, and blue is water close by. `
+        { speaker: KATIE, phone: true, answered: true, text: `[placeholder] See that bar? That's the vibe. The yellow is how flat it is &mdash; that counts the most, you don't want to roll out of the tent.` },
+        { speaker: KATIE, phone: true, text: `[placeholder] Purple is the view, green is shade from the trees, and blue is water close by. `
             + `Fill the bar as far as you can, then park and make camp.` },
     ],
-    'tut-campmade': [{ speaker: KATIE, text: `[placeholder] Nice spot! Go ahead and break out that snack: <span class="dlg-key">Tab</span>, and eat the peanuts.` }],
+    // DEC-355: at camp the side menu is not there (B is the card's back), so she names the camp card's own button.
+    'tut-campmade': [{ speaker: KATIE, text: `[placeholder] Nice spot! Go ahead and break out that snack: select <span class="dlg-key">inventory</span> and eat the peanuts.` }],
     // DEC-324 → DEC-347: what now, the expedition camp and its good deeds (DEC-236's cards 2–4 in her voice), and the
     // paycheck — too late today; now said in person, she having pulled over by your truck (no model is drawn). {dir} and
     // {deeds} are filled from the game, as RUN_INTRO's are (main.js _fillCamp).
     'tut-katie': [
-        { speaker: KATIE, text: `Hey, it's me. So what are you gonna do now that you don't have a job?` },
+        { speaker: KATIE, text: `So what are you gonna do now that you don't have a job?` },   // DEC-355: in person, no opener
         { speaker: KATIE, text: `I hear there's an expedition camp up at the old {dir} road. I think they're looking to make a new supply route. `
             + `I heard them say they'd take anyone with {deeds} good deeds to their name.` },
         { speaker: KATIE, text: `Don't expect it to be easy if you join up with them, but it might be the best way to get connected back up with the outside world.` },

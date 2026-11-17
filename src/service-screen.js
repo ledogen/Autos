@@ -579,12 +579,14 @@ export class ServiceScreen {
   _buyOpts (e, i) {
     const s = this.service, sockets = socketsFor(e.id)
     const fitQ = sockets.length && s.buyQuote(i, sockets[0]), carry = s.buyQuote(i)
+    const why = s.locked?.(e) ?? null, ok = !why   // DEC-356: a row the shop will not sell now (main.js says why), its buttons off
     return `<div data-slot="${i}"><div class="sv-row"><span class="sv-name sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</span></div>`   // the row's padding: as My items' first line
+      + (why ? `<div class="sv-row"><span class="sv-name sv-desc">${why}</span></div>` : '')
       + (sockets.length ? this._act('Fit on the truck', fitQ, sockets.length > 1   // a tire or wheel names its corner
-        ? sockets.map(sk => btn('buy', where(sk), true, `data-slot="${i}" data-socket="${sk}"`)).join(' ')
-        : btn('buy', 'add to cart', true, `data-slot="${i}" data-socket="${sockets[0]}"`, ' ok')) : '')
-      + (ITEMS[e.id]?.eatIn ? this._act('Eat here', carry, btn('eat', 'add to cart', true, `data-slot="${i}"`, ' ok'))
-        : this._act('Into the inventory', carry, btn('stow', 'add to cart', true, `data-slot="${i}"`, sockets.length ? '' : ' ok'))) + `</div>`
+        ? sockets.map(sk => btn('buy', where(sk), ok, `data-slot="${i}" data-socket="${sk}"`)).join(' ')
+        : btn('buy', 'add to cart', ok, `data-slot="${i}" data-socket="${sockets[0]}"`, ' ok')) : '')
+      + (ITEMS[e.id]?.eatIn ? this._act('Eat here', carry, btn('eat', 'add to cart', ok, `data-slot="${i}"`, ' ok'))
+        : this._act('Into the inventory', carry, btn('stow', 'add to cart', ok, `data-slot="${i}"`, sockets.length ? '' : ' ok'))) + `</div>`
   }
 
   // ── Jobs ────────────────────────────────────────────────────────────────────────────────────────

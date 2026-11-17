@@ -14,7 +14,9 @@
  * constants in data/dialogue.js, never player input, so the renderer can set innerHTML directly.
  */
 export class DialogueSystem {
-    constructor () {
+    /** `phone` (DEC-354): `{ ring, click }`, the two framing cards' words (data/dialogue.js PHONE); see _frame. */
+    constructor (phone = null) {
+        this._phone = phone
         this._queue = []
         this._i = 0
         this._onDone = null
@@ -58,10 +60,28 @@ export class DialogueSystem {
         if (key !== null && this._seen.has(key)) { onDone?.(); return false }
         if (key !== null) this._seen.add(key)
         if (!cards?.length) { onDone?.(); return false }
-        this._queue = cards
+        this._queue = this._frame(cards)
         this._i = 0
         this._onDone = onDone
         return true
+    }
+
+    /**
+     * DEC-354 (owner, 2026-11-16): a phone call is framed — "a card that just says phone and then ring ring ring", and
+     * "every dialogue that ends with the character on the phone should end with <click>". A card said over the phone
+     * carries `phone: true`; each run of them gets the ring card before it, unless its first card is `answered: true`
+     * (the call was already going), and a click card in the caller's name after it, unless its last card is
+     * `holds: true` (the caller stays on the line into a later script). Built here once, never typed per script.
+     */
+    _frame (cards) {
+        if (!this._phone || !cards.some(c => c.phone)) return cards
+        const out = []
+        cards.forEach((c, i) => {
+            if (c.phone && !cards[i - 1]?.phone && !c.answered) out.push(this._phone.ring)
+            out.push(c)
+            if (c.phone && !cards[i + 1]?.phone && !c.holds) out.push({ speaker: c.speaker, text: this._phone.click })
+        })
+        return out
     }
 
     /**

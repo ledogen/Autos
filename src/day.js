@@ -247,6 +247,12 @@ export class DaySystem {
         this._push(false)
     }
 
+    /** FEAT-229 (DEC-357): the eyelids alone, at this step's rate, with the clock and the meters held (the tutorial's drive,
+     *  clockHeld) — its sleepy driver blinks without the hours being lived. */
+    blinkOnly (dtSec) {
+        if (this._running && dtSec > 0) this._updateBlinks(dtSec * 24 / DAY_PARAMS.dayLengthSec, dtSec)
+    }
+
     /** Current hour of day, 0..24 continuous. */
     hour () { return this._hour }
 
