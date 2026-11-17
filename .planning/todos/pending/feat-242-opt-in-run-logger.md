@@ -12,7 +12,7 @@ lane: unplaced
 # FEAT-242: An opt-in run logger that auto-downloads a JSON log
 
 ## Next steps
-Lane C builds it (DEC-358).
+Built on `land/feat-242-runlog` (lane C); orchestrator lands it. Owner: turn it on and play; ask for a pull-back if a part is too dense.
 
 ## Summary
 A debug-menu switch. When on, the game records a run as events and downloads the log by itself, so the owner can just play and later point at an event.
@@ -20,10 +20,29 @@ A debug-menu switch. When on, the game records a run as events and downloads the
 ## Description
 The owner's list: where you go, what missions you do, how much wear the vehicle sees, the specific events that trigger wear and their damage, items bought, when you eat, when you sleep; 'as much information as possible'. Auto-download every day or after every mission. Up to about 1 GB a run is acceptable unless Chrome struggles or logging costs performance. DEC-358 records the exception to the no-diagnostics-in-src rule.
 
+### As built
+- `src/run-log.js`: `runLog.on`, `event(type, data)`, `tick(dt)` (1 s route sample from the fixed step), `flush()`. Every call site is
+  `runLog.on && …`. Stamp on every line: game day + hour, real ms, playtime, truck pos [x,y,z], speed, heading.
+- Debug panel → *Run logging (FEAT-242)*: the checkbox (remembered in localStorage key `autos-runlog/1`, the choice only),
+  *Download log now*, an events counter. Turning it on mid-run writes a `header` line (seed, settings, parts, every condition,
+  flats, inventory, wallet, fuel, energy, build).
+- Parts: JSON Lines, `autos-run-<seed>-<startISO>-partNN.jsonl`, downloaded at each new game day, run end, `pagehide`,
+  switching off, and the button; the buffer is emptied after each. Chrome asks once to allow multiple downloads.
+- Events: `runStart` · `route` (mode, on-road, fuel, energy, hunger, wallet, gear, rpm, temp, pedals, continuous wear by
+  track and cause, every track's condition each 60 s) · `mission` (each state change: offer, spec, job scalars + terms,
+  result with pay/deeds/letter) · `impact` · `bumpStop` · `rimStrike` · `puncture` (hazard) · `missShift` (each with the
+  measured force/speed, its thresholds, condition before → after, popped tires, and the corner's load, strut speed,
+  tire condition and velocity AT THE PEAK) · `reseat` · `reset` · `tow` · `roadside` · `tire` (spare, plug, tire service)
+  · `fit` · `repair` · `purchase` (the service cart's lines) · `fuel` (pump, can pour) · `item` (grant/use/consume/drop/
+  take/remove) · `eat` · `drink` · `crash` · `timeSkip` · `sleep` (+ `sleepSite`: where, vibe segments, gear assist) ·
+  `camp` (make/break) · `alert` · `runEnd` · `part`.
+- `node tools/run-log-summary.mjs <parts…>`: days, km, jobs by type (time, pay, deeds, ranks), money per day, wear by
+  cause, damage events + top 10 + every puncture against its threshold, purchases, fuel, tows, sleeps.
+
 ## Tracker
-- [ ] A debug-menu option turns run logging on and off; off by default; off costs nothing
-- [ ] Events logged with game time, position and the numbers behind them: missions, wear and damage with trigger and threshold, purchases, eating, sleeping, fuel, tows, deaths
-- [ ] The route is sampled at a low fixed rate
-- [ ] The log downloads by itself at a fixed point (each day or each mission) with no prompt
-- [ ] Measured: frame cost with logging on
-- [ ] A reader script in test/ or tools/ prints a run summary from a log
+- [x] A debug-menu option turns run logging on and off; off by default; off costs nothing
+- [x] Events logged with game time, position and the numbers behind them: missions, wear and damage with trigger and threshold, purchases, eating, sleeping, fuel, tows, deaths
+- [x] The route is sampled at a low fixed rate
+- [x] The log downloads by itself at a fixed point (each day or each mission) with no prompt
+- [x] Measured: frame cost with logging on
+- [x] A reader script in test/ or tools/ prints a run summary from a log

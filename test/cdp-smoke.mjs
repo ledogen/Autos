@@ -428,7 +428,7 @@ const STEPS = [
     check(saved.length >= 1 && saved.every(n => /^autos-run-6-.*-part\d\d\.jsonl$/.test(n)), `runlog: the parts downloaded are ${JSON.stringify(saved)}`)
     await js('void (window.__rlText = null, Promise.all(window.__rlSaved.map(s => fetch(s.href).then(r => r.text()))).then(t => { window.__rlText = t.join("") }))')
     check(await until(() => js('window.__rlText !== null'), 3000), 'runlog: the downloaded parts could not be read back')
-    const got = await js(`(() => { const ev = window.__rlText.trim().split('\n').map(l => JSON.parse(l))
+    const got = await js(`(() => { const ev = window.__rlText.trim().split('\\n').map(l => JSON.parse(l))
       const by = (e) => ev.filter(x => x.e === e)
       return { n: ev.length, header: by('header').length, route: by('route').length, buy: by('purchase').map(x => x.lines.map(l => l.label).join()),
         sleep: by('sleep').map(x => x.hours), stamped: ev.filter(x => x.e !== 'part').every(x => x.day != null && x.pos?.length === 3) } })()`)
