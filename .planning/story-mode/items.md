@@ -156,11 +156,11 @@ before the buff question is settled.
 | Perishable | Fresh for | Consequence when it runs out |
 |---|---|---|
 | **Fish, uncooked** | **~6 h** (2026-10-21; was ~4–5 h) | Gone. Cook and eat it on the spot, or lose it |
-| **Fish, in a cooler** | **~36 h** (2026-10-21: ×1/6); **~48 h in the Ice King** (2026-10-22: ×1/8) | You can carry it, camp on it, and still eat it tomorrow — a two-rung ladder, see below |
+| **Fish, in a cooler** | **~24 h** (2026-11-17, DEC-367: ×1/4; was ×1/6); **~48 h in the Ice King** (2026-10-22: ×1/8) | You can carry it, camp on it, and still eat it tomorrow — a two-rung ladder, see below |
 | **Chili dog** | **16 h** (2026-10-21) | Gone |
 | **Packed lunch** | **24 h** (2026-10-21) | Gone |
 | **Burger** | **16 h** (2026-10-21, like the chili dog) | Gone |
-| **Groceries** | **24 h**; the cooler slows them like fish (×1/6) (2026-10-21) | Gone |
+| **Groceries** | **24 h**; the cooler slows them like fish (×1/4, DEC-367; was ×1/6) | Gone |
 | **Potato** | **raw: never spoils; cooked: 24 h** (2026-10-22) — inedible until cooked on the campfire | Cooked: gone |
 | *(everything else)* | unspecified | Cooked fish and food-as-cargo still want a figure |
 
@@ -204,6 +204,7 @@ told *the fish is still good* or *the fish has turned*, never a percentage or a 
 
 **RULED 2026-10-21 (the item setup page):** uncooled fish keep ~6 h; **the cooler holds 4 fish** and keeps them
 ~36 h (×1/6 — so the proposal table below is superseded for the first rung).
+**RULED 2026-11-17 (DEC-367):** the regular cooler is **×1/4**, a 4× lifetime, so fish keep ~24 h in it.
 
 **RULED 2026-10-22:** the better cooler is renamed the **Ice King**. It is **×1/8**, so fish keeps
 ~48 h, and **its ice lasts 5 days** instead of 3. Both coolers can be carried (§2).

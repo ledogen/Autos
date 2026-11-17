@@ -131,6 +131,7 @@ export const RANGER_PARAMS = {
   ignitionCatchTime:     0.25,  // s — crank time before the engine catches at full engine health
   ignitionCatchTimeWorn: 2.0,   // s — crank time as engine health approaches zero (owner 2026-09-05: raised 1.0→2.0, the decay was not significant enough at 1 s; linear 0.25→2.0; a worn engine always starts, owner 2026-10-22 — see ignition.js catchTime)
   // FEAT-120 start transient (src/drivetrain.js stepStart): a lag to the crank speed, then a flare curve.
+  ignitionBumpStartRPM:  300,   // rpm — FEAT-258 (owner 2026-11-17): engine already turning faster than this at the key press → it starts at once (ignition.js)
   ignitionCrankRPM:      450,   // rpm — cranking speed (owner 2026-10-22: 200 sounded like the starter was barely turning over)
   ignitionCrankRpmLag:   0.12,  // s — lag on the cranking speed and on the flare after the catch
   engineStartFlareRPM:   1325,  // rpm — flare curve's peak after the catch, warm engine. The lag shaves the excursion

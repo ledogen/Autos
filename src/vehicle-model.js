@@ -525,16 +525,20 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
       m.color.setHex(on ? lensHex : 0x555555)
     }
     // Imported-model headlight lens (front split of the shared white-lens material).
-    for (const m of [...modelHeadMats, ...modReflectorMats]) {
+    for (const m of modelHeadMats) {
       m.emissive.setHex(on ? lensHex : 0x000000)
       m.emissiveIntensity = lensIntensity
+    }
+    // FEAT-204: the light bar's pods burn on HIGH beam only (owner, 2026-11-17: "Low beams should not turn on the
+    // light bar, only high beams should turn it on").
+    for (const m of modReflectorMats) {
+      m.emissive.setHex(high ? lensHex : 0x000000)
+      m.emissiveIntensity = high ? HEAD_TUNE.lensHigh : 0
     }
     // Beam shape per mode (intensity handled per-frame in syncMeshesToState). Low beam swaps in the
     // half-cone cutoff cookie; high beam the full-cone (uniform) one. Both are always non-null so the
     // swap never changes numSpotLightMaps (no shader recompile).
-    // FEAT-204: a fitted light bar (headlightGain > 1) is a driving lamp with no cutoff, so the low beam takes the
-    // high beam's full pattern while it burns (setMods re-runs this on every fit).
-    const full = high || (params.headlightGain ?? 1) > 1
+    const full = high
     for (const s of headlightSpots) {
       const sx = Math.sign(s.position.x) || 1
       s.color.setHex(lensHex)
@@ -873,11 +877,13 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     // Per-lamp output = flicker level × the wear dimming damage.js publishes (absent = a stock lamp).
     const dim = params._headlightBrightness
     const lampGain = (i) => lampLevel[i] * (dim?.[i] ?? 1)
-    // FEAT-204: a fitted light bar burns with the headlights through these two spots (no lamp of its own, DEC-229):
-    // intensity × headlightGain, range × headlightReach (data/parts.js lightBar; 1 / 1 without one).
-    const reach = (headlightMode === 2 ? HEAD_TUNE.highDistance : HEAD_TUNE.lowDistance) * (params.headlightReach ?? 1)
+    // FEAT-204: a fitted light bar burns with the HIGH beams through these two spots (no lamp of its own, DEC-229;
+    // never on low, DEC-373): intensity × headlightGain, range × headlightReach (data/parts.js lightBar; 1 / 1 without one).
+    const barGain  = headlightMode === 2 ? (params.headlightGain ?? 1) : 1
+    const barReach = headlightMode === 2 ? (params.headlightReach ?? 1) : 1
+    const reach = (headlightMode === 2 ? HEAD_TUNE.highDistance : HEAD_TUNE.lowDistance) * barReach
     for (let i = 0; i < 2; i++) {
-      headlightSpots[i].intensity = headCast * castScale * lampGain(i) * (params.headlightGain ?? 1)
+      headlightSpots[i].intensity = headCast * castScale * lampGain(i) * barGain
       headlightSpots[i].distance = reach
     }
     // The lens glow follows its lamp's flicker (applyHeadlights sets colour; intensity is per frame).
@@ -1177,7 +1183,7 @@ float rsBakedShade () {
       }, undefined, (err) => console.warn(`[vehicle-model] ${stem}.glb failed to load:`, err))
     }
     for (const [stem, o] of mods) if (o) o.visible = modWant.includes(stem)
-    applyHeadlights()   // the light bar's beam shape follows the fit
+    applyHeadlights()   // a newly loaded light bar's pods take the current beam (lit on high only)
   }
 
   // ── FEAT-231 (DEC-352): the bed mat and the bedliner, as solids built from `spec.bed` (ranger.glb's bed

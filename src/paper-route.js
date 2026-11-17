@@ -295,6 +295,7 @@ export const RR_PARAMS = {
     minShowS: 0.4,    // minimum RECALCULATING time. The job takes ~120 ms, so without this
                       // the indicator would flash rather than inform.
     staleM:   50,     // m of drift that invalidates a finished job. Should never fire.
+    nearS:    1.0,    // s between BUG-194 nearest-recipient re-plans: the guide always points at the nearest owed house by road
     snapM:    200,    // queryNearest search radius for the truck's own road point
 }
 
@@ -1284,6 +1285,11 @@ export class PaperRouteSystem {
         if (this._checkT < RR_PARAMS.pollS) return
         this._checkT = 0
 
+        // TRIGGER N (BUG-194) — the nearest owed house can change under a truck that never left the line
+        // (it drove past a miss), so re-plan quietly every nearS. One Dijkstra: planTourJob's want-1 path.
+        this._nearT = (this._nearT ?? 0) + RR_PARAMS.pollS
+        if (this._nearT >= RR_PARAMS.nearS) { this._nearT = 0; this._startReplan('nearest', true); return }
+
         // TRIGGER A — a customer was served out of order, so the rest of the line is a lie.
         // Delivering IN order does not trigger anything: the remaining suffix is still optimal.
         if (this._orderIsStale()) { this._startReplan('out of order'); return }
@@ -1336,10 +1342,11 @@ export class PaperRouteSystem {
      */
     _startReplan (reason, quiet = false, retry = false) {
         if (this.state !== 'running' || !this.route || !this.run) return
-        // FEAT-141: the shortest way to FINISH — through any of the customers still owed a paper,
-        // as many as the round still needs. (Before, the set was the plotted route's, fixed.)
+        // BUG-194 (owner, 2026-11-17): the GUIDE goes to the NEAREST house still owed a paper, by road from
+        // the truck (want 1 — planTourJob's one-stop case), so a house passed without a throw flips the
+        // line back to it. The priced tour, par and the deadline are untouched: this is `guide`, never `route`.
         const left = this.eligible.filter(c => !this.run.hits.has(c.id))
-        const want = this.run.n - this.run.hits.size
+        const want = this.run.n - this.run.hits.size > 0 ? 1 : 0
         if (!left.length || want <= 0) return
         const car = this._getCar()
         const origin = this._originPoint()

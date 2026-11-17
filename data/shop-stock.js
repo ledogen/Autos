@@ -15,8 +15,12 @@
 // 1/0.037 ≈ 27 h. (4 slots at 0.06 averaged 2.5; 6 at 0.06 would be 3.7.) The ALWAYS rows come on top.
 
 export const SHELF_SLOTS = 6
-export const P_FILL = 0.037           // per empty slot per game hour
-export const LIFE_H = [6, 48]         // an item's shelf life, uniform
+// FEAT-259 (owner, 2026-11-17: "Increase the frequency at which new stock comes into the store") [DEFAULT, on the
+// machine-1117-look card]: P_FILL 0.037 → 0.074 and LIFE_H 6–48 → 3–21 h. The shelf still carries ~3 rotating items
+// (mean life 12.5 h against a mean wait 12.5 h), but they turn over ~1.85× as often: 3.1 → 5.8 new items per shop
+// per day, each lasting 12 h on average instead of 27 h.
+export const P_FILL = 0.074           // per empty slot per game hour
+export const LIFE_H = [3, 21]         // an item's shelf life, uniform
 export const P_NEW = 0.15             // otherwise used:
 export const USED_COND = [0.4, 0.85]  //   condition, uniform
 

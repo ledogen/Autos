@@ -148,6 +148,22 @@ let _lastVehicleState = null
 let _snapNext = false
 export function snapCamera () { _snapNext = true }
 
+// FEAT-246: the chase boom's blocker. main.js hands a (pivot, desired) → free fraction function (terrain height
+// + one wall ray, see camera-boom.js). The spring's own state stays unclamped (_free); only the DRAWN position is
+// pulled in, instantly (never see through a wall) and eased back out with BOOM_EASE_TAU (critically damped
+// first-order: 95 % back in 3·tau = 0.36 s).
+const BOOM_EASE_TAU = 0.12
+let _boomProbe = null, _boomS = 1, _boomShown = false
+const _free = new THREE.Vector3()
+export function setCameraBoomProbe (fn) { _boomProbe = fn }
+function _applyBoom (camera, pivot, dt, snap) {
+  if (!_boomProbe) return
+  _free.copy(camera.position)
+  const s = _boomProbe(pivot, camera.position)
+  _boomS = snap || s < _boomS ? s : s - (s - _boomS) * Math.exp(-dt / BOOM_EASE_TAU)
+  if (_boomS < 1) { camera.position.lerpVectors(pivot, _free, _boomS); _boomShown = true }
+}
+
 // ── Focus override (FEAT-45: camp) ─────────────────────────────────────────────
 // A world point the camera orbits instead of the truck. Set while camp is established so the view
 // is ON the pad — you made camp, you should be looking at it, not at the back of your own tailgate.
@@ -376,6 +392,7 @@ function _exitFreecam () {
 export function updateCamera (camera, vehicleState, dt, followDt = dt) {
   // Store latest vehicleState reference so the C-key listener can read truck position.
   _lastVehicleState = vehicleState
+  if (_boomShown) { camera.position.copy(_free); _boomShown = false }   // FEAT-246: the spring runs on the unclamped position
   const snap = _snapNext   // consumed here, whichever branch below runs
   _snapNext = false
   if (snap) reverseView = swinging = false   // a fresh seat starts facing forward, no swing in flight
@@ -468,6 +485,7 @@ export function updateCamera (camera, vehicleState, dt, followDt = dt) {
       // Hand the dragged angle to the follow heading, so releasing swings back BEHIND along an arc
       // at the yaw rate cap instead of lerping a chord across the truck.
       camYaw = orbitTheta
+      _applyBoom(camera, vehicleState.position, dt, snap)
     } else {
       // ── Follow mode: crash-calm chase (FEAT-95 — see the CHASE_YAW_* block) ──────
       // Goal position: offset rotated by the camera's OWN heading (camYaw), never the body's
@@ -547,6 +565,7 @@ export function updateCamera (camera, vehicleState, dt, followDt = dt) {
       orbitRadius = Math.max(0.01, delta.length())
       orbitTheta  = Math.atan2(delta.x, delta.z)
       orbitPhi    = Math.asin(Math.max(-1, Math.min(1, delta.y / orbitRadius)))
+      _applyBoom(camera, vehicleState.position, dt, snap)
     }
   } else {
     // Hood cam: fixed offset at the rear edge of the hood, just outside the windshield

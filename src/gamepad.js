@@ -59,7 +59,10 @@ export const PAD_PARAMS = {
 // the reticle is up as well (RB tap throws). pumpActive: set by main.js — the pump is open, so A
 // pumps. hudMenu: set by src/hud-menu.js — the B-hold icon menu ({ open, move, select, cancel }).
 // skipHold: set by main.js — the opening can be skipped, so View is held M (FEAT-170).
-export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0, panX: 0, panY: 0, zoom: 0,
+// mouseLive (FEAT-255): false from any pad button / stick input until the mouse actually MOVES (or a real key is
+// pressed). While false, hover is ignored — menu-nav.js's pointer highlight, map2d.js's list rows and its mouse cursor —
+// so a mouse left resting on the UI cannot hold a highlight or the map's centre while the pad drives.
+export const pad = { active: false, mouseLive: true, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0, panX: 0, panY: 0, zoom: 0,
   menuActive: () => false, cardActive: () => false, cardTabs: () => false, cardDrive: () => false,
   mapActive: () => false, canThrow: () => false, throwReady: () => false,
   pumpActive: () => false, skipHold: () => false, hudMenu: null }
@@ -73,7 +76,7 @@ export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, l
 // recovery) sit behind ONE button, B held (owner, 2026-10-21), and B + ←/→ is reserved for a later
 // action. Their rows carry `B (…)` so every key tab reads "B". The pump left B for A, at the pump only.
 // The D-pad drives three actions (owner, 2026-11-03, FEAT-144): ↓ picks up / loads lost bed cargo, ←
-// sets the spawn (free roam), → held resets the truck like View's hold. Home (16) is unbound.
+// sets the spawn (free roam), → held resets the truck. Home (16) is unbound.
 export const BINDINGS = [
   { action: 'throttle',              key: 'W',         pad: 'RT' },
   { action: 'brake / reverse',       key: 'S',         pad: 'LT' },
@@ -101,7 +104,7 @@ export const BINDINGS = [
   { action: 'tabs (service shop)',   key: 'Q / E',    pad: 'LB / RB (shop open)' },
   { action: 'map: zoom in / out',    key: 'wheel',     pad: 'right stick ↑ / ↓ (map open)' },
   { action: 'cards: pick / press',   key: 'arrows / Enter', pad: 'D-pad / A (card up)' },
-  { action: 'reset truck',           key: 'r',         pad: 'View or D-pad → (hold 1 s)' },
+  { action: 'reset truck',           key: 'r',         pad: 'D-pad → (hold 1 s)' },
   { action: 'pick up / load lost cargo (parked)', key: 'g', pad: 'D-pad ↓', button: 13 },
   { action: 'set spawn here (free roam)', key: 'Shift+R', pad: 'D-pad ←', button: 14 },
   { action: 'inventory',             key: 'Tab',       pad: 'B (hold, ↑/↓, release)' },
@@ -153,12 +156,10 @@ const PUMP_KEYS = { ...BUTTON_KEYS, 0: 'f' }
 const NAV = [['ArrowUp', 12], ['ArrowDown', 13], ['ArrowLeft', 14], ['ArrowRight', 15]]
 const NAV_DELAY_MS = 400, NAV_REPEAT_MS = 120, NAV_STICK = 0.5
 const navNext = new Map()   // arrow key → performance.now() of its next repeat, while held
-// View: a tap (released under VIEW_HOLD_MS) opens the map (m, sent on RELEASE — only then is it known
-// to be a tap); holding it VIEW_HOLD_MS resets the truck (r, keydown at the threshold, keyup on
-// release so vehicle.js's per-step keys.r read still sees it held).
+// View: a press opens the map (m, sent on RELEASE). DEC-362 (owner, 2026-11-17): holding it no longer resets the truck —
+// the reset is R and the D-pad → hold (below) only.
 const VIEW = 8, VIEW_HOLD_MS = 1000
 let viewDownAt = -1      // performance.now() of the press, -1 while up
-let viewReset = false    // the hold already fired r this press
 // RB, FEAT-133: while pad.throwReady() a press is HELD BACK — released under throwTapMs it throws (F
 // down + up: main.js's own throw path), held past it it becomes the handbrake. Otherwise RB is
 // plain Space at once, so a handbrake turn off the aim costs no latency at all. Drive layout only.
@@ -184,19 +185,6 @@ let padShown = false     // body.pad-on, as last written
 
 /** Center softening: sign(x)·|x|^(1+k). Shared with the settings page's plot (main.js). */
 export const steerCurve = (x, k) => Math.sign(x) * Math.abs(x) ** (1 + k)
-
-/** The ABS pedal kick-back (src/abs.js pulse): a short buzz in the brake trigger where the pad can
- *  (Xbox 'trigger-rumble'), the whole pad otherwise. Unsupported pads ignore it. */
-export function padKick () {
-  for (const gp of navigator.getGamepads?.() ?? []) {
-    const a = gp?.vibrationActuator
-    if (!a) continue
-    const trig = a.effects?.includes('trigger-rumble')
-    a.playEffect(trig ? 'trigger-rumble' : 'dual-rumble', trig
-      ? { duration: 40, leftTrigger: 0.8 }
-      : { duration: 40, strongMagnitude: 0.4, weakMagnitude: 0.7 }).catch(() => {})
-  }
-}
 
 const deadzone = (v, d) => Math.abs(v) < d ? 0 : Math.sign(v) * (Math.abs(v) - d) / (1 - d)
 // BUG-189 (owner, 2026-11-16: in camp the "start the truck" hint came up untouched; started, the engine sat on the limiter
@@ -229,6 +217,11 @@ function poll () {
     : map ? MAP_KEYS : BUTTON_KEYS
   const drive = keys === BUTTON_KEYS
   if (drive && pad.pumpActive()) keys = PUMP_KEYS
+  // BUG-193 (owner, 2026-11-17): LB held in the map (ArrowLeft) and the map closed — the button is down but its held key
+  // is the map's, so the clutch never engaged. Back in the drive layout a held clutch / handbrake (LB, RB) lets go of
+  // the key it went down with and is read afresh as the drive's. Not the other buttons: A / Y / L3 held through a
+  // close would fire a shift, the ignition or the lights nobody asked for.
+  if (drive) for (const i of [4, RB]) if (held.has(i) && held.get(i) !== keys[i]) { sendKey('keyup', held.get(i)); held.delete(i) }
   const down = new Set(), nav = new Set()
   let bDown = false, dpad = 0, rightDown = false
   // A press keeps the meaning it went down with until it is let go (as `held` does for every other button).
@@ -253,6 +246,9 @@ function poll () {
     if (gp.buttons[B]?.pressed) bDown = true
     if (gp.buttons[UP]?.pressed) dpad |= 1
     if (gp.buttons[DOWN]?.pressed) dpad |= 2
+    // FEAT-254 (owner, 2026-11-17): the left stick walks the B menu too — only with B held; the edge test below
+    // makes a held deflection one step, as the D-pad's is.
+    if (gp.buttons[B]?.pressed) { if (gp.axes[1] < -NAV_STICK) dpad |= 1; if (gp.axes[1] > NAV_STICK) dpad |= 2 }
     if (gp.buttons[RIGHT]?.pressed) rightDown = true
     const mapOnly = map && !card   // FEAT-239: the map's own layout leaves D-pad ← / → spare (the shoulders flip)
     if (menu || card || map) for (const [k, b] of NAV) if (!(mapOnly && (b === 14 || b === 15)) && gp.buttons[b]?.pressed) nav.add(k)
@@ -277,7 +273,7 @@ function poll () {
 
   // A button keeps the key it went down with, so a press that opens or closes a menu still releases
   // the key it sent.
-  for (const i of down) if (!held.has(i)) { held.set(i, keys[i]); sendKey('keydown', keys[i]); pad.active = true }
+  for (const i of down) if (!held.has(i)) { held.set(i, keys[i]); sendKey('keydown', keys[i]); pad.active = true; pad.mouseLive = false }
   for (const [i, k] of held) if (!down.has(i)) { held.delete(i); sendKey('keyup', k) }
   if (thr > 0 || brk > 0 || steer !== 0) pad.active = true
   if (map && (pad.zoom || pad.panX || pad.panY)) pad.active = true   // the map's cursor is the pad's, unlike the camera
@@ -315,6 +311,7 @@ function poll () {
   if (!drive && bDown) bSpent = true
   if (!bDown) bSpent = false
   dPrev = dpad
+  if (nav.size || (map && (pad.panX || pad.panY || pad.zoom)) || bDown) pad.mouseLive = false   // FEAT-255
   for (const k of nav) {
     const t = navNext.get(k)
     if (t === undefined || now >= t) {
@@ -325,20 +322,18 @@ function poll () {
   for (const k of navNext.keys()) if (!nav.has(k)) navNext.delete(k)
 
   if (menu) {   // View is silent in a menu: a press in flight dies quietly (a reset already firing lets go)
-    if (viewDownAt >= 0 && viewReset) sendKey('keyup', 'r')
     if (viewDownAt >= 0 && viewSkip) sendKey('keyup', 'm')
     viewDownAt = -1; viewDown = false; viewSkip = false
   }
   if (viewDown) {
     const now = performance.now()
     if (viewDownAt < 0) {
-      viewDownAt = now; viewReset = false; pad.active = true
+      viewDownAt = now; pad.active = true
       viewSkip = pad.skipHold()
       if (viewSkip) sendKey('keydown', 'm')
-    } else if (!viewSkip && !viewReset && now - viewDownAt >= VIEW_HOLD_MS) { viewReset = true; sendKey('keydown', 'r') }
+    }
   } else if (viewDownAt >= 0) {
     if (viewSkip) sendKey('keyup', 'm')
-    else if (viewReset) sendKey('keyup', 'r')
     else if (any) { sendKey('keydown', 'm'); sendKey('keyup', 'm') }   // not on an unplug mid-press
     viewDownAt = -1; viewSkip = false
   }
@@ -351,7 +346,9 @@ function poll () {
 
 if (typeof navigator !== 'undefined' && navigator.getGamepads) {
   // Synthetic events are untrusted, so the pad's own replayed keys never hand control back.
-  document.addEventListener('keydown', e => { if (e.isTrusted && !e.repeat) pad.active = false }, true)
+  document.addEventListener('keydown', e => { if (e.isTrusted && !e.repeat) { pad.active = false; pad.mouseLive = true } }, true)
+  // FEAT-255: only a pointer that really moved gives hover back (a resting one fires zero-movement events).
+  document.addEventListener('pointermove', e => { if (e.isTrusted && (e.movementX || e.movementY)) pad.mouseLive = true }, true)
   for (const ev of ['gamepadconnected', 'gamepaddisconnected'])   // BUG-189: a (re)connected pad's triggers wait for rest
     globalThis.addEventListener?.(ev, e => { trigArmed.delete(`${e.gamepad.index}:6`); trigArmed.delete(`${e.gamepad.index}:7`) })
   requestAnimationFrame(poll)

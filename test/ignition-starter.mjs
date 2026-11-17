@@ -203,6 +203,35 @@ for (const engine of ['vulcan30', 'duratec23']) for (const box of ['auto', 'm5od
   }
 }
 
+console.log('\n── 8. bump start (FEAT-258): already turning above ignitionBumpStartRPM, the press starts it ─')
+{
+  const at = (rpm, extra = {}) => ({ ignition: makeIgnitionState(OFF), drivetrain: { engineRPM: rpm }, ...extra })
+  const a = at(P.ignitionBumpStartRPM + 50)
+  stepIgnition(a, P, DT, true)
+  check(a.ignition.state === RUNNING && a.ignition.event === 'catch', `${P.ignitionBumpStartRPM + 50} rpm at the press: RUNNING on that step (event ${a.ignition.event})`)
+  const b = at(P.ignitionBumpStartRPM - 50)
+  stepIgnition(b, P, DT, true)
+  check(b.ignition.state === CRANKING, `${P.ignitionBumpStartRPM - 50} rpm: it cranks as usual (${b.ignition.state})`)
+  const c = at(1200, { engineHealth: 0 })
+  stepIgnition(c, P, DT, true)
+  check(c.ignition.state !== RUNNING, `a seized engine does not bump start (${c.ignition.state})`)
+  const d = at(1200, { fuel: { gal: 0 } })
+  stepIgnition(d, P, DT, true)
+  check(d.ignition.state !== RUNNING, `an empty tank does not bump start (${d.ignition.state})`)
+  // The starter's own spin is not a bump start: crank a worn engine, let go, press again at once with the
+  // engine still at crank speed (450 > 300) — it must crank again, not start (or a tap-tap beats the catch time).
+  const e = at(0, { engineHealth: 0.2 })
+  for (let t = 0; t < 0.5; t += DT) { stepIgnition(e, P, DT, true); e.drivetrain.engineRPM = P.ignitionCrankRPM }
+  stepIgnition(e, P, DT, false)
+  check(e.ignition.event === 'abort', 'worn engine: let go before the catch')
+  stepIgnition(e, P, DT, true)
+  check(e.ignition.state === CRANKING, `re-pressed at ${P.ignitionCrankRPM} rpm of starter spin: cranks again (${e.ignition.state})`)
+  // …but once that spin has died below the threshold, a later driveline spin counts again.
+  stepIgnition(e, P, DT, false); e.drivetrain.engineRPM = 100; stepIgnition(e, P, DT, false)
+  e.drivetrain.engineRPM = 900; stepIgnition(e, P, DT, true)
+  check(e.ignition.state === RUNNING, `spin died, then 900 rpm off the wheels: bump starts (${e.ignition.state})`)
+}
+
 console.log(`\n${'═'.repeat(64)}`)
 if (failures) { console.log(`IGNITION GATE: ${failures} FAILURE(S)`); process.exit(1) }
 console.log('IGNITION GATE: all checks passed ✓')

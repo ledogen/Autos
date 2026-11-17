@@ -320,11 +320,11 @@ export const THINGS = [
     // of road; the letter is the share smashed. Always a roadside job. The deed is the removal — each
     // giver has an ordinary reason. PLACEHOLDER words and counts.
     // The farmer's old empty drums, set out along his frontage: crushed, they go to the scrapyard in one trip.
-    { id: 'scrapDrums',  phrase: 'his old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
+    { id: 'scrapDrums',  phrase: '{n} old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
       targets: [{ kinds: ['barrel', 'drumOpen'], n: [8, 12], cluster: [1, 3] }] },
     // The county is repaving: the old sign line comes down before the new one goes up, and the last job's
     // barricades are still out. The crew is behind.
-    { id: 'oldSignLine', phrase: 'the old sign line knocked down', family: 'demolition', massKg: [0, 0], pools: ['workSite'],
+    { id: 'oldSignLine', phrase: '{n} old signs and barricades knocked down', family: 'demolition', massKg: [0, 0], pools: ['workSite'],
       targets: [{ kinds: ['signGrade', 'signCurves', 'signRockslide', 'signTee', 'signCross', 'signStop', 'signIcy'],
                   n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
                 { kinds: ['roadBarrier'], n: [2, 3], cluster: [2, 3], face: 'road' }] },
@@ -374,7 +374,9 @@ export const REWARDS = [
     // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
     // barn find is a roadside-find event (items.md §6), not a giver.
     { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'], cat: 'tires' },
-    { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['B', 'A'], cat: 'tires' },
+    // FEAT-259 (owner, 2026-11-17: standard tires should "come up as mission reward more often") [DEFAULT]: C added, so it
+    // competes with the old tire on the easiest gate too (was B / A only: 1.2 % of item rewards against the old tire's 6.6 %).
+    { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['C', 'B', 'A'], cat: 'tires' },
     { id: 'tireSport',  name: 'Sport tire',  kind: 'part',       gates: ['A', 'S'], cat: 'tires' },
     { id: 'tireOffroad', name: 'All-terrain tire', kind: 'part', gates: ['A', 'S'], cat: 'tires' },
     { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'], cat: 'tires' },
@@ -513,7 +515,7 @@ export const REQUISITION = [
     // recycles until it holds 20+ and clears the line in one trip. The card shows the stock on hand.
     { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 20 },
     { id: 'reqCrew',     phrase: 'the crew',       family: 'delivery', from: 'workSite',     massKg: 0, passenger: true },
-    { id: 'reqSigns',    phrase: 'the turn-back signs knocked down', family: 'demolition', from: 'expeditionCamp', massKg: 0,
+    { id: 'reqSigns',    phrase: '{n} turn-back signs, crates and barrels knocked down', family: 'demolition', from: 'expeditionCamp', massKg: 0,
       targets: [{ kinds: ['turnBackSign', 'turnBackSignKeepOut', 'turnBackSignBeware', 'turnBackSignNoEntry'],
                   n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
                 { kinds: ['smallCrate'], n: [3, 5], cluster: [1, 3] }, { kinds: ['barrel'], n: [3, 5], cluster: [1, 2] }] },
