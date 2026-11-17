@@ -3328,9 +3328,9 @@ function _rebuildPoiMarkers () {
       _poiMeshes.set(q.id, cube)
     }
     // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
-    // in poi.js (deterministic in the seed); this only dresses them. FEAT-149: a knockable ornament
-    // (gnome, beach ball, flamingo) becomes a body near the truck (_updateOrnaments); the rest are
-    // solid in place (poi.js satSolid, synced with the markers).
+    // in poi.js (deterministic in the seed); this only dresses them. FEAT-149/251: a knockable one
+    // (every lawn item but the fire pit) becomes a body near the truck (_updateOrnaments); the rest
+    // are solid in place (poi.js satSolid, synced with the markers).
     for (const sat of q.satellites ?? []) {
       const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
       m.position.set(sat.x, sat.y, sat.z)
@@ -6760,9 +6760,13 @@ function _updateBarricades () {
 // Owner, 2026-10-25: "smashing into specific lawn ornaments should trigger them to become physics
 // objects and roll/bounce away (gnomes, beach balls, flamingo)". FEAT-65's model↔body swap: a plain
 // model far off; within ORNAMENT_ON_M a debris body at exactly its pose, put to SLEEP at once, so it
-// stands until the truck touches it and the engine wakes it. Pinned (outside the debris cap) and
-// harmless (noDamage — a gnome is not a rock). Past ORNAMENT_OFF_M it is a model again, standing where
-// the body came to rest: a knocked gnome stays knocked for the session.
+// stands until the truck touches it and the engine wakes it. Pinned (outside the debris cap: a standing
+// ornament the cap reclaimed would vanish from its yard; the 60 m radius bounds the count instead).
+// FEAT-251 (owner, 2026-11-17: "The only thing I want players to actually collide with is the fire pit …
+// spawn in a rigid body … so it can have mass and hit the truck and tumble"): every lawn item but the fire
+// pit is knockable, at its real mass, and NOT noDamage — like a demolition target, a hit costs what the
+// wear model says (a 3.5 kg chair is far under every floor). Past ORNAMENT_OFF_M it is a model again,
+// standing where the body came to rest: a knocked gnome stays knocked for the session, never saved.
 const ORNAMENT_ON_M = 60, ORNAMENT_OFF_M = 120
 const _ornQ = new THREE.Quaternion(), _ornP = new THREE.Vector3(), _ornUp = new THREE.Vector3()
 
@@ -6779,7 +6783,7 @@ function _updateOrnaments () {
     if (o.body == null && d < ORNAMENT_ON_M && terrainPhysics.hasChunkAt(o.mesh.position.x, o.mesh.position.z)) {   // BUG-172
       const q = o.mesh.quaternion
       o.body = debrisSystem.spawn(o.kind, _ornP.copy(o.mesh.position).add(_ornUp), still,
-        { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, noDamage: true })
+        { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true })
       if (o.body != null) { physicsEngine.sleep(o.body); o.mesh.visible = false }
     } else if (o.body != null && d > ORNAMENT_OFF_M) {
       physicsEngine.getTransform(o.body, _ornP, _ornQ)

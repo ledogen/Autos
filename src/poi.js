@@ -418,6 +418,8 @@ const YARD_SOLID_GAP = 0.15   // m — clearance from the POI model's own collis
  * Null for a knockable ornament (data/prop-models.js `knockable` — main.js makes it a body near the
  * truck) and for a model with no collision. "Others should have collision but not budge (brick
  * firepit)" — owner, 2026-10-25; before this a satellite was a mesh only and the truck drove through.
+ * FEAT-251 (owner, 2026-11-17): of the lawn furniture only the fire pit is solid now; the farm's yard
+ * clutter (drums, crates, pallets) still is.
  */
 export function satSolid (sat) {
     if (sat._solid !== undefined) return sat._solid
