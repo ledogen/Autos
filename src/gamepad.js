@@ -188,19 +188,6 @@ let padShown = false     // body.pad-on, as last written
 /** Center softening: sign(x)·|x|^(1+k). Shared with the settings page's plot (main.js). */
 export const steerCurve = (x, k) => Math.sign(x) * Math.abs(x) ** (1 + k)
 
-/** The ABS pedal kick-back (src/abs.js pulse): a short buzz in the brake trigger where the pad can
- *  (Xbox 'trigger-rumble'), the whole pad otherwise. Unsupported pads ignore it. */
-export function padKick () {
-  for (const gp of navigator.getGamepads?.() ?? []) {
-    const a = gp?.vibrationActuator
-    if (!a) continue
-    const trig = a.effects?.includes('trigger-rumble')
-    a.playEffect(trig ? 'trigger-rumble' : 'dual-rumble', trig
-      ? { duration: 40, leftTrigger: 0.8 }
-      : { duration: 40, strongMagnitude: 0.4, weakMagnitude: 0.7 }).catch(() => {})
-  }
-}
-
 const deadzone = (v, d) => Math.abs(v) < d ? 0 : Math.sign(v) * (Math.abs(v) - d) / (1 - d)
 // BUG-189 (owner, 2026-11-16: in camp the "start the truck" hint came up untouched; started, the engine sat on the limiter
 // "until I tapped the accelerator"): a trigger drives only once it has been SEEN AT REST since its pad (re)connected. The
