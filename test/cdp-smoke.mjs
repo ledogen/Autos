@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url'
 import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
 import { ECONOMY_PARAMS } from '../src/economy.js'
 import { DAY_PARAMS } from '../src/day.js'
+import { summarize, parseLines, report } from '../tools/run-log-summary.mjs'   // the runlog step reads its real log back
 import { SHOP_TYPES } from '../src/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -425,7 +426,8 @@ const STEPS = [
     await js('window.__day().sleep(8, 0.5)')
     check(await js('window.__rlSaved.length') === 0, 'runlog: something downloaded before the save button was pressed')
     await js('window.__runLog.setOn(false)')
-    await js('window.__runLog.saveNow()')
+    await js('void window.__runLog.saveNow()')   // async (IndexedDB): wait for its one download
+    await until(() => js('window.__rlSaved.length > 0'), 3000)
     const saved = await js('window.__rlSaved.map(s => s.name)')
     check(saved.length === 1 && /^autos-run-6-[\dT-]+Z\.jsonl$/.test(saved[0]), `runlog: the files downloaded are ${JSON.stringify(saved)}`)
     await js('void (window.__rlText = null, Promise.all(window.__rlSaved.map(s => fetch(s.href).then(r => r.text()))).then(t => { window.__rlText = t.join("") }))')
@@ -436,6 +438,9 @@ const STEPS = [
         sleep: by('sleep').map(x => x.hours), stamped: ev.filter(x => x.e !== 'part').every(x => x.day != null && x.pos?.length === 3) } })()`)
     check(got.header === 1 && got.route >= 2 && got.buy.includes('Oil change') && got.sleep.includes(8) && got.stamped,
       `runlog: the log is missing its header, route samples, the purchase or the sleep: ${JSON.stringify(got)}`)
+    // The real one-file log through tools/run-log-summary.mjs (BUG-199's header handling x FEAT-69's SHOP TIME block).
+    const { events, bad } = parseLines(await js('window.__rlText')), rep = report(summarize(events), bad)
+    check(!bad && /Oil change/.test(rep) && /SHOP TIME[^\n]*\n  day \d+: maintenance (?!0\.00)/.test(rep), `runlog: the summary of the real log lacks the oil change or its shop time:\n${rep}`)
     await js('HTMLAnchorElement.prototype.click = window.__rlClick; delete window.__rlSaved; delete window.__rlText')
   }],
   ['camp', async () => {
