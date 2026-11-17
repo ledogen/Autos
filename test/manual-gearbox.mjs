@@ -9,7 +9,7 @@
 //   3. scripted clutch-out shifts 1→5 under throttle reach > 90 mph, burning fuel;
 //   4. dropping the clutch in 1st at rest with no throttle STALLS the engine;
 //   5. a shift with the clutch in is REJECTED (gear unchanged, missShift flagged);
-//   6. R is refused while moving, accepted from N at rest, and backs the truck up;
+//   6. R is refused while rolling FORWARDS, accepted at rest and while rolling backwards (BUG-196), and backs the truck up;
 //   7. a worn box (_transShiftScale 3) takes 3× as long in N;
 //   8. engine braking: lifting in 3rd slows harder than coasting in N;
 //   9. a clutch dumped at the rev limiter spins the rears.
@@ -145,6 +145,23 @@ console.log('\n6. reverse')
   check(b.vs.drivetrain.mGear === -1, `N → R accepted at rest (gear ${b.vs.drivetrain.mGear})`)
   step(b.P, b.vs, 180, (i) => { b.vs.throttle = 0.4; b.vs.clutch = Math.min(1, i / 90) })
   check(vf(b.vs) < -1 && b.vs.ignition.state === 'running', `W in R backs up at ${(-vf(b.vs) * MPH).toFixed(1)} mph`)
+  // BUG-196: already rolling BACKWARDS (a hill start gone wrong, 1st in, clutch down), R is the gear the truck is moving
+  // in, so it is accepted: only a forward roll refuses R. The same shift from 1st, two presses (1 → N → R).
+  for (const back of [1.5, 4]) {
+    const r = fresh({ gear: 1, v0: -back })
+    r.vs.clutch = 0; step(r.P, r.vs, 2)
+    for (let i = 0; i < 2; i++) { r.vs.shiftRequest = -1; step(r.P, r.vs, 1) }
+    let n = 0; while (dt(r.vs).shifting && n++ < 300) step(r.P, r.vs, 1)
+    check(dt(r.vs).mGear === -1, `1st → R accepted rolling backwards at ${(back * MPH).toFixed(1)} mph (gear ${dt(r.vs).mGear}, v ${vf(r.vs).toFixed(2)} m/s)`)
+  }
+  // …and the mirror: rolling FORWARDS in R, 1st is accepted (R → N → 1st); R is still refused rolling forwards (above).
+  {
+    const f = fresh({ v0: 3 })
+    f.vs.drivetrain.mGear = -1; f.vs.clutch = 0; step(f.P, f.vs, 2)
+    for (let i = 0; i < 2; i++) { f.vs.shiftRequest = 1; step(f.P, f.vs, 1) }
+    let n = 0; while (dt(f.vs).shifting && n++ < 300) step(f.P, f.vs, 1)
+    check(dt(f.vs).mGear === 1, `R → 1st accepted rolling forwards at ${(3 * MPH).toFixed(1)} mph (gear ${dt(f.vs).mGear})`)
+  }
 }
 
 console.log('\n7. a worn box shifts slower')
