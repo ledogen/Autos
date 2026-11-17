@@ -2214,8 +2214,11 @@ const STEPS = [
     // player's to eat now (her card asks for a packed lunch). FEAT-229: the day's stamps are lived hours (energy and hunger
     // pay for them), so the driver may wake hungry; the lunch she asks for feeds him.
     const stage = () => js('document.getElementById("hm-stage").textContent')   // FEAT-198: hunger's own line
-    check(await readCards() >= 2, 'no breakfast and no reminder in the morning')
+    let morn = await readCards()   // up to her breakfast card, which waits for a lunch eaten (DEC-359)
+    check(await js('window.__tutorial().until') === 'lunch', `no breakfast card waiting for a lunch in the morning: ${JSON.stringify(await js('window.__tutorial()'))}`)
     check(await js('window.__inv.use("packedLunch")'), 'no packed lunch for breakfast')
+    morn += await readCards()   // Katie's reminder
+    check(morn >= 1, 'no reminder in the morning')
     check(await until(async () => !/hungry/.test(await stage()), 1000), `breakfast did not feed the driver ("${await stage()}")`)
     if (await panel()) await tap('Escape')   // her sleep card, if it is still up over the morning
     await strayCheck('on the way to the paycheck')
