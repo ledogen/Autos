@@ -886,6 +886,7 @@ const STEPS = [
     }
     // DEC-397: the cook buttons show at the dead fire, and a cook relights it at once.
     check(await until(() => shown('cp-cook'), 3000), 'no cook button at the dead fire with a raw potato aboard')
+    await until(async () => !(await js('document.getElementById("camp-fade").classList.contains("on") || document.getElementById("midnight-card").classList.contains("on")')), 8000); await sleep(300)   // the night's fade is over (the card ignores clicks until then)
     await js('document.getElementById("cp-cook").click()')
     check(await until(async () => (await fire())?.live === true && !(await fire()).dead, 2000), `cooking at the dead fire did not relight it: ${JSON.stringify(await fire())}`)
     await until(async () => !(await js('document.getElementById("camp-fade").classList.contains("on")')), 5000)
