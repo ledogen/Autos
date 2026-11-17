@@ -32,7 +32,7 @@ import { PROP_MODELS } from '../data/prop-models.js'
 import { validateArea, discArea } from '../src/world-validate.js'
 import { MissionSystem, buildGraphAdj, REGION_MARGIN } from '../src/mission.js'
 import { REGION_RADIUS_M, REGION_WARM_RADIUS_M } from '../src/story.js'
-import { siteTargets, nearestTarget, guideTo, DEMOLITION_PARAMS as D, TARGET_TYPES } from '../src/demolition.js'
+import { siteTargets, rolledCount, nearestTarget, guideTo, DEMOLITION_PARAMS as D, TARGET_TYPES } from '../src/demolition.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
@@ -93,7 +93,7 @@ for (const s of SEEDS) {
 
     const dressings = [...THINGS, ...REQUISITION].filter((t) => t.family === 'demolition').map((t) => [t.id, t.targets])
     let ms0 = 0, nCalls = 0
-    const bad = { plan: [], same: [], full: [], deck: [], off: [], site: [], junction: [], water: [], slope: [], ground: [], u: [], guide: [], nearest: [], gap: [] }
+    const bad = { plan: [], same: [], full: [], count: [], over: [], deck: [], off: [], site: [], junction: [], water: [], slope: [], ground: [], u: [], guide: [], nearest: [], gap: [] }
     let gapMax = 0
     for (const o of offers) {
         const spc = board.spec(o)
@@ -109,6 +109,8 @@ for (const s of SEEDS) {
         ms0 += performance.now() - t1; nCalls++
         if (JSON.stringify(siteTargets(m, dressing, key, world)) !== JSON.stringify(T)) bad.same.push(tag)
         const want = dressing.reduce((a, grp) => a + grp.n[0], 0)
+        if (T.length > rolledCount(dressing, key)) bad.over.push(`${tag}`)
+        if (rolledCount(dressing, key) !== T.length) bad.count.push(`${tag} card ${rolledCount(dressing, key)} stood ${T.length}`)
         if (T.length < want - 2) bad.full.push(`${tag} ${T.length}/${want}`)
         // The route's own centreline, 1 m apart, each point with its metres-before-the-end.
         const pts = []
@@ -163,6 +165,9 @@ for (const s of SEEDS) {
     }
     check('every demolition job plans a roadside job (the camp\'s from the camp)', !bad.plan.length, bad.plan.join(', '))
     check('the same targets on every placement', !bad.same.length, bad.same.join(', '))
+    // FEAT-256: the card names the ROLLED count (before any route exists); a tight road drops 1-2 (`tries`). Report-only.
+    console.log(`       card count vs stood: ${bad.count.length ? bad.count.join(', ') : 'all equal'}`)
+    check('no site stands MORE than its card names (FEAT-256)', !bad.over.length, bad.over.join(', '))
     check('every site at least its dressing\'s minimum, less two', !bad.full.length, bad.full.join(', '))
     check('no target on a deck', !bad.deck.length, `${bad.deck.length}`)
     check(`every target half a shoulder past its route's deck edge (${P.roadHalfWidth + D.shoulderOff} m ± 0.5)`, !bad.off.length, bad.off.slice(0, 5).join(', '))

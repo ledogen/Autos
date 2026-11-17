@@ -339,8 +339,9 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
         }
     }
     check('demolition rolls only at farms and work sites, always roadside, with a site dressing', demo > 0 && wrong === 0, `${demo} rolled, ${wrong} wrong`)
-    check('a demolition card counts its targets and states the deed and the gate as a share smashed',
-        card?.terms.includes('10 to smash') && /Deed: 1 if \d+%\+ smashed · 1\/2 at \d+%\+/.test(card.deed)
+    check('a demolition card names its count in the sentence, no smash line (FEAT-256), and states the deed and the gate as a share smashed',
+        /needs \d+ /.test(card?.sentence.map(x => x.t).join('')) && !/\{n\}/.test(card?.sentence.map(x => x.t).join(''))
+            && !card.terms.some(t => /smash/.test(t)) && /Deed: 1 if \d+%\+ smashed · 1\/2 at \d+%\+/.test(card.deed)
             && gateLine('B', 'demolition', 1) === 'if 75%+ smashed', JSON.stringify(card && { terms: card.terms, deed: card.deed }))
 }
 
@@ -841,8 +842,8 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     const src = readFileSync(new URL('../src/offer-board.js', import.meta.url), 'utf8')
     const imports = [...src.matchAll(/from\s+'([^']+)'/g)].map(m => m[1]).sort()
     // R-07: parts.js and shop-stock.js (both data) price a reward for the card's "Tip: Compressor ($20)".
-    const allowed = ['../data/offer-names.js', '../data/offers.js', '../data/parts.js', '../data/shop-stock.js', '../data/stock-weights.js', './day.js', './economy.js', './seed.js']
-    check('offer-board.js imports only its tables (stock-weights.js: the reward pick, 2026-10-22; parts.js + shop-stock.js: reward prices, R-07), seed.js, economy.js and day.js (the clock unit)',
+    const allowed = ['../data/offer-names.js', '../data/offers.js', '../data/parts.js', '../data/shop-stock.js', '../data/stock-weights.js', './day.js', './demolition.js', './economy.js', './seed.js']
+    check('offer-board.js imports only its tables (stock-weights.js: the reward pick, 2026-10-22; parts.js + shop-stock.js: reward prices, R-07), seed.js, economy.js day.js (the clock unit) and demolition.js (FEAT-256: the card's rolled count)',
         JSON.stringify(imports) === JSON.stringify(allowed), imports.join(', '))
     check('offer-board.js never reads Math.random', !/Math\.random/.test(src.replace(/\/\/.*$/gm, '')))
 }
