@@ -37,6 +37,8 @@ firewood yard (haul jobs), never found. Both still need an in-game visual (not t
   bare 0.028, mat 0.1125, liner 0.45. Other cargo lands near: a tire (0.9) 0.32 / 0.64, a drum (0.5) 0.24 / 0.47.
 - Neither wears: the mat had no wear model, so the liner's "never wears out" needs none.
 
+- DEC-352 (owner, 2026-11-16): both stay carried items (owning = fitted, nothing removes them, a dropped one un-fits via the inventory's onChange); the liner goes over the mat (both owned is valid, liner grip 0.60 wins). Looks are code-built solids (ranger.glb's bed interior shares RangerPaint with the body, so no recolour): the mat one black slab between the wheelhouses, the liner a charcoal shell (floor, front wall, sides, wheelhouse covers); the liner hides the mat. `setBedLook` in src/vehicle-model.js, fed by `InventorySystem.owns` from main.js onChange.
+
 ## Open questions
 - Prices [DEFAULT]: mat $8 (of $5–10), bedliner $20 (of $10–30). Shelf weight: mat 4 (Sometimes, none ruled),
   bedliner 0.25 (Hardly ever, the lowest tier, for "very rarely"). Bedliner mass 10 kg [DEFAULT].
@@ -50,3 +52,4 @@ data/shop-stock.js, data/stock-weights.js, test/bed-grip.mjs (gate).
 - 2026-11-16: minted from the FEAT-121 audit.
 - 2026-11-16: built (e7fa231c). bed-grip gate: break-loose at 0.163 / 0.312 / 0.604 g for μ 0.15 / 0.30 / 0.60.
   fingerprint-physics identical to main (it has no bed; bare floor value is the same expression). Unverified: in-game.
+- 2026-11-16: looks (DEC-352) built on land/feat-231-looks: 2 merged meshes (mat 12 tris, liner 72), 1 draw call each, only while owned. bed-grip gate + smoke boltons step extended; shots wip/feat-231-looks/.
