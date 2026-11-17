@@ -1573,7 +1573,7 @@ export class DamageModel {
         const f = isRoad ? (road[i] || 0) : (rimF[i] || 0)
         if (f > this._strikePeak[i]) this._strikeRoad[i] = isRoad
         const peak = this._strikePeak[i]
-        if (f > peak) { this._strikePeak[i] = f; continue }
+        if (f > peak) { this._strikePeak[i] = f; if (runLog.on) this._peakAt(1, i, vehicleState, params); continue }
         // Release is judged in the PEAK's own measurement. When a road strike lets go, the road
         // residual drops to 0 and the "winner" flips to the debris reading; judged on the debris
         // yield, which sits ABOVE the road one since R-02 (85 vs 46 kN), a 46-85 kN road strike
@@ -1594,7 +1594,7 @@ export class DamageModel {
             this._evClose('rimStrike', { corner: i, source: peakRoad ? 'road' : 'debris', forceN: Math.round(peak), staticN: Math.round(staticW), inflated,
               yieldN: Math.round((peakRoad ? P.rimYieldRoadMult : P.rimYieldMult) * staticW * (inflated ? P.rimInflatedMult : 1)),
               fullN: Math.round((peakRoad ? P.rimFullRoadMult : P.rimFullMult) * staticW),
-              pinchN: peakRoad && inflated ? Math.round(P.rimPinchRoadMult * staticW) : null, ...this._cornerLog(i, vehicleState, params) })
+              pinchN: peakRoad && inflated ? Math.round(P.rimPinchRoadMult * staticW) : null, ...this._peakLog?.[1][i] })
           }
           this._strikePeak[i] = 0
         } else if (fPeak <= tripPeak) {
@@ -1635,7 +1635,7 @@ export class DamageModel {
       for (let i = 0; i < 4; i++) {
         const f = Math.abs(bumpF[i] || 0)
         const peak = this._bumpPeak[i]
-        if (f > peak) { this._bumpPeak[i] = f; continue }            // still building
+        if (f > peak) { this._bumpPeak[i] = f; if (runLog.on) this._peakAt(0, i, vehicleState, params); continue }   // still building
         // Banked on decay as well as release, for the same reason as the rim strike: a truck that
         // settles onto its stops and stays there would otherwise never bank the landing that put
         // it there. A steady resting load does not decay, so it is never banked twice.
@@ -1649,7 +1649,7 @@ export class DamageModel {
               tireCondCap: r2(this.tireCondCap), punctureN: Number.isFinite(this.punctureThreshold(tc)) ? Math.round(this.punctureThreshold(tc)) : null,
               punctureFromCond: P.punctureCond, wasFlat: this._evt.flat[i],
               wheelOnsetN: params?.bumpStopStiffness ? Math.round(wheelBumpOnsetN(floorN, params.bumpStopStiffness, params.bumpStopProgressiveM || 0.05, P.wheelBumpEnergyMult)) : null,
-              alignFloorN: P.alignBumpFloorN, ...this._cornerLog(i, vehicleState, params) })
+              alignFloorN: P.alignBumpFloorN, ...this._peakLog?.[0][i] })
           }
           this._bumpPeak[i] = 0
         } else if (f <= floorN) {
@@ -1719,6 +1719,12 @@ export class DamageModel {
     const v = vs.velocity
     return { tireCond: r2(this.get(TIRE_IDS[i])), wheelCond: r2(this.get(WHEEL_IDS[i])), fzN: Math.round(params?._tireFz?.[i] || 0),
       strutVel: r2(vs.strutCompVel?.[i] || 0), omega: r2(vs.wheelOmega?.[i] || 0), vel: v ? [r2(v.x), r2(v.y), r2(v.z)] : null }
+  }
+
+  /** FEAT-242: hold the corner's state at the step a bump stop (kind 0) or rim strike (1) peaked — the event banks
+   *  a step or more later, when the load has already let go. */
+  _peakAt (kind, i, vs, params) {
+    (this._peakLog ??= [[], []])[kind][i] = this._cornerLog(i, vs, params)
   }
 
   /** The state-derived signals step() publishes on vehicleState every step, wearing or not: the corners down to their

@@ -179,7 +179,7 @@ export const runLog = {
     })
   },
 
-  _road () { try { return this._ctx.onRoad?.() ?? null } catch { return null } }   // the camp index may not exist yet
+  _road () { try { return this._ctx.onRoad?.() ?? null } catch { return null } },   // the camp index may not exist yet
 
   /** Download what is held as the next numbered part, then let it go. A no-op with nothing held. */
   flush (why = 'manual') {

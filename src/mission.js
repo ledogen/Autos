@@ -552,6 +552,7 @@ export class MissionSystem {
         runLog.event('mission', {
             state: this.state, elapsed: Math.round((this.elapsed ?? 0) * 10) / 10,
             offer: this.offer ? scalars(this.offer) : null,
+            spec: this.offer?._spec ? scalars(this.offer._spec) : null,
             job: m ? { ...scalars(m), terms: m.terms ? { ...scalars(m.terms), thresholds: m.terms.thresholds } : null } : null,
             result: r ? { ...scalars(r), award: r.award?.name ?? null, cargo: r.cargo ? scalars(r.cargo) : null } : null,
         })
