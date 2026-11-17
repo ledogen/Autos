@@ -662,24 +662,6 @@ export function particleLevel (key, fill, norm) {
   return Math.min(1, 0.02 + 0.98 * Math.pow(Math.max(0, (0.5 * key + 0.5 * fill) * norm), 0.8))
 }
 
-// FEAT-243: how much of the key light reaches a point, from the terrain alone — the CPU twin of the sun's shadow
-// cascades, where terrain is the caster that matters (main.js `sunFar`, ±256 m, so the march stops at 256 m too).
-// A horizon test: the highest terrain elevation angle along the light's azimuth against the light's own, softened over
-// SUN_VIS_SOFT (the sun's 0.53° disc plus the cascade's filter blur). Steps grow ×1.3 from 1.5 m: 20 height samples.
-// ponytail: geometric steps can step over a ridge narrower than ~20 % of its distance; finer far steps if one shows.
-const SUN_VIS_SOFT = Math.tan(1 * Math.PI / 180)
-export function sunVisibility (heightAt, x, y, z, dir) {
-  const hl = Math.hypot(dir.x, dir.z)
-  if (hl < 1e-6) return 1   // overhead: nothing in the way
-  const ux = dir.x / hl, uz = dir.z / hl, tanE = dir.y / hl
-  let worst = Infinity
-  for (let d = 1.5; d <= 256; d *= 1.3) {
-    const t = tanE - (heightAt(x + ux * d, z + uz * d) - y) / d   // clearance slope of the ray over this sample
-    if (t < worst) worst = t
-  }
-  return Math.max(0, Math.min(1, 0.5 + worst / (2 * SUN_VIS_SOFT)))
-}
-
 export const SKY_CYCLE = { playing: false, hour: 12, dayLengthSec: 120 }
 
 // Rod vision (the Purkinje shift): as light falls through the mesopic range, ~5 cd/m² down to ~0.01, colour
@@ -1033,12 +1015,13 @@ export class SkySystem {
       particleLevel(sc.b * k, a.color.b * a.intensity, nrm), THREE.LinearSRGBColorSpace)
   }
 
-  /** FEAT-243: the spawn tint for a particle born where the key light is `sunVis` visible — its particleLight against
-   *  the sunlit one, per channel. Baked into the colour at spawn; the per-frame particleLight still does day/night, so
-   *  night is not dimmed twice (after dark both sit on particleLevel's 2 % floor, so the tint is ~1 by itself). */
-  particleShadeTint (sunVis, out) {
+  /** FEAT-243: the light of a particle in the terrain's shadow (key light removed, fill only) against a sunlit one's, per
+   *  channel. The particle shaders mix from it to 1 by their shadow-map lookup (dust.js SUN_SHADE_VERT); the per-frame
+   *  particleLight still does day/night, so night is not dimmed twice (after dark both sit on particleLevel's 2 % floor,
+   *  so the tint is ~1 by itself). */
+  particleShadeTint (out) {
     const lit = this.particleLight(_c, 1), r = lit.r, g = lit.g, b = lit.b
-    this.particleLight(out, sunVis)
+    this.particleLight(out, 0)
     return out.setRGB(out.r / r, out.g / g, out.b / b, THREE.LinearSRGBColorSpace)
   }
 

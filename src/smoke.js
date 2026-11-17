@@ -27,7 +27,7 @@
  */
 
 import * as THREE from 'three'
-import { makeBillboardMesh, rotateByQuat } from './dust.js'
+import { makeBillboardMesh, rotateByQuat, SUN_SHADE_VERT } from './dust.js'
 
 // ── Pool / tuning constants ──────────────────────────────────────────────────
 const POOL_SIZE      = 200     // max simultaneous puffs across all four wheels
@@ -81,10 +81,12 @@ export class TireSmokeSystem {
         varying vec3 vColor;
         varying float vOpacity;
         #include <fog_pars_vertex>
+        ${SUN_SHADE_VERT}
         void main () {
           vUv = uv;
           vColor = aColor;
           vOpacity = aParam.z;
+          vShade = sunShade(aPos);   // FEAT-243: the terrain's shade at the puff centre
           float c = cos(aParam.y), s = sin(aParam.y);
           vec2 corner = mat2(c, s, -s, c) * (position.xy * aParam.x);   // spin, then scale
           vec4 mvPosition = viewMatrix * vec4(aPos, 1.0);               // mesh sits at the origin
@@ -95,6 +97,7 @@ export class TireSmokeSystem {
         uniform sampler2D uMap;
         uniform vec3 uLight;
         uniform float uLightA;
+        varying vec3 vShade;
         varying vec2 vUv;
         varying vec3 vColor;
         varying float vOpacity;
@@ -104,7 +107,7 @@ export class TireSmokeSystem {
           // Day/night: dim the COLOUR and the ALPHA. Colour alone only greys the puff out, and a
           // grey puff on a black road is still obvious — what sells "unlit smoke at night" is the
           // thing becoming transparent. uLightA is luminance(uLight) shaped by its own curve.
-          gl_FragColor = vec4(vColor * tex.rgb * uLight, tex.a * vOpacity * uLightA);
+          gl_FragColor = vec4(vColor * tex.rgb * uLight * vShade, tex.a * vOpacity * uLightA);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           #include <fog_fragment>
@@ -132,7 +135,6 @@ export class TireSmokeSystem {
     this._smoothIntensity = [0, 0, 0, 0]   // per-wheel ramped intensity (RAMP_TIME below)
     this._smokeColor = new THREE.Color()
     this._tmpColor = new THREE.Color()
-    this._shade = new THREE.Color(1, 1, 1)   // FEAT-243 spawn tint, see setLight
   }
 
   /** Show/hide the smoke sheet (testing-lab teardown parity with dust — visibility only). */
@@ -155,7 +157,6 @@ export class TireSmokeSystem {
     this._smokeColor.set(steam ? STEAM_COLOR : (p.smokeColor ?? 0xcfcfcf))
     const jitter = 0.85 + Math.random() * 0.3
     this._tmpColor.copy(this._smokeColor).multiplyScalar(jitter)
-    this._tmpColor.multiply(this._shade)   // FEAT-243: born in the terrain's shade
     part.r = this._tmpColor.r; part.g = this._tmpColor.g; part.b = this._tmpColor.b
     part.rot = Math.random() * Math.PI * 2
 
@@ -212,14 +213,11 @@ export class TireSmokeSystem {
    * per render frame from main.js — these billboards are unlit, so this is their only light source.
    * @param {THREE.Color} c — linear RGB multiplier; 1,1,1 is the authored daylight look.
    * @param {number} alpha — opacity multiplier for the same reason (see the shader note).
-   * @param {THREE.Color} [shade] — FEAT-243 spawn tint (SkySystem.particleShadeTint): < 1 where the terrain shades the
-   *        truck from the sun. Baked into each particle's colour at spawn, so it costs nothing per frame.
    */
-  setLight (c, alpha, shade) {
+  setLight (c, alpha) {
     const u = this._mesh.material.uniforms
     u.uLight.value.copy(c)
     u.uLightA.value = alpha
-    if (shade) this._shade.copy(shade)
   }
 
   /**

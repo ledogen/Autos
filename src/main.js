@@ -61,10 +61,10 @@ import { perfAdd, perfMark, perfDump, perfReset, perfSnapshot, perfEnableUserTim
 let _perfFrame = 0  // frame counter for the ?hitch/?prof auto-dump at load
 let _firstFrameMarked = false  // first animate frame: perf mark (init vs loop time) + one-time hand-offs
 import { RoadMeshSystem } from './road-mesh.js'
-import { DustSystem } from './dust.js'
+import { DustSystem, SUN_SHADE_UNIFORMS } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
-import { SkySystem, SKY_CYCLE, nightWeight, sunVisibility } from './sky.js'   // the sky, its sun/moon/stars, the daylight and the sky fog — one atmosphere
+import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'   // the sky, its sun/moon/stars, the daylight and the sky fog — one atmosphere
 import { parseWorldSeed, seedFor } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
@@ -1993,10 +1993,6 @@ window.__terrain = () => terrainSystem
 
 // Scratch for the per-frame unlit-particle irradiance push (dust / smoke / dirt spray).
 const _particleLight = new THREE.Color(1, 1, 1)
-const _particleShade = new THREE.Color(1, 1, 1)   // FEAT-243: spawn tint, see the particleLight push in loop()
-const _particleShadeAt = new THREE.Vector3(Infinity, 0, 0)
-let _particleShadeT = 0
-const _skinHeightAt = (x, z) => terrainSystem.analyticHeight(x, z)   // the terrain skin (no queryY: a bore's hill shades)
 
 // Wheel dust trails (src/dust.js). Self-contained sprite-pool puffs tinted to the dirt
 // we're driving on; driven each render frame from vehicleState (see loop). Construct here
@@ -11445,20 +11441,17 @@ function loop (t) {
   // Pushed here, once, rather than threaded through three different update() signatures.
   skySystem.particleLight(_particleLight)
   const _particleAlpha = skySystem.particleAlpha()
-  // FEAT-243: particles born in a hill's shadow are lit by the fill only, like the ground they rise from. One terrain
-  // horizon test at the truck (sky.js sunVisibility, 20 height samples), re-run only once it has moved 1 m or 0.25 s
-  // has passed (the sun moves); the tint is baked into each particle's colour at spawn, so none of it runs per particle.
-  _particleShadeT += frameTime
-  const _psdx = _renderPos.x - _particleShadeAt.x, _psdz = _renderPos.z - _particleShadeAt.z
-  if (_particleShadeT >= 0.25 || _psdx * _psdx + _psdz * _psdz >= 1) {
-    _particleShadeT = 0; _particleShadeAt.copy(_renderPos)
-    const vis = _labActive || !terrainSystem ? 1 : sunVisibility(_skinHeightAt, _renderPos.x,
-      terrainSystem.analyticHeight(_renderPos.x, _renderPos.z) + 0.5, _renderPos.z, skySystem.sunDirection)
-    skySystem.particleShadeTint(vis, _particleShade)
-  }
-  dustSystem.setLight(_particleLight, _particleAlpha, _particleShade)
-  smokeSystem.setLight(_particleLight, _particleAlpha, _particleShade)
-  dirtSpraySystem.setLight(_particleLight, _particleAlpha, _particleShade)
+  dustSystem.setLight(_particleLight, _particleAlpha)
+  smokeSystem.setLight(_particleLight, _particleAlpha)
+  dirtSpraySystem.setLight(_particleLight, _particleAlpha)
+  // FEAT-243: the particle shaders look the terrain's shade up in the far shadow map (dust.js SUN_SHADE_VERT). The
+  // map is null before the first shadow pass and replaced on a tier resize, so it is re-pointed here every frame.
+  const _farMap = sunFar.castShadow && !_labActive ? sunFar.shadow.map : null
+  SUN_SHADE_UNIFORMS.uSunShadow.value = _farMap ? _farMap.depthTexture : null
+  SUN_SHADE_UNIFORMS.uSunShadowOn.value = _farMap ? 1 : 0
+  SUN_SHADE_UNIFORMS.uSunShadowMatrix.value.copy(sunFar.shadow.matrix)
+  SUN_SHADE_UNIFORMS.uSunDir.value.copy(skySystem.sunDirection)
+  skySystem.particleShadeTint(SUN_SHADE_UNIFORMS.uShadeTint.value)
   const _ringGlow = RING_GLOW * (0.2126 * _particleLight.r + 0.7152 * _particleLight.g + 0.0722 * _particleLight.b)
   for (const m of _ringMats) m.emissiveIntensity = _ringGlow
 
