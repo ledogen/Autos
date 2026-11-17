@@ -219,8 +219,8 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
   check('the ruled fresh clocks: chili dog and burger 16 h, packed lunch, cooked potato, groceries and ice 24 h; raw potato and cooked groceries none',
     ITEMS.chiliDog.freshH === 16 && ITEMS.burger.freshH === 16 && ITEMS.packedLunch.freshH === 24 && ITEMS.potatoCooked.freshH === 24
     && ITEMS.groceries.freshH === 24 && ITEMS.ice.freshH === 24 && ITEMS.potato.freshH === undefined && ITEMS.groceriesCooked.freshH === undefined)
-  check('the coolers: ×1/6 with 72 h ice holding 4; the Ice King ×1/8 with 5 days of ice holding 4 (DEC-338)',
-    ITEMS.cooler.coolRate === 1 / 6 && ITEMS.cooler.iceLastsH === 72 && ITEMS.cooler.holds === 4
+  check('the coolers: ×1/4 (DEC-367) with 72 h ice holding 4; the Ice King ×1/8 with 5 days of ice holding 4 (DEC-338)',
+    ITEMS.cooler.coolRate === 1 / 4 && ITEMS.cooler.iceLastsH === 72 && ITEMS.cooler.holds === 4
     && ITEMS.iceKing.coolRate === 1 / 8 && ITEMS.iceKing.iceLastsH === 120 && ITEMS.iceKing.holds === 4)
   const mk = () => { const s = new InventorySystem({ slotCap: () => 20, effects: { ice: (e) => s.iceCooler(e), eat: () => {} } }); s.start(); return s }
   const ent = (id) => runInventory.entries.find(e => e.id === id)
@@ -264,28 +264,35 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
   f.grant('burger'); f.grant('chiliDog'); f.grant('packedLunch'); f.grant('groceries')
   f.tick(1066 + 24)
   check('the bag left beside the iced cooler still melts in its day (ice is not food: the cooler chills food)', n('ice') === 0)
+  // DEC-367: the cooler is ×1/4. A 16 h food lasts 64 h in it, less than the ice's 72 h; a 24 h food outlasts the ice.
+  f.tick(1066 + 63.9)
+  check('burger, chili dog, packed lunch and groceries chill ×1/4 (DEC-367): all four still good 63.9 h in',
+    ['burger', 'chiliDog', 'packedLunch', 'groceries'].every(id => near(ent(id).ages[0], 63.9 / 4)))
+  f.tick(1066 + 64)
+  check('the 16 h foods go at 64 h in the iced cooler; the 24 h foods are at 16', n('burger') === 0 && n('chiliDog') === 0
+    && near(ent('packedLunch').ages[0], 16) && near(ent('groceries').ages[0], 16))
   f.tick(1066 + 72)
-  check('burger, chili dog, packed lunch and groceries chill ×1/6: 72 h in the iced cooler cost each 12 (owner, 11-16)',
-    ['burger', 'chiliDog', 'packedLunch', 'groceries'].every(id => near(ent(id).ages[0], 12)) && ent('cooler').iceH === 0)
-  f.tick(1066 + 72 + 3.9)
-  check('the ice ran out: warm again, ×1, the chili dog goes at 16', n('chiliDog') === 1 && (f.tick(1066 + 76), n('chiliDog') === 0) && n('burger') === 0)
+  check('72 h in the iced cooler cost the 24 h foods 18, and the ice is out', near(ent('packedLunch').ages[0], 18) && ent('cooler').iceH === 0)
+  f.tick(1066 + 72 + 5.9)
+  check('the ice ran out: warm again, ×1, the packed lunch goes at 24', n('packedLunch') === 1 && (f.tick(1066 + 78), n('packedLunch') === 0) && n('groceries') === 0)
 
   // A stack of 5 in a 4-unit cooler: 4 chill, the oldest stays out and goes alone; then the 4 go on their own clock.
   f = mk(); f.tick(0); f.grant('cooler'); f.grant('ice'); f.use('ice'); f.grant('chiliDog', 5)
   f.tick(15.9); f.tick(16)
-  check('5 chili dogs in the cooler: the one with no room goes at 16 h, alone', n('chiliDog') === 4 && near(ent('chiliDog').ages[3], 16 / 6))
-  f.tick(72); f.tick(75.9)
-  check('the four chilled to 12 h by the ice\'s 72 h, then warm: still good at 75.9', n('chiliDog') === 4)
-  f.tick(76 + 1e-9)
-  check('… gone at 16 h of fresh life, 76 h in', n('chiliDog') === 0)
+  check('5 chili dogs in the cooler: the one with no room goes at 16 h, alone', n('chiliDog') === 4 && near(ent('chiliDog').ages[3], 16 * ITEMS.cooler.coolRate))
+  f.tick(63.9)
+  check('the four chilled ×1/4: still good at 63.9 h', n('chiliDog') === 4)
+  f.tick(64)
+  check('… gone at 16 h of fresh life, 64 h in, with ice still in the cooler', n('chiliDog') === 0 && ent('cooler').iceH > 0)
+  f.tick(76)
   f.grant('ice'); f.tick(88); f.use('ice')
   check('a bag 12 h into its day gives the empty cooler half its 72 h: 36', Math.abs(ent('cooler').iceH - 36) < 1e-6)
   f.grant('iceKing'); f.grant('ice'); f.use('ice'); f.grant('ice'); f.use('ice')
   check('a fresh bag goes to the cooler with the least ice: the empty Ice King to 120, then the cooler to 72',
     ent('cooler').iceH === 72 && ent('iceKing').iceH === 120)
   f.grant('groceries', 5); f.tick(96)
-  check('the Ice King (×1/8) chills first, then the cooler (×1/6): four bags at 1, one at 8/6',
-    runInventory.entries.filter(e => e.id === 'groceries').map(e => e.ages[0]).every((a, k) => near(a, k < 4 ? 1 : 8 / 6)))
+  check('the Ice King (×1/8) chills first, then the cooler (×1/4): four bags at 1, one at 2',
+    runInventory.entries.filter(e => e.id === 'groceries').map(e => e.ages[0]).every((a, k) => near(a, k < 4 ? 1 : 8 * ITEMS.cooler.coolRate)))
 
   // Save → load: the run save is JSON of runInventory (main.js _runSnapshot).
   const saved = JSON.parse(JSON.stringify(f.snapshot()))

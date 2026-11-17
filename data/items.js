@@ -122,9 +122,10 @@ export const ITEMS = {
     // ('ice': into the owned cooler with the least left) it lasts 72 h in the cooler, 5 days in the Ice King, scaled by
     // what the bag had left. Each chills `holds` units: the cooler's 4 is ruled (4 fish), the Ice King's 4 approved
     // (owner 11-16). Masses [DEFAULT]: an 8 lb bag; the cooler is "deliberately trivial".
+    // DEC-367 (owner, 2026-11-17): the regular cooler is ×4 lifetime (coolRate 1/4), down from ×6. The Ice King stays ×8.
     ice:          { name: 'Ice',           kind: 'consumable', massKg: 3.6, use: 'ice', freshH: 24,
                     desc: 'Cold and wet.' },   // the owner's flavor line (setup page, 10-22)
-    cooler:       { name: 'Cooler',        kind: 'tool',       massKg: 3, coolRate: 1 / 6, iceLastsH: 72, holds: 4,
+    cooler:       { name: 'Cooler',        kind: 'tool',       massKg: 3, coolRate: 1 / 4, iceLastsH: 72, holds: 4,
                     desc: 'Keeps stuff cold.' },   // the owner's flavor line (setup page, 10-22)
     iceKing:      { name: 'Ice King',      kind: 'tool',       massKg: 8, coolRate: 1 / 8, iceLastsH: 120, holds: 4,
                     desc: 'A thick-walled cooler. Holds its ice for days.' },   // PLACEHOLDER words for the owner's
