@@ -57,4 +57,4 @@ frame) and do not set `lights: true` on the materials (drags in every light unif
   centre, lifted 2 m toward the sun; off when sunFar casts no shadow / map null / lab; tint = particleShadeTint().
   Grid proof (r2-grid.log): 169 discs on a 6 m grid over a shadow edge, read off the frame: horizon-lit median 1.00,
   horizon-shaded 0.445 of their untinted brightness; 11/134 disagree, all on the edge. Particle update 1.22/1.40 ms/s
-  (new) vs 1.76/1.63 (horizon build), A-B-A-B; tint push +0.06–0.08 ms/s. Affected 12/12 green; smoke: see below.
+  (new) vs 1.76/1.63 (horizon build), A-B-A-B; tint push +0.06–0.08 ms/s. Affected 12/12 green; cdp-smoke PASS 35 steps, 0 console errors.
