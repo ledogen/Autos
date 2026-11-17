@@ -154,7 +154,7 @@ docs, the dashboard list fix, and e7239312 (offer card says "from" for a househo
 - Lane B, CarGame-machine, land/bug-179 (Opus): BUG-179 option 1 (chained forks), ten examples, DEC-366; owner signs
   off before main (new card bug179-chained-forks-look).
 **LANDED 02:15:** BUG-191 (ABS vented all four brakes after a throttle lift; fix in src/abs.js) merged at 6a74de22. Smoke
-on main running: wip/orch/smoke-1117-abs.log (also the first smoke over e7239312). Ticket stays open for the owner's drive
+on main PASS 35 steps (wip/orch/smoke-1117-abs2.log; first try failed "opening" under load, passes alone); play build :8002 refreshed to 9b6e3daa. Ticket stays open for the owner's drive
 (card bug191-abs-drive). Refresh the :8002 play build after a green smoke so he can drive it on Windows.
 **QUEUE, in this order, one fresh agent each as a lane frees (owner said "intake and start crunchin"):**
 1. (spawned) BUG-179.
