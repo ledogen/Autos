@@ -1,7 +1,7 @@
 // RAINY-DAY (BUG-179, DEC-366): list every CHAINED FORK the merge plan builds — a run that both loses a fork to one
 // road and wins a fork of another at the same junction (B forks off A, C forks off B). Not a gate.
 //
-//   node test/chained-forks.mjs <seed,seed,…> [--r=3000] [--json=<out.json>] [--node=<site key>]
+//   node test/chained-forks.mjs <seed,seed,…> [--r=3000] [--json=<out.json>] [--node=<site key>] [--reach=<m>]
 //
 // Per chain: the node, each link (who forks off whom, the fork's distance from the node, whether the T was built),
 // the worst ground step across any run-to-run seam within the chain's box (winner flip bisected to 1 mm, then a 5 cm
@@ -18,7 +18,7 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 const args = process.argv.slice(2), opt = (k, d) => (args.find(a => a.startsWith(`--${k}=`)) ?? `=${d}`).split('=')[1]
 const SEEDS = (args.find(a => !a.startsWith('--')) ?? '').split(',').filter(Boolean)
 if (!SEEDS.length) { console.error('usage: node test/chained-forks.mjs <seed,seed,…> (there is no default seed)'); process.exit(2) }
-const R = +opt('r', 3000), JSON_OUT = opt('json', ''), NODE = opt('node', '')   // --node: report this node even unchained (the before picture)
+const R = +opt('r', 3000), JSON_OUT = opt('json', ''), NODE = opt('node', ''), REACH = +opt('reach', 0)   // --node: report this node even unchained (the before picture); --reach: fixed seam box half-size, m
 
 // record the FINAL node plans (not the legacy fallback, not the pass-1 forecast) as the build computes them
 const plans = new Map()
@@ -100,7 +100,7 @@ for (const S of SEEDS) {
                 if (T) forks.push(T)
             }
         }
-        const reach = Math.min(150, Math.max(40, ...links.map((k) => k.out)) + 40)
+        const reach = REACH || Math.min(150, Math.max(40, ...links.map((k) => k.out)) + 40)
         const step = seamStep(road, H, node.x - reach, node.x + reach, node.z - reach, node.z + reach)
         const legs = []
         for (const [at, k] of [[node, nk], ...forks.map((T) => [T.pos, [...road._promoted].find(([, r]) => r === T)[0]])])
