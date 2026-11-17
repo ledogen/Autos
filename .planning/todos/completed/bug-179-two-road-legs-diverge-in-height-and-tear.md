@@ -1,9 +1,10 @@
 ---
 id: BUG-179
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-15
+closed: 2026-11-17
 source: owner, 2026-11-15 — "two legs diverge in elevation rapidly and there is a tear at the interface"
 relates: BUG-171, src/road.js, src/road-mesh.js
 ---
@@ -12,10 +13,10 @@ lane: Spare
 # BUG-179: Two road legs diverge in height quickly and the surface tears where they meet
 
 ## Next steps
-Round 2 built on `land/bug-179` @ d0f216e5 (the chain's dead-end tail dropped, 9 → 0): owner sign-off of the new sheet
-`wip/bug-179/chained-forks-sheet.jpg` (same tile numbers as `chained-forks-sheet-r1.jpg`; owed card
-`bug179-chained-forks-look`). On a yes: land it. His open calls on that card: the #9 hairpin (38 % climb) and whether
-main's own 51 stubs (same root, untouched) get the same trim as a separate change.
+Closed (2026-11-17). Resolution: the chained fork (DEC-366, option 1) plus the dead-end trim (d0f216e5) on
+`land/bug-179`, signed off by the owner on the round-2 sheet ("1. looks good"); lands on main with gate
+`test/leg-overlap-tear.mjs`. Still open, on main: the #9 hairpin's 38 % climb is BUG-200; the light sliver at a
+degree-2 bend (#17) is BUG-201; main's own 51 dead-end stubs stay, as character (DEC-396), so no trim follow-up.
 
 ## Summary
 At one place on seed 1684703087 two road legs leave each other with rapidly different elevations, and there is a
@@ -76,12 +77,14 @@ Not BUG-171's root (that is the limb/tie terms inside one leg's carve; here two 
 - [x] Fixed at the root, with a gate or census that fails before and passes after (`test/leg-overlap-tear.mjs`)
 - [x] 12 generated chains measured before → after, sheet made (`wip/bug-179/chained-forks-sheet.jpg`)
 - [x] Dead-end tail the chain left (9 of 12 chains) dropped: the old fork is a 2-leg bend (d0f216e5), tails 9 → 0
-- [ ] Owner signs off the chains + the tail drop on the round-2 sheet (DEC-366)
-- [ ] Owner looks at the spot on seed 1684703087
+- [x] Owner signs off the chains + the tail drop on the round-2 sheet (DEC-366): "1. looks good" (2026-11-17)
+- [x] Owner looks at the spot on seed 1684703087 (not driven: the gate `test/leg-overlap-tear.mjs` pins the capture seed's tear; closed with the round-2 sign-off)
 
 ## Decisions
 DEC-366 (owner, 2026-11-17): build option 1, a chain of forks at one junction; show him 10 generated chained forks and
 he signs off before it lands on main ("im worried this expansion could create a whole class of bugs").
+Owner sign-off, 2026-11-17, on the round-2 sheet: "1. looks good" (the chains + the dead-end trim). Land it.
+DEC-396 (owner, 2026-11-17): main's existing dead ends stay, as character; the trim stays chains-only.
 DEC-260 (fix by construction, never averaged away) governs this ticket. DEC-065, DEC-068, DEC-064 bind any fix; none
 of the options below conflicts with them. Owner 2026-11-13 (memory, no record): ask before changing junction promotion.
 
@@ -106,6 +109,8 @@ Capture: `Logs/autos-capture-1794791342440.json`. Possibly related: BUG-171 (dee
 `test/leg-overlap-census.mjs` (the class census; becomes a gate with the fix) · `test/replay.mjs`
 
 ## Log
+- 2026-11-17 (Lane B, land/bug-179, landing): owner signed off round 2 ("1. looks good"). Main merged in (no
+  conflicts). Follow-ups on main: BUG-200 (#9 hairpin 38 %), BUG-201 (degree-2 bend sliver), DEC-396 (stubs stay). Closed.
 - 2026-11-17 (Lane B, land/bug-179 @ d0f216e5, round 2 checks): affected gates 76/76 green (serial); world fingerprint
   ALL IDENTICAL to main. #9 (seed 688224244): the 0.79 m is a smooth slope at the outer metre of a hairpin the old T
   became (centreline profile identical to r1: a 38 % climb 20–36 m out, made by the chained fork), no tear. #7: the +606 m
