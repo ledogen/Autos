@@ -170,7 +170,7 @@ const ANTENNA_TUNE = {
   maxAccel: 60,                   // m/s², clamps a teleport's (reset, story entry) one-frame spike
 }
 
-function createAntenna (a, material) {
+export function createAntenna (a, material) {
   const base = new THREE.Vector3(...a.base)
   const axis = new THREE.Vector3(...a.tip).sub(base)
   const L = axis.length()
@@ -211,6 +211,9 @@ function createAntenna (a, material) {
     tPrev = now
     p.copy(base).applyQuaternion(state.quaternion).add(state.position)
     if (dt <= 0) { pPrev.copy(p); return }
+    // BUG-190: a base jump of more than a few mast lengths is a teleport (spawn, load, reset, tow), not motion.
+    // Differencing it gives a 10^4 m/s velocity and a drag force that flings the tip; snap to rest instead.
+    if (p.distanceTo(pPrev) > 5 * L) { pPrev.copy(p); d.set(0, 0); dv.set(0, 0); primed = false; geom.attributes.position.array.set(rest); geom.attributes.position.needsUpdate = true; geom.computeVertexNormals(); return }
     v.subVectors(p, pPrev).divideScalar(dt)
     pPrev.copy(p)
     if (!primed) { vPrev.copy(v); primed = true; return }   // the first velocity has nothing to difference against
