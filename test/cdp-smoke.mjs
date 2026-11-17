@@ -377,7 +377,7 @@ const STEPS = [
     check(await until(dlg, 3000), 'no card after the skip (FEAT-184: the last check, then Larry)')
     const dlgText = () => js('document.getElementById("dialogue-panel").textContent')
     check(/last check/.test(await dlgText()), "the manager's last check is not the first card")
-    for (let i = 0; i < 8 && /last check|\[placeholder\]/.test(await dlgText()); i++) { await tap('Enter'); await sleep(100) }
+    for (let i = 0; i < 8 && /last check|\[placeholder\]|Ring ring ring/.test(await dlgText()); i++) { await tap('Enter'); await sleep(100) }   // DEC-354: Larry's call rings first
     // The owner's word stream (feat120-blip): a card fills a word at a time (the intro's 33 words take ~2.6 s);
     // a press fills it in place, the next turns it.
     const shown = () => js('[...document.querySelectorAll("#dlg-text span")].filter(w => !w.children.length && w.style.visibility !== "hidden").length')
