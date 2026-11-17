@@ -76,6 +76,7 @@ inv.grant('bedliner');     ok(inv.bedMu() === 0.60, `mat and liner owned: the li
 
 // FEAT-231 / DEC-352: the look follows owns(): the mat alone, then the liner over it (both owned is valid), gone when dropped.
 const inv2 = new InventorySystem({ slotCap: () => 20, onMassChange: () => {}, onChange: () => {} })
+inv2.start()   // the run inventory is module-shared
 ok(!inv2.owns('rubberBedMat') && !inv2.owns('bedliner'), 'nothing owned: neither look')
 inv2.grant('bedliner'); ok(inv2.owns('bedliner') && !inv2.owns('rubberBedMat'), 'liner bought first: owned, mat not')
 inv2.grant('rubberBedMat'); ok(inv2.owns('bedliner') && inv2.owns('rubberBedMat'), 'the mat can still be bought with the liner fitted')
