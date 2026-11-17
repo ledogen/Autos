@@ -18,7 +18,8 @@ simplest way out is to just not display the name of the business in the tutorial
 As built: the tire fixed, before her door, energy is set to 3 h, mid SLEEPY (day.js: tired at 2, sleepy at 4; the
 eyelids and the slower hands of sleepy, never a doze) [3 h the agent's DEFAULT]; the tutorial's held clock now runs the
 blinks alone while the truck drives in the sleepy band (`DaySystem.blinkOnly`): before, no blink could fire in the
-tutorial at all, whatever the energy. Her door's 21:30 stamp drains on from there. Mom's third sleep card: "Set your alarm
+tutorial at all, whatever the energy (measured at the fix on the smoke's drive: −0.42 h, exhausted, so setting
+sleepy RAISES it there). Her door's 21:30 stamp drains on from there. Mom's third sleep card: "Set your alarm
 clock for 06:30"; the night is not preset, and a wake time other than 06:30 is refused with "Set this time instead: wake
 06:30"; the night runs to 06:30 exactly. The morning: breakfast, Katie's call and the drive at 06:30 (the clock held),
 and parked at the joint the clock is stamped 07:00, so the paycheck is 24 h after the firing (DEC-153) and a player and
