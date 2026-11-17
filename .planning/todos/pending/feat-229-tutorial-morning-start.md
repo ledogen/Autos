@@ -93,3 +93,6 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - 2026-11-16: box 3 on `land/tut-seed-gate`: `test/tutorial-seed.mjs` walks DEC-304's order with main.js's picks; legs 2.00 /
   0.70 / 2.72 / 2.11 / 3.86 (flat at 2.06, tow 0.53 crow) / 0.94 / 2.00 km, 12.5 km, 15 min wheel; TUT_STAMPS read from
   main.js. Gate green. Unguarded: a leg driven (the gate plans, never drives), a beat's trigger in main.js.
+- 2026-11-16: DEC-344 seed search (lane U, study only, nothing changed): 320 random seeds, 290 valid; pick 3590618618
+  (route 112 m vs 144, roadside green 0.35 vs 0.18, joint sun clear; mom's wake sun blocked), runner-up 1273834102.
+  Sheets + table: wip/tut-seed-search/RESULTS.md (git-invisible, in CarGame-land-gps). Awaits the owner's pick.
