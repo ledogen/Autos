@@ -843,7 +843,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     const imports = [...src.matchAll(/from\s+'([^']+)'/g)].map(m => m[1]).sort()
     // R-07: parts.js and shop-stock.js (both data) price a reward for the card's "Tip: Compressor ($20)".
     const allowed = ['../data/offer-names.js', '../data/offers.js', '../data/parts.js', '../data/shop-stock.js', '../data/stock-weights.js', './day.js', './demolition.js', './economy.js', './seed.js']
-    check('offer-board.js imports only its tables (stock-weights.js: the reward pick, 2026-10-22; parts.js + shop-stock.js: reward prices, R-07), seed.js, economy.js day.js (the clock unit) and demolition.js (FEAT-256: the card's rolled count)',
+    check('offer-board.js imports only its tables (stock-weights.js: the reward pick, 2026-10-22; parts.js + shop-stock.js: reward prices, R-07), seed.js, economy.js day.js (the clock unit) and demolition.js (FEAT-256: the card rolled count)',
         JSON.stringify(imports) === JSON.stringify(allowed), imports.join(', '))
     check('offer-board.js never reads Math.random', !/Math\.random/.test(src.replace(/\/\/.*$/gm, '')))
 }
