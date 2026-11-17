@@ -149,17 +149,24 @@ Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale, play b
 tonight. I have a reset in the pocket." So the two-agent cap is OFF for tonight: one agent per free worktree, grouped by
 code area. A one-shot timer fires at 07:13 with the word "orchestrator" (session-only cron).
 
-**Main:** 6c4280e8 + this commit, NOT pushed. Last full smoke PASS 35 steps on 9b6e3daa (wip/orch/smoke-1117-abs2.log);
-since then only 6c4280e8 (regular cooler ×1/4, DEC-367; inventory gate green, no smoke yet). Play build :8002 = 9b6e3daa.
-Landed tonight: e7239312 (offer card "from", `own` flag) · BUG-191 ABS (6a74de22; ticket open for his drive, card
-bug191-abs-drive) · DEC-367.
+**Main:** 53cc3b6b + docs, NOT pushed. **SMOKE RED on main (04:00):** step "service" fails alone
+(`SMOKE_STEPS=boot,story,service`: "the corner swap did not queue on the cart"), after merging land/pad-menus (ac4a06c2)
+and land/missions-1117 (53cc3b6b; one conflict in `_updateParkTriggers` resolved by hand). A Sonnet agent in
+CarGame-land-gps on land/smoke-service-fix is finding the cause (game or smoke). LAND NOTHING ELSE until it is green,
+and never merge while a smoke runs (the 03:22 smoke died to exactly that). Last green smoke: 9b6e3daa
+(wip/orch/smoke-1117-abs2.log); play build :8002 = 9b6e3daa. Landed tonight: e7239312 offer card "from" · BUG-191 ABS
+(6a74de22; card bug191-abs-drive) · DEC-367 cooler ×1/4 (6c4280e8) · pad/menu batch FEAT-252/254/255, BUG-192/193 (card
+pad-menus-look; DEC-368/369 are DRAFT) · missions batch FEAT-256/257, BUG-194/195 (card missions-1117-look; DEC-370/371).
+BUG-199 ticketed (run log part lost to Chrome's multiple-download block).
 **RUNNING (six agents; each mints its own tickets from the ids given, writes one owed card, never lands):**
 - Lane A, CarGame-run-shape, land/tut-round3 (Sonnet): make tutorial round 3 landable = economy unchanged by the day
   renumber (day 0 tutorial, runs start day 1) + the smoke's card steps. Round 3 itself is built @ b69b124b, DEC-359..363.
 - Lane B, CarGame-machine, land/bug-179 (Opus): finish chained forks: the seed-4243617325 regression (1.5 → 25.3 m), the
   dead-end spurs, 10th example, sheet, fingerprint, card bug179-chained-forks-look. Owner signs off BEFORE main (DEC-366).
-- Lane U, CarGame-land-gps, land/pad-menus (Sonnet): FEAT-254, FEAT-252, FEAT-255, BUG-192, BUG-193. DEC-368..369.
-- Lane s2, CarGame-land-211d, land/missions-1117 (Sonnet): FEAT-256, FEAT-257, BUG-194, BUG-195. DEC-370..371.
+- UI batch 2, CarGame-spare-base, land/ui-1117 (Sonnet): FEAT-248 UI scale, FEAT-262, FEAT-263, gradient, plot labels,
+  white 10 % line. DEC-383..384. Card ui-1117-look.
+- Budget, CarGame-land-211d, land/feat-69-budget (Sonnet): the FEAT-69 dive answers (300 kg freight line, the two lists,
+  oil change $6, pace). DEC-385..390. Card feat69-freight-lists.
 - Lane p, CarGame-perf, land/machine-1117 (Opus): FEAT-258, BUG-196, BUG-197, FEAT-204 (toolbox out, light bar on high
   beams, part masses), FEAT-259 (standard tires + stock turnover; numbers to the owner). DEC-372..375.
 - Lane C, CarGame-content, land/food-1117 (Opus): FEAT-250 hunger counter (+ cooler stack slots, 24 h spoil, $0.35/h),
@@ -191,7 +198,7 @@ test/pad-e2e.mjs in the smoke's browser run. (4) A stale shell loop from 11-14 i
 **Play build for the owner's Windows machine:** http://m4air:8002 = a FROZEN production build of main ea373576 in
 `wip/play-build/`, served by `python3 -m http.server 8002 --bind 100.111.133.99 --directory wip/play-build` (started by
 the orchestrator; it dies with a reboot). Refresh on his word: `npm run build && rsync -a --delete dist/ wip/play-build/`.
-**Next free DEC:** 383 (332-336 unused; 368-382 are handed to tonight's agents, see RUNNING).
+**Next free DEC:** 391 (332-336 unused; 372-390 are handed to tonight's agents, see RUNNING).
 **Gotchas (keep):** (1) agents stall or re-report in loops on background waits: ask for ONE report, TaskStop a finished
 agent that keeps waking, above all when a new agent shares its worktree. (2) Owed and dive answers save as the owner
 types: act only when the file is 3 min stale. (3) DIVE answers land in ledorepo `dives/<slug>.answers.json`: at every
