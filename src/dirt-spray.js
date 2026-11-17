@@ -206,6 +206,7 @@ export class DirtSpraySystem {
     this._sparkWait = [0, 0, 0, 0]    // per wheel, both lips: seconds until the next spark
     this._sprayColor = new THREE.Color()
     this._tmpColor = new THREE.Color()
+    this._shade = new THREE.Color(1, 1, 1)   // FEAT-243 spawn tint, see setLight
   }
 
   /** Show/hide the spray sheet (testing-lab teardown parity with dust/smoke — visibility only). */
@@ -237,6 +238,7 @@ export class DirtSpraySystem {
 
     const jitter = 0.8 + Math.random() * 0.35
     this._tmpColor.copy(this._baseColor()).multiplyScalar(CLOD_TINT * jitter)
+    this._tmpColor.multiply(this._shade)   // FEAT-243: born in the terrain's shade
     part.r = this._tmpColor.r; part.g = this._tmpColor.g; part.b = this._tmpColor.b
 
     part.active = true
@@ -309,6 +311,7 @@ export class DirtSpraySystem {
     this._tmpColor.copy(this._baseColor())
       .multiplyScalar(FLOAT_TINT * jitter)
       .lerp(WHITE, FLOAT_WHITE)
+    this._tmpColor.multiply(this._shade)   // FEAT-243: born in the terrain's shade
     part.r = this._tmpColor.r; part.g = this._tmpColor.g; part.b = this._tmpColor.b
 
     part.active = true
@@ -384,11 +387,14 @@ export class DirtSpraySystem {
    * per render frame from main.js — these billboards are unlit, so this is their only light source.
    * @param {THREE.Color} c — linear RGB multiplier; 1,1,1 is the authored daylight look.
    * @param {number} alpha — opacity multiplier for the same reason (see the shader note).
+   * @param {THREE.Color} [shade] — FEAT-243 spawn tint (SkySystem.particleShadeTint): < 1 where the terrain shades the
+   *        truck from the sun. Baked into each particle's colour at spawn, so it costs nothing per frame.
    */
-  setLight (c, alpha) {
+  setLight (c, alpha, shade) {
     const u = this._mesh.material.uniforms
     u.uLight.value.copy(c)
     u.uLightA.value = alpha
+    if (shade) this._shade.copy(shade)
   }
 
   /**

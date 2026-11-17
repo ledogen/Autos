@@ -656,6 +656,30 @@ void main () {
 const eyeCurve = (x, slope, depth, fall) => slope * x - depth * (1 - Math.exp(x / fall))
 
 // ── Day/night cycle state shared with the debug panel and main.js ─────────────────────────────────────
+/** One channel of the unlit particles' light (SkySystem.particleLight): key + fill irradiance against noon's
+ *  (`norm`), on a 0.8 curve with a 2 % floor, capped at the authored daylight look. Monotone in `key`. */
+export function particleLevel (key, fill, norm) {
+  return Math.min(1, 0.02 + 0.98 * Math.pow(Math.max(0, (0.5 * key + 0.5 * fill) * norm), 0.8))
+}
+
+// FEAT-243: how much of the key light reaches a point, from the terrain alone — the CPU twin of the sun's shadow
+// cascades, where terrain is the caster that matters (main.js `sunFar`, ±256 m, so the march stops at 256 m too).
+// A horizon test: the highest terrain elevation angle along the light's azimuth against the light's own, softened over
+// SUN_VIS_SOFT (the sun's 0.53° disc plus the cascade's filter blur). Steps grow ×1.3 from 1.5 m: 20 height samples.
+// ponytail: geometric steps can step over a ridge narrower than ~20 % of its distance; finer far steps if one shows.
+const SUN_VIS_SOFT = Math.tan(1 * Math.PI / 180)
+export function sunVisibility (heightAt, x, y, z, dir) {
+  const hl = Math.hypot(dir.x, dir.z)
+  if (hl < 1e-6) return 1   // overhead: nothing in the way
+  const ux = dir.x / hl, uz = dir.z / hl, tanE = dir.y / hl
+  let worst = Infinity
+  for (let d = 1.5; d <= 256; d *= 1.3) {
+    const t = tanE - (heightAt(x + ux * d, z + uz * d) - y) / d   // clearance slope of the ray over this sample
+    if (t < worst) worst = t
+  }
+  return Math.max(0, Math.min(1, 0.5 + worst / (2 * SUN_VIS_SOFT)))
+}
+
 export const SKY_CYCLE = { playing: false, hour: 12, dayLengthSec: 120 }
 
 // Rod vision (the Purkinje shift): as light falls through the mesopic range, ~5 cd/m² down to ~0.01, colour
@@ -996,15 +1020,26 @@ export class SkySystem {
   /** 0 = daylight … 1 = night, for the lamps (headlight pools, campfire): sun from 4° above to 6° below. */
   nightFactor () { return clamp01((4 * D2R - Math.asin(this.sunDir.y)) / (10 * D2R)) }
 
-  /** Linear RGB multiplier for the unlit particles (dust/smoke/spray): their irradiance against noon's. */
-  particleLight (out) {
+  /** Linear RGB multiplier for the unlit particles (dust/smoke/spray): their irradiance against noon's.
+   *  `sunVis` (FEAT-243, 0..1) scales the key light alone: 0 = in the terrain's shadow, lit by the fill only. */
+  particleLight (out, sunVis = 1) {
     if (!this._particleNorm) {
       const n = newState(), st = simulate(SOLAR_NOON_H, 0, n), S = this._adaptScale(st.eEye, true) * SKY_PARAMS.landGain
       this._particleNorm = 1 / (0.5 * lum(...st.eSun) * S + 0.5 * SKY_PARAMS.skyGain * lum(...st.eSky) * S * SKY_PARAMS.ambient)
     }
-    const k = this.sun.intensity + (this.sunFar ? this.sunFar.intensity : 0), a = this.ambient
-    const f = (key, sky) => Math.min(1, 0.02 + 0.98 * Math.pow(Math.max(0, (0.5 * key * k + 0.5 * sky * a.intensity) * this._particleNorm), 0.8))
-    return out.setRGB(f(this.sun.color.r, a.color.r), f(this.sun.color.g, a.color.g), f(this.sun.color.b, a.color.b), THREE.LinearSRGBColorSpace)
+    const k = (this.sun.intensity + (this.sunFar ? this.sunFar.intensity : 0)) * sunVis, a = this.ambient, sc = this.sun.color
+    const nrm = this._particleNorm
+    return out.setRGB(particleLevel(sc.r * k, a.color.r * a.intensity, nrm), particleLevel(sc.g * k, a.color.g * a.intensity, nrm),
+      particleLevel(sc.b * k, a.color.b * a.intensity, nrm), THREE.LinearSRGBColorSpace)
+  }
+
+  /** FEAT-243: the spawn tint for a particle born where the key light is `sunVis` visible — its particleLight against
+   *  the sunlit one, per channel. Baked into the colour at spawn; the per-frame particleLight still does day/night, so
+   *  night is not dimmed twice (after dark both sit on particleLevel's 2 % floor, so the tint is ~1 by itself). */
+  particleShadeTint (sunVis, out) {
+    const lit = this.particleLight(_c, 1), r = lit.r, g = lit.g, b = lit.b
+    this.particleLight(out, sunVis)
+    return out.setRGB(out.r / r, out.g / g, out.b / b, THREE.LinearSRGBColorSpace)
   }
 
   /** Opacity multiplier for the same particles: their light's luminance against noon's (unlit smoke fades out). */
