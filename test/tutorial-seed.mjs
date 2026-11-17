@@ -1,7 +1,9 @@
 // GATE (FEAT-184, DEC-149; FEAT-229 box 3, DEC-304..308 + DEC-320..326): THE TUTORIAL SEED STILL PLAYS ITS BEATS.
 //
-// data/tutorial.js pins one world (822480141, the owner's pick from the census, 2026-11-14) for the first playthrough
-// ever and every played tutorial (DEC-111, DEC-157). Its beats were picked off the census line, so a world-generation
+// data/tutorial.js pins one world (3590618618, the owner's pick 2026-11-16, DEC-351; criteria DEC-344, study in
+// wip/tut-seed-search/) for the first playthrough ever and every played tutorial (DEC-111, DEC-157). It replaced 822480141
+// (the census pick of 2026-11-14): that route sat at the median height of 144 m, the joint at 169 m among 46 trees with the
+// 07:00 sun behind a hill, and the day ran 12.5 km. Its beats were picked off the census line, so a world-generation
 // change that moves its places breaks the tutorial without failing anything else. This gate builds the region as story
 // entry builds it (poi.build, then campSystem.build + fillReach, main.js onRegionLive) and walks DEC-304's order with
 // each stop picked as main.js picks it (_joint, _mom, _larry, _snackShop, _campDoor, the flat in _eveningLessons, the
@@ -36,11 +38,11 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
-// The census line for 822480141 (ALPHA-GAP-2026-11-16 § 7, re-measured here 2026-11-16): places (m), road legs (km),
+// The census line for 3590618618 (the DEC-344 study, re-measured on land/tut-seed-pin 2026-11-16): places (m), road legs (km),
 // crow distances (km).
-const AT = { joint: [844, -679], mom: [-434, -51], larry: [-340, 363], station: [1019, -1204], shop: [267, -284] }
-const KM = { jointMom: 2.00, momLarry: 0.70, larryStation: 2.72, stationCamp: 2.11, campMom: 3.86, campFlat: 2.06, shopMom: 0.94, momJoint: 2.00 }
-const CROW = { stationCamp: 0.84, tow: 0.53 }   // § 7's smoke run read 3.98 and 0.51; these are from the camp's road door
+const AT = { joint: [774, -31], mom: [108, 189], larry: [247, 495], station: [1088, -164], shop: [600, 716] }
+const KM = { jointMom: 1.52, momLarry: 0.34, larryStation: 2.66, stationCamp: 1.08, campMom: 3.40, campFlat: 1.83, shopMom: 1.01, momJoint: 1.52 }
+const CROW = { stationCamp: 0.67, tow: 0.76 }   // from the camp's road door
 const KMH = 50   // the wheel-time speed (§ 7)
 // main.js's own stamps and firing hour, read from its source so the gate can never hold a stale copy.
 const MAIN = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
