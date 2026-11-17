@@ -56,7 +56,7 @@ Used up. Per-job or per-day decisions, not permanent upgrades.
 
 | Item | What it does | Source | Cost | Status |
 |---|---|---|---|---|
-| **Coffee** | Alert now, sleepy earlier tomorrow. **A loan against tomorrow, repaid at interest.** The canonical consumable and the shape every other one is measured against. **+5 h now, −2 h off the next wake-up** (owner, 2026-10-20; was −3: five hours awake costs about three hours of sleep, so the cup has to beat that ratio or nobody drinks it). | Bought (general store, gas station, food vendor), **$3** | Tomorrow's hours | **RATIFIED** — DESIGN.md "The day and the clock"; figures §7 rulings 2026-10-20 |
+| **Coffee** | Alert now, sleepy earlier tomorrow. **A loan against tomorrow, repaid at interest.** The canonical consumable and the shape every other one is measured against. **+5 h now, −1 h off the next wake-up** (owner, 2026-11-17, DEC-378; −2 ruled 2026-10-20, was −3: five hours awake costs about three hours of sleep, so the cup has to beat that ratio or nobody drinks it). | Bought (general store, gas station, food vendor), **$3** | Tomorrow's hours | **RATIFIED** — DESIGN.md "The day and the clock"; figures §7 rulings 2026-10-20 |
 | ~~**Cargo straps**~~ **[STRUCK 2026-10-14 — not an item; FEAT-110 closed, see §3e]** | Makes the **next fragile cargo** more resilient by changing the coupling between chassis and load — the cargo sees less shock than the truck does. Enables freight-grade fragile work you'd otherwise turn down. | Bought or found | Cash; a slot; trivial mass | **IDEA** — `IDEAS.md` 2026-07-29. *Open: single-use per job, degrades over several, or a reusable tool?* |
 | **Fish (eaten)** | Alertness that **does not have to be repaid** — the only honest restoration in the game. *"Coffee is debt. Fish is income."* | Caught; best at a favored water | A long relationship with the water | **PROPOSED** — `spirits-and-pacts.md` #04. ⚠ Depends on The Confluence, which is deferred. **Four species (owner, 2026-10-21): salmon, rainbow trout, brown trout, catfish — each carries a different effect** (§5) |
 | **Groceries** | **A delayed meal.** Bought at the general store **or a farm** (owner, 2026-10-21), carried, and **cooked into a meal at camp — only if you own the cooking kit**. **Ruled 2026-10-21:** one meal per bag; the cooked meal holds 10 h; cooking adds 30 min; cook it in the evening or the morning before you break camp; fresh for 24 h, and the cooler slows them like fish; the kit's flat food bonus does not apply on top — cooking them *is* the kit's bonus. $5; a reward from farms and the general store (B–A); never found. They still spoil (§1b), so they buy hours, not days. The meal for later in a run, when you camp far from a food vendor and the next stop with a kitchen is a day's drive off. Flavor: *"Fresh and goes together easy"* (owner, 2026-10-22). | Bought (general store, farm) | Cash; the spoilage clock; and the cooking kit's ≈23 kg on every mile | **RATIFIED** — owner, 2026-10-20; every figure set 2026-10-21 (the item setup page). Needs hunger (§1d) and the cooking kit |
@@ -254,6 +254,11 @@ Open, and the owner's to settle:
   harder choice (rule 4).
 
 ### 1d. Hunger — a rate on the energy clock, not a second meter [owner-approved direction 2026-09-30, figures open]
+
+> **[AMENDED 2026-11-17, DEC-376 / DEC-377 / DEC-379]** Hunger is now ONE satiety counter (hours of drain): each food
+> ADDS its satiety (its old hold, one for one), so foods stack, capped at 12 h [DEFAULT]; the zones below are ranges of
+> it. Food costs about $0.35 an hour of satiety. A cooler chills 4 slots, a stack to a slot; cooked groceries keep 24 h.
+> New foods: FEAT-260. The rows below keep their history; the records win.
 
 **Hunger is not a bar.** It is a **multiplier on the energy drain** that already ships (`src/day.js`:
 awake drains 1 h of energy per in-game hour). Past a threshold since your last meal, the tank drains

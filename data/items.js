@@ -20,7 +20,7 @@
 //            one for one). Priced on the $0.35 an hour line (DEC-377, data/shop-stock.js ITEM_PRICE)
 //   freshH   FEAT-230 slice 2 (items.md §1b, DEC-338): game hours each unit keeps; past that the unit is gone, never
 //            the stack. Unset = never spoils. Every FOOD with a freshH chills in an iced cooler (DEC-338)
-//   coolRate a cooler: the fresh-clock rate on the food it chills; `iceLastsH` a full bag of ice in it; `holds` slots it chills, a stack to a slot (DEC-376)
+//   coolRate a cooler: the fresh-clock rate on the food it chills; `iceLastsH` a full bag of ice in it; `holds` slots it chills, a stack to a slot (DEC-379)
 
 import { PARTS, partIcon } from './parts.js'
 
@@ -66,7 +66,7 @@ export const ITEMS = {
     potatoCooked: { name: 'Cooked potato', kind: 'food',       massKg: 0.2, stack: 5, use: 'eat', satiety: 4, freshH: 24, thumb: 'potato',
                     desc: 'Potato. Hot and plain.' },
     // FEAT-260 (owner, 2026-11-17: "let's add a salad, … a deli sandwich, … some cookies, … some bread. Try to balance
-    // the spoilage, time, satiety, and cost"): the general store's four. Every number [DEFAULT, owed on the card]:
+    // the spoilage, time, satiety, and cost"): the general store's four (DEC-380, a draft). Every number [DEFAULT, owed on the card]:
     // satiety × $0.35 (DEC-377), the price nudged ±$0.05 an hour by shelf life. Eaten on the go like any carried food.
     // Masses [DEFAULT]. Stand-in thumbnails (no art yet) and PLACEHOLDER words for the owner's.
     salad:        { name: 'Salad',         kind: 'food',       massKg: 0.4, use: 'eat', satiety: 4, freshH: 12, thumb: 'groceries',
@@ -133,7 +133,7 @@ export const ITEMS = {
     // FEAT-230 slice 2 (items.md §1 / §1b / §2, owner 2026-10-21/22 and 11-16, DEC-338): the coolers slow the fresh clock
     // of food, ×1/6 and ×1/8, while they have ice. A bag of ice melts in a day in the inventory (owner 11-16); used
     // ('ice': into the owned cooler with the least left) it lasts 72 h in the cooler, 5 days in the Ice King, scaled by
-    // what the bag had left. Each chills `holds` slots, a whole stack to a slot (DEC-376, owner 2026-11-17: "the coolers
+    // what the bag had left. Each chills `holds` slots, a whole stack to a slot (DEC-379, owner 2026-11-17: "the coolers
     // offer four slots"; was 4 units, DEC-338). Masses [DEFAULT]: an 8 lb bag; the cooler is "deliberately trivial".
     // DEC-367 (owner, 2026-11-17): the regular cooler is ×4 lifetime (coolRate 1/4), down from ×6. The Ice King stays ×8.
     ice:          { name: 'Ice',           kind: 'consumable', massKg: 3.6, use: 'ice', freshH: 24,
@@ -202,7 +202,7 @@ export const ITEMS = {
     // FEAT-230 slice 3: a bag of groceries, one meal. Raw it is no meal; cooked at camp ONLY with the cooking kit deployed
     // (main.js _cookGroceries, +30 min) it holds 10 h. `noKit`: the kit's +20 % is the cooking, not a bonus on top
     // (DEC-310). One bag a slot, mass 2 kg [DEFAULT]. The bag keeps 24 h, chilled like fish (items.md §1b); the cooked
-    // meal keeps 24 h too, chilled in a cooler (DEC-376, owner 2026-11-17: "Cooked groceries should also spoil in 24h
+    // meal keeps 24 h too, chilled in a cooler (DEC-379, owner 2026-11-17: "Cooked groceries should also spoil in 24h
     // outside a cooler").
     groceries:    { name: 'Groceries',     kind: 'food',       massKg: 2,   stack: 1, freshH: 24,
                     desc: 'A bag of groceries. Not a meal until it is cooked over a campfire with a cooking kit.' },

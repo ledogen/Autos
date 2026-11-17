@@ -13,7 +13,7 @@
 //      6c. The bigger packs (FEAT-182): each has slots and a reach; the Frame pack takes a whole camp and refuses
 //      one more; camp's tether follows the equipped pack, capped at 120 m (src/camp.js reachM).
 //  11. FEAT-230 slice 2 (DEC-338): the fresh clock per unit (one old unit never spoils the stack, the oldest eaten first),
-//      every food chilled ×1/4 / ×1/8 in 4 SLOTS a cooler, a whole stack to a slot (DEC-376), ice melting in 24 h
+//      every food chilled ×1/4 / ×1/8 in 4 SLOTS a cooler, a whole stack to a slot (DEC-379), ice melting in 24 h
 //      and lasting 72 h / 120 h in a cooler, the bar's fraction, save → load, an old save fresh, the ground; the sources.
 //   7. Catalog: every REWARDS id but a dineIn meal is an ITEMS id (the grant path can't miss), and no desc carries a
 //      digit (SM-INV-10 — described, never scored).
@@ -216,7 +216,7 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
 // ── 11. FEAT-230 slice 2: the fresh clock, the coolers and ice (items.md §1 / §1b / §2) ───────────────
 {
   const near = (a, b) => Math.abs(a - b) < 1e-9
-  check('the ruled fresh clocks: chili dog and burger 16 h; packed lunch, cooked potato, groceries raw and cooked (DEC-376) and ice 24 h; raw potato none',
+  check('the ruled fresh clocks: chili dog and burger 16 h; packed lunch, cooked potato, groceries raw and cooked (DEC-379) and ice 24 h; raw potato none',
     ITEMS.chiliDog.freshH === 16 && ITEMS.burger.freshH === 16 && ITEMS.packedLunch.freshH === 24 && ITEMS.potatoCooked.freshH === 24
     && ITEMS.groceries.freshH === 24 && ITEMS.ice.freshH === 24 && ITEMS.potato.freshH === undefined && ITEMS.groceriesCooked.freshH === 24)
   check('the coolers: ×1/4 (DEC-367) with 72 h ice holding 4; the Ice King ×1/8 with 5 days of ice holding 4 (DEC-338)',
@@ -276,7 +276,7 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
   f.tick(1066 + 72 + 5.9)
   check('the ice ran out: warm again, ×1, the packed lunch goes at 24', n('packedLunch') === 1 && (f.tick(1066 + 78), n('packedLunch') === 0) && n('groceries') === 0)
 
-  // DEC-376 (owner 11-17): a stack is ONE cooler slot, and a cooler has four. A stack of 5 chills whole; a fifth KIND stays out.
+  // DEC-379 (owner 11-17): a stack is ONE cooler slot, and a cooler has four. A stack of 5 chills whole; a fifth KIND stays out.
   f = mk(); f.tick(0); f.grant('cooler'); f.grant('ice'); f.use('ice'); f.grant('chiliDog', 5)
   f.grant('burger'); f.grant('salad'); f.grant('deliSandwich'); f.grant('groceriesCooked')
   f.tick(12)
@@ -284,7 +284,7 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
     && near(ent('burger').ages[0], 3) && near(ent('salad').ages[0], 3) && near(ent('deliSandwich').ages[0], 3))
   check('…the fifth slot (cooked groceries) has no room and ages warm', near(ent('groceriesCooked').ages[0], 12))
   f.tick(24)
-  check('DEC-376: cooked groceries spoil in 24 h outside a cooler', n('groceriesCooked') === 0 && n('chiliDog') === 5)
+  check('DEC-379: cooked groceries spoil in 24 h outside a cooler', n('groceriesCooked') === 0 && n('chiliDog') === 5)
   f.tick(63.9)
   check('the five chilled ×1/4: still good at 63.9 h', n('chiliDog') === 5)
   f.tick(64)

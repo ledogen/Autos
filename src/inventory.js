@@ -358,7 +358,7 @@ export class InventorySystem {
     /**
      * FEAT-230 slice 2 (DEC-338): advance the fresh clock to world time `nowH` (daySystem.clockH(), every fixed step; a
      * sleep's jump lands on the next step). Every unit ages on its own and goes alone at freshH. The iced coolers, best
-     * rate first, each chill `holds` SLOTS of food, a whole stack to a slot (FEAT-250 / DEC-376, owner 2026-11-17: "A
+     * rate first, each chill `holds` SLOTS of food, a whole stack to a slot (FEAT-250 / DEC-379, owner 2026-11-17: "A
      * stack of items only counts as one slot and the coolers offer four slots"), filled in inventory order; a unit's cold
      * hours stop when its cooler's ice does, mid-jump included.
      */

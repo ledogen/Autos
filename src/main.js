@@ -5261,7 +5261,7 @@ function _checkOpeningEnd () {
   economySystem.payPaycheck()
   if (_returnSeed) { _returnToRunWorld(); return }
   if (skipped && !dialogueSystem.has(DLG.bossCheck)) { _tut(DLG.bossCheck, BOSS_CHECK, null, true); return }
-  // BUG-198 (owner, 2026-11-17: "make sure we get the three free meals when starting a new game"): the run proper starts
+  // BUG-198 / DEC-381 (owner, 2026-11-17: "make sure we get the three free meals when starting a new game"): the run proper starts
   // on mom's three packed lunches (FEAT-173, items.md §1d) however many the tutorial's breakfast and night ate.
   const lunches = inventorySystem.list().filter(r => r.id === 'packedLunch').reduce((k, r) => k + r.n, 0)
   if (lunches < 3) inventorySystem.grant('packedLunch', 3 - lunches)
