@@ -122,3 +122,7 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - 2026-11-16: DEC-353 round 2 on `land/tut-round2` (DEC-354..357; BUG-189). Smoke boot,story,opening,newRun PASS first
   run; card shots `wip/tut-round2/cards/`. Energy at the fix measured −0.42 h (exhausted; no blink could fire in the
   tutorial before). Unverified: the camp-short-of-the-pin path in a browser (logic only), a real pad.
+- 2026-11-17: seed search round 2 (lane u, `land/tut-seed-search-r2`, study in git-invisible `wip/tut-seed-search-r2/`). Pinned
+  3590618618 Larry's → station: steepest 10 m 38.7 %, 1005 m > 12 %. 1000 random seeds, 900 valid, 14 pass a 20 % / 150 m
+  limit; no seed has a whole day under 20 % (the router's 38 % ceiling). 5 candidates + the pin on owed card
+  `tutorial-seed-pick-r2` (sheets in the wip folder). Pin unchanged.
