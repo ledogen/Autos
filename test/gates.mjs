@@ -204,7 +204,7 @@ export const GATES = [
   { file: 'rock-sink.mjs', subsystem: 'props', cost: 'fast', extraDeps: [],
     desc: 'BUG-54: every rock sinks by its OWN variant radius (the palette hands them to the scatter via PropSystem): height within 0.5 − bury of its own size (the old largest-radius sink leaves it), bushes unchanged, and posed as drawn none floats or hides on flat, 45° and 60°' },
   { file: 'camera-boom.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
-    desc: 'FEAT-246: chase boom stops short of a terrain ridge (camera above ground, nearer) and of a wall hit, clear boom unchanged, never longer than desired' },
+    desc: 'FEAT-246: chase boom stops short of a terrain ridge (camera above ground, nearer) and of a wall hit, clear boom unchanged, never longer than desired; the real probe (makeBoomProbe) stops at the bore lining and crown, never at zero, and the deck under the truck leaves it unchanged on open road and a crest' },
   { file: 'camera-follow-clock.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-102: the chase camera trails a 25 m/s truck by its 60 fps distance under PERF-32 slow motion and across load recoveries (the follow runs on the drawn truck\'s sim clock; the old wall-clock follow pulled in 3.7 m and dropped back on recovery), never still while the truck moves; bursty clamped frames unchanged' },
   { file: 'hilift.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],

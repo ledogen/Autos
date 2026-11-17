@@ -22,7 +22,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, setBedGrip, syncChassisMass, rollBalance } from './physics.js'
 import { HiLift, basin, rollDeg } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
-import { createPhysicsEngine, GROUP_STATIC } from './physics-engine.js'
+import { createPhysicsEngine, GROUP_STATIC, GROUP_ROAD } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-physics.js'
 import { DebrisSystem, bedDropPoints, inBedWell, strapPose, cubeLayout, STACK_RADIUS, BARREL_CUBE_SIDE, BARREL_CUBE_LAYERS } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
@@ -47,7 +47,7 @@ window.__view = placeFreecam
 // harness toggles prop shadow casting and reads renderer.info through these.
 window.__props = () => propSystem
 window.__renderer = () => renderer
-import { boomFreeFraction } from './camera-boom.js'
+import { makeBoomProbe } from './camera-boom.js'
 window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase heading after a freecam exit (R-11)
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout, syncDebugLive } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
@@ -2816,15 +2816,9 @@ terrainSystem.setRecarveHook((cx, cz) => propSystem?.releaseGround(cx, cz))
 const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS,
   { bed: DEFAULT_VEHICLE_MODEL.bed ?? null })
 const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
-// FEAT-246: the chase boom stops short of terrain (analytic height, no engine query) and of static solids (ONE ray per frame).
-const _boomDir = { x: 0, y: 0, z: 0 }
-setCameraBoomProbe((pivot, want) => {
-  const dx = want.x - pivot.x, dy = want.y - pivot.y, dz = want.z - pivot.z, len = Math.hypot(dx, dy, dz)
-  if (len < 1e-3) return 1
-  _boomDir.x = dx / len; _boomDir.y = dy / len; _boomDir.z = dz / len
-  const hit = physicsEngine.castRay(pivot, _boomDir, len, { collidesWith: GROUP_STATIC })
-  return boomFreeFraction(pivot, want, (x, z) => terrainSystem.analyticHeight(x, z), hit ? hit.distance : null)
-})
+// FEAT-246: the chase boom stops short of terrain (analytic height, no engine query) and of static solids and the road
+// group's bore lining (ONE ray per frame; camera-boom.js says why the deck under the truck does not shorten it).
+setCameraBoomProbe(makeBoomProbe(physicsEngine, (x, z) => terrainSystem.analyticHeight(x, z), GROUP_STATIC | GROUP_ROAD))
 const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
 
 // ── FEAT-96: the strapped load — a freight job's, or the debug "Load Cargo" pick ─────────────
