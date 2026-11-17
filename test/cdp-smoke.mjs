@@ -864,9 +864,14 @@ const STEPS = [
     check(await js('!document.getElementById("hud-dock").checkVisibility({ visibilityProperty: true })'), 'the HUD shows behind the service screen')
     // FEAT-212: Maintenance is a tree, one item open per level — Tires, Wheels… → Tires and Wheels → Rear right → Tire
     // shows its swap; selecting the top level again collapses everything.
+    await js('window.__damage.flat[3] = true; document.querySelector("#svc-screen [data-tab=maint]")?.click()')   // FEAT-244: a flat on RR, drawn
     for (const id of ['twbs', 'tw', 'RR', 'tire']) await js(`document.querySelector('#svc-screen [data-act=node][data-id="${id}"]')?.click()`)
     check(await js('/Swap with inventory/.test(document.querySelector("#svc-screen .sv-kids .sv-kids .sv-kids .sv-kids")?.textContent ?? "")'),
       'Maintenance: the rear-right tire opened no swap')
+    // FEAT-244: the flat tire is the failing band at every level down to it: category, group, corner, the tire row.
+    const red = await js(`['twbs', 'tw', 'RR', 'tire'].map(id => getComputedStyle(document.querySelector('#svc-screen [data-act=node][data-id="' + id + '"] .sv-name')).color)`)
+    check(red.every(c => c === 'rgb(229, 87, 74)'), `FEAT-244: a flat rear-right tire is not red at every level: ${JSON.stringify(red)}`)
+    await js('window.__damage.flat[3] = false; document.querySelector("#svc-screen [data-tab=maint]")?.click()')
     // FEAT-213: an open part's (i) button shows the owner's text, names coloured.
     for (const id of ['brakes']) await js(`document.querySelector('#svc-screen [data-act=node][data-id="${id}"]')?.click()`)
     await js('document.querySelector("#svc-screen [data-act=info]")?.click()')
