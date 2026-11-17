@@ -7135,7 +7135,7 @@ function _renderCampUI () {
   show('cp-break',  isHome)
   show('cp-sleep',  isHome && !noBed)
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
-  show('cp-item',   st.mode === 'camp' || st.mode === 'truck')
+  show('cp-item',   isHome)   // FEAT-245: mom's too (eat and use things at her table); isHome = camp, truck, mom's
   show('cp-cook',   st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230: the fire is lit all camp
   show('cp-cook-groceries', st.mode === 'camp' && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
   show('cp-map',    isHome)

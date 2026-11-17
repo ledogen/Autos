@@ -79,6 +79,8 @@ export const GATES = [
   { file: 'model-palette.mjs', subsystem: 'infra', cost: 'fast',
     extraDeps: ['data/prop-models.js', 'assets/models'],
     desc: 'curated recolour pools bind to the GLB by SUBSTRING on material name, which fails silently on re-export: assert every palette key still matches exactly one material, arrays are equal-length (one variant index drives the whole model), and index 0 equals the authored baseColorFactor (variant 0 reuses that material)' },
+  { file: 'antenna-teleport.mjs', subsystem: 'infra', cost: 'fast', extraDeps: ['data/vehicle-models.js'],
+    desc: 'BUG-190: the whip antenna snaps to rest when its mount jumps more than a few mast lengths (spawn, load, reset, tow) instead of differencing the jump into a huge velocity; jumps the base 1 km and asserts the tip stays within its length and settles' },
   { file: 'vehicle-lamps.mjs', subsystem: 'infra', cost: 'fast', extraDeps: ['assets/models/ranger.glb'],
     desc: 'BUG-143: vehicle-model.js lights every face of a model\'s `reverse.material` behind `rearZ` in reverse (substring match), so nothing but the reverse lamps may wear it at the tail: every such face sits outboard of the ±0.3 m centre band where the licence plate hangs (the Ranger\'s plate wore RangerLens and lit with the lamps)' },
   { file: 'model-variant.mjs', subsystem: 'infra', cost: 'fast',
