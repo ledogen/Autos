@@ -54,10 +54,12 @@ for (const W of windows) {
   }
   let worst = 0, worstAt = '', worstGap = 0, gapAt = ''
   for (const node of nodes) {
-    const geos = geosOf(node), arc = node.deg2
+    const geos = geosOf(node), arc = node.deg2, mp = arc.markPhase
     node.legs.forEach((leg, i) => {
       legs++
-      const e = road._network.get(leg.runKey), mouthD = arc.mouthD[i], far = mouthD + 1.5 * hw
+      // The connector's own mouth on this leg (markPhase carries both, A = node.legs[0]).
+      const mouthD = Math.abs((i === 0 ? mp.aArc : mp.bArc) - leg.arc)
+      const e = road._network.get(leg.runKey), far = mouthD + 1.5 * hw
       let minD = Infinity
       for (const g of geos) {
         const p = g.attributes.position.array
