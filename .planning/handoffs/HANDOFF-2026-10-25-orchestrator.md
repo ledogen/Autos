@@ -149,8 +149,8 @@ Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale, play b
 tonight. I have a reset in the pocket." So the two-agent cap is OFF for tonight: one agent per free worktree, grouped by
 code area. A one-shot timer fires at 07:13 with the word "orchestrator" (session-only cron).
 
-**Main:** 5c6241b8 + docs, NOT pushed, GREEN: full smoke PASS 36 steps on exactly this tree
-(CarGame-land-gps/wip/smoke-integrate.log), 50 affected gates green, pad-e2e ALL OK. Play build :8002 = 5c6241b8.
+**Main:** b82f78bd, NOT pushed, GREEN: smoke PASS 36 steps + 132 affected gates + pad-e2e on land/integrate-1117b
+(CarGame-land-gps/wip/*-integrate-b.log); main differs from that tree by one docs commit. Play build :8002 = b82f78bd.
 **HOW LANDINGS WORK TONIGHT:** never merge finished branches into main one by one. An Opus integration agent in
 CarGame-land-gps merges them onto `land/integrate-1117<x>` (cut from main), fixes clashes, runs gates + pad-e2e + ONE full
 smoke there; main is then fast-forwarded (`git merge --ff-only`) and the play build refreshed
@@ -161,19 +161,27 @@ FEAT-256/257, BUG-194/195 (card missions-1117-look) · tutorial round 3 (DEC-359
 the day renumber" needs the owner's confirmation; card tutorial-test-drives) · UI scale + UI batch 2 (DEC-383/384; card
 ui-1117-look) · FEAT-69: freight deed line 300 kg, oil change $6 (DEC-385..390; card feat69-freight-lists) · a fix so
 the pad can use the inventory while a waiting tutorial card is up (`dlg-waits`, 3095f420; not hand-verified on a pad).
-**RUNNING at 04:40:**
-- Integration round 2, CarGame-land-gps, land/integrate-1117b (Opus): land/rumble-runlog (FEAT-247 vibration, card
-  feat247-vibration-feel; BUG-199 run log one file, DEC-392) + land/camera-campfire (FEAT-246, FEAT-264, DEC-393, card
-  camera-campfire-look). Fast-forward main to its head when it reports green.
-- Lane p, CarGame-perf, land/machine-1117 (Opus): all five built and committed (FEAT-258, BUG-196, BUG-197, FEAT-204,
-  FEAT-259; DEC-372..375; card machine-1117-look), finishing its gate run. NEXT integration round.
-- Lane C, CarGame-content, land/food-1117 (Opus): FEAT-250, FEAT-260, BUG-198, FEAT-261. DEC-376..382. Card
-  food-1117-numbers BLOCKS landing (the owner's numbers).
-- s2, CarGame-land-211d, land/feat-251-lawn (Opus): lawn furniture knocks over. DEC-394. Card feat251-lawn-drive.
-- b, CarGame-machine, land/feat-249-far-shade (Opus): shade past the far shadow map. Card feat249-far-shade-look.
-- u, CarGame-spare-base, land/tut-seed-search-r2 (Opus): tutorial seed re-search; the owner picks (card
-  tutorial-seed-pick-r2); the pin does not change.
+  (A single small branch: the orchestrator may do the same itself in CarGame-land-gps.)
+**Landed 11-17 round 2:** FEAT-247 vibration (card feat247-vibration-feel) · BUG-199 run log as one file (DEC-392) ·
+FEAT-246 chase-camera collision (0.025 ms/frame; tunnel fix 23859b68) · FEAT-264 dead campfire (DEC-393; card
+camera-campfire-look) · machine batch FEAT-258, BUG-196, BUG-197, FEAT-204, FEAT-259 (DEC-372..374 standing, DEC-375
+DRAFT = the tire/stock numbers; card machine-1117-look).
+**RUNNING at 05:35:**
+- Orchestrator's own background job in CarGame-land-gps, land/integrate-1117c = main + land/feat-251-lawn (FEAT-251,
+  DEC-394, card feat251-lawn-drive): gates → wip/gates-integrate-c.log, smoke → wip/smoke-integrate-c.log. Green
+  ("RUN-ALL: all" + "SMOKE EXIT 0") → `git merge --ff-only land/integrate-1117c` on main, refresh the play build.
+- u, CarGame-spare-base, land/tut-seed-search-r2 (Opus): seed census ~1006 seeds (resumable
+  wip/tut-seed-search-r2/run.sh), then 5 candidates + sheets + card tutorial-seed-pick-r2. Pinned seed's Larry's →
+  station leg measured: max 38.7 %, 1005 m above 12 % of 2638 m.
+**OPEN OWNER QUESTIONS from round 2:** (1) should the camera's wall ray also hit road geometry (tunnel walls/ceiling)?
+one-line mask, agent recommends yes. (2) DEC-028 + DEC-340 still say the bed toolbox is in the alpha, MILESTONES.md
+line 81 too; DEC-372 superseded only DEC-129: needs a new record once the owner confirms. (3) truck rolls over the
+0.40 m fire pit dead centre (body collider has nothing below the frame): ticket?
 **BUILT, HELD for the owner (not on main):**
+- land/food-1117 (CarGame-content): FEAT-250, FEAT-260, FEAT-261, BUG-198; DEC-376..381 (DEC-380 draft). Card
+  food-1117-numbers BLOCKS landing. Needs a main merge (keep the BUG-198 top-up before Larry's call in _checkOpeningEnd).
+- land/feat-249-far-shade @ b21696f0 (CarGame-machine): far shadow box grows with the tier (High ±512 m, Ultra ±640 m).
+  Card feat249-far-shade-look. GPU active cycles still owed (bench on a quiet machine, High + Ultra).
 - land/bug-179 @ 1863415d (branch only): chained forks, 4 tears fixed, 0 new, 12 examples; open risk = dead-end stubs.
   Card bug179-chained-forks-look (sign off / changes / drop). Needs a main merge before landing.
 - land/feat-235-r3 @ f72c5d15 (branch only): cluster round 3 (DEC-391). Card feat235-cluster-r3-look. Its gpu-reset run
