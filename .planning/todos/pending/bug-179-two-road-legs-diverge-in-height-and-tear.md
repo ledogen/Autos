@@ -12,9 +12,10 @@ lane: Spare
 # BUG-179: Two road legs diverge in height quickly and the surface tears where they meet
 
 ## Next steps
-Owner picked option 1 (2026-11-17, DEC-366); built on `land/bug-179` (worktree CarGame-machine). Waiting on his
-sign-off of the examples sheet `wip/bug-179/chained-forks-sheet.jpg` (owed card `bug179-chained-forks-look`). On a
-yes: land it. Open for him: the dead-end spur the chain leaves at a 3-leg junction (9 of 12 chains).
+Round 2 built on `land/bug-179` @ d0f216e5 (the chain's dead-end tail dropped, 9 → 0): owner sign-off of the new sheet
+`wip/bug-179/chained-forks-sheet.jpg` (same tile numbers as `chained-forks-sheet-r1.jpg`; owed card
+`bug179-chained-forks-look`). On a yes: land it. His open calls on that card: the #9 hairpin (38 % climb) and whether
+main's own 51 stubs (same root, untouched) get the same trim as a separate change.
 
 ## Summary
 At one place on seed 1684703087 two road legs leave each other with rapidly different elevations, and there is a
@@ -74,7 +75,8 @@ Not BUG-171's root (that is the limb/tie terms inside one leg's carve; here two 
 - [x] Owner picks a fix (DEC-366: option 1, the chained fork)
 - [x] Fixed at the root, with a gate or census that fails before and passes after (`test/leg-overlap-tear.mjs`)
 - [x] 12 generated chains measured before → after, sheet made (`wip/bug-179/chained-forks-sheet.jpg`)
-- [ ] Owner signs off the chains (DEC-366) and rules on the dead-end spur
+- [x] Dead-end tail the chain left (9 of 12 chains) dropped: the old fork is a 2-leg bend (d0f216e5), tails 9 → 0
+- [ ] Owner signs off the chains + the tail drop on the round-2 sheet (DEC-366)
 - [ ] Owner looks at the spot on seed 1684703087
 
 ## Decisions
@@ -104,6 +106,12 @@ Capture: `Logs/autos-capture-1794791342440.json`. Possibly related: BUG-171 (dee
 `test/leg-overlap-census.mjs` (the class census; becomes a gate with the fix) · `test/replay.mjs`
 
 ## Log
+- 2026-11-17 (Lane B, land/bug-179 @ d0f216e5, round 2 checks): affected gates 76/76 green (serial); world fingerprint
+  ALL IDENTICAL to main. #9 (seed 688224244): the 0.79 m is a smooth slope at the outer metre of a hairpin the old T
+  became (centreline profile identical to r1: a 38 % climb 20–36 m out, made by the chained fork), no tear. #7: the +606 m
+  is graph leg 1,-1,0—1,-2,0, which main drops (role rule barred the merge, shove 44 m > 30 m cap); the chain merges it.
+  Main's stubs: 51 on 27 of 34 seeds (32–120 m), all left by promotion ceding legs off a winner (same root; trunkEnds is
+  chains-only by design). Sheet rebuilt (19 tiles). Unverified: a drive of the #9 hairpin; a ~1 m sliver at #17's bend edge.
 - 2026-11-17 (Lane B, land/bug-179 @ 08373870, no src change this round): 35 chain sites from 213 random seeds
   (`wip/bug-179/sites-all.json`, `measure.mjs`): 12 fully built, 23 with one T declined (those 23 identical before/after).
   Shared-pavement step (census measure) before → after: 4 tears fixed (6.12, 3.95, 14.87, 6.94 → ≤ 0.27), 0 new; worst
