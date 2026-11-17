@@ -97,12 +97,13 @@ const POD_E = 38    // temp above, fuel below the axis
 const POD_DX = 12   // temp right of, fuel left of the pod's centre line
 const POD_DY = 15   // the pod's centre below the axis: the reference's temp sits near the axis, fuel low (round 8: 0)
 const FUEL_X = 56
+const FUEL_DROP = 7   // round 3 (DEC-391): the left pod's bottom edge comes down until its bottom margin to the housing equals its left (ROOM)
 const POD_CORNER = 14   // the left pod's bottom-right corner radius
 const DIAL_PAD = 8      // indent ring visible around the tach/speedo wells
 const TACH_DROP = 84 - 75   // SPEEDO.well − TACH.well: the tach's indent bottom level with the speedo's
 const POD_GAP_R = 75 + DIAL_PAD + GAP   // the left pod's concave right side: the tach's indent radius + GAP
 const TEMP  = { cx: FUEL_X + 2 * POD_DX, cy: AXIS + POD_DY - POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
-const FUEL  = { cx: FUEL_X, cy: AXIS + POD_DY + POD_E, well: 33, scaleR: 26, start: 215, sweep: 110 }
+const FUEL  = { cx: FUEL_X, cy: AXIS + POD_DY + POD_E + FUEL_DROP, well: 33, scaleR: 26, start: 215, sweep: 110 }
 const TACH_X = TEMP.cx + Math.sqrt((POD_GAP_R + POD_R) ** 2 - (AXIS - TEMP.cy) ** 2)
 const TACH  = { cx: TACH_X, cy: AXIS, well: 75, scaleR: 65, start: 160, sweep: 170 }    // dial top: _tachMax (setRedline)
 const SPEEDO= { cx: TACH_X + TACH_SPEEDO, cy: AXIS, well: 84, scaleR: 75, start: 135, sweep: 270, max: 120 }  // MPH
@@ -117,24 +118,13 @@ const ODO = { x: -29, y: -23, w: 58, h: 14 }
 // One factor on the canvas transform (round 3), so every distance the layout balances (the key's three below, the
 // joined faces' cusp) scales with it, and the layout keeps its own units.
 const SCALE = 1.15
-// FEAT-33 ignition switch — a small well on the dial axis at the speedo's 3 o'clock (round 3).
-// It carries its OWN indent pad (smaller than DIAL_PAD) because at this size the standard ring would
-// be most of the dial. Three distances have to hold, and they are tight — check all three before
-// moving it (all measured from the speedo centre, the distance is now set by END_X (round 5)):
-//   wells apart      93.3 > SPEEDO.well + KEY.well (87)      or the key face eats the speedo face
-//   indent clears    93.3 − (well+pad) = 73.3 > SPEEDO.well   or it bites a crescent out of 120/km-h
-//   indents overlap  93.3 < SPEEDO.well + DIAL_PAD + well+pad or the switch reads as a detached island
-// The well grew 13 → 17 when the needle became a key grip: a key silhouette needs pixels to read as
-// an object, and 26 px of dial was not enough. 34 px is the most the three distances above allow.
-// Round 5: the key's indent stands MARGIN inside the bottom-right corner circle (centre END_X, AXIS + POD_E),
-// i.e. KEY_CORNER = POD_R + MARGIN − (KEY.well + KEY.pad) − MARGIN from that centre, along the diagonal. END_X puts the
-// key 103 from the speedo hub, > SPEEDO.well + KEY.well (101) so the key face does not eat the speedo face.
-const END_X = SPEEDO.cx + 84 + 8 + GAP + 17 + 3   // the speedo's indent edge + GAP + the key's indent (well + pad)
-// Round 8 (DEC-285): the housing's right edge (its dark rim's outside) stands KEY_EDGE right of the key's centre.
-// FEAT-235 keeps that edge and the key's height (46 below the axis), now inside the outline's right end.
-const KEY_EDGE = 37
-const W = END_X + KEY_EDGE + 8   // plus the 8 px canvas margin
-const KEY   = { cx: END_X, cy: AXIS + 46, well: 17, pad: 3 }
+// FEAT-33 ignition switch: its OWN indent pad (smaller than DIAL_PAD; the standard ring would be most of the switch).
+// Two distances from the speedo hub must hold (round 2: ~107): > SPEEDO.scaleR + KEY_R (95) so the key clears the
+// 120 mph tick, and < SPEEDO.well + DIAL_PAD + KEY_R (112) so its disc joins the speedo's pod, not an island.
+// FEAT-235 round 2 (DEC-350): the key no longer widens the cluster. It sits in the housing's bottom-right corner under
+// the speedo, its indent FACE_M − 1 of light face inside the right edge and the bottom (as every pod), and its disc joins
+// the speedo's pod (they overlap by ~5). The housing's right edge is the speedo's grown circle's tangent, straight down.
+const KEY_R = 17 + 3   // the key's indent radius (well + pad)
 // Key detents, in canvas angles (0 = 3 o'clock, increasing clockwise): 10 / 12 / 2 o'clock.
 const KEY_ANGLE = { off: 210 * DEG, on: 270 * DEG, start: 330 * DEG }
 const KEY_TICK_R = 16.5   // detent ticks run inward from here to r=14.5 — OUTSIDE the fascia, framing it
@@ -171,18 +161,24 @@ const BOTTOM_Y = INSET_Y + INSET_H
 const ROOM = FACE_M + BEZEL   // a pod's circle grown by this is where the outline may come
 const CORNER = 16             // the bottom corners' radius
 const ARCH_PEAK = 7           // the arch's top, from the canvas top
-const KEY_END = KEY_EDGE - 2  // the right end's circle round the key: its outside is the round-8 edge
+const RIGHT_X = SPEEDO.cx + SPEEDO.well + DIAL_PAD + ROOM   // the housing's right edge (round 2: straight down off the speedo)
+const W = RIGHT_X + 2 + 8   // its dark rim, plus the 8 px canvas margin
+const KEY   = { cx: RIGHT_X - ROOM - KEY_R, cy: BOTTOM_Y - ROOM - KEY_R, well: 17, pad: 3 }
 // The outline is the hull of these circles, clockwise from the arch (_outlinePath): the arch, internally tangent to the
-// grown temp and speedo circles; the grown speedo; the key's end; the bottom corners; the grown fuel and temp circles.
+// grown temp and speedo circles; the grown speedo; the bottom corners (the right one under the speedo's right edge, so
+// that side is one vertical line); the grown fuel and temp circles.
 const OUTLINE = (() => {
   const temp = { x: TEMP.cx, y: TEMP.cy, r: POD_R + ROOM }, fuel = { x: FUEL.cx, y: FUEL.cy, r: POD_R + ROOM }
   const speedo = { x: SPEEDO.cx, y: SPEEDO.cy, r: SPEEDO.well + DIAL_PAD + ROOM }
-  const key = { x: KEY.cx, y: KEY.cy, r: KEY_END }
-  const br = { x: KEY.cx + KEY_END - CORNER, y: BOTTOM_Y - CORNER, r: CORNER }
+  const br = { x: RIGHT_X - CORNER, y: BOTTOM_Y - CORNER, r: CORNER }
   const bl = { x: fuel.x - fuel.r + CORNER, y: BOTTOM_Y - CORNER, r: CORNER }
-  return [archThrough(temp, speedo, ARCH_PEAK), speedo, key, br, bl, fuel, temp]
+  return [archThrough(temp, speedo, ARCH_PEAK), speedo, br, bl, fuel, temp]
 })()
-const INSET_X = (OUTLINE[4].x - CORNER + OUTLINE[3].x + CORNER) / 2
+// Round 3 (DEC-391): the notch's left top stands ROOM right of the left pod's bottom-right corner, so the pod sits in the
+// crook beside the notch's rise (the notch was INSET_HALF wide each side of centre; its right side is unchanged).
+const INSET_L = POD_BR.x + POD_CORNER + ROOM
+const OUT_BR = 2   // OUTLINE's bottom-right corner: the bottom run, with the inset, leaves it
+const INSET_X = (OUTLINE[OUT_BR + 1].x - CORNER + OUTLINE[OUT_BR].x + CORNER) / 2
 const FACE_LIGHT = '#575049'   // the light face (the owner guide's white appliqué, as a lighter plastic)
 
 const FACE   = '#171412'   // gauge face / panel
@@ -448,18 +444,18 @@ export class GaugeCluster {
   _outlinePath (ctx, p) {
     const c = OUTLINE, n = c.length
     const out = c.map((a, i) => tangentAngle(a, c[(i + 1) % n]))   // leaving circle i
-    const x1 = INSET_X - INSET_HALF, x2 = INSET_X + INSET_HALF, yB = BOTTOM_Y + p, yI = INSET_Y + p, f = 4
+    const x1 = INSET_L, x2 = INSET_X + INSET_HALF, yB = BOTTOM_Y + p, yI = INSET_Y + p, f = 4
     ctx.beginPath()
     for (let i = 0; i < n; i++) {
       const a = c[i], a0 = out[(i + n - 1) % n]
       let a1 = out[i]
       while (a1 < a0) a1 += 2 * Math.PI
       ctx.arc(a.x, a.y, a.r + p, a0, a1)
-      if (i === 3) {   // the bottom corner on the right: the bottom line to the left, through the inset
+      if (i === OUT_BR) {   // the bottom corner on the right: the bottom line to the left, through the inset
         ctx.arcTo(x2 + INSET_RUN, yB, x2, yI, f)
         ctx.arcTo(x2, yI, x1, yI, f)
         ctx.arcTo(x1, yI, x1 - INSET_RUN, yB, f)
-        ctx.arcTo(x1 - INSET_RUN, yB, c[4].x, yB, f)
+        ctx.arcTo(x1 - INSET_RUN, yB, c[OUT_BR + 1].x, yB, f)
       }
     }
     ctx.closePath()
