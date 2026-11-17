@@ -168,8 +168,9 @@ camera-campfire-look) · machine batch FEAT-258, BUG-196, BUG-197, FEAT-204, FEA
 DRAFT = the tire/stock numbers; card machine-1117-look).
 **RUNNING at 07:20 (after the 07:13 restart; intake found nothing new: no unanswered inbox note, no new owed answer,
 no untaken dive):**
-- p, CarGame-perf, land/asset-90-dead-campfire (Opus): ASSET-90 ashes-only campfire model + wiring into FEAT-264's
-  dead state. Card asset90-dead-campfire-look.
+- (DONE, HELD for the owner's look) ASSET-90 dead campfire: land/asset-90-dead-campfire @ b8203066 (CarGame-perf),
+  campfire-dead.glb 434 tris, smoke step `deadFire` passes alone, 44 gates green. Card asset90-dead-campfire-look,
+  sheet CarGame-perf/wip/asset-90/sheet.jpg. Needs a main merge + full smoke before landing. Nothing else is running.
 - (LANDED) housekeeping: MILESTONES.md lane rows for 38 tickets; pad-e2e
   registered as a browser-only gate. Docs/test only: land it when it reports green.
 - Orchestrator's own: `node test/gpu-reset.mjs` on main → wip/orch/gpu-reset-main-1117.log (was the feat-235-r3
