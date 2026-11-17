@@ -46,3 +46,14 @@ The owner's list: where you go, what missions you do, how much wear the vehicle 
 - [x] The log downloads by itself at a fixed point (each day or each mission) with no prompt
 - [x] Measured: frame cost with logging on
 - [x] A reader script in test/ or tools/ prints a run summary from a log
+
+## Files
+src/run-log.js (new) · tools/run-log-summary.mjs (new) · test/run-log.mjs (new gate) · hooks in src/damage.js, mission.js, day.js,
+inventory.js, alerts.js, camp.js, service.js, fuel-stop.js, recovery.js, debug.js; one-line calls in src/main.js · test/cdp-smoke.mjs `runlog` step.
+
+## Log
+- 2026-11-16, lane C, land/feat-242-runlog: built. Gates: affected 69/69 green (serial); smoke boot,story,runlog,service,newRun PASS; build OK.
+  Cost: node microbench damage.step + tick off 1.02 µs/step, on 2.30 µs → ~0.08 ms per second at 60 Hz. Browser A/B (PERF-40 bench,
+  120 s): every session INVALID (0 km in BOTH arms, the autopilot never drove), so no drive number; parked phase main thread A 565/569 vs
+  B (logging on) 564/571 Minstr/s, no difference. Size: route line ~440 B → ~26 KB per game hour + events; a 10-day run ~5–10 MB.
+  Not hooked: economy.js (its gate pins "imports nothing"; the wallet rides every route sample instead); mom's menu (in flux on another lane).
