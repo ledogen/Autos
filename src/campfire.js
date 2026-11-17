@@ -179,6 +179,7 @@ export class CampfireFx {
       return m
     })
     this._t = 0
+    this._dead = false
     this._m4 = new THREE.Matrix4()
     this._q = new THREE.Quaternion()
     this._v = new THREE.Vector3()
@@ -215,6 +216,20 @@ export class CampfireFx {
     this.root.rotation.y = (hash32(`campfire:${x.toFixed(2)}:${z.toFixed(2)}`) / 4294967296) * Math.PI * 2
     this.root.visible = true
     this.light.visible = true
+    this.setDead(false)
+  }
+
+  /**
+   * FEAT-264: burnt out (a night's sleep at the camp). Flames, embers, light and coal glow go off; the model stays,
+   * logs and all, until ASSET-90 ships the ashes-only one (the logs are a material of the one mesh, so they cannot be hidden).
+   */
+  setDead (dead) {
+    this._dead = dead
+    this.light.visible = !dead && this.root.visible
+    for (const f of this._flames) f.visible = !dead
+    for (const m of this._hotCoals) m.visible = !dead
+    for (const m of this._coalMats) m.emissiveIntensity = dead ? 0 : CAMPFIRE_PARAMS.coalGlow
+    if (dead) { this._embAlive = 0; this._embers.count = 0 }
   }
 
   /** Put it out. The light leaves the light loop entirely (visible=false), so a cold camp costs nothing. */
@@ -231,7 +246,7 @@ export class CampfireFx {
    * @param {number} nightFactor  SkySystem.nightFactor(): 0 day … 1 night
    */
   update (dt, nightFactor) {
-    if (!this.root.visible) return
+    if (!this.root.visible || this._dead) return
     const P = CAMPFIRE_PARAMS
     const t = (this._t += dt)
 
@@ -315,7 +330,7 @@ export class CampfireFx {
     await this._ready
     const rootVis = this.root.visible, lightVis = this.light.visible
     this.root.visible = true
-    this.light.visible = true
+    this.light.visible = true   // lit or not: the program variant must be compiled once
     try { await renderer.compileAsync(scene, camera) } catch (_) { /* best-effort */ }
     this.root.visible = rootVis
     this.light.visible = lightVis

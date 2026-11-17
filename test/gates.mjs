@@ -201,6 +201,8 @@ export const GATES = [
     desc: 'BUG-89/115/116, through the game\'s tire contact and open-bed chassis: on its side the flank hull (pair μ 0.5) and the tilted tires\' sidewalls scrub — 15 m/s along its length stops inside 30 m (20.4; was 108 m); flush across a 15° slope it holds on its side (< 1 m in 10 s; was 18 m onto its wheels); still rolling sideways, ≥ 5/9 roll on and the mean slide < 25 m (6/9, 16 m; was 3/9, 37 m); on its roof across 8°/15° it holds (< 1 m)' },
   { file: 'rock-sink.mjs', subsystem: 'props', cost: 'fast', extraDeps: [],
     desc: 'BUG-54: every rock sinks by its OWN variant radius (the palette hands them to the scatter via PropSystem): height within 0.5 − bury of its own size (the old largest-radius sink leaves it), bushes unchanged, and posed as drawn none floats or hides on flat, 45° and 60°' },
+  { file: 'camera-boom.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
+    desc: 'FEAT-246: chase boom stops short of a terrain ridge (camera above ground, nearer) and of a wall hit, clear boom unchanged, never longer than desired' },
   { file: 'camera-follow-clock.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'BUG-102: the chase camera trails a 25 m/s truck by its 60 fps distance under PERF-32 slow motion and across load recoveries (the follow runs on the drawn truck\'s sim clock; the old wall-clock follow pulled in 3.7 m and dropped back on recovery), never still while the truck moves; bursty clamped frames unchanged' },
   { file: 'hilift.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],

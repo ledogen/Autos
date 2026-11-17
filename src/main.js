@@ -22,7 +22,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, setBedGrip, syncChassisMass, rollBalance } from './physics.js'
 import { HiLift, basin, rollDeg } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
-import { createPhysicsEngine } from './physics-engine.js'
+import { createPhysicsEngine, GROUP_STATIC } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-physics.js'
 import { DebrisSystem, bedDropPoints, inBedWell, strapPose, cubeLayout, STACK_RADIUS, BARREL_CUBE_SIDE, BARREL_CUBE_LAYERS } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
@@ -39,7 +39,7 @@ import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90
 import { updateVehicle, setLaunchHold, setParkLock, setThrottleCut, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { PARK_SPEED } from './park-brake.js'
 import { makeIgnitionState, keyPosition, seized, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
-import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setCameraViews, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setCameraViews, setCameraBoomProbe, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
@@ -47,6 +47,7 @@ window.__view = placeFreecam
 // harness toggles prop shadow casting and reads renderer.info through these.
 window.__props = () => propSystem
 window.__renderer = () => renderer
+import { boomFreeFraction } from './camera-boom.js'
 window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase heading after a freecam exit (R-11)
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout, syncDebugLive } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
@@ -2813,6 +2814,15 @@ terrainSystem.setRecarveHook((cx, cz) => propSystem?.releaseGround(cx, cz))
 const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS,
   { bed: DEFAULT_VEHICLE_MODEL.bed ?? null })
 const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
+// FEAT-246: the chase boom stops short of terrain (analytic height, no engine query) and of static solids (ONE ray per frame).
+const _boomDir = { x: 0, y: 0, z: 0 }
+setCameraBoomProbe((pivot, want) => {
+  const dx = want.x - pivot.x, dy = want.y - pivot.y, dz = want.z - pivot.z, len = Math.hypot(dx, dy, dz)
+  if (len < 1e-3) return 1
+  _boomDir.x = dx / len; _boomDir.y = dy / len; _boomDir.z = dz / len
+  const hit = physicsEngine.castRay(pivot, _boomDir, len, { collidesWith: GROUP_STATIC })
+  return boomFreeFraction(pivot, want, (x, z) => terrainSystem.analyticHeight(x, z), hit ? hit.distance : null)
+})
 const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
 
 // ── FEAT-96: the strapped load — a freight job's, or the debug "Load Cargo" pick ─────────────
@@ -7067,6 +7077,7 @@ const _campRest = (st) => st?.truck || st?.moms ? 0 : inventorySystem.restBonus(
 const _campHome = (st) => st.moms ? 'moms' : st.truck ? 'truck' : 'camp'
 
 /** Sleep the chosen number of hours at this site's vibe (mom's house 0.5, the truck its own rate). */
+const CAMPFIRE_BURN_H = 2   // a camp fire burns two hours unattended (owner 2026-11-17)
 function _sleepAtCamp () {
   if (!_campUi || _campBusy) return
   let hours = parseInt(document.getElementById('cp-hours')?.value ?? '8', 10) || 8
@@ -7094,7 +7105,10 @@ function _sleepAtCamp () {
     damageModel.engineTempC = DAMAGE_PARAMS.tempAmbientC   // FEAT-51: a night off is a cold engine
     // You wake WHERE YOU SLEPT: the truck is untouched and the dialogue is still up. The pad stays
     // dug for as long as you stay camped; "break camp" is what closes it AND un-digs the bench.
-    _campUi = { ..._campUi, mode: back }
+    // FEAT-264 (DEC-393): a night's sleep of more than two hours at a camp burns the fire out until the camp is broken.
+    const fireOut = back === 'camp' && hours > CAMPFIRE_BURN_H
+    if (fireOut) campfire.setDead(true)
+    _campUi = { ..._campUi, mode: back, fireOut: !!_campUi.fireOut || fireOut }
     _renderCampUI()
   })
 }
@@ -7219,8 +7233,8 @@ function _renderCampUI () {
   show('cp-sleep',  isHome && !noBed)
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
   show('cp-item',   isHome)   // FEAT-245: mom's too (eat and use things at her table); isHome = camp, truck, mom's
-  show('cp-cook',   st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230: the fire is lit all camp
-  show('cp-cook-groceries', st.mode === 'camp' && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
+  show('cp-cook',   st.mode === 'camp' && !st.fireOut && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230: the fire is lit until a night's sleep burns it out (FEAT-264)
+  show('cp-cook-groceries', st.mode === 'camp' && !st.fireOut && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
   show('cp-map',    isHome)
   show('cp-spirits', st.mode === 'camp')
   show('cp-sleep-go',   isSleep)
@@ -7337,7 +7351,7 @@ document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
 for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked', false], ['cp-cook-groceries', 'groceries', 'groceriesCooked', true]]) {
   document.getElementById(btn)?.addEventListener('click', (e) => {
     e.currentTarget.blur()
-    if (!_campUi || _campBusy || _campUi.mode !== 'camp' || (needsKit && !_kitAtCamp())) return
+    if (!_campUi || _campBusy || _campUi.mode !== 'camp' || _campUi.fireOut || (needsKit && !_kitAtCamp())) return
     _campFade(() => { if (inventorySystem.convert(raw, cooked)) daySystem.advanceMinutes(30); _renderCampUI() })
   })
 }
