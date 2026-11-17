@@ -128,6 +128,47 @@ function puffTexture () {
 }
 
 /**
+ * FEAT-243: the terrain's shade on the particles, read from the sun's FAR shadow map (main.js `sunFar`, ±256 m,
+ * terrain casts, the truck is hidden from it) that the GPU already holds — no readback, no main-thread work. ONE
+ * uniform set shared by reference by all three sheets, so main.js points it once per frame for all of them:
+ *  · uSunShadow / uSunShadowMatrix — `sunFar.shadow.map.depthTexture` / `sunFar.shadow.matrix`. The map is null until
+ *    the first shadow pass and replaced when a quality tier resizes it, so main.js re-points it every frame.
+ *  · uSunShadowOn — 0 when there is no usable map (Low tier, sun shadows off, the lab): every puff reads as lit.
+ *  · uSunDir — unit vector toward the sun (SUN_SHADE_LIFT below).
+ *  · uShadeTint — the fully-shaded light against the sunlit one (SkySystem.particleShadeTint(0)): fill only.
+ * The VERTEX shader does one depth compare at the puff CENTRE (aPos), so a puff has one shade — no gradient across
+ * the billboard — and changes shade as it drifts across a shadow edge. three r184 builds that depth texture with a
+ * compare function for PCFShadowMap (WebGLShadowMap:263, LessEqual — this renderer has no reversed depth), so it MUST
+ * be a `sampler2DShadow`; texture() then returns 1 = lit, 0 = shadowed (bilinear PCF between).
+ * SUN_SHADE_LIFT: the centre is moved 2 m toward the sun before the compare. Along the light's ray that changes only
+ * depth, so it is a depth bias in metres: a puff sitting on the ground never reads as shaded by the ground under it
+ * (at a grazing sun one 0.25 m texel spans metres of depth), while a hill's shadow, cast from tens of metres away,
+ * still lands. Outside the map's 0..1 box reads as lit.
+ */
+export const SUN_SHADE_UNIFORMS = {
+  uSunShadow: { value: null },
+  uSunShadowMatrix: { value: new THREE.Matrix4() },
+  uSunShadowOn: { value: 0 },
+  uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+  uShadeTint: { value: new THREE.Color(1, 1, 1) },
+}
+export const SUN_SHADE_VERT = /* glsl */`
+        uniform sampler2DShadow uSunShadow;
+        uniform mat4 uSunShadowMatrix;
+        uniform float uSunShadowOn;
+        uniform vec3 uSunDir;
+        uniform vec3 uShadeTint;
+        varying vec3 vShade;   // light multiplier: uShadeTint in full shade … 1 in sun
+        const float SUN_SHADE_LIFT = 2.0;
+        vec3 sunShade (vec3 p) {
+          if (uSunShadowOn < 0.5) return vec3(1.0);
+          vec4 c = uSunShadowMatrix * vec4(p + uSunDir * SUN_SHADE_LIFT, 1.0);
+          c.xyz /= c.w;
+          if (any(lessThan(c.xyz, vec3(0.0))) || any(greaterThan(c.xyz, vec3(1.0)))) return vec3(1.0);
+          return mix(uShadeTint, vec3(1.0), texture(uSunShadow, c.xyz));
+        }`
+
+/**
  * Build one billboard sheet (PERF-21 — see header) and add it to the scene: ONE InstancedMesh of
  * camera-facing quads on the shared puff texture, shared by dust, smoke.js and dirt-spray.js (QUAL-34).
  * Only the GLSL differs between them, so each caller passes its own shader strings verbatim; the
@@ -160,15 +201,17 @@ export function makeBillboardMesh (scene, pool, withShape, vertexShader, fragmen
   for (const k in attrs) geo.setAttribute(k, attrs[k])
   geo.instanceCount = 0
 
-  const mat = new THREE.ShaderMaterial({
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+  const uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
       uMap: { value: puffTexture() },
       // Day/night irradiance multiplier (SkySystem.particleLight, pushed via setLight each frame).
       // These puffs are UNLIT — no normals, no light loop — so without this they keep their full
       // daytime albedo after dark and read as glowing blobs. 1,1,1 = the shipped daylight look.
       uLight: { value: new THREE.Color(1, 1, 1) },
       uLightA: { value: 1 },
-    }]),
+    }])
+  Object.assign(uniforms, SUN_SHADE_UNIFORMS)   // FEAT-243: by reference, AFTER merge (merge clones)
+  const mat = new THREE.ShaderMaterial({
+    uniforms,
     vertexShader,
     fragmentShader,
     transparent: true,
@@ -201,10 +244,12 @@ export class DustSystem {
         varying float vOpacity;
         varying float vShape;
         #include <fog_pars_vertex>
+        ${SUN_SHADE_VERT}
         void main () {
           vUv = uv;
           vColor = aColor;
           vOpacity = aParam.z;
+          vShade = sunShade(aPos);   // FEAT-243: the terrain's shade at the puff centre
           vShape = aShape;
           float c = cos(aParam.y), s = sin(aParam.y);
           vec2 corner = mat2(c, s, -s, c) * (position.xy * aParam.x);   // spin, then scale
@@ -216,6 +261,7 @@ export class DustSystem {
         uniform sampler2D uMap;
         uniform vec3 uLight;
         uniform float uLightA;
+        varying vec3 vShade;
         varying vec2 vUv;
         varying vec3 vColor;
         varying float vOpacity;
@@ -232,7 +278,7 @@ export class DustSystem {
           // Day/night: dim the COLOUR and the ALPHA. Colour alone only greys the puff out, and a
           // grey puff on a black road is still obvious — what sells "unlit smoke at night" is the
           // thing becoming transparent. uLightA is luminance(uLight) shaped by its own curve.
-          gl_FragColor = vec4(vColor * mix(tex.rgb, vec3(1.0), vShape) * uLight, a * vOpacity * uLightA);
+          gl_FragColor = vec4(vColor * mix(tex.rgb, vec3(1.0), vShape) * uLight * vShade, a * vOpacity * uLightA);
           // ShaderMaterial does NOT auto-append these (built-ins do): keep dust inside the same
           // ACES + colour pipeline as the SpriteMaterial it replaced, fog last like the built-ins.
           #include <tonemapping_fragment>

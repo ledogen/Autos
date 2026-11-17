@@ -22,7 +22,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, setBedGrip, syncChassisMass, rollBalance } from './physics.js'
 import { HiLift, basin, rollDeg } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
-import { createPhysicsEngine, GROUP_STATIC } from './physics-engine.js'
+import { createPhysicsEngine, GROUP_STATIC, GROUP_ROAD } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-physics.js'
 import { DebrisSystem, bedDropPoints, inBedWell, strapPose, cubeLayout, STACK_RADIUS, BARREL_CUBE_SIDE, BARREL_CUBE_LAYERS } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
@@ -47,7 +47,7 @@ window.__view = placeFreecam
 // harness toggles prop shadow casting and reads renderer.info through these.
 window.__props = () => propSystem
 window.__renderer = () => renderer
-import { boomFreeFraction } from './camera-boom.js'
+import { makeBoomProbe } from './camera-boom.js'
 window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase heading after a freecam exit (R-11)
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout, syncDebugLive } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
@@ -62,7 +62,7 @@ import { perfAdd, perfMark, perfDump, perfReset, perfSnapshot, perfEnableUserTim
 let _perfFrame = 0  // frame counter for the ?hitch/?prof auto-dump at load
 let _firstFrameMarked = false  // first animate frame: perf mark (init vs loop time) + one-time hand-offs
 import { RoadMeshSystem } from './road-mesh.js'
-import { DustSystem } from './dust.js'
+import { DustSystem, SUN_SHADE_UNIFORMS } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
 import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'   // the sky, its sun/moon/stars, the daylight and the sky fog — one atmosphere
@@ -2816,15 +2816,9 @@ terrainSystem.setRecarveHook((cx, cz) => propSystem?.releaseGround(cx, cz))
 const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS,
   { bed: DEFAULT_VEHICLE_MODEL.bed ?? null })
 const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
-// FEAT-246: the chase boom stops short of terrain (analytic height, no engine query) and of static solids (ONE ray per frame).
-const _boomDir = { x: 0, y: 0, z: 0 }
-setCameraBoomProbe((pivot, want) => {
-  const dx = want.x - pivot.x, dy = want.y - pivot.y, dz = want.z - pivot.z, len = Math.hypot(dx, dy, dz)
-  if (len < 1e-3) return 1
-  _boomDir.x = dx / len; _boomDir.y = dy / len; _boomDir.z = dz / len
-  const hit = physicsEngine.castRay(pivot, _boomDir, len, { collidesWith: GROUP_STATIC })
-  return boomFreeFraction(pivot, want, (x, z) => terrainSystem.analyticHeight(x, z), hit ? hit.distance : null)
-})
+// FEAT-246: the chase boom stops short of terrain (analytic height, no engine query) and of static solids and the road
+// group's bore lining (ONE ray per frame; camera-boom.js says why the deck under the truck does not shorten it).
+setCameraBoomProbe(makeBoomProbe(physicsEngine, (x, z) => terrainSystem.analyticHeight(x, z), GROUP_STATIC | GROUP_ROAD))
 const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
 
 // ── FEAT-96: the strapped load — a freight job's, or the debug "Load Cargo" pick ─────────────
@@ -7241,8 +7235,8 @@ function _renderCampUI () {
   show('cp-sleep',  isHome && !noBed)
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
   show('cp-item',   isHome)   // FEAT-245: mom's too (eat and use things at her table); isHome = camp, truck, mom's
-  show('cp-cook',   st.mode === 'camp' && !st.fireOut && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230: the fire is lit until a night's sleep burns it out (FEAT-264)
-  show('cp-cook-groceries', st.mode === 'camp' && !st.fireOut && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
+  show('cp-cook',   st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230; at a dead fire too: cooking relights it (DEC-397)
+  show('cp-cook-groceries', st.mode === 'camp' && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
   show('cp-map',    isHome)
   show('cp-spirits', st.mode === 'camp')
   show('cp-sleep-go',   isSleep)
@@ -7359,7 +7353,9 @@ document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
 for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked', false], ['cp-cook-groceries', 'groceries', 'groceriesCooked', true]]) {
   document.getElementById(btn)?.addEventListener('click', (e) => {
     e.currentTarget.blur()
-    if (!_campUi || _campBusy || _campUi.mode !== 'camp' || _campUi.fireOut || (needsKit && !_kitAtCamp())) return
+    if (!_campUi || _campBusy || _campUi.mode !== 'camp' || (needsKit && !_kitAtCamp())) return
+    // DEC-397 (owner): "if you cook at a dead fire the fire is instantly relit". The only thing that relights it.
+    if (_campUi.fireOut) { campfire.setDead(false); _campUi = { ..._campUi, fireOut: false } }
     _campFade(() => { if (inventorySystem.convert(raw, cooked)) daySystem.advanceMinutes(30); _renderCampUI() })
   })
 }
@@ -11061,6 +11057,7 @@ function loop (t) {
   // same looseSurfaceFactor too: smoke reads it INVERTED (full on pavement, a thin floor off it)
   // while dust and spray read it forward. No lab special-case here — looseSurfaceFactor answers for
   // the lab itself (its own surface, on the pavement effect class), so all four consumers agree.
+  smokeSystem.setFireSmoke(campfire.smokeSource())   // ASSET-90: the dead campfire's wisps ride this pool (DEC-397)
   smokeSystem.update(frameTime, vehicleState, RANGER_PARAMS, _fxGroundY, looseSurfaceFactor)
 
   // Dirt spray — same render-pose timing and ground sampler; additionally gated by
@@ -11519,6 +11516,14 @@ function loop (t) {
   dustSystem.setLight(_particleLight, _particleAlpha)
   smokeSystem.setLight(_particleLight, _particleAlpha)
   dirtSpraySystem.setLight(_particleLight, _particleAlpha)
+  // FEAT-243: the particle shaders look the terrain's shade up in the far shadow map (dust.js SUN_SHADE_VERT). The
+  // map is null before the first shadow pass and replaced on a tier resize, so it is re-pointed here every frame.
+  const _farMap = sunFar.castShadow && !_labActive ? sunFar.shadow.map : null
+  SUN_SHADE_UNIFORMS.uSunShadow.value = _farMap ? _farMap.depthTexture : null
+  SUN_SHADE_UNIFORMS.uSunShadowOn.value = _farMap ? 1 : 0
+  SUN_SHADE_UNIFORMS.uSunShadowMatrix.value.copy(sunFar.shadow.matrix)
+  SUN_SHADE_UNIFORMS.uSunDir.value.copy(skySystem.sunDirection)
+  skySystem.particleShadeTint(SUN_SHADE_UNIFORMS.uShadeTint.value)
   const _ringGlow = RING_GLOW * (0.2126 * _particleLight.r + 0.7152 * _particleLight.g + 0.0722 * _particleLight.b)
   for (const m of _ringMats) m.emissiveIntensity = _ringGlow
 

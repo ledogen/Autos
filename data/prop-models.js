@@ -279,6 +279,15 @@ export const PROP_MODELS = {
     collision: { shape: 'none', size: [0.708, 0.378, 0.675] },
   },
 
+  // ASSET-90 — the same fire burnt out (FEAT-264, DEC-393: shown after a sleep over two hours).
+  // 434 tris, built by campfire.py's build_dead(): the live model's stone ring stone for stone,
+  // same seat and FireFlameAnchor, the logs and coal bed gone — a FireAsh heap, FireCinder
+  // fragments, two FireChar stubs. No FireCoal, so src/campfire.js has nothing to glow.
+  campfireDead: {
+    url: 'assets/models/campfire-dead.glb',
+    collision: { shape: 'none', size: [0.708, 0.158, 0.675] },
+  },
+
   // ASSET-04 — the kettle barbecue.  566 tris, 0.629 x 1.066 x 0.629 m, four flat
   // materials, no textures.  LAWN FURNITURE: scatter it WITH a POI, never on bare
   // ground — the ticket's rule is that without an anchor it reads as litter, not

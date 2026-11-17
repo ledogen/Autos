@@ -33,7 +33,7 @@
  */
 
 import * as THREE from 'three'
-import { makeBillboardMesh, rotateByQuat } from './dust.js'
+import { makeBillboardMesh, rotateByQuat, SUN_SHADE_VERT } from './dust.js'
 
 // ── Pool ─────────────────────────────────────────────────────────────────────
 const POOL_SIZE   = 300     // clods + floaters together
@@ -124,10 +124,12 @@ export class DirtSpraySystem {
         varying float vOpacity;
         varying float vShape;
         #include <fog_pars_vertex>
+        ${SUN_SHADE_VERT}
         void main () {
           vUv = uv;
           vColor = aColor;
           vOpacity = aParam.z;
+          vShade = sunShade(aPos);   // FEAT-243: the terrain's shade at the puff centre
           vShape = aShape;
           vec4 mvPosition = viewMatrix * vec4(aPos, 1.0);               // mesh sits at the origin
           if (aShape > 1.5) {
@@ -149,6 +151,7 @@ export class DirtSpraySystem {
         uniform sampler2D uMap;
         uniform vec3 uLight;
         uniform float uLightA;
+        varying vec3 vShade;
         varying vec2 vUv;
         varying vec3 vColor;
         varying float vOpacity;
@@ -171,7 +174,7 @@ export class DirtSpraySystem {
           // Sparks are hot metal — their own light — so night leaves them alone.
           // The streak's head is white-hot, its trail the particle's orange (vColor carries the gain).
           vec3 col = mix(vColor, vec3(max(vColor.r, 1.0)), spark * smoothstep(0.75, 1.0, vUv.x) * 0.3);
-          gl_FragColor = vec4(col * mix(uLight, vec3(1.0), spark), a * vOpacity * mix(uLightA, 1.0, spark));
+          gl_FragColor = vec4(col * mix(uLight * vShade, vec3(1.0), spark), a * vOpacity * mix(uLightA, 1.0, spark));
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           #include <fog_fragment>

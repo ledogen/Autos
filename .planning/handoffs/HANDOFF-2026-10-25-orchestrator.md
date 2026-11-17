@@ -149,8 +149,10 @@ Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale, play b
 tonight. I have a reset in the pocket." So the two-agent cap is OFF for tonight: one agent per free worktree, grouped by
 code area. A one-shot timer fires at 07:13 with the word "orchestrator" (session-only cron).
 
-**Main:** bd9e6581 (b82f78bd + FEAT-251 lawn furniture, smoke PASS on land/integrate-1117c), NOT pushed, GREEN: smoke PASS 36 steps + 132 affected gates + pad-e2e on land/integrate-1117b
-(CarGame-land-gps/wip/*-integrate-b.log); main differs from that tree by one docs commit. Play build :8002 = bd9e6581.
+**Main:** 53cabcb7, NOT pushed, GREEN: confirming smoke PASS 38 steps on exactly this tree
+(wip/orch/smoke-1117-campfire.log). Holds everything below plus BUG-179 (closed), FEAT-243 (closed), DEC-395, and
+campfire/camera round 2: ASSET-90 model, dead-fire smoke, cooking relights (DEC-397), camera vs tunnel walls. Card
+campfire-camera-r2-look: on his "Good" move FEAT-246 and FEAT-264 to completed/. Play build :8002 = 53cabcb7.
 **HOW LANDINGS WORK TONIGHT:** never merge finished branches into main one by one. An Opus integration agent in
 CarGame-land-gps merges them onto `land/integrate-1117<x>` (cut from main), fixes clashes, runs gates + pad-e2e + ONE full
 smoke there; main is then fast-forwarded (`git merge --ff-only`) and the play build refreshed
@@ -168,7 +170,7 @@ camera-campfire-look) · machine batch FEAT-258, BUG-196, BUG-197, FEAT-204, FEA
 DRAFT = the tire/stock numbers; card machine-1117-look).
 **RUNNING at 07:20 (after the 07:13 restart; intake found nothing new: no unanswered inbox note, no new owed answer,
 no untaken dive):**
-- (DONE, HELD for the owner's look) ASSET-90 dead campfire: land/asset-90-dead-campfire @ b8203066 (CarGame-perf),
+- (LANDED 53cabcb7) ASSET-90 dead campfire: land/asset-90-dead-campfire @ b8203066 (CarGame-perf),
   campfire-dead.glb 434 tris, smoke step `deadFire` passes alone, 44 gates green. Card asset90-dead-campfire-look,
   sheet CarGame-perf/wip/asset-90/sheet.jpg. Needs a main merge + full smoke before landing. Nothing else is running.
 - (LANDED) housekeeping: MILESTONES.md lane rows for 38 tickets; pad-e2e
@@ -185,20 +187,16 @@ DEC superseding DEC-351.
 one-line mask, agent recommends yes. (2) DEC-028 + DEC-340 still say the bed toolbox is in the alpha, MILESTONES.md
 line 81 too; DEC-372 superseded only DEC-129: needs a new record once the owner confirms. (3) truck rolls over the
 0.40 m fire pit dead centre (body collider has nothing below the frame): ticket?
-**BUG-179 SIGNED OFF (owner 11-17 "1. looks good"), LANDING:** Lane B agent in CarGame-machine merges main into
-land/bug-179, gates + fingerprint + full smoke (wip/bug-179/*-land.log). Green → merge into main, refresh the play
-build. THEN, serially on src/road.js (never in parallel): BUG-201 (light sliver at a degree-2 bend, owner: "ticket and
-fix it", his hypothesis: deg-2 junction legs not trimmed), then BUG-200 (38 % hairpin at the chained fork on seed
-688224244; owner wants fix options, dropping the road is acceptable). DEC-396: main's existing dead ends stay.
-Next free: BUG-202, DEC-397.
 **INTAKE 13:00 (owner answered 4 cards; pairs moved to answered/):** BUG-191 closed ("Drove it: fixed"). FEAT-243
 "Good: land it". Dead campfire + camera: changes asked. RUNNING, three agents, each proves its own branch (merge of
 main + gates + full smoke); merge each into main only when it reports green and never under a running smoke; after
 the last one run ONE confirming smoke on main and refresh the play build:
-- b, CarGame-machine, land/bug-179: BUG-179 landing (see above).
-- s2, CarGame-spare, land/feat-243-particle-shade: FEAT-243 landing prep (vite :3885 stays up).
-- p, CarGame-perf, land/asset-90-dead-campfire: smoke wisps on the dead fire, cooking relights it (DEC-397), camera
-  ray hits tunnel walls (FEAT-246); lands when green, card campfire-camera-r2-look is for his check after.
+- BUG-201 BUILT, HELD for the owner's look: land/bug-201-deg2-sliver @ 9cf85a9e. His hypothesis confirmed (a deg-2
+  node never set leg.mouth, so legs overran the connector by 2.5–10.5 m); census 79/399 bends → 0; gate
+  test/deg2-leg-trim.mjs; 78 gates green. Card bug201-bend-sliver-look, sheet CarGame-machine/wip/bug-201/sheet.jpg.
+  Landing: integration branch + smoke.
+- b, CarGame-machine, land/bug-200-hairpin-grade (Opus, cut ON TOP of bug-201): BUG-200 investigation → options card
+  bug200-hairpin-grade-pick. The owner picks; nothing lands.
 Next free: BUG-202, DEC-398.
 **BUILT, HELD for the owner (not on main):**
 - land/food-1117 (CarGame-content): FEAT-250, FEAT-260, FEAT-261, BUG-198; DEC-376..381 (DEC-380 draft). Card

@@ -288,7 +288,9 @@ P = dict(
 
 OBJ_NAME = 'Campfire'
 ANCHOR_NAME = 'FireFlameAnchor'
-OUT_GLB = os.path.join(os.path.dirname(bpy.data.filepath) or '.', '..', 'campfire.glb')
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # this checkout's assets/models
+OUT_GLB = os.path.join(OUT_DIR, 'campfire.glb')
+OUT_GLB_DEAD = os.path.join(OUT_DIR, 'campfire-dead.glb')                # ASSET-90, build_dead()
 
 
 # ---------------------------------------------------------------------------
@@ -509,11 +511,12 @@ def _wipe():
             blk.remove(it)
 
 
-def _materials():
-    order = list(P['mats'].keys())
+def _materials(spec_of=None):
+    spec_of = spec_of or P['mats']
+    order = list(spec_of.keys())
     made = {}
     for name in order:
-        spec = P['mats'][name]
+        spec = spec_of[name]
         m = bpy.data.materials.new(name)
         m.use_nodes = True
         bsdf = m.node_tree.nodes['Principled BSDF']
@@ -559,6 +562,15 @@ def build():
             cv = [x + Vector((0, 0, cdz)) for x in cv]
         parts.append((cv, cf, cm))
 
+    parts += make_ring_parts(p)
+    _teepee(p, parts)
+    return _assemble(parts, order, mats, slot_of)
+
+
+def make_ring_parts(p):
+    """The 11-stone fire ring.  Shared by build() and build_dead(), so the dead
+    fire's ring is the live one's stone for stone (ASSET-90)."""
+    parts = []
     # --- the fire ring ------------------------------------------------------
     # Stones ride the ring at even spacing with a deterministic wobble in radius,
     # size and bearing, then each is bedded into the ground by ring_sink of its
@@ -587,7 +599,10 @@ def build():
                                 'FireStone', tilt=p['ring_tilt'])
         sv = [Vector((v.x, v.y, max(0.0, v.z))) for v in sv]
         parts.append((sv, sf, sm))
+    return parts
 
+
+def _teepee(p, parts):
     # --- the teepee ---------------------------------------------------------
     for k in range(p['log_count']):
         az = 2.0 * math.pi * k / p['log_count'] + p['log_az_jitter'][k]
@@ -624,6 +639,8 @@ def build():
                 bv = [x + Vector((0, 0, bdz)) for x in bv]
             parts.append((bv, bf, bm))
 
+
+def _assemble(parts, order, mats, slot_of):
     # --- assemble one mesh --------------------------------------------------
     bm = bmesh.new()
     for verts, faces, mnames in parts:
@@ -660,6 +677,102 @@ def build():
     return obj
 
 
+# --- ASSET-90: the dead fire (campfire-dead.glb) ------------------------------
+# The burnt-out state FEAT-264 shows after a long sleep (DEC-393).  The SAME ring
+# (make_ring_parts, same P, so stone for stone), the same seat and the same
+# FireFlameAnchor; the logs and the coal bed are gone.  What is left: a flat grey
+# heap of FireAsh inside the stones, a few paler FireCinder fragments, two black
+# FireChar stubs (the log butts that fell in), and a few char crumbs.  No FireLog,
+# no FireCoal: src/campfire.js glows FireCoal, and nothing here glows.
+DEAD = dict(
+    # heap profile, (radius, height) from the ground ring in: the live bed's
+    # footprint (bed_r_base, capped by the ring) slumped lower than the live peak
+    heap_rings=((0.172, 0.0), (0.158, 0.020), (0.118, 0.042), (0.062, 0.054)),
+    heap_peak=0.058,
+    heap_jit=0.004,        # per-vertex height jitter on the two inner rings
+    cinder_count=6,
+    cinder_r=(0.013, 0.022),
+    cinder_spread=(0.030, 0.120),
+    crumb_count=3,
+    crumb_r=0.012,
+    # stubs: (azimuth, outer radius, inner radius, end radii) lying on the heap
+    stubs=((0.55, 0.128, 0.040, 0.030, 0.022), (3.35, 0.122, 0.055, 0.026, 0.020)),
+    stub_n=6,
+    stub_sink=0.35,        # axis height above the heap, as a fraction of radius
+    mats={
+        'FireAsh':    P['mats']['FireAsh'],
+        'FireCinder': dict(color=(0.560, 0.548, 0.520), rough=0.97),
+        'FireChar':   P['mats']['FireCoal'],
+        'FireStone':  P['mats']['FireStone'],
+    },
+)
+
+
+def heap_z(d, r):
+    """Height of the un-jittered heap at radius r (piecewise linear)."""
+    pts = [(0.0, d['heap_peak'])] + list(reversed(d['heap_rings']))
+    for (r0, z0), (r1, z1) in zip(pts, pts[1:]):
+        if r <= r1:
+            return z0 + (z1 - z0) * (r - r0) / (r1 - r0)
+    return 0.0
+
+
+def make_heap(d):
+    """The ash heap: a closed low cone, all FireAsh -- the live bed with its
+    black coal fan turned to ash and one more ring for a slumped profile."""
+    n = P['bed_n']
+    x, y = Vector((1, 0, 0)), Vector((0, 1, 0))
+    rings = []
+    for k, (r, z) in enumerate(d['heap_rings']):
+        ring = _ring(Vector((0, 0, z)), x, y, r, n)
+        if k >= 2:
+            ring = [v + Vector((0, 0, d['heap_jit'] * math.sin(i * 2.3 + k * 1.7)))
+                    for i, v in enumerate(ring)]
+        rings.append(ring)
+    verts = [v for ring in rings for v in ring] + [Vector((0.006, -0.004, d['heap_peak']))]
+    pk = len(verts) - 1
+    faces = [tuple(range(n - 1, -1, -1))]
+    for band in range(len(rings) - 1):
+        a, b = band * n, (band + 1) * n
+        for i in range(n):
+            j = (i + 1) % n
+            faces.append((a + i, a + j, b + j, b + i))
+    top = (len(rings) - 1) * n
+    for i in range(n):
+        faces.append((top + i, top + (i + 1) % n, pk))
+    return verts, faces, ['FireAsh'] * len(faces)
+
+
+def build_dead():
+    d = DEAD
+    _wipe()
+    order, mats = _materials(d['mats'])
+    slot_of = {name: i for i, name in enumerate(order)}
+    parts = [make_heap(d)]
+    parts += make_ring_parts(P)
+
+    def bedded(r, a, size, flatten, mat, seed):
+        # centre ON the heap surface: the lower apex is buried, nothing floats
+        c = Vector((r * math.cos(a), r * math.sin(a), heap_z(d, r) - 0.002))
+        return make_blob(c, size, flatten, seed, mat, sides=4)
+
+    lo, hi = d['cinder_spread']
+    for k in range(d['cinder_count']):
+        a = k * 2.399963 + 0.7
+        r = lo + (hi - lo) * math.sqrt((k + 0.5) / d['cinder_count'])
+        size = d['cinder_r'][0] + (d['cinder_r'][1] - d['cinder_r'][0]) * (0.5 + 0.5 * math.sin(a * 1.9))
+        parts.append(bedded(r, a, size, 0.55, 'FireCinder', a))
+    for k in range(d['crumb_count']):
+        a = k * 2.1 + 1.9
+        parts.append(bedded(0.05 + 0.03 * k, a, d['crumb_r'], 0.6, 'FireChar', a + 4.0))
+
+    for az, ro, ri, r0, r1 in d['stubs']:
+        p0 = Vector((ro * math.cos(az), ro * math.sin(az), heap_z(d, ro) + r0 * d['stub_sink']))
+        p1 = Vector((ri * math.cos(az + 0.35), ri * math.sin(az + 0.35), heap_z(d, ri) + r1 * d['stub_sink']))
+        parts.append(make_log(p0, p1, r0, r1, d['stub_n'], 0.5, 'FireChar', 'FireChar'))
+    return _assemble(parts, order, mats, slot_of)
+
+
 def stats():
     dg = bpy.context.evaluated_depsgraph_get()
     ob = bpy.data.objects[OBJ_NAME]
@@ -681,11 +794,11 @@ def stats():
     return out
 
 
-def export():
+def export(path=OUT_GLB):
     for ob in bpy.data.objects:
         ob.select_set(True)
     bpy.ops.export_scene.gltf(
-        filepath=os.path.abspath(OUT_GLB),
+        filepath=os.path.abspath(path),
         export_format='GLB',
         export_yup=True,
         export_apply=True,
@@ -694,4 +807,10 @@ def export():
         export_cameras=False,
         export_lights=False,
     )
-    return os.path.abspath(OUT_GLB)
+    return os.path.abspath(path)
+
+
+if __name__ == "__main__":
+    # headless: blender -b --factory-startup --python-exit-code 1 --python assets/models/src/campfire.py
+    build(); print('campfire', stats()); export()
+    build_dead(); print('campfire-dead', stats()); export(OUT_GLB_DEAD)

@@ -7,6 +7,10 @@
  * null); the camera stops `margin` short of it. Never returns more than 1 (never further than desired).
  * A pivot already below groundAt+clearance is UNDER the heightfield (a tunnel bore: the analytic surface is the
  * mountain above), so the terrain test is skipped there; collapsing to the pivot put the camera inside the truck.
+ * In a bore the wall ray is then the only blocker, so it must see the ROAD group: the bore lining and portal ring are
+ * road-tile colliders (terrain-physics.js RoadPhysics). The deck under the truck does not shorten an open-road boom:
+ * deck triangles collide from their front (upper) face only and the ray starts at the pivot, above the deck, rising
+ * toward a camera that sits above it. A deck the ray does meet (a sag behind the truck) is ground the camera would be under.
  */
 export const BOOM_CLEARANCE = 0.45   // m above the ground: clears the near plane and the heightfield's facets
 export const BOOM_WALL_MARGIN = 0.35 // m short of a wall
@@ -29,4 +33,20 @@ export function boomFreeFraction (pivot, desired, groundAt, wallDist = null, cle
     return lo
   }
   return t
+}
+
+/**
+ * The per-frame probe main.js hands camera.js: ONE engine ray along the boom against `mask` (main.js passes
+ * GROUP_STATIC | GROUP_ROAD; names stay in the world owner), then boomFreeFraction. `engine` is the adapter instance,
+ * used only through castRay, so this module still imports nothing.
+ */
+export function makeBoomProbe (engine, groundAt, mask) {
+  const dir = { x: 0, y: 0, z: 0 }, opt = { collidesWith: mask }
+  return (pivot, want) => {
+    const dx = want.x - pivot.x, dy = want.y - pivot.y, dz = want.z - pivot.z, len = Math.hypot(dx, dy, dz)
+    if (len < 1e-3) return 1
+    dir.x = dx / len; dir.y = dy / len; dir.z = dz / len
+    const hit = engine.castRay(pivot, dir, len, opt)
+    return boomFreeFraction(pivot, want, groundAt, hit ? hit.distance : null)
+  }
 }
