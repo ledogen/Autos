@@ -12336,6 +12336,8 @@ export class RoadSystem {
         }
         const flatS = ej.jStart.flatCamber || bankCrest(ej.jStart, true)
         const flatE = ej.jEnd.flatCamber || bankCrest(ej.jEnd, false)
+        // BUG-200 (option E, prototype): the run's own solved profile, before the hold bends it — the recovery's cap reads it.
+        const own = gradeY ? gradeY.slice() : null
         for (let i = 0; i < N; i++) {
             // fG = grade-reconcile weight (any junction endpoint); fC = camber weight (only a
             // flatCamber endpoint — a ≥3-way intersection or a ≥60° deg-2 kink — or a BUG-90 crest-side
@@ -12371,15 +12373,15 @@ export class RoadSystem {
         if (gradeY && havePts) {
             const crestHold = this._params?.roadV2?.crestHold ?? 0
             if (crestHold > 0) {
-                if (ej.jStart.is) this._recoverFromHold(arcPos, gradeY, pts, true, hS, RgS, reachCap, crestHold, ej.jStart.vNode2)
-                if (ej.jEnd.is) this._recoverFromHold(arcPos, gradeY, pts, false, hE, RgE, reachCap, crestHold, ej.jEnd.vNode2)
+                if (ej.jStart.is) this._recoverFromHold(arcPos, gradeY, pts, true, hS, RgS, reachCap, crestHold, ej.jStart.vNode2, own)
+                if (ej.jEnd.is) this._recoverFromHold(arcPos, gradeY, pts, false, hE, RgE, reachCap, crestHold, ej.jEnd.vNode2, own)
             }
         }
     }
 
     // FEAT-82: bend the handoff past a deck hold into a vertical curve that satisfies the crest/sag
     // rule at the junction-approach design speed. See _applyJunctionBlend.
-    _recoverFromHold(arcPos, gradeY, pts, fromStart, hold, reach0, reachCap, crestHold, vNode2) {
+    _recoverFromHold(arcPos, gradeY, pts, fromStart, hold, reach0, reachCap, crestHold, vNode2, own) {
         const N = arcPos.length
         if (N < 4) return
         const g = PAR_REF.g
@@ -12409,28 +12411,42 @@ export class RoadSystem {
         }
         const C = this._v2Costs()
         const capG = (C.gMaxRoad ?? 0.24) + (C.gradeTol ?? 0.14)   // the ceiling — a leg may be steep, never illegal
+        // BUG-200 (option E, prototype): the recovery is first held to the DESIGN maximum — the solver's vocabulary cap
+        // gMaxRoad, or the run's own solved grade between two samples where that is already steeper — so a junction never
+        // makes a road steeper than the solver built it. Before, the smoothstep it starts from blended a held line into a
+        // diverging one and reached the 38 % ceiling on 1 run in 10 (BUG-200's census). Only where no window up to the
+        // 45 % run cap fits that does the old pass run, capped at the ceiling: never worse than before.
+        const gDesign = C.gMaxRoad ?? 0.24
+        const tightAt = (i) => Math.min(capG, Math.max(gDesign, Math.abs(own[i + 1] - own[i]) / ((arcPos[i + 1] - arcPos[i]) || 1)))
         const maxReach = Math.max(0, reachCap - hold)
-        let reach = Math.min(maxReach, Math.max(reach0, 1))
         const start = gradeY.slice()
         let best = null, bestResid = Infinity, bestFree = null
-        for (let attempt = 0; attempt < 6; attempt++) {
-            const y = start.slice()
-            const r = reach
-            const free = (i) => { const d = dOf(i); return i > 0 && i < N - 1 && d > hold && d < hold + r }
-            projectProfile(arcPos, y, { cCrest, cSag, cap: () => capG, free, maxIt: 600 })
-            // Residual curvature violation (m of second difference over the limit) across the window
-            // AND its pinned neighbours — the handoff into the pinned own profile is where an
-            // undersized window shows. Judged on the residual, not the projection's last step size:
-            // the sweeps creep for a long time at ~1e-3 while the curve is already within 2 mm.
-            let resid = 0
-            for (let i = 1; i < N - 1; i++) {
-                const d = dOf(i); if (d < hold - 8 || d > hold + r + 8) continue
-                const d2 = y[i - 1] - 2 * y[i] + y[i + 1]
-                resid = Math.max(resid, -d2 - cCrest[i], d2 - cSag[i])
+        for (const capAt of own ? [tightAt, () => capG] : [() => capG]) {
+            const tight = capAt === tightAt
+            let reach = Math.min(maxReach, Math.max(reach0, 1))
+            best = null; bestResid = Infinity; bestFree = null
+            for (let attempt = 0; attempt < 6; attempt++) {
+                const y = start.slice()
+                const r = reach
+                const free = (i) => { const d = dOf(i); return i > 0 && i < N - 1 && d > hold && d < hold + r }
+                projectProfile(arcPos, y, { cCrest, cSag, cap: capAt, free, maxIt: 600 })
+                // Residual curvature violation (m of second difference over the limit) across the window
+                // AND its pinned neighbours — the handoff into the pinned own profile is where an
+                // undersized window shows. Judged on the residual, not the projection's last step size:
+                // the sweeps creep for a long time at ~1e-3 while the curve is already within 2 mm.
+                // The tight pass also counts metres of rise over its cap.
+                let resid = 0
+                for (let i = 1; i < N - 1; i++) {
+                    const d = dOf(i); if (d < hold - 8 || d > hold + r + 8) continue
+                    const d2 = y[i - 1] - 2 * y[i] + y[i + 1]
+                    resid = Math.max(resid, -d2 - cCrest[i], d2 - cSag[i])
+                    if (tight) resid = Math.max(resid, Math.abs(y[i + 1] - y[i]) - capAt(i) * (arcPos[i + 1] - arcPos[i]))
+                }
+                if (resid < bestResid) { best = y; bestResid = resid; bestFree = free }
+                if (resid < 0.02 || reach >= maxReach - 1e-6) break
+                reach = Math.min(maxReach, reach * 1.5)
             }
-            if (resid < bestResid) { best = y; bestResid = resid; bestFree = free }
-            if (resid < 0.02 || reach >= maxReach - 1e-6) break
-            reach = Math.min(maxReach, reach * 1.5)
+            if (!tight || bestResid < 0.02) break
         }
         // Ship the best attempt even when no window satisfied the rule — it is never worse than the
         // smoothstep it started from on the measure that matters (the residual).
