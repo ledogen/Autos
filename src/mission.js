@@ -42,6 +42,7 @@
 import { computePar, gradeRun, PAR_REF, PAR_SLACK } from './par.js'
 import { roadQuality } from './road-quality.js'
 import { DAY_PARAMS } from './day.js'
+import { runLog, scalars } from './run-log.js'   // FEAT-242: the opt-in run log (every hook is behind runLog.on)
 
 // FEAT-113: real seconds per game hour — the unit par and `elapsed` are counted in (par 180 s = 3 h).
 // Read at use: dayLengthSec is a live debug slider.
@@ -252,7 +253,8 @@ export class MissionSystem {
         this._teleport = teleport
         this._setSpawn = setSpawn || null
         this._setMapOpen = setMapOpen
-        this._onChange = onChange || (() => {})
+        const changed = onChange || (() => {})
+        this._onChange = () => { runLog.on && this._logState(); changed() }   // FEAT-242: every state change comes through here
         this._getTerms = getTerms || null
         this._onSettle = onSettle || null
         this._getClockH = getClockH || null
@@ -539,6 +541,20 @@ export class MissionSystem {
         this.state = 'done'
         this._onChange()
         return id
+    }
+
+    /** FEAT-242: one run-log line per state (or offer) change — the offer, the job's scalars and terms, the result. */
+    _logState() {
+        const key = this.state + ':' + (this.offer?.id ?? '')
+        if (key === this._logKey) return
+        this._logKey = key
+        const m = this.mission, r = this.result
+        runLog.event('mission', {
+            state: this.state, elapsed: Math.round((this.elapsed ?? 0) * 10) / 10,
+            offer: this.offer ? scalars(this.offer) : null,
+            job: m ? { ...scalars(m), terms: m.terms ? { ...scalars(m.terms), thresholds: m.terms.thresholds } : null } : null,
+            result: r ? { ...scalars(r), award: r.award?.name ?? null, cargo: r.cargo ? scalars(r.cargo) : null } : null,
+        })
     }
 
     /** True while a job is taken and not yet finished — the states the cancel button applies to. */

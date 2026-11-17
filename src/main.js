@@ -145,6 +145,7 @@ import { siteTargets, nearestTarget, guideTo, DEMOLITION_PARAMS, TARGET_TYPES } 
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
+import { runLog, scalars } from './run-log.js'             // FEAT-242 (DEC-358): the opt-in run log — every call below is behind runLog.on
 
 // World seed — the URL's ?seed= when it names one, else a fresh random world. There is no default
 // seed (owner, 2026-11-06): any world the player did not pick (the one built behind the menu, free roam
@@ -6070,6 +6071,7 @@ const _SERVICE_CENTER = q => q.type === 'autoShop'
  */
 function _towTo (t, seat) {
   if (!t || !economySystem.spend(t.price)) return
+  runLog.on && runLog.event('tow', { to: t.q?.type, poiId: t.q?.id, km: t.km, price: t.price, hours: t.hours, wallet: economySystem.money() })   // FEAT-242
   if (_firingDay()) _eveTowed = true   // FEAT-184 stage 5: the worst day's tow — it's night when you drive home
   _recoveryOpen = false
   const prev = _spawnOverride
@@ -6097,7 +6099,7 @@ function _towToShop () {
 const _CORNER = ['FL', 'FR', 'RL', 'RR']
 const _tireNote = (c) => PARTS[partsSystem.fitted(`tire${_CORNER[c]}`)]?.name ?? 'Tire'
 const _backToInventory = () => { if (vehicleState.parked) inventoryScreen.open() }
-const _afterRoadsideWork = (h) => { damageModel.publish(RANGER_PARAMS); daySystem.advanceMinutes(h * 60) }
+const _afterRoadsideWork = (h) => { runLog.on && runLog.event('roadside', { hours: h, flat: damageModel.flat.slice() }); damageModel.publish(RANGER_PARAMS); daySystem.advanceMinutes(h * 60) }   // FEAT-242: the log line
 
 /** The spare's inventory effect (ITEMS.spareTire.use): any corner, flat or not, spareFitHours() on the clock. */
 function _pickSpare (e) {
@@ -6999,6 +7001,7 @@ function _sleepAtCamp () {
   const vibe = _campVibe(_campUi)
   const back = _campHome(_campUi)
   const evening = _firingDay(), atMoms = !!_campUi.moms
+  runLog.on && runLog.event('sleepSite', { at: back, hours, vibe, site: _campUi.site ? { ...scalars(_campUi.site), assist: vibeAssist(_campUi.site, inventorySystem.fills()) } : null })   // FEAT-242
   _campFade(() => {
     daySystem.sleep(hours, vibe, _campRest(_campUi))
     _endEvening()   // FEAT-170: any night ends the opening's evening
@@ -9608,6 +9611,7 @@ const storySystem = new StorySystem({
     if (_pendingResume) { _restoreRun(_pendingResume); _pendingResume = null }
     else if (_paperScenario) { runPaper.tier = PAPER_PARAMS.tiers.length - 1; _seatAt(_larry()) }   // FEAT-62: every rung open (owner 11-06)
     else _seatAt(_joint())
+    runLog.on && runLog.start(_openingRun ? 'new' : _paperScenario ? 'scenario' : 'resume')   // FEAT-242
   },
   /** FEAT-46: leaving story mode — drop the pads before releaseRegion() re-bakes without them. */
   onRegionExit: () => {
@@ -10117,6 +10121,7 @@ window.__cargo = () => ({ board: offerBoard, freight: _freight && { key: _freigh
 // dev handle — test/cdp-smoke.mjs fells a demolition site's targets and reads the GPS's pick (FEAT-65 slice 2)
 window.__site = () => _site && { ..._site, gps: gpsSystem._src }
 window.__gps = () => gpsSystem._src   // the GPS's route right now (cdp-smoke: the opening's evening)
+runLog.bind({ vs: vehicleState, day: daySystem, econ: economySystem, inv: inventorySystem, parts: partsSystem, damage: damageModel, play: () => _playedS, seed: () => _seedString, mode: () => _gameMode, onRoad: _truckOnRibbon, settings: () => ({ ..._settings, runGearbox: _runGearbox, runWorld: _runWorld }) })   // FEAT-242
 
 /** The run is over (FEAT-146's endings call this): delete its save and write it no more. */
 function _discardRunSave () {
@@ -10147,6 +10152,7 @@ function _endRun (kind) {
   _discardRunSave()
   // Read the run as it ended, before the clock moves on behind the card.
   const title = RUN_END_TITLE[kind], body = _runEndHtml(kind)
+  runLog.on && runLog.event('runEnd', { kind, economy: structuredClone(runEconomy), playedS: _playedS, fatal: damageModel.fatalImpact, cond: runLog._cond() })   // FEAT-242 (downloads the last part)
   if (missionSystem?.isActive()) missionSystem.exit()
   if (kind === 'crash') renderer.domElement.style.filter = 'grayscale(1)'
   setTimeout(() => {
@@ -10717,6 +10723,7 @@ function loop (t) {
     if (ignEv === 'catch') _ignEdge = ignEv
     else if (ignEv === 'shutoff' && seized(vehicleState)) _ignEdge = 'seize'   // FEAT-162: the running engine seized
     if (resetRequested) {
+      runLog.on && runLog.event('reset', { camped: !!_campUi })   // FEAT-242: R pressed
       // R-12: R while camped breaks camp first — the same close the dialogue's "break camp" button
       // runs (un-digs the pad, hides the fire, drops the camera focus, releases the FEAT-118 clock
       // hold). A fade in flight checks that its dialogue is still up, so this is safe mid-fade too.
@@ -10834,6 +10841,7 @@ function loop (t) {
       if (damageModel.fatalImpact && storySystem.isActive() && !storySystem.isEntering()) _endRun('crash')
     }
     simTime += PHYSICS_DT
+    runLog.on && runLog.tick(PHYSICS_DT)   // FEAT-242: the run log's 1 s route sample
     // While recording, log the ground the browser sampled (gated on isRecording() so normal play
     // pays nothing). The post-hoc road-resolution path lives in test/replay.mjs.
     let roadDebug = null

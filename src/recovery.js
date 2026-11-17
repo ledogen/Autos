@@ -40,6 +40,7 @@
 import { PARTS, SLOTS, REPAIR_CAP, HUB, BEAD, PATCH, stockPart } from '../data/parts.js'
 import { ITEMS } from '../data/items.js'
 import { TIRE_IDS, WHEEL_IDS } from './damage.js'
+import { runLog } from './run-log.js'   // FEAT-242: the opt-in run log (every hook is behind runLog.on)
 
 /**
  * Hours to change a tire for the spare (FEAT-203, DEC-105): 2 h with the factory jack and wrench; the
@@ -129,6 +130,7 @@ export function tireServiceQuote (damage, shopTow, tier, params) {
 
 /** Do quoted tire service `q`: the new parts on, every flat holding air. The wallet and the clock are the caller's. */
 export function tireService (parts, damage, q) {
+  runLog.on && runLog.event('tire', { act: 'tireService', jobs: q.jobs, price: q.price, hours: q.hours })
   for (const { corner, tire, wheel } of q.jobs) {
     if (tire) parts.fit(stockPart(TIRE_IDS[corner]), 1, TIRE_IDS[corner])
     if (wheel) parts.fit(stockPart(WHEEL_IDS[corner]), 1, WHEEL_IDS[corner])
@@ -149,6 +151,7 @@ export function tireService (parts, damage, q) {
 export function fitSpare (parts, damage, inventory, index, corner) {
   const r = inventory.list()[index]
   if (r?.id !== 'spareTire' || r.flat || !(corner >= 0 && corner < 4)) return -1
+  runLog.on && runLog.event('tire', { act: 'fitSpare', corner, spareCond: r.cond ?? null, offCond: damage.get(TIRE_IDS[corner]), offFlat: damage.flat[corner] })
   inventory.grant('spareTire', 1, parts.fitMounted(inventory.take(index), corner))
   return corner
 }
@@ -185,6 +188,7 @@ export function fitRoadside (parts, inventory, index) {
   const off = parts.fit(r.id, r.cond, p.slot)
   if (!off) return -1
   inventory.take(index)
+  runLog.on && runLog.event('fit', { act: 'roadside', id: r.id, cond: r.cond ?? null, off: off.id, offCond: off.cond })
   if (off.id && PARTS[off.id].massKg > 0) inventory.grant(off.id, 1, { cond: off.cond })
   return SLOTS[p.slot].hours
 }
@@ -211,6 +215,7 @@ export function plugTire (damage, inventory, how, { corner = null, index = null 
     inventory.amend(index, { flat: false })
   }
   inventory.consume('tirePlugKit')
+  runLog.on && runLog.event('tire', { act: 'plug', how, corner, index })
   return PLUG_H[how]
 }
 
@@ -234,6 +239,7 @@ export const fieldRepairTo = (damage, id, track) => Math.min(REPAIR_CAP, damage.
 export function fieldRepair (damage, inventory, id, track) {
   const fr = FIELD_REPAIR[id]
   if (!fr?.tracks.includes(track) || !fieldRepairable(damage, track) || !inventory.list().some(r => r.id === id)) return -1
+  runLog.on && runLog.event('repair', { act: 'field', id, track, from: damage.get(track), to: fieldRepairTo(damage, id, track) })
   damage.set(track, fieldRepairTo(damage, id, track))
   inventory.consume(id)
   return fr.hours
@@ -248,6 +254,7 @@ export function pourCan (fuel, tankGal, inventory, index) {
   if (!ITEMS[r?.id]?.capGal) return 0
   const g = Math.min(r.gal, tankGal - fuel.gal)
   if (g < 0.05) return 0
+  runLog.on && runLog.event('fuel', { act: 'pourCan', gal: g })
   fuel.gal += g
   fuel.dry = false
   inventory.amend(index, { gal: r.gal - g })

@@ -29,6 +29,7 @@
 // catalog, so the headless gate runs it in pure node.
 
 import { ITEMS, STACKING_KINDS } from '../data/items.js'
+import { runLog } from './run-log.js'   // FEAT-242: the opt-in run log (every hook is behind runLog.on)
 
 export const QUICK_SLOTS = 4
 
@@ -144,6 +145,7 @@ export class InventorySystem {
      */
     grant (id, n = 1, extra = null) {
         if (!ITEMS[id]) return null
+        runLog.on && runLog.event('item', { act: 'grant', id, n, fits: this.fits(id, n) })
         if (!this.fits(id, n)) {
             runInventory.pending = { id, n, extra }
             this._changed()
@@ -180,6 +182,7 @@ export class InventorySystem {
     take (index) {
         const e = runInventory.entries[index]
         if (!e || ITEMS[e.id].kind !== 'part') return null
+        runLog.on && runLog.event('item', { act: 'take', id: e.id })
         runInventory.entries.splice(index, 1)
         this._changed()
         return e
@@ -188,7 +191,7 @@ export class InventorySystem {
     /** FEAT-184 (DEC-238): take the entry at `index` out of the run whatever its kind (the tutorial's pack, back to mom's). */
     remove (index) {
         const [e] = runInventory.entries.splice(index, 1)
-        if (e) this._changed()
+        if (e) { runLog.on && runLog.event('item', { act: 'remove', id: e.id, n: e.n }); this._changed() }
         return e ?? null
     }
 
@@ -210,6 +213,7 @@ export class InventorySystem {
         const i = runInventory.entries.findIndex(e => e.id === id)
         if (i < 0) return false
         const e = runInventory.entries[i], uses = ITEMS[id].uses ?? 1
+        runLog.on && runLog.event('item', { act: 'consume', id })
         if (ITEMS[id].freshH) _ages(e)
         e.left = (e.left ?? uses) - 1
         if (e.left <= 0) { delete e.left; if (--e.n <= 0) runInventory.entries.splice(i, 1) }
@@ -232,6 +236,7 @@ export class InventorySystem {
         const e = runInventory.entries[index]
         if (!e || (_isPack(e) && (e.equipped || e.contents.length))) return false
         runInventory.entries.splice(index, 1)
+        runLog.on && runLog.event('item', { act: 'drop', id: e.id, n: e.n })
         if (ITEMS[e.id].freshH) _ages(e)
         if (this._lastH != null) e.droppedH = this._lastH   // its fresh clock runs on the ground (restoreEntry)
         this._onDrop(e)   // FEAT-143: it goes on the ground, not out of the game
@@ -334,6 +339,7 @@ export class InventorySystem {
             if (e.n++ <= 0) runInventory.entries.splice(i, 0, e)
             return false
         }
+        runLog.on && runLog.event('item', { act: 'use', id })
         this._changed()
         return true
     }

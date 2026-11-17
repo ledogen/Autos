@@ -1,13 +1,16 @@
 // DEC-287: the HUD's alerts area (#machine-word) is general purpose. Several alerts can be open at once;
 // it shows one at a time, ALERT_CYCLE_S each, round-robin in the order they opened. Pure: no DOM, no clock.
 export const ALERT_CYCLE_S = 2
+import { runLog } from './run-log.js'   // FEAT-242: the opt-in run log (pure too; a no-op when off)
 
 export class AlertCycle {
   constructor () { this._list = []; this._i = 0; this._t = 0 }
 
   /** Open an alert (a no-op if `id` is already open, so a per-frame caller is safe). */
   open (id, text, bad = false) {
-    if (!this._list.some(a => a.id === id)) this._list.push({ id, text, bad })
+    if (this._list.some(a => a.id === id)) return
+    this._list.push({ id, text, bad })
+    runLog.on && runLog.event('alert', { id, text, bad })
   }
 
   /** Close an alert; it leaves the cycle at once (the next one shows from the top of its 2 s). */

@@ -34,6 +34,7 @@
 // Everything arrives through the `deps` adapter main.js hands us.
 
 import { hash32, mulberry32, clamp01 } from './seed.js'
+import { runLog } from './run-log.js'   // FEAT-242: the opt-in run log (every hook is behind runLog.on)
 
 /**
  * Tunables. Zone siting + the road tether only — none of this may ever enter RANGER_PARAMS
@@ -859,6 +860,7 @@ export class CampSystem {
      */
     makeCampAt (pad) {
         if (!pad) return this._camps
+        runLog.on && runLog.event('camp', { act: 'make', px: pad.x, pz: pad.z, py: pad.y })
         this._camps.push(pad)
         this._rev++          // the ground just changed under every memoized grade
         return this._camps
@@ -870,7 +872,7 @@ export class CampSystem {
      */
     removeCamp (pad) {
         const i = this._camps.indexOf(pad)
-        if (i >= 0) { this._camps.splice(i, 1); this._rev++ }
+        if (i >= 0) { this._camps.splice(i, 1); this._rev++; runLog.on && runLog.event('camp', { act: 'break', px: pad.x, pz: pad.z }) }
         return this._camps
     }
 
