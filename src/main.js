@@ -1257,7 +1257,7 @@ const _menu = (name, isOpen, close) => _menus.push({ name, isOpen, close })
 function _closeMenus (except = null) {
   for (const m of _menus) if (m.name !== except && m.isOpen()) m.close()
   if (except) return   // BUG-187: the map opening shuts the cards but is no transition: a tow's owed answer stands
-  _towOwed = false   // BUG-178's owed answer belongs to the seat it was owed at
+  _towOwed = _shopAfterCard = false   // BUG-178's owed answer belongs to the seat it was owed at
 }
 window.__openMenus = () => _menus.filter(m => m.isOpen()).map(m => m.name)   // dev handle — test/cdp-smoke.mjs skipMenus
 
@@ -3921,6 +3921,10 @@ _menu('service', () => serviceScreen.isOpen, () => serviceScreen.close())   // a
 function _serviceInReach () {
   if (!storySystem.isActive() || storySystem.isEntering()) return null
   if (['generating', 'offer'].includes(missionSystem?.state)) return null
+  // BUG-195: a finished job's result card resolves BEFORE the shop opens (owner, 2026-11-17). The item choice on it
+  // is charged off the wallet (_takeItem) and needs room in the truck, so a purchase made first could take either
+  // away. Only this ordering: with no result card up the shop is open as ever (DEC-051).
+  if (missionSystem?.state === 'done' || paperRouteSystem?.state === 'done') return null
   const vp = vehicleState.position
   const q = poiSystem.nearest(vp.x, vp.z, POI_PARAMS.poiInteractR)
   // FEAT-104: a storefront's shop too, except on the tutorial's firing day (the givers' rule, _poiInReach) — but for
@@ -5758,6 +5762,7 @@ let _prevParkedForPoi = true
 // lift with the prompt up and no screen. So the tow's answer is owed until the pump or the shop takes it, or the
 // brake comes off. It answers only those two: an ordinary pull anywhere else is untouched.
 let _towOwed = false
+let _shopAfterCard = false   // BUG-195: parked through a result card, the shop owed once it is put away
 
 // FEAT-102: the fetch prompts. "park to acquire mission item" in reach of the pickup; after the
 // latch, "get back to …!" for FETCH_HOME_MSG_S. Returns true when it owns the prompt this poll.
@@ -6394,6 +6399,9 @@ function _updateParkTriggers (zParked = false) {
   const pulled = parked && !_prevParkedForPoi
   _prevParkedForPoi = parked
   _towOwed &&= parked
+  // BUG-195: the shop waits out the result card (_serviceInReach), then opens at once if the truck is still parked.
+  _shopAfterCard &&= parked
+  if (parked && (missionSystem?.state === 'done' || paperRouteSystem?.state === 'done')) _shopAfterCard = true
 
   // FEAT-102: a FETCH's pickup outranks everything below — while one is out, parking at the pickup
   // is the only thing the brake means there. The item is acquired the instant the brake latches
@@ -6437,8 +6445,8 @@ function _updateParkTriggers (zParked = false) {
     // BUG-192 (owner, 2026-11-17): only an OPEN storefront blocks them. It used to read `!isOpen ||`, so backing out of
     // the shop left the truck parked in reach with the inventory and the B menu still locked ("park").
     damageScreen.blocked = serviceScreen.isOpen && serviceScreen.store
-    if (shop && (pulled || _towOwed)) {
-      _towOwed = false
+    if (shop && (pulled || _towOwed || _shopAfterCard)) {
+      _towOwed = _shopAfterCard = false
       const store = _openShop(shop)
       if (!store) _tut('tut-service')   // FEAT-147
       if (!store && _firingDay() && damageModel.flat.some(Boolean)) _tut('tut-shopfix')   // FEAT-184 stage 4: towed here

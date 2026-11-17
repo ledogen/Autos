@@ -320,11 +320,11 @@ export const THINGS = [
     // of road; the letter is the share smashed. Always a roadside job. The deed is the removal — each
     // giver has an ordinary reason. PLACEHOLDER words and counts.
     // The farmer's old empty drums, set out along his frontage: crushed, they go to the scrapyard in one trip.
-    { id: 'scrapDrums',  phrase: 'his old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
+    { id: 'scrapDrums',  phrase: '{n} old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
       targets: [{ kinds: ['barrel', 'drumOpen'], n: [8, 12], cluster: [1, 3] }] },
     // The county is repaving: the old sign line comes down before the new one goes up, and the last job's
     // barricades are still out. The crew is behind.
-    { id: 'oldSignLine', phrase: 'the old sign line knocked down', family: 'demolition', massKg: [0, 0], pools: ['workSite'],
+    { id: 'oldSignLine', phrase: '{n} old signs and barricades knocked down', family: 'demolition', massKg: [0, 0], pools: ['workSite'],
       targets: [{ kinds: ['signGrade', 'signCurves', 'signRockslide', 'signTee', 'signCross', 'signStop', 'signIcy'],
                   n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
                 { kinds: ['roadBarrier'], n: [2, 3], cluster: [2, 3], face: 'road' }] },
@@ -513,7 +513,7 @@ export const REQUISITION = [
     // recycles until it holds 20+ and clears the line in one trip. The card shows the stock on hand.
     { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 20 },
     { id: 'reqCrew',     phrase: 'the crew',       family: 'delivery', from: 'workSite',     massKg: 0, passenger: true },
-    { id: 'reqSigns',    phrase: 'the turn-back signs knocked down', family: 'demolition', from: 'expeditionCamp', massKg: 0,
+    { id: 'reqSigns',    phrase: '{n} turn-back signs, crates and barrels knocked down', family: 'demolition', from: 'expeditionCamp', massKg: 0,
       targets: [{ kinds: ['turnBackSign', 'turnBackSignKeepOut', 'turnBackSignBeware', 'turnBackSignNoEntry'],
                   n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
                 { kinds: ['smallCrate'], n: [3, 5], cluster: [1, 3] }, { kinds: ['barrel'], n: [3, 5], cluster: [1, 2] }] },
