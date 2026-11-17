@@ -423,7 +423,7 @@ export class ServiceScreen {
     const sw = ['swap'], sr = ['swap', 'repair'], rs = ['repair', 'swap']
     const oil = s.oilQuote(), clutch = s.repairQuote('diff', 1)
     const tree = [
-      `<button class="sv-line" data-act="diag"><span class="sv-name">Vehicle Diagnostics</span></button>`,
+      `<button class="sv-line" data-act="diag"><span class="sv-name">▸ Vehicle Diagnostics</span></button>`,
       node('twbs', 'Tires, Wheels, Brakes and Suspension', [
         node('tw', 'Tires and Wheels', [this._alignment(), ...CORNERS.map((_, i) => this._corner(i))]),
         node('brakes', 'Brakes', AXLES.map(a => this._part(a, a, { socket: 'brakes' + a, track: 'brake' + a, acts: sw }))),
@@ -525,7 +525,9 @@ export class ServiceScreen {
     const tire = 'tire' + c, wheel = 'wheel' + c, flat = d.flat[i], tc = d.get(tire), wc = d.get(wheel)
     const swap = s.cornerSwapQuote(), patch = s.patchQuote()
     const tag = (flat ? '<span class="sv-flat">flat</span>' : '') + (wc <= 0 ? '<span class="sv-flat">wheel failed</span>' : '')
-    return node(c, label, [
+    // FEAT-262 (owner, 2026-11-17): the corner line names the tire on it, the part's own name (Old / Standard / Sport / ...), stock or not.
+    const fitted = s.parts.fitted(tire)
+    return node(c, label + (fitted ? ` <span class="sv-desc">${PARTS[fitted].name}</span>` : ''), [
       node('corner', 'Swap with corner', CORNERS.flatMap(([o, ol], to) => to === i ? [] : [
         `<div class="sv-row"><span class="sv-name">${ol}</span>${pctIn('T', d.get('tire' + o), d.flat[to])}${pctIn('W', d.get('wheel' + o))}`
         + `<span class="sv-cost">${cost(swap.price, swap.hours)}</span>` + btn('swap', 'swap', true, `data-a="${i}" data-b="${to}"`) + `</div>`])),

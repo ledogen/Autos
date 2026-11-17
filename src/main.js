@@ -1564,8 +1564,10 @@ const SELECTORS = {
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
+  uiScale:      { name: 'UI size', opts: [['small', 'small'], ['big', 'big']] },   // FEAT-248: index.html `html[data-ui-scale=big]`
   frameCap:     { name: 'frame rate',      opts: [[60, '60 fps'], [30, '30 fps'], [90, '90 fps'], [120, '120 fps'], [0, 'display rate']] },   // PERF-48, DEC-185
 }
+document.documentElement.dataset.uiScale = _settings.uiScale   // FEAT-248: CSS does the rest
 window.__settings = _settings   // dev handle — test/cdp-smoke.mjs marks the browser as played before (FEAT-184 playedBefore)
 let _setupTruck = 'stock'   // FEAT-205
 let _setupMode = 'story'   // FEAT-156: the new-game page's mode — 'story' | 'scenarios' | 'freeroam' | 'lab'
@@ -1585,7 +1587,8 @@ function _renderSelectors () {
     if (sel.plot) {
       const pts = Array.from({ length: 41 }, (_, i) => { const x = i / 20 - 1; return `${x},${-sel.plot(x, value)}` }).join(' ')
       plot = `<svg class="sel-plot" viewBox="-1.1 -1.1 2.2 2.2" preserveAspectRatio="xMaxYMid meet">`
-        + `<path d="M-1 0H1M0 -1V1"/><polyline points="${pts}"/></svg>`
+        + `<path d="M-1 0H1M0 -1V1"/><polyline points="${pts}"/>`
+        + `<text x="1.05" y="0.25" text-anchor="end">axis</text><text transform="translate(-0.06 -0.06) rotate(-90)">steering</text></svg>`
     }
     b.style.display = sel.show && !sel.show() ? 'none' : ''
     b.innerHTML = `<span>${sel.name}</span><span class="sel-val"><i class="sel-prev">◂</i>`
@@ -1606,6 +1609,7 @@ function _cycleSelector (b, dir) {
   if (set) set(next); else _settings[key] = next
   saveSettings(_settings)
   if (_LIVE[key]) _LIVE[key][key] = _settings[key]
+  if (key === 'uiScale') document.documentElement.dataset.uiScale = next
   _renderSelectors()
 }
 for (const b of document.querySelectorAll('button.mm-sel')) {

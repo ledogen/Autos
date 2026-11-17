@@ -906,6 +906,68 @@ const STEPS = [
     await sleep(700); check(!await msg(), 'the message did not hide itself')
     await js('document.querySelector("#svc-screen [data-act=discard]")?.click()')
   }],
+  ['uiscale', async () => {
+    // FEAT-248: the UI size setting (Small = today, Big = a TV). Each screen opens once, then is shot at Small and Big on 1920x1080
+    // and 1280x720; at Big NO visible top-level 2D element may leave the viewport. Runs after story: SMOKE_STEPS=boot,story,uiscale.
+    // Pictures: wip/ui-1117/<small|big>-<screen>-<w>.png (the contact sheet is composed from them by hand).
+    mkdirSync('wip/ui-1117', { recursive: true })
+    const VPS = [[1920, 1080], [1280, 720]]
+    const each = async (name) => {
+      for (const [w, h] of VPS) {
+        await client.cmd('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false })
+        for (const sc of ['small', 'big']) {
+          await js(`document.documentElement.dataset.uiScale = '${sc}'`); await sleep(500)
+          const sh = await client.cmd('Page.captureScreenshot', { format: 'png' })
+          writeFileSync(`wip/ui-1117/${sc}-${name}-${w}.png`, Buffer.from(sh.result.data, 'base64'))
+          if (sc !== 'big') continue
+          const out = await js(`Array.from(document.body.children).filter(e => e.tagName !== 'CANVAS' && e.id !== 'hud' && e.id !== 'lab-hud' && e.checkVisibility()
+            && getComputedStyle(e).position === 'fixed').map(e => [e.id, e.getBoundingClientRect()])
+            .filter(([, r]) => r.width > 0 && r.height > 0 && (r.left < -1 || r.top < -1 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1))
+            .map(([id, r]) => id + ' ' + [r.left, r.top, r.right, r.bottom].map(Math.round))`)
+          check(out.length === 0, `Big ${name} ${w}x${h}: leaves the screen: ${out.join('; ')}`)
+        }
+      }
+      await client.cmd('Emulation.clearDeviceMetricsOverride')
+    }
+    const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+    const nodePoi = (type) => js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === '${type}' && !q.hidden)
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
+    for (let i = 0; i < 6 && await js('document.getElementById("dialogue-panel").checkVisibility()'); i++) { await tap('Enter'); await sleep(150) }
+    await each('hud')
+    // the offer card: a farm that has a job up, its jobs button
+    const live = await js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
+      const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden && !q.drop && !q.park && b.view(q.id, 0)?.count > 0)
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
+    if (live) {
+      await seat(live.x, live.z, live.h); await park(true)
+      if (await until(() => vis('svc-screen'), 2000)) {
+        await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+        if (await until(() => vis('mp-accept'), 2000)) await each('offer')
+        await tap('Escape'); await sleep(300); await tap(' '); await sleep(300)
+      }
+    } else console.log('  uiscale: no farm with an offer — the offer card skipped')
+    const shop = await nodePoi('autoShop')
+    if (shop) {
+      await seat(shop.x, shop.z, shop.h); await park(true)
+      check(await until(() => vis('svc-screen'), 2000), 'no service screen at the auto shop')
+      await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()'); await sleep(200)
+      await each('shop')
+      await js('document.querySelector("#svc-screen [data-tab=maint]")?.click()')
+      for (const id of ['twbs', 'tw', 'RR', 'tire']) await js(`document.querySelector('#svc-screen [data-act=node][data-id="${id}"]')?.click()`)
+      await each('maint')
+      // FEAT-263: Maintenance's first row opens the diagnostic screen; B / Esc closes it and the shop is still there, on the same tab.
+      await js('document.querySelector("#svc-screen [data-act=diag]").click()'); await sleep(300)
+      check(await js('document.getElementById("dmg-screen").classList.contains("open")'), 'FEAT-263: Vehicle Diagnostics opened no damage screen')
+      await tap('Escape'); await sleep(300)
+      check(await js('!document.getElementById("dmg-screen").classList.contains("open") && document.getElementById("svc-screen").checkVisibility() && !!document.querySelector("#svc-screen [data-act=diag]")'),
+        'FEAT-263: closing the diagnostics did not return to Maintenance')
+      await tap('Escape'); await sleep(300); await tap(' '); await sleep(300)
+    }
+    if (await js('window.__vs.parked') === false) await park(true)
+    await tap('Tab'); await sleep(300)
+    if (await js('document.getElementById("inv-screen").classList.contains("open")')) { await each('inventory'); await tap('Tab') }
+    await js('document.documentElement.dataset.uiScale = "small"')
+  }],
   ['service', async () => {
     // SM-3: park at an auto shop → the service screen; both tabs render; Esc closes it.
     const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)

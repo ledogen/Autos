@@ -46,6 +46,12 @@
       --poi: #ff9f43;      --poi-text: #ffb066;
       --camp: #ffdc3c;     --camp-text: #ffe89a;
     }
+    /* FEAT-248: UI size. ONE lever: CSS `zoom` (scales an element's lengths, text and children by one factor) on every
+       top-level 2D element, never on the WebGL canvas (the first <canvas>, a direct child of body). Small = 1 = today.
+       Big is for a TV; the factor is the one number below (see FEAT-248). */
+    html { --ui-zoom: 1; }
+    html[data-ui-scale=big] { --ui-zoom: 1.5; }
+    html[data-ui-scale=big] body > :not(canvas:first-child) { zoom: var(--ui-zoom); }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #111; overflow: hidden; }
     canvas { display: block; }
@@ -226,11 +232,12 @@
       inset: 0;
       z-index: 205;
       flex-direction: column;
-      justify-content: center;
+      justify-content: safe center;   /* FEAT-248: a page taller than the screen (Big) starts at its top and scrolls */
+      overflow-y: auto;
       gap: 10px;
       padding: 0 0 0 68px;
       font-family: var(--font);
-      background: linear-gradient(100deg, rgba(4,7,10,0.92) 0%, rgba(4,7,10,0.72) 34%, rgba(4,7,10,0.0) 62%);
+      background: linear-gradient(100deg, rgba(4,7,10,0.92) 0%, rgba(4,7,10,0.72) 38%, rgba(4,7,10,0.0) 56%);
     }
     #mm-root { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
     #mm-save-note { color: var(--warn-text); font-size: 12px; margin: 0 0 4px 20px; }   /* caution, not failure (UI-STYLE); 20 px = a button's label */
@@ -312,10 +319,11 @@
     button.mm-sel .sel-bar b { display: block; height: 100%; background: var(--accent-system); }
     /* A row's plot: a line of its own under the value (flex-wrap), only while the row is highlighted. */
     button.mm-sel { flex-wrap: wrap; }
-    button.mm-sel .sel-plot { display: none; flex-basis: 100%; height: 90px; margin: 8px 0 4px; fill: none; }
+    button.mm-sel .sel-plot { display: none; flex-basis: 100%; height: 130px; margin: 8px 0 4px; fill: none; }
     button.mm-sel.nav-focus .sel-plot { display: block; }
     button.mm-sel .sel-plot * { vector-effect: non-scaling-stroke; }
     button.mm-sel .sel-plot path { stroke: var(--line); stroke-width: 1; }
+    button.mm-sel .sel-plot text { fill: var(--text-dim); stroke: none; font: 0.2px var(--font); letter-spacing: 0; }   /* 0.2 drawing units = ~12 px at the plot's 130 px */
     button.mm-sel .sel-plot polyline { stroke: var(--accent-system); stroke-width: 2; stroke-linejoin: round; }
     #pause-menu button.mm-sel { display: flex; justify-content: space-between; gap: 18px; }
     #cs-bindings { border-collapse: collapse; font-size: 12px; color: var(--text-dim); margin: 0 0 12px 18px; }
@@ -1015,13 +1023,13 @@
       text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.8);
     }
     #job-g .jg-floor span { color: var(--warn); }
-    #job-g .jg-ten span { color: var(--text-dim); }
+    #job-g .jg-ten span { color: var(--text-bright); }
     #job-g .jg-break span { color: var(--bad-text); }
     #job-g .jg-bar { position: relative; width: 12px; height: 90px; background: var(--hud-bg); border: 1px solid var(--line-control); }
     #job-g .jg-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; background: var(--text); transform-origin: bottom; transform: scaleY(0); }
     #job-g .jg-mark { position: absolute; left: -4px; right: -4px; height: 2px; }
     #job-g .jg-floor { background: var(--warn); }
-    #job-g .jg-ten { background: var(--text-dim); }
+    #job-g .jg-ten { background: var(--text-bright); }
     #job-g .jg-break { background: var(--bad); }
     #rank-timer .rt-card {
       background: linear-gradient(180deg, rgba(14, 18, 24, 0.82), rgba(0, 0, 0, 0.7));
@@ -1716,6 +1724,7 @@
       <div class="mm-group">controller</div>
       <button class="mm-sel" data-key="stickDeadzone"></button>
       <div class="mm-group">display</div>
+      <button class="mm-sel" data-key="uiScale"></button>
       <button class="mm-sel" data-key="frameCap"></button>
       <div class="mm-group">tutorial</div>
       <div class="mm-group"></div>
