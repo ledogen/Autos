@@ -1781,7 +1781,11 @@ const STEPS = [
       for (let i = 0; i < 40; i++) {
         if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return n }
         if (stopAt && await speaker() === stopAt) return n
-        said.push(`${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent ?? ""')}`)
+        // A press on a card still streaming in only fills it (main.js `_dlgFill`), so the same card can be read twice:
+        // it counts, and is recorded, once.
+        const line = `${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent ?? ""')}`
+        if (line === said[said.length - 1]) { await tap('Enter'); await sleep(200); continue }
+        said.push(line)
         // CARD_SHOTS=<dir>: a screenshot of every card read, for a look at new lines' layout (UI-STYLE)
         if (process.env.CARD_SHOTS) { mkdirSync(process.env.CARD_SHOTS, { recursive: true })
           for (let t = null, k = 0; k < 20; k++) { const u = await js('document.getElementById("dlg-text")?.innerHTML'); if (u === t) break; t = u; await sleep(400) }   // typed out
