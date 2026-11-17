@@ -12,7 +12,8 @@ lane: unplaced
 # BUG-189: In camp: the start-the-truck prompt shows, and starting pins the throttle
 
 ## Next steps
-Lane A fixes it with the tutorial round (DEC-353).
+Built on `land/tut-round2`. Owner: drive with the pad; if no phantom throttle comes back, close it (the root cause below
+is the best reading, not reproduced on his hardware).
 
 ## Summary
 Two faults. The ignition prompt shows while the camp is open. And starting the engine from camp latches full throttle until the accelerator is tapped.
@@ -21,6 +22,16 @@ Two faults. The ignition prompt shows while the camp is open. And starting the e
 Find why the throttle input latches (a held key or pad axis read while the camp UI owns input?) and fix it for every menu, not only the camp. The prompt must not show while any menu owns input.
 
 ## Tracker
-- [ ] No ignition prompt while the camp or any menu is open
-- [ ] Starting the engine never leaves the throttle held: checked from camp and from another menu
-- [ ] Smoke or gate covers it
+- [x] No ignition prompt while the camp or any menu is open (camp, a parked card's lock, a pad menu)
+- [x] Starting the engine never leaves the throttle held: both input-path latches fixed (see Log)
+- [x] Smoke covers it (`opening`, in camp after Katie's talk)
+- [ ] Owner confirms on his pad
+
+## Log
+- 2026-11-16: root cause, by reading the input path (`vehicle.js` rawThrottle = `pad.throttle` or `keys.w`, nothing else;
+  the hint fires only on rawThrottle > 0): the hint came up untouched, so a pedal read pressed. Pad: the Gamepad API's
+  standard mapping reads some pads' triggers off an axis, (v+1)/2, which sits at 0.5 until the first report after a
+  (re)connect — a phantom half throttle that holds "until I tapped the accelerator". Fix: a trigger drives only once seen
+  at rest since its pad connected (`gamepad.js trigger()`). Keyboard: no blur handler, so W let go out of focus stayed
+  held; fix: blur clears the driving keys. Hint hidden while a menu owns the truck. Smoke checks all three (W in camp,
+  blur with W down, a fake pad's trigger at 0.5 then rest then press).

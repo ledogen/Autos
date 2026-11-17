@@ -12,13 +12,12 @@ lane: A (tutorial)
 # FEAT-229: The tutorial starts the run in the morning
 
 ## Next steps
-On `land/tut-picnic`: the owner's picnic middle (DEC-345) built — Katie's call at Larry's, mom's gas call, the ranch on a
-waypoint, Katie's camp walk-through (DEC-346..348); Billy (DEC-343, DEC-349) in the dialogue. Owner: the placeholder lines
-(Katie's snack ask, mom's gas lesson and send-off, Katie's three camp cards) and whether her 17:00 talk keeps its words.
-Landed before: the morning-start order (122a606f, DEC-304..308), the owner's dialogue pass (1bf41b62, DEC-320..326) and the seed
-gate (f8ffe439). Owner: look cards `tut-dialogue-look` (review the lines; whether story mode's R / pad reset stays for the alpha;
-the two agent lines), `tutorial-test-drives` (playtest), `feat229-same-landing` (open; DEC-299/304 may already answer it),
-and the defaults (clock held + stamps, $6, tired at night, the skipper's line).
+On `land/tut-round2`: the owner's round 2 (DEC-353) built — phone calls ring and click (DEC-354), Katie's lines
+(DEC-355), the peanuts-only snack shelf and the ranch arrival / waypoint (DEC-356, supersedes DEC-346), sleepy after the
+tire, the 06:30 alarm, the joint called "work" (DEC-357); BUG-189's fixes ride along. Owner: the placeholder lines (Katie's
+snack ask, mom's gas lesson and send-off, the two vibe cards, Katie's camp-made card, mom's pick-up lesson), and whether
+mom's in-drive lesson cards are phone calls (DEC-354 leaves them unframed). Earlier look cards stand (`tut-dialogue-look`,
+`tutorial-test-drives`, `feat229-same-landing`, the defaults).
 
 ## Summary
 Today the firing is at 19:30 and the tutorial lasts exactly 24 in-game hours, so free will opens at 19:30: a new player
@@ -59,6 +58,9 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - [x] DEC-345 built: Katie's picnic call at Larry's, mom's gas call, the ranch on a waypoint, Katie teaches the camp (DEC-346..348)
 - [ ] Owner: DEC-345's placeholder lines, and Katie's 17:00 talk now in person (DEC-347)
 - [x] Tutorial seed re-checked against the new order (`test/tutorial-seed.mjs`, DEC-304's legs)
+- [x] DEC-353 built (DEC-354..357): phone frame, Katie's lines, peanuts-only shelf, ranch arrival + waypoint both ways,
+  sleepy after the tire (with blinks on the held clock), the 06:30 alarm, "work"; smoke `opening` walks each
+- [ ] Owner: round 2's placeholders and the mom-lesson-cards-as-calls question (DEC-354)
 
 ## Decisions
 - DEC-299 (owner, 2026-11-15/16): the tutorial is 24 in-game hours, fired about 07:00, free will about 07:00 the next
@@ -81,8 +83,12 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
   ranch", and Katie teaches the camp there. DEC-347 (supersedes DEC-324): her 17:00 talk is in person, same six cards and
   stamp. DEC-348 (supersedes DEC-320): Katie has no model; on the phone except at the camp. DEC-343/349: Billy.
 
+- DEC-353 (owner's round 2): DEC-354 phone calls framed (ring, <click>); DEC-355 Katie's lines; DEC-356 peanuts-only shelf,
+  arrival in the ranch's own zone, a camp short of it clears the pin (supersedes DEC-346); DEC-357 sleepy after the tire,
+  the alarm at 06:30 (paycheck stamped 07:00), the joint is "work" in the tutorial.
+
 ## Open questions
-- DEC-347: what Katie's 17:00 talk becomes now she is there in person (its "Hey, it's me." opener reads as a call).
+- DEC-354: are mom's in-drive lesson cards (pedals, flat "Was that a bang?", damage, spare, tow, shop, lights, park) calls?
 - Everything in the dive's form.
 
 ## Links
@@ -111,3 +117,6 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - 2026-11-16: DEC-344 seed search (lane U, study only, nothing changed): 320 random seeds, 290 valid; pick 3590618618
   (route 112 m vs 144, roadside green 0.35 vs 0.18, joint sun clear; mom's wake sun blocked), runner-up 1273834102.
   Sheets + table: wip/tut-seed-search/RESULTS.md (git-invisible, in CarGame-land-gps). Awaits the owner's pick.
+- 2026-11-16: DEC-353 round 2 on `land/tut-round2` (DEC-354..357; BUG-189). Smoke boot,story,opening,newRun PASS first
+  run; card shots `wip/tut-round2/cards/`. Energy at the fix measured −0.42 h (exhausted; no blink could fire in the
+  tutorial before). Unverified: the camp-short-of-the-pin path in a browser (logic only), a real pad.
