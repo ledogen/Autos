@@ -2272,11 +2272,11 @@ const STEPS = [
       for (let i = 0; i < 40; i++) {
         if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return }
         const u = await js('window.__tutorial().until')   // DEC-359: a card that waits for an action: the key is turned, any other is left up (the skip below ends it)
-        if (u === 'engine') { await crank(); continue }
+        if (u === 'engine') { await crank(); await sleep(500); continue }   // the HUD poll clears the card
         if (u) return
         await tap('Enter'); await sleep(200)
       }
-      throw new Error('cards never stopped coming')
+      throw new Error(`cards never stopped coming: ${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent')} ${await js('JSON.stringify({ ign: window.__vs.ignition?.state, t: window.__tutorial(), q: window.__mission().state })')}`)
     }
     const tp = async (x, z, h) => {
       await js(`window.__seated = false; window.__teleport(${x}, ${z}, ${h}).then(() => { window.__seated = true })`)
