@@ -170,6 +170,20 @@ wants it), feat235-cluster-r2-look, feat243-particle-shade-look, feat204-wire-lo
 feat204-toolbox-freight (toolbox NOT wired until answered), feat231-looks-look (liner reads as a black void in shade),
 feat242-runlog-try, bug179-fork-chain, fresh-clock-look, tut-dialogue-look, feat69-budget-dive, and the older look /
 make cards. FEAT-241 (random factory colour per run) is ticketed, three open questions, nobody on it.
+**UNTAKEN INTAKE, arrived 23:44-00:16 as the owner play-tested on :8002 (FIRST job after the clear; nothing acted on,
+no replies written; he was still typing at 00:16, so wait until the files are 3 min stale):**
+- `owed/tutorial-test-drives.answer.json` (note, no choice; card stays open): no game freeze during dialogue, and a card
+  that tells the player to press something clears only when they DO it · mom's parking-brake hint must say "at a stop"
+  · seed: opening shot and proximity "awesome" but the grade Larry's → gas station is too steep: expand the search ·
+  mom, not Larry, gives the gas tip, and reminds you of the dashboard gauge · Katie's vibe advice is useless with the
+  camp menu shut (too fast / not flat hides the bar) · AUDIT every menu for a default selection (camp menu has none;
+  main menu exempt; warn where none is right) · a tutorial reset faces the GPS direction · the tire can be changed
+  before it is checked: guardrail it.
+- inbox, five with no reply: 074418-nh2r chase-camera collision (pull toward the pivot) · 074621-co1v a tutorial
+  reset leaves the truck RUNNING · 080832-7d3h B menu navigable by left stick as well as D-pad · 081443-w0pm rumble
+  works on his 8BitDo 2C (2.4 GHz, Windows), felt only on ABS: "add vibrations for everything", make a card, tell him
+  how to reproduce, then test for feel · 081529-w93s ABS badly cuts braking at low speed, sometimes just coasts
+  (throttle lift then brake): a physics bug, Opus.
 **PARTIAL dive, do NOT act until submitted:** ledorepo dives/FEAT-69-one-region-budget.answers.json (status partial).
 His freight note there: threshold to 300 kg, wants a list of freight ideas above 300 kg (and how many are needed for a
 300 kg median) and a list of all freight under 50 kg.
