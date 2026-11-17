@@ -2173,7 +2173,9 @@ const STEPS = [
     console.log(`  the fix: energy ${(await js('window.__day().energyH()')).toFixed(2)} h before (${await js('window.__day().stage()')})`)
     await tap('Escape'); await tap(' ')   // off the brake: the night drive, whose card holds the sim
     check(await until(async () => /headlights/.test(await js('document.getElementById("dlg-text")?.textContent ?? ""')), 3000), 'no headlights card on the night drive')
-    await readCards()
+    await readCards()   // up to the lights' card, which waits for L (DEC-359)
+    check(await js('window.__tutorial().until') === 'lights', `the headlights card does not wait for L: ${JSON.stringify(await js('window.__tutorial()'))}`)
+    await tap('l'); await readCards()   // it clears on the lights; her slow-down card follows
     // DEC-357: the tire fixed, the driver is SLEEPY, and blinks on the held clock's drive (day.js blinkOnly).
     check(await js('window.__day().stage()') === 'sleepy', `the tire fixed, the driver is not sleepy (DEC-357): ${await js('window.__day().energyH()')} h`)
     { const h1 = await clock(); await js('window.__day()._nextBlinkH = 1e-4')
@@ -2187,6 +2189,7 @@ const STEPS = [
     // her sleep card (and its lessons) may already be open on arrival — then no second park, whose Space would turn them.
     const panel = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     let lessons = await readCards()
+    if (await js('window.__tutorial().until') === 'park') { await simFor(1); await park(true); lessons += await readCards() }   // DEC-359: her park card waits for the full stop + handbrake
     if (!await panel()) { await simFor(1); await park(true) }   // the 0.5 m drop lands, then a fresh pull
     check(await until(panel, 3000), "parking at mom's that night opened no sleep card")
     lessons += await readCards()
