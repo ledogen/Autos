@@ -41,6 +41,13 @@ export class DialogueSystem {
     /** True while a card is on screen. main.js gates the advance key and the HUD on this. */
     get active () { return this._i < this._queue.length }
 
+    /**
+     * DEC-359: a card that tells the player to DO something carries `until: '<name>'` (main.js _UNTIL). It holds neither the
+     * sim nor the keys: the player plays on under it, and it clears the moment the action is done (main.js
+     * _untilTick), never on a click-through. `holding` is "a card is up that freezes the game and eats the press".
+     */
+    get holding () { return this.active && !this._queue[this._i].until }
+
     /** The card to draw, or null. `{ speaker, text }` — text is trusted authored markup. */
     current () { return this.active ? this._queue[this._i] : null }
 

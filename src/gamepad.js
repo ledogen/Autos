@@ -73,7 +73,7 @@ export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, l
 // recovery) sit behind ONE button, B held (owner, 2026-10-21), and B + ←/→ is reserved for a later
 // action. Their rows carry `B (…)` so every key tab reads "B". The pump left B for A, at the pump only.
 // The D-pad drives three actions (owner, 2026-11-03, FEAT-144): ↓ picks up / loads lost bed cargo, ←
-// sets the spawn (free roam), → held resets the truck like View's hold. Home (16) is unbound.
+// sets the spawn (free roam), → held resets the truck. Home (16) is unbound.
 export const BINDINGS = [
   { action: 'throttle',              key: 'W',         pad: 'RT' },
   { action: 'brake / reverse',       key: 'S',         pad: 'LT' },
@@ -101,7 +101,7 @@ export const BINDINGS = [
   { action: 'tabs (service shop)',   key: 'Q / E',    pad: 'LB / RB (shop open)' },
   { action: 'map: zoom in / out',    key: 'wheel',     pad: 'right stick ↑ / ↓ (map open)' },
   { action: 'cards: pick / press',   key: 'arrows / Enter', pad: 'D-pad / A (card up)' },
-  { action: 'reset truck',           key: 'r',         pad: 'View or D-pad → (hold 1 s)' },
+  { action: 'reset truck',           key: 'r',         pad: 'D-pad → (hold 1 s)' },
   { action: 'pick up / load lost cargo (parked)', key: 'g', pad: 'D-pad ↓', button: 13 },
   { action: 'set spawn here (free roam)', key: 'Shift+R', pad: 'D-pad ←', button: 14 },
   { action: 'inventory',             key: 'Tab',       pad: 'B (hold, ↑/↓, release)' },
@@ -153,12 +153,10 @@ const PUMP_KEYS = { ...BUTTON_KEYS, 0: 'f' }
 const NAV = [['ArrowUp', 12], ['ArrowDown', 13], ['ArrowLeft', 14], ['ArrowRight', 15]]
 const NAV_DELAY_MS = 400, NAV_REPEAT_MS = 120, NAV_STICK = 0.5
 const navNext = new Map()   // arrow key → performance.now() of its next repeat, while held
-// View: a tap (released under VIEW_HOLD_MS) opens the map (m, sent on RELEASE — only then is it known
-// to be a tap); holding it VIEW_HOLD_MS resets the truck (r, keydown at the threshold, keyup on
-// release so vehicle.js's per-step keys.r read still sees it held).
+// View: a press opens the map (m, sent on RELEASE). DEC-362 (owner, 2026-11-17): holding it no longer resets the truck —
+// the reset is R and the D-pad → hold (below) only.
 const VIEW = 8, VIEW_HOLD_MS = 1000
 let viewDownAt = -1      // performance.now() of the press, -1 while up
-let viewReset = false    // the hold already fired r this press
 // RB, FEAT-133: while pad.throwReady() a press is HELD BACK — released under throwTapMs it throws (F
 // down + up: main.js's own throw path), held past it it becomes the handbrake. Otherwise RB is
 // plain Space at once, so a handbrake turn off the aim costs no latency at all. Drive layout only.
@@ -325,20 +323,18 @@ function poll () {
   for (const k of navNext.keys()) if (!nav.has(k)) navNext.delete(k)
 
   if (menu) {   // View is silent in a menu: a press in flight dies quietly (a reset already firing lets go)
-    if (viewDownAt >= 0 && viewReset) sendKey('keyup', 'r')
     if (viewDownAt >= 0 && viewSkip) sendKey('keyup', 'm')
     viewDownAt = -1; viewDown = false; viewSkip = false
   }
   if (viewDown) {
     const now = performance.now()
     if (viewDownAt < 0) {
-      viewDownAt = now; viewReset = false; pad.active = true
+      viewDownAt = now; pad.active = true
       viewSkip = pad.skipHold()
       if (viewSkip) sendKey('keydown', 'm')
-    } else if (!viewSkip && !viewReset && now - viewDownAt >= VIEW_HOLD_MS) { viewReset = true; sendKey('keydown', 'r') }
+    }
   } else if (viewDownAt >= 0) {
     if (viewSkip) sendKey('keyup', 'm')
-    else if (viewReset) sendKey('keyup', 'r')
     else if (any) { sendKey('keydown', 'm'); sendKey('keyup', 'm') }   // not on an unplug mid-press
     viewDownAt = -1; viewSkip = false
   }

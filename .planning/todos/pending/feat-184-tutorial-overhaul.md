@@ -13,6 +13,7 @@ lane: A
 # FEAT-184: the tutorial overhaul — alpha
 
 ## Next steps
+Round 3 (owner's 2026-11-17 play-test) is built on `land/tut-round3` (DEC-359..363); owner: re-drive via the `tutorial-test-drives` card. Not in it: the tutorial seed re-search (gentler Larry's to station grade) and FEAT-254's menu defaults.
 Slice 4 landed (5efe7acb, land/tutorial-1116); the tutorial was then rebuilt to the morning-start order under FEAT-229
 (122a606f, DEC-304..308) and the owner's dialogue pass (1bf41b62, DEC-320..326). The tutorial's open items now live in
 FEAT-229. Owner: look cards `tut-dialogue-look` (the lines) and `tutorial-test-drives` (the whole-tutorial playtest, open
@@ -410,6 +411,8 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
   - [ ] The owner's playtest of the whole tutorial (the "test drives" card, open until the owner signs off)
   - [ ] The owner's words for `tut-snack`, `tut-snackcamp`, and the peanuts' price
 - [x] The smoke's opening step plays the whole sequence
+- [x] Round 3 built on land/tut-round3 (DEC-359..363); smoke is the orchestrator's at landing
+- [ ] Owner re-drive of round 3 (card `tutorial-test-drives`)
 
 ## Decisions
 - 2026-11-15, owner (card tutorial-slice2, "changes"): Larry's four cards (DEC-236); "2. correct" (DEC-237); "3. lets have
@@ -471,6 +474,20 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
 - 2026-11-15/16, owner (cards tutorial-errand, tutorial-gates): "mom hands you a few dollars and you buy it" (DEC-276);
   the manager's line (DEC-277); "shrink the offroad reset grace area around POIs to 20m … otherwise keep it" (DEC-281);
   "both" gates (DEC-282).
+- 2026-11-17, owner (card tutorial-test-drives, round 3), verbatim:
+  > It shouldn't freeze the game during dialogues. We tell the player what to press but the game is frozen so they need to click through and then they're supposed to remember what they were supposed to press. I think we should gate any card that tells the player what to do should require them to do that action to clear the card. We need to adjust mom's control hint for parking brake to mention that the player needs to be at a stop before they can pull the parking brake.
+  > The opening shot and proximity in the tutorial world are awesome. Unfortunately, the grade is a little bit too steep between Larry's house and the gas station. Expand the search and look for other great candidates
+  > It should be mom giving you the gas tip instead of uncle Larry
+  > Mom should remind you that you can check your gas in the gauge on the dashboard
+  > Katie's advice about camping and how the vibe is composed is not very useful when the camping menu isn't open. If the player presses B and the truck is moving too quickly all they see is slow down to look for a campsite they don't see the camping bar not to mention that it could also be an not flat spot where they happen to open the menu in which case they're just gonna see the spot not flat enough warning
+  > Some menus don't have a selection by default, for example, in the camping menu First nothing is highlighted until the player presses the d-pad. Do an audit of all UI menus and make sure that a button is always selected at default except for the main menu. Warn me if you think some things should default to nothing
+  > When the player is reset in the tutorial they should always be facing the direction of the GPS
+  > It's possible for the player to change their tire before checking it, which breaks the tutorial flow. Remember we have to lock players into all lessons with guardrails.
+  > Reminder, we need to force the player to pick a specific amount of sleep at mom's in the tutorial. 
+  > I think it would be better if the tutorial started in day zero and finished in day one and all runs started on day one. Base one is more familiar to people especially for a day counter in a video game. That fits in naturally with the gameplay loop and the tutorial can be day zero and I think it will Makes sense mentally
+  > Larry should say the grease beard line from the intro On the first day when you drive to his house. In general, six cards for the player to click through is way too long in the beginning of the run so it should just be something brief from Larry like It's too bad you got fired. I have some work if you need it. Remember to check out the expedition camp. Like two cards at most.
+  (DEC-359, DEC-360, DEC-361, DEC-362, DEC-363; the seed re-search and the menu-default audit are other tickets.)
+- 2026-11-17, owner (card tut-dialogue-look): "Holding B you shouldn't reset you. Keep dpedray and R. We'll keep these for the tutorial because it is possible to get stuck without triggering the auto reset. " Inbox: "When the truck is reset in the tutorial it should be running. The player shouldn't have to start it again." (DEC-362)
 
 ## Open questions
 - **The snack (DEC-239):** the evening's pump takes every last dollar (DEC-151), so the morning has no money for a snack.
@@ -581,3 +598,4 @@ Each has a recommendation there.
   the damage screen's keycap (V / pad B, park-badge.js keycap). BUG-181 (f26b0d77): X in the evening plays tut-tow first and
   the recovery menu opens as it ends. cdp-smoke boot,opening PASS with the new tow-card assertion.
 2026-11-16 (bookkeeping sweep): box "smoke opening step plays the whole sequence" ticked: 03fe4c37 / 122a606f walk the rebuilt order; full smoke PASS 33 steps incl. `opening` (wip/orch/smoke-1116-fresh2.log). Slice 4 merged 5efe7acb.
+- 2026-11-17 lane a: round 3 built on land/tut-round3 (action cards `until`, tire lock, reset, day 0/1, Larry's two cards, View hold). Affected gates run; cdp-smoke steps updated for the day numbers and waiting cards, not run.
