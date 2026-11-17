@@ -412,6 +412,15 @@ const STEPS = [
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }   // a teleport seats latched
     await tap(' ')
     check(await until(panel, 2000), "parking at mom's opened no camp panel")
+    // FEAT-245: her menu has an inventory button; it opens the inventory, and closing it leaves her menu up.
+    mkdirSync('wip/small-1117', { recursive: true })
+    const shot = async (n) => writeFileSync(`wip/small-1117/${n}.png`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+    await sleep(500); await shot('moms-menu')
+    check(await js('getComputedStyle(document.getElementById("cp-item")).display !== "none"'), "mom's menu has no inventory button (FEAT-245)")
+    await js('document.getElementById("cp-item").click()')
+    check(await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 2000), "mom's inventory button opened no inventory")
+    await tap('Tab')
+    check(await until(() => js('!document.getElementById("inv-screen").classList.contains("open")'), 2000) && await panel(), "closing the inventory did not return to mom's menu")
     const clock = () => js('document.querySelector("#run-hud .rh-clock").textContent')
     const h0 = await clock(); await sleep(3000)
     check(await clock() === h0, `clock ran while at mom's (FEAT-118 hold): ${h0} → ${await clock()}`)
@@ -870,6 +879,8 @@ const STEPS = [
       'Maintenance: the rear-right tire opened no swap')
     // FEAT-244: the flat tire is the failing band at every level down to it: category, group, corner, the tire row.
     const red = await js(`['twbs', 'tw', 'RR', 'tire'].map(id => getComputedStyle(document.querySelector('#svc-screen [data-act=node][data-id="' + id + '"] .sv-name')).color)`)
+    mkdirSync('wip/small-1117', { recursive: true })
+    writeFileSync('wip/small-1117/repair-flat.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
     check(red.every(c => c === 'rgb(229, 87, 74)'), `FEAT-244: a flat rear-right tire is not red at every level: ${JSON.stringify(red)}`)
     await js('window.__damage.flat[3] = false; document.querySelector("#svc-screen [data-tab=maint]")?.click()')
     // FEAT-213: an open part's (i) button shows the owner's text, names coloured.
