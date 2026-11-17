@@ -20,7 +20,7 @@
 // route, the scenario finish, camp, the fuel recovery card, and the inventory and damage screens.
 // A card does NOT hold the truck: the pad keeps driving, and only its A / X / B / D-pad change role
 // (gamepad.js CARD_KEYS). A dialogue card on top owns every key ("press any key"), so no card
-// counts while one is showing.
+// counts while one is showing — unless it waits for an action (DEC-359): that one owns no key.
 
 import { pad } from './gamepad.js'
 
@@ -48,7 +48,8 @@ function menuContainer () {
 
 /** FEAT-133: the live in-game card, or null. Screens first: the camp card opens the inventory over itself. */
 function cardContainer () {
-  if ($('dialogue-panel')?.style.display === 'block') return null
+  const dp = $('dialogue-panel')   // DEC-359: a card that waits for an action owns no key, so the card under it stays live
+  if (dp?.style.display === 'block' && !dp.classList.contains('dlg-waits')) return null
   for (const id of ['inv-screen', 'dmg-screen', 'svc-screen']) { const el = $(id); if (el?.classList.contains('open')) return el }
   for (const id of ['camp-panel', 'mission-panel', 'paper-panel', 'scenario-panel', 'recovery-card']) {
     const el = $(id)

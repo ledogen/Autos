@@ -4022,6 +4022,7 @@ function _renderDialogue () {
   if (!panel) return
   const card = dialogueSystem.current()
   panel.style.display = card ? 'block' : 'none'
+  panel.classList.toggle('dlg-waits', !!card?.until)   // DEC-359: menu-nav.js lets the pad work the card under a waiting one
   if (!card) { _cardHold = false; clearInterval(_dlg.timer); Object.assign(_dlg, { card: null, words: null, timer: 0 }); return }
   const sp = document.getElementById('dlg-speaker')
   const tx = document.getElementById('dlg-text')
