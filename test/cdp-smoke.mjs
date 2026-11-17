@@ -1781,7 +1781,9 @@ const STEPS = [
       for (let i = 0; i < 40; i++) {
         if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return n }
         if (stopAt && await speaker() === stopAt) return n
-        if (await js('window.__tutorial().until')) return n   // DEC-359: a card that waits for an action stays up (the game runs under it); the caller does the action, which clears it
+        if (await js('window.__tutorial().until')) { await sleep(1500)   // typed out, then recorded once
+          const w = `${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent ?? ""')}`; if (w !== said[said.length - 1]) said.push(w)
+          return n }   // DEC-359: a card that waits for an action stays up (the game runs under it); the caller does the action, which clears it
         // A press on a card still streaming in only fills it (main.js `_dlgFill`), so the same card can be read twice:
         // it counts, and is recorded, once.
         const line = `${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent ?? ""')}`
@@ -1808,7 +1810,7 @@ const STEPS = [
     check(Math.abs(a.h + 17) < 0.1, `the firing is not at 07:00 on day 0 (clockH ${a.h})`)
     // BUG-136: the days before the clock's zero; the HUD read day 0 as "Day 0, -6 am".
     const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
-    check(await until(async () => await hudClock() === 'Day -1, 7 am', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day -1, 7 am" (BUG-136)`)
+    check(await until(async () => await hudClock() === 'Day 0, 7 am', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day 0, 7 am" (BUG-136)`)
     let boss = false, hung = false
     for (let i = 0; i < 8 && ['Katie', 'The manager'].includes(await speaker()); i++) {
       boss ||= await speaker() === 'The manager'; hung ||= !boss && await js('document.getElementById("dlg-text").textContent') === '<click>'
@@ -1828,11 +1830,13 @@ const STEPS = [
     check(await until(() => js('window.__autosave()'), 3000) && await js('JSON.parse(localStorage.getItem("autos-run/1")).data.returnSeed') === '6',
       'the tutorial did not save with its way back to seed 6')
     check(await until(async () => await speaker() === 'Phone', 5000), `the tutorial seed did not open on mom's call ringing (speaker "${await speaker()}")`)
-    await readCards()   // her call; stage 4: the driving lesson follows it
+    await readCards()   // her call, up to the key card (DEC-359: it waits for the key, the game runs under it)
+    check(await js('window.__tutorial().until') === 'engine', `mom's call did not stop at the key card: ${JSON.stringify(await js('window.__tutorial()'))}`)
+    await crank(); await readCards()   // the key catches: her <click>, then the driving lesson
     // DEC-354: a call rings first and hangs up last — the key card (FEAT-184) inside it.
     { const r = said.findIndex(t => /^Phone: Ring ring ring/.test(t)), k = said.findIndex(t => /^Mom: And honey .* the truck won't start itself/.test(t))
       check(r === 0 && k > r && said[k + 1] === 'Mom: <click>', `mom's call is not ring, her cards, the key, <click>: ${JSON.stringify(said.slice(0, 7))}`) }
-    check(!await speaker(), "mom's call did not close")
+    // (the call closes on <click>; the pedals' card follows at once, so no 'speaker is gone' check here)
     check(await until(async () => (await at()).cam < 9, 3000), 'the camera never came back to the truck')
     // FEAT-229: the FIRING DAY — no job (free will is after the paycheck), the HUD and the GPS to mom's first.
     const eve = () => js(`(() => ({ s: window.__mission().state, tut: window.__tutorial().phase, gps: !!window.__gps(),
@@ -1844,8 +1848,7 @@ const STEPS = [
       `the day does not open on mom's line, a near-empty tank and an empty wallet ("${e0.hud}", ${await js('window.__vs.fuel.gal.toFixed(2)')} gal, $${await js('window.__econ.money')})`)
     check(await until(async () => (await eve()).gps, 5000), "the GPS has no way to mom's")
     // BUG-135: the played run's start, the joint's lay-by, drives off too.
-    await crank()
-    await readCards()   // FEAT-184 stage 3: the pedals' card (and the gauge's) once the key has caught
+    await readCards()   // FEAT-184 stage 3: the pedals' card (and the gauge's)
     if (await js('window.__vs.parked')) await tap(' ')
     { const c0 = await car(); await hold('w', 5); const c1 = await car(), d = Math.hypot(c1.x - c0.x, c1.z - c0.z)
       check(d > 10, `the truck did not drive off from the burger joint: ${d.toFixed(1)} m in 5 s of throttle`) }
@@ -2253,6 +2256,7 @@ const STEPS = [
     const readCards = async (beatMs = 800) => {
       for (let i = 0; i < 40; i++) {
         if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return }
+        if (await js('window.__tutorial().until')) return   // DEC-359: waits for an action; the skip below ends it
         await tap('Enter'); await sleep(200)
       }
       throw new Error('cards never stopped coming')
