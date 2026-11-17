@@ -1041,7 +1041,7 @@ const STEPS = [
       check(await until(() => vis('svc-screen'), 2000), 'parking at a farm with no offer opened no shop')
       const txt = await js('document.querySelector("#svc-screen").textContent')
       check(/Groceries/.test(txt) && !/My Vehicle|Parts Shop/.test(txt), `the farm's shop reads: "${txt.slice(0, 200)}"`)
-      check(await js('!document.querySelector("#svc-screen [data-tab=jobs]")'), 'a farm with no offer shows a dead Jobs tab')
+      check(await js('!document.querySelector("#svc-screen [data-act=jobs]")'), 'a farm with no offer shows a dead Jobs button')
       await shot('farm-shop.png')
       await leave()
     } else console.log('  farm: no farm without an offer — the no-offer half skipped')
@@ -1049,9 +1049,7 @@ const STEPS = [
     if (!live) { console.log('  farm: no farm with an offer up — the jobs half skipped'); return }
     await seat(live.x, live.z, live.h); await park(true)
     check(await until(() => vis('svc-screen'), 2000), 'parking at a farm with an offer opened no shop')
-    check(await js('!!document.querySelector("#svc-screen [data-tab=jobs]")'), 'the farm shop has no Jobs tab although an offer is up')   // the tab holds the "go to jobs" button
-    await js('document.querySelector("#svc-screen [data-tab=jobs]").click()')
-    check(await js('!!document.querySelector("#svc-screen [data-act=jobs]")'), 'the farm\'s Jobs tab has no "go to jobs" button')
+    check(await js('!!document.querySelector("#svc-screen [data-act=jobs]") && !document.querySelector("#svc-screen [data-tab=jobs]")'), 'the farm shop has no top Jobs button although an offer is up (or still has a Jobs tab)')   // FEAT-252
     await shot('farm-shop-jobs.png')
     await js('document.querySelector("#svc-screen [data-act=jobs]").click()')
     check(await until(() => vis('mp-accept'), 2000), "the farm's jobs button did not bring up the farm's own offer card")
@@ -1393,7 +1391,7 @@ const STEPS = [
     // over to the offer.
     if (SHOP_TYPES.has(p.type)) {
       check(await until(() => vis('svc-screen'), 2000), `parking at the ${p.type} opened no shop screen`)
-      await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+      await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
     }
     check(await until(() => vis('mp-accept'), 2000), `parking at the ${p.type} pad opened no offer`)
     // BUG-187: the player's own map (M) shuts the parked card; the card comes back on the next brake pull.
@@ -1405,7 +1403,7 @@ const STEPS = [
     await tap(' '); await sleep(1500); await park()   // the 10 Hz poll sees the unparked frame, then the new pull
     if (SHOP_TYPES.has(p.type)) {
       check(await until(() => vis('svc-screen'), 3000), `parking again at the ${p.type} opened no shop screen`)
-      await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+      await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
     }
     check(await until(() => vis('mp-accept'), 2000), `the offer card did not come back on the next brake pull after the map (mission ${await js('window.__mission().state')}, parked ${await js('window.__vs.parked')}, map ${await js('window.__map2d().isOpen()')})`)
     await js('document.getElementById("mp-accept").click()')
@@ -1507,7 +1505,7 @@ const STEPS = [
       await seat(fr.x, fr.z, fr.h)
       await park(true)
       const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
-      if (SHOP_TYPES.has(fr.type) && await until(() => vis('svc-screen'), 2000)) await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+      if (SHOP_TYPES.has(fr.type) && await until(() => vis('svc-screen'), 2000)) await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
       if (await until(() => vis('mp-accept'), 2000)) {
         for (let i = 0; i < 8 && await js(`window.__mission().offer?.id !== ${JSON.stringify(fr.id)}`); i++) await js('document.getElementById("mp-next")?.click()')
         if (await js(`window.__mission().offer?.id === ${JSON.stringify(fr.id)} && !document.getElementById("mp-accept").disabled`)) {

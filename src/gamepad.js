@@ -59,7 +59,10 @@ export const PAD_PARAMS = {
 // the reticle is up as well (RB tap throws). pumpActive: set by main.js — the pump is open, so A
 // pumps. hudMenu: set by src/hud-menu.js — the B-hold icon menu ({ open, move, select, cancel }).
 // skipHold: set by main.js — the opening can be skipped, so View is held M (FEAT-170).
-export const pad = { active: false, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0, panX: 0, panY: 0, zoom: 0,
+// mouseLive (FEAT-255): false from any pad button / stick input until the mouse actually MOVES (or a real key is
+// pressed). While false, hover is ignored — menu-nav.js's pointer highlight, map2d.js's list rows and its mouse cursor —
+// so a mouse left resting on the UI cannot hold a highlight or the map's centre while the pad drives.
+export const pad = { active: false, mouseLive: true, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0, panX: 0, panY: 0, zoom: 0,
   menuActive: () => false, cardActive: () => false, cardTabs: () => false, cardDrive: () => false,
   mapActive: () => false, canThrow: () => false, throwReady: () => false,
   pumpActive: () => false, skipHold: () => false, hudMenu: null }
@@ -229,6 +232,11 @@ function poll () {
     : map ? MAP_KEYS : BUTTON_KEYS
   const drive = keys === BUTTON_KEYS
   if (drive && pad.pumpActive()) keys = PUMP_KEYS
+  // BUG-193 (owner, 2026-11-17): LB held in the map (ArrowLeft) and the map closed — the button is down but its held key
+  // is the map's, so the clutch never engaged. Back in the drive layout a held clutch / handbrake (LB, RB) lets go of
+  // the key it went down with and is read afresh as the drive's. Not the other buttons: A / Y / L3 held through a
+  // close would fire a shift, the ignition or the lights nobody asked for.
+  if (drive) for (const i of [4, RB]) if (held.has(i) && held.get(i) !== keys[i]) { sendKey('keyup', held.get(i)); held.delete(i) }
   const down = new Set(), nav = new Set()
   let bDown = false, dpad = 0, rightDown = false
   // A press keeps the meaning it went down with until it is let go (as `held` does for every other button).
@@ -253,6 +261,9 @@ function poll () {
     if (gp.buttons[B]?.pressed) bDown = true
     if (gp.buttons[UP]?.pressed) dpad |= 1
     if (gp.buttons[DOWN]?.pressed) dpad |= 2
+    // FEAT-254 (owner, 2026-11-17): the left stick walks the B menu too — only with B held; the edge test below
+    // makes a held deflection one step, as the D-pad's is.
+    if (gp.buttons[B]?.pressed) { if (gp.axes[1] < -NAV_STICK) dpad |= 1; if (gp.axes[1] > NAV_STICK) dpad |= 2 }
     if (gp.buttons[RIGHT]?.pressed) rightDown = true
     const mapOnly = map && !card   // FEAT-239: the map's own layout leaves D-pad ← / → spare (the shoulders flip)
     if (menu || card || map) for (const [k, b] of NAV) if (!(mapOnly && (b === 14 || b === 15)) && gp.buttons[b]?.pressed) nav.add(k)
@@ -277,7 +288,7 @@ function poll () {
 
   // A button keeps the key it went down with, so a press that opens or closes a menu still releases
   // the key it sent.
-  for (const i of down) if (!held.has(i)) { held.set(i, keys[i]); sendKey('keydown', keys[i]); pad.active = true }
+  for (const i of down) if (!held.has(i)) { held.set(i, keys[i]); sendKey('keydown', keys[i]); pad.active = true; pad.mouseLive = false }
   for (const [i, k] of held) if (!down.has(i)) { held.delete(i); sendKey('keyup', k) }
   if (thr > 0 || brk > 0 || steer !== 0) pad.active = true
   if (map && (pad.zoom || pad.panX || pad.panY)) pad.active = true   // the map's cursor is the pad's, unlike the camera
@@ -315,6 +326,7 @@ function poll () {
   if (!drive && bDown) bSpent = true
   if (!bDown) bSpent = false
   dPrev = dpad
+  if (nav.size || (map && (pad.panX || pad.panY || pad.zoom)) || bDown) pad.mouseLive = false   // FEAT-255
   for (const k of nav) {
     const t = navNext.get(k)
     if (t === undefined || now >= t) {
@@ -351,7 +363,9 @@ function poll () {
 
 if (typeof navigator !== 'undefined' && navigator.getGamepads) {
   // Synthetic events are untrusted, so the pad's own replayed keys never hand control back.
-  document.addEventListener('keydown', e => { if (e.isTrusted && !e.repeat) pad.active = false }, true)
+  document.addEventListener('keydown', e => { if (e.isTrusted && !e.repeat) { pad.active = false; pad.mouseLive = true } }, true)
+  // FEAT-255: only a pointer that really moved gives hover back (a resting one fires zero-movement events).
+  document.addEventListener('pointermove', e => { if (e.isTrusted && (e.movementX || e.movementY)) pad.mouseLive = true }, true)
   for (const ev of ['gamepadconnected', 'gamepaddisconnected'])   // BUG-189: a (re)connected pad's triggers wait for rest
     globalThis.addEventListener?.(ev, e => { trigArmed.delete(`${e.gamepad.index}:6`); trigArmed.delete(`${e.gamepad.index}:7`) })
   requestAnimationFrame(poll)

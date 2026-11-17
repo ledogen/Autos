@@ -12,7 +12,7 @@ lane: unplaced
 # FEAT-252: Shops: a Jobs button at the top replaces the Map button; no Jobs tab
 
 ## Next steps
-A free lane (Sonnet), with the UI bundle: remove the Jobs tab, rename the top Map button to Jobs, keep what it opens.
+Owner: look at a farm / shop with an offer up (branch land/pad-menus). The orchestrator runs the smoke at landing.
 
 ## Summary
 The Jobs tab only opens the map, so it should be a button. It takes the place of the Map button at the top of the shop screen.
@@ -20,8 +20,10 @@ The Jobs tab only opens the map, so it should be a button. It takes the place of
 ## Description
 Check the pad binding for the old Map button still works under its new name.
 
+Built: the head button reads "jobs" and does what the tab's "go to jobs" did (closes the shop, the offer card over the map; declining returns to the shop). It shows only while the shop has live offers; with none there is no button, so the shop's plain Map button is gone (no other route to the map from inside the screen; M / View still open it behind). The service screen's `openMap` hook and `_jobs()` are deleted. Smoke steps and the soak click `[data-act=jobs]` directly.
+
 ## Tracker
-- [ ] Jobs tab gone
-- [ ] Top button reads Jobs and opens the job map
-- [ ] Pad and keyboard both reach it
-- [ ] Smoke green
+- [x] Jobs tab gone
+- [x] Top button reads Jobs and opens the job map
+- [x] Pad and keyboard both reach it (the button is in the card's nav list; D-pad / A, Enter)
+- [ ] Smoke green (orchestrator at landing)
