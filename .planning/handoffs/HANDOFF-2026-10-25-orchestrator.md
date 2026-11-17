@@ -149,9 +149,10 @@ Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale, play b
 tonight. I have a reset in the pocket." So the two-agent cap is OFF for tonight: one agent per free worktree, grouped by
 code area. A one-shot timer fires at 07:13 with the word "orchestrator" (session-only cron).
 
-**Main:** 9aad7881, NOT pushed, GREEN: confirming smoke PASS 36 steps on exactly this tree
-(wip/orch/smoke-1117-243-179.log). Holds everything below plus BUG-179 chained forks (closed), FEAT-243 dust shading
-(closed), DEC-395 impact floor 5 mph, BUG-191 closed. Play build :8002 = 9aad7881.
+**Main:** 53cabcb7, NOT pushed, GREEN: confirming smoke PASS 38 steps on exactly this tree
+(wip/orch/smoke-1117-campfire.log). Holds everything below plus BUG-179 (closed), FEAT-243 (closed), DEC-395, and
+campfire/camera round 2: ASSET-90 model, dead-fire smoke, cooking relights (DEC-397), camera vs tunnel walls. Card
+campfire-camera-r2-look: on his "Good" move FEAT-246 and FEAT-264 to completed/. Play build :8002 = 53cabcb7.
 **HOW LANDINGS WORK TONIGHT:** never merge finished branches into main one by one. An Opus integration agent in
 CarGame-land-gps merges them onto `land/integrate-1117<x>` (cut from main), fixes clashes, runs gates + pad-e2e + ONE full
 smoke there; main is then fast-forwarded (`git merge --ff-only`) and the play build refreshed
@@ -169,7 +170,7 @@ camera-campfire-look) · machine batch FEAT-258, BUG-196, BUG-197, FEAT-204, FEA
 DRAFT = the tire/stock numbers; card machine-1117-look).
 **RUNNING at 07:20 (after the 07:13 restart; intake found nothing new: no unanswered inbox note, no new owed answer,
 no untaken dive):**
-- (DONE, HELD for the owner's look) ASSET-90 dead campfire: land/asset-90-dead-campfire @ b8203066 (CarGame-perf),
+- (LANDED 53cabcb7) ASSET-90 dead campfire: land/asset-90-dead-campfire @ b8203066 (CarGame-perf),
   campfire-dead.glb 434 tris, smoke step `deadFire` passes alone, 44 gates green. Card asset90-dead-campfire-look,
   sheet CarGame-perf/wip/asset-90/sheet.jpg. Needs a main merge + full smoke before landing. Nothing else is running.
 - (LANDED) housekeeping: MILESTONES.md lane rows for 38 tickets; pad-e2e
@@ -194,8 +195,6 @@ the last one run ONE confirming smoke on main and refresh the play build:
   deg-2 legs not trimmed. Card bug201-bend-sliver-look, does NOT land without him. AFTER it (serial on src/road.js):
   BUG-200, the 38 % hairpin at the chained fork on seed 688224244 (fix options with screenshots; dropping the road is
   acceptable to him). DEC-396: main's existing dead ends stay.
-- p, CarGame-perf, land/asset-90-dead-campfire: smoke wisps on the dead fire, cooking relights it (DEC-397), camera
-  ray hits tunnel walls (FEAT-246); lands when green, card campfire-camera-r2-look is for his check after.
 Next free: BUG-202, DEC-398.
 **BUILT, HELD for the owner (not on main):**
 - land/food-1117 (CarGame-content): FEAT-250, FEAT-260, FEAT-261, BUG-198; DEC-376..381 (DEC-380 draft). Card
