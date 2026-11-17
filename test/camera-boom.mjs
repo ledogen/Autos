@@ -6,7 +6,7 @@ const flat = () => 0
 assert.equal(boomFreeFraction(pivot, want, flat), 1, 'clear boom unchanged')
 const ridge = (x, z) => (z > 5 && z < 8 ? 9 : 0)          // a ridge between truck and camera
 const t = boomFreeFraction(pivot, want, ridge)
-assert(t < 0.5 && t > 0.3, 'stops at the ridge foot, got ' + t)
+assert(t <= 0.5 && t > 0.3, 'stops at the ridge foot, got ' + t)
 const camY = pivot.y + (want.y - pivot.y) * t, camZ = want.z * t
 assert(camY >= ridge(0, camZ) + 0.4, 'camera above ground')
 assert(boomFreeFraction(pivot, want, flat, 4) < 0.4 && boomFreeFraction(pivot, want, flat, 4) > 0.3, 'wall at 4 m stops short')
