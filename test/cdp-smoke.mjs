@@ -531,7 +531,7 @@ const STEPS = [
   ['boltons', async () => {
     // FEAT-204: the roof rack, bull bar and light bar fitted straight onto the truck (window.__parts, no shop, no
     // inventory row): each model in the scene and shown, the light bar's rack-mount model only with the rack (DEC-340,
-    // swapped live both ways), the rack's +4 slots, the light bar's longer head beams with the lamps on. Back to stock at
+    // swapped live both ways), the rack's +4 slots, the light bar's longer head beams on high beam only (DEC-373). Back to stock at
     // the end, lamps as found. The newRun step fits them too and checks a new run clears them. Runs after story:
     // SMOKE_STEPS=boot,story,boltons. FEAT204_SHOTS=1 also takes the day / night pictures into wip/feat-204-wire/
     // (it moves the run clock: run it on its own).
@@ -559,14 +559,19 @@ const STEPS = [
     const heads = () => js(`JSON.stringify((() => { const r = []; window.sky.scene.traverse(o => { if (o.isSpotLight && o.map) r.push({ d: +o.distance.toFixed(1), on: o.visible }) }); return r })())`)
     const lit = async () => JSON.parse(await heads()).every(h => h.on)
     for (let i = 0; i < 3 && !await lit(); i++) { await tap('l'); await frames(3, 100) }
-    const barred = JSON.parse(await heads())
-    await fit('lightBarNone'); await frames(3, 100)
-    const bare = JSON.parse(await heads())
-    await fit('lightBar'); await frames(3, 100)
-    console.log(`  boltons: head spots with the bar ${JSON.stringify(barred)} · without ${JSON.stringify(bare)}`)
-    check(barred.length === 2 && barred.every((h, i) => h.on && Math.abs(h.d / bare[i].d - 1.47) < 0.01), `the light bar did not lengthen the head beams: ${JSON.stringify({ barred, bare })}`)
-    check(await js(`(() => { let n = 0; window.sky.scene.getObjectByName('mod:mod-light-bar-rack').traverse(o => { if (o.isMesh && /LightBarReflector/.test(o.material.name) && o.material.emissiveIntensity > 0) n++ }); return n > 0 })()`),
-      'the light bar\'s reflectors are dark with the lamps on')
+    // DEC-373 (FEAT-204): the bar burns on HIGH beam only. Low beam: the same range with or without it; high: × 1.47.
+    const withAndWithout = async () => { const a = JSON.parse(await heads()); await fit('lightBarNone'); await frames(3, 100)
+      const b = JSON.parse(await heads()); await fit('lightBar'); await frames(3, 100); return [a, b] }
+    const reflectorsLit = () => js(`(() => { let n = 0; window.sky.scene.getObjectByName('mod:mod-light-bar-rack').traverse(o => { if (o.isMesh && /LightBarReflector/.test(o.material.name) && o.material.emissiveIntensity > 0) n++ }); return n > 0 })()`)
+    const [lowBar, lowBare] = await withAndWithout()
+    check(lowBar.length === 2 && lowBar.every((h, i) => h.on && h.d === lowBare[i].d), `the light bar changed the LOW beams (DEC-373: high only): ${JSON.stringify({ lowBar, lowBare })}`)
+    check(!await reflectorsLit(), 'the light bar\'s reflectors burn on low beam (DEC-373: high only)')
+    await tap('l'); await frames(3, 100)   // low → high
+    const [barred, bare] = await withAndWithout()
+    console.log(`  boltons: high-beam head spots with the bar ${JSON.stringify(barred)} · without ${JSON.stringify(bare)}`)
+    check(barred.length === 2 && barred.every((h, i) => h.on && Math.abs(h.d / bare[i].d - 1.47) < 0.01), `the light bar did not lengthen the high beams: ${JSON.stringify({ barred, bare })}`)
+    check(await reflectorsLit(), 'the light bar\'s reflectors are dark on high beam')
+    await tap('l'); await frames(3, 100); await tap('l'); await frames(3, 100)   // high → off → low, as before the check
     if (process.env.FEAT204_SHOTS) {
       mkdirSync('wip/feat-204-wire', { recursive: true })
       const snap = async (f) => { await frames(20, 1500); writeFileSync(`wip/feat-204-wire/${f}`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
