@@ -374,7 +374,9 @@ export const REWARDS = [
     // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
     // barn find is a roadside-find event (items.md §6), not a giver.
     { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'], cat: 'tires' },
-    { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['B', 'A'], cat: 'tires' },
+    // FEAT-259 (owner, 2026-11-17: standard tires should "come up as mission reward more often") [DEFAULT]: C added, so it
+    // competes with the old tire on the easiest gate too (was B / A only: 1.2 % of item rewards against the old tire's 6.6 %).
+    { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['C', 'B', 'A'], cat: 'tires' },
     { id: 'tireSport',  name: 'Sport tire',  kind: 'part',       gates: ['A', 'S'], cat: 'tires' },
     { id: 'tireOffroad', name: 'All-terrain tire', kind: 'part', gates: ['A', 'S'], cat: 'tires' },
     { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'], cat: 'tires' },

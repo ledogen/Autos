@@ -525,9 +525,13 @@ export function createVehicleChassis (engine, vehicleState, params, { bed = null
  * only through this call — without it the truck kept the mass it was created with.
  * FEAT-122: `params.stowedKg` (the inventory's kit, absent = 0) adds its mass at the CG. Inertia and
  * the centre stay put — light kit barely moves them, and every force here acts about the origin as CG.
+ * FEAT-204: `params.fittedKg` (the fitted bolt-ons, src/parts.js boltOnKg) adds the same way. APPROXIMATION: the 16 kg
+ * bull bar sits ~0.6 m ahead of the front axle (~1.9 m ahead of the CG): really it puts ~19 kg on the front axle and
+ * takes ~3 kg off the rear, moves the CG ~2 cm forward and adds ~58 kg·m² of yaw/pitch inertia (2 % of yaw). Here it
+ * sits at the CG and splits 55/45 like the rest (a point mass off the CG needs a CG offset this body does not carry).
  */
 export function syncChassisMass (engine, chassis, params) {
-  engine.setMassData(chassis, params.mass + (params.stowedKg || 0),
+  engine.setMassData(chassis, params.mass + (params.stowedKg || 0) + (params.fittedKg || 0),
     { x: params.inertiaPitch, y: params.inertiaYaw, z: params.inertiaRoll })
 }
 

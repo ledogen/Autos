@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url'
 import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
 import { ECONOMY_PARAMS } from '../src/economy.js'
 import { DAY_PARAMS } from '../src/day.js'
+import { summarize, parseLines, report } from '../tools/run-log-summary.mjs'   // the runlog step reads its real log back
 import { SHOP_TYPES } from '../src/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -402,7 +403,7 @@ const STEPS = [
   ['runlog', async () => {
     // FEAT-242 (DEC-358): the run logger, switched on mid-run by its dev handle. The download is intercepted (the anchor
     // click is stubbed, so nothing lands in Downloads): an oil change checked out at the auto shop and a night's sleep
-    // must both be in the part that switching it off downloads, with the header and the 1 s route samples around them.
+    // must both be in the ONE file "Save log now" downloads (BUG-199: nothing downloads per day), with the header and the 1 s route samples around them.
     await js(`(() => { const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
       A.click = function () { if (this.download?.startsWith('autos-run-')) window.__rlSaved.push({ name: this.download, href: this.href }); else window.__rlClick.call(this) } })()`)
     await js('window.__runLog.setOn(true)')
@@ -423,17 +424,23 @@ const STEPS = [
     await tap('Escape')
     await until(async () => !await open(), 2000)
     await js('window.__day().sleep(8, 0.5)')
+    check(await js('window.__rlSaved.length') === 0, 'runlog: something downloaded before the save button was pressed')
     await js('window.__runLog.setOn(false)')
+    await js('void window.__runLog.saveNow()')   // async (IndexedDB): wait for its one download
+    await until(() => js('window.__rlSaved.length > 0'), 3000)
     const saved = await js('window.__rlSaved.map(s => s.name)')
-    check(saved.length >= 1 && saved.every(n => /^autos-run-6-.*-part\d\d\.jsonl$/.test(n)), `runlog: the parts downloaded are ${JSON.stringify(saved)}`)
+    check(saved.length === 1 && /^autos-run-6-[\dT-]+Z\.jsonl$/.test(saved[0]), `runlog: the files downloaded are ${JSON.stringify(saved)}`)
     await js('void (window.__rlText = null, Promise.all(window.__rlSaved.map(s => fetch(s.href).then(r => r.text()))).then(t => { window.__rlText = t.join("") }))')
-    check(await until(() => js('window.__rlText !== null'), 3000), 'runlog: the downloaded parts could not be read back')
+    check(await until(() => js('window.__rlText !== null'), 3000), 'runlog: the downloaded file could not be read back')
     const got = await js(`(() => { const ev = window.__rlText.trim().split('\\n').map(l => JSON.parse(l))
       const by = (e) => ev.filter(x => x.e === e)
       return { n: ev.length, header: by('header').length, route: by('route').length, buy: by('purchase').map(x => x.lines.map(l => l.label).join()),
         sleep: by('sleep').map(x => x.hours), stamped: ev.filter(x => x.e !== 'part').every(x => x.day != null && x.pos?.length === 3) } })()`)
     check(got.header === 1 && got.route >= 2 && got.buy.includes('Oil change') && got.sleep.includes(8) && got.stamped,
       `runlog: the log is missing its header, route samples, the purchase or the sleep: ${JSON.stringify(got)}`)
+    // The real one-file log through tools/run-log-summary.mjs (BUG-199's header handling x FEAT-69's SHOP TIME block).
+    const { events, bad } = parseLines(await js('window.__rlText')), rep = report(summarize(events), bad)
+    check(!bad && /Oil change/.test(rep) && /SHOP TIME[^\n]*\n  day \d+: maintenance (?!0\.00)/.test(rep), `runlog: the summary of the real log lacks the oil change or its shop time:\n${rep}`)
     await js('HTMLAnchorElement.prototype.click = window.__rlClick; delete window.__rlSaved; delete window.__rlText')
   }],
   ['camp', async () => {
@@ -524,7 +531,7 @@ const STEPS = [
   ['boltons', async () => {
     // FEAT-204: the roof rack, bull bar and light bar fitted straight onto the truck (window.__parts, no shop, no
     // inventory row): each model in the scene and shown, the light bar's rack-mount model only with the rack (DEC-340,
-    // swapped live both ways), the rack's +4 slots, the light bar's longer head beams with the lamps on. Back to stock at
+    // swapped live both ways), the rack's +4 slots, the light bar's longer head beams on high beam only (DEC-373). Back to stock at
     // the end, lamps as found. The newRun step fits them too and checks a new run clears them. Runs after story:
     // SMOKE_STEPS=boot,story,boltons. FEAT204_SHOTS=1 also takes the day / night pictures into wip/feat-204-wire/
     // (it moves the run clock: run it on its own).
@@ -552,14 +559,19 @@ const STEPS = [
     const heads = () => js(`JSON.stringify((() => { const r = []; window.sky.scene.traverse(o => { if (o.isSpotLight && o.map) r.push({ d: +o.distance.toFixed(1), on: o.visible }) }); return r })())`)
     const lit = async () => JSON.parse(await heads()).every(h => h.on)
     for (let i = 0; i < 3 && !await lit(); i++) { await tap('l'); await frames(3, 100) }
-    const barred = JSON.parse(await heads())
-    await fit('lightBarNone'); await frames(3, 100)
-    const bare = JSON.parse(await heads())
-    await fit('lightBar'); await frames(3, 100)
-    console.log(`  boltons: head spots with the bar ${JSON.stringify(barred)} · without ${JSON.stringify(bare)}`)
-    check(barred.length === 2 && barred.every((h, i) => h.on && Math.abs(h.d / bare[i].d - 1.47) < 0.01), `the light bar did not lengthen the head beams: ${JSON.stringify({ barred, bare })}`)
-    check(await js(`(() => { let n = 0; window.sky.scene.getObjectByName('mod:mod-light-bar-rack').traverse(o => { if (o.isMesh && /LightBarReflector/.test(o.material.name) && o.material.emissiveIntensity > 0) n++ }); return n > 0 })()`),
-      'the light bar\'s reflectors are dark with the lamps on')
+    // DEC-373 (FEAT-204): the bar burns on HIGH beam only. Low beam: the same range with or without it; high: × 1.47.
+    const withAndWithout = async () => { const a = JSON.parse(await heads()); await fit('lightBarNone'); await frames(3, 100)
+      const b = JSON.parse(await heads()); await fit('lightBar'); await frames(3, 100); return [a, b] }
+    const reflectorsLit = () => js(`(() => { let n = 0; window.sky.scene.getObjectByName('mod:mod-light-bar-rack').traverse(o => { if (o.isMesh && /LightBarReflector/.test(o.material.name) && o.material.emissiveIntensity > 0) n++ }); return n > 0 })()`)
+    const [lowBar, lowBare] = await withAndWithout()
+    check(lowBar.length === 2 && lowBar.every((h, i) => h.on && h.d === lowBare[i].d), `the light bar changed the LOW beams (DEC-373: high only): ${JSON.stringify({ lowBar, lowBare })}`)
+    check(!await reflectorsLit(), 'the light bar\'s reflectors burn on low beam (DEC-373: high only)')
+    await tap('l'); await frames(3, 100)   // low → high
+    const [barred, bare] = await withAndWithout()
+    console.log(`  boltons: high-beam head spots with the bar ${JSON.stringify(barred)} · without ${JSON.stringify(bare)}`)
+    check(barred.length === 2 && barred.every((h, i) => h.on && Math.abs(h.d / bare[i].d - 1.47) < 0.01), `the light bar did not lengthen the high beams: ${JSON.stringify({ barred, bare })}`)
+    check(await reflectorsLit(), 'the light bar\'s reflectors are dark on high beam')
+    await tap('l'); await frames(3, 100); await tap('l'); await frames(3, 100)   // high → off → low, as before the check
     if (process.env.FEAT204_SHOTS) {
       mkdirSync('wip/feat-204-wire', { recursive: true })
       const snap = async (f) => { await frames(20, 1500); writeFileSync(`wip/feat-204-wire/${f}`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }

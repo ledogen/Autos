@@ -22,7 +22,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, setBedGrip, syncChassisMass, rollBalance } from './physics.js'
 import { HiLift, basin, rollDeg } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
-import { createPhysicsEngine } from './physics-engine.js'
+import { createPhysicsEngine, GROUP_STATIC } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-physics.js'
 import { DebrisSystem, bedDropPoints, inBedWell, strapPose, cubeLayout, STACK_RADIUS, BARREL_CUBE_SIDE, BARREL_CUBE_LAYERS } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
@@ -39,7 +39,7 @@ import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90
 import { updateVehicle, setLaunchHold, setParkLock, setThrottleCut, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { PARK_SPEED } from './park-brake.js'
 import { makeIgnitionState, keyPosition, seized, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
-import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setCameraViews, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setCameraViews, setCameraBoomProbe, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
@@ -47,6 +47,7 @@ window.__view = placeFreecam
 // harness toggles prop shadow casting and reads renderer.info through these.
 window.__props = () => propSystem
 window.__renderer = () => renderer
+import { boomFreeFraction } from './camera-boom.js'
 window.__cam = () => camera   // INFRA-07: test/cdp-smoke.mjs reads the chase heading after a freecam exit (R-11)
 import { initDebug, updatePacejkaCurve, updateTravelBars, updateSlipVectors, setDebugLockout, syncDebugLive } from './debug.js'
 import { captureFrame, toggleRecording, openInitialCondition, isRecording, setCaptureContext, downloadJSON } from './logger.js'
@@ -123,6 +124,7 @@ import { FuelStop, towPrice, towHours, stationPriceFactor, drumPositions } from 
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { ensureKnockAudio, setKnockAudio, updateKnockAudio, playSeizeBang, KNOCK_FROM } from './knock-audio.js'   // FEAT-162: the dying engine
+import { padHit, stepPadRumble, flushPadRumble, RUMBLE_PARAMS } from './pad-rumble.js'   // FEAT-247
 import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
 import { playCoin, playStinger, playTickTrain, playClack, playThud, playBlip, playPaperThrow, playPaperSlap, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
@@ -1437,6 +1439,8 @@ const partsSystem = new PartsSystem({ params: RANGER_PARAMS, damage: damageModel
   TRUCK = truckConfig(DEFAULT_VEHICLE_MODEL, partsSystem.loadUpgrades())
   damageModel.publish(RANGER_PARAMS)
   setMods(modModels(runParts.fitted))   // FEAT-204: the bolt-ons on the truck (setMods: createVehicleModel, below; never called before it)
+  RANGER_PARAMS.fittedKg = partsSystem.boltOnKg()   // …and their mass on the chassis (DEC-373; the chassis is built later on first boot)
+  window.__syncChassisMass?.()
   inventoryScreen.render()              // …and the slots a roof rack adds or takes away
 } })
 window.__parts = partsSystem   // dev handle — test/cdp-smoke.mjs fits the FEAT-204 bolt-ons
@@ -1532,7 +1536,7 @@ document.getElementById('ss-start')?.addEventListener('click', () => _startStory
 // Both pages draw their ◂ value ▸ rows from this one table, keyed by the settings key.
 const _settings = loadSettings()
 const _LIVE = { steerAssist: PAD_PARAMS, steerShape: PAD_PARAMS, clutchAssist: RANGER_PARAMS, abs: RANGER_PARAMS,
-  throttleAssist: RANGER_PARAMS, tractionControl: RANGER_PARAMS, stickDeadzone: PAD_PARAMS }
+  throttleAssist: RANGER_PARAMS, tractionControl: RANGER_PARAMS, stickDeadzone: PAD_PARAMS, vibration: RUMBLE_PARAMS }
 for (const [k, o] of Object.entries(_LIVE)) o[k] = _settings[k]
 const _STOCK_BOX = RANGER_PARAMS.transmission   // 'auto' = the truck's own automatic
 // `difficulty` is not stored: it names the preset the three knobs match ("custom" when none), and
@@ -1564,6 +1568,7 @@ const SELECTORS = {
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
+  vibration:    { name: 'controller vibration', opts: [[0, 'off'], [0.5, 'low'], [1, 'normal'], [1.5, 'high']] },   // FEAT-247 (src/pad-rumble.js)
   uiScale:      { name: 'UI size', opts: [['small', 'small'], ['big', 'big']] },   // FEAT-248: index.html `html[data-ui-scale=big]`
   frameCap:     { name: 'frame rate',      opts: [[60, '60 fps'], [30, '30 fps'], [90, '90 fps'], [120, '120 fps'], [0, 'display rate']] },   // PERF-48, DEC-185
 }
@@ -2811,6 +2816,15 @@ terrainSystem.setRecarveHook((cx, cz) => propSystem?.releaseGround(cx, cz))
 const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_PARAMS,
   { bed: DEFAULT_VEHICLE_MODEL.bed ?? null })
 const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
+// FEAT-246: the chase boom stops short of terrain (analytic height, no engine query) and of static solids (ONE ray per frame).
+const _boomDir = { x: 0, y: 0, z: 0 }
+setCameraBoomProbe((pivot, want) => {
+  const dx = want.x - pivot.x, dy = want.y - pivot.y, dz = want.z - pivot.z, len = Math.hypot(dx, dy, dz)
+  if (len < 1e-3) return 1
+  _boomDir.x = dx / len; _boomDir.y = dy / len; _boomDir.z = dz / len
+  const hit = physicsEngine.castRay(pivot, _boomDir, len, { collidesWith: GROUP_STATIC })
+  return boomFreeFraction(pivot, want, (x, z) => terrainSystem.analyticHeight(x, z), hit ? hit.distance : null)
+})
 const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
 
 // ── FEAT-96: the strapped load — a freight job's, or the debug "Load Cargo" pick ─────────────
@@ -3784,6 +3798,8 @@ function _pourStopLeak () {
 // ── FEAT-122: the inventory ────────────────────────────────────────────────────────────────
 // One grant path (rewards now; the shop and finds later). Stowed kit is real load: every change
 // pushes its mass onto the chassis. start() empties it when the region goes live (story deps).
+// FEAT-204 (DEC-373): what the springs and tires carry beyond the truck itself — stowed kit plus fitted bolt-ons.
+const _carriedKg = () => inventorySystem.stowedKg() + (RANGER_PARAMS.fittedKg || 0)
 const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots + partsSystem.extraSlots(),   // FEAT-204: the roof rack's +4
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
@@ -5516,7 +5532,7 @@ const _HAUL_PIECE = PROP_MODELS.firewoodBundleA.collision.size   // one bundle; 
 function _offerVerdict (offer, pieces = null) {
   const sp = offerBoard.spec(offer)
   // FEAT-122: stowed kit counts toward the same payload as the cargo (owner, 2026-10-16).
-  const massKg = (sp?.stock && pieces != null ? pieces * HAUL_BUNDLE_KG : sp?.massKg ?? 0) + inventorySystem.stowedKg()
+  const massKg = (sp?.stock && pieces != null ? pieces * HAUL_BUNDLE_KG : sp?.massKg ?? 0) + _carriedKg()
   if (sp?.stock) return loadVerdict(TRUCK, { massKg, size: _HAUL_PIECE, form: 'loose' })
   const row = sp?.load ? FREIGHT[sp.load] : null
   return row ? loadVerdict(TRUCK, { massKg, size: PROP_MODELS[row.model].collision.size, form: row.form }) : null
@@ -5534,7 +5550,7 @@ function _haulPick (offer) {
   if (!sp?.stock || sp.line || !(j?.par > 0)) return null   // FEAT-103: a line's load is fixed and free
   const { payTier, region } = economySystem.terms()
   const price = stockPrice(j.par, payTier, sp.payMult)
-  const hardN = Math.floor((massLimits(TRUCK).hardKg - inventorySystem.stowedKg()) / HAUL_BUNDLE_KG)
+  const hardN = Math.floor((massLimits(TRUCK).hardKg - _carriedKg()) / HAUL_BUNDLE_KG)
   const afford = price > 0 ? Math.floor(economySystem.money() / price + 1e-9) : sp.stock
   const max = Math.max(0, Math.min(sp.stock, hardN, afford))
   const n = Math.max(1, Math.min(max, parseInt(document.getElementById('mp-count')?.value, 10) || max))
@@ -7065,6 +7081,7 @@ const _campRest = (st) => st?.truck || st?.moms ? 0 : inventorySystem.restBonus(
 const _campHome = (st) => st.moms ? 'moms' : st.truck ? 'truck' : 'camp'
 
 /** Sleep the chosen number of hours at this site's vibe (mom's house 0.5, the truck its own rate). */
+const CAMPFIRE_BURN_H = 2   // a camp fire burns two hours unattended (owner 2026-11-17)
 function _sleepAtCamp () {
   if (!_campUi || _campBusy) return
   let hours = parseInt(document.getElementById('cp-hours')?.value ?? '8', 10) || 8
@@ -7092,7 +7109,10 @@ function _sleepAtCamp () {
     damageModel.engineTempC = DAMAGE_PARAMS.tempAmbientC   // FEAT-51: a night off is a cold engine
     // You wake WHERE YOU SLEPT: the truck is untouched and the dialogue is still up. The pad stays
     // dug for as long as you stay camped; "break camp" is what closes it AND un-digs the bench.
-    _campUi = { ..._campUi, mode: back }
+    // FEAT-264 (DEC-393): a night's sleep of more than two hours at a camp burns the fire out until the camp is broken.
+    const fireOut = back === 'camp' && hours > CAMPFIRE_BURN_H
+    if (fireOut) campfire.setDead(true)
+    _campUi = { ..._campUi, mode: back, fireOut: !!_campUi.fireOut || fireOut }
     _renderCampUI()
   })
 }
@@ -7217,8 +7237,8 @@ function _renderCampUI () {
   show('cp-sleep',  isHome && !noBed)
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
   show('cp-item',   isHome)   // FEAT-245: mom's too (eat and use things at her table); isHome = camp, truck, mom's
-  show('cp-cook',   st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230: the fire is lit all camp
-  show('cp-cook-groceries', st.mode === 'camp' && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
+  show('cp-cook',   st.mode === 'camp' && !st.fireOut && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230: the fire is lit until a night's sleep burns it out (FEAT-264)
+  show('cp-cook-groceries', st.mode === 'camp' && !st.fireOut && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
   show('cp-map',    isHome)
   show('cp-spirits', st.mode === 'camp')
   show('cp-sleep-go',   isSleep)
@@ -7335,7 +7355,7 @@ document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
 for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked', false], ['cp-cook-groceries', 'groceries', 'groceriesCooked', true]]) {
   document.getElementById(btn)?.addEventListener('click', (e) => {
     e.currentTarget.blur()
-    if (!_campUi || _campBusy || _campUi.mode !== 'camp' || (needsKit && !_kitAtCamp())) return
+    if (!_campUi || _campBusy || _campUi.mode !== 'camp' || _campUi.fireOut || (needsKit && !_kitAtCamp())) return
     _campFade(() => { if (inventorySystem.convert(raw, cooked)) daySystem.advanceMinutes(30); _renderCampUI() })
   })
 }
@@ -10797,8 +10817,8 @@ function loop (t) {
     // S-61: stepIgnition clears ignition.event at the top of EVERY step, so on a 2+ step frame a
     // catch on step 1 is gone by the time the frame reads it. Latch the edge here, per step.
     const ignEv = vehicleState.ignition?.event
-    if (ignEv === 'catch') _ignEdge = ignEv
-    else if (ignEv === 'shutoff' && seized(vehicleState)) _ignEdge = 'seize'   // FEAT-162: the running engine seized
+    if (ignEv === 'catch') { _ignEdge = ignEv; padHit('engineStart') }
+    else if (ignEv === 'shutoff' && seized(vehicleState)) { _ignEdge = 'seize'; padHit('engineSeize') }   // FEAT-162: the running engine seized
     if (resetRequested) {
       runLog.on && runLog.event('reset', { camped: !!_campUi })   // FEAT-242: R pressed
       // R-12: R while camped breaks camp first — the same close the dialogue's "break camp" button
@@ -10875,7 +10895,7 @@ function loop (t) {
 
     // FEAT-36: debris pre-step — render snapshot + cargo-in-bed bullet flag (see debris.js).
     debrisSystem.beforeStep(vehicleChassis, DEFAULT_VEHICLE_MODEL.bed ?? null)
-    hiLift.step(vehicleState, RANGER_PARAMS.mass + (RANGER_PARAMS.stowedKg || 0), PHYSICS_DT, _now())   // FEAT-138
+    hiLift.step(vehicleState, RANGER_PARAMS.mass + (RANGER_PARAMS.stowedKg || 0) + (RANGER_PARAMS.fittedKg || 0), PHYSICS_DT, _now())   // FEAT-138
     const _galBefore = vehicleState.fuel.gal   // FEAT-184: the evening burns none (put back after the damage step)
     _fragilePre()    // BUG-166: the fragile load's velocity before the step, for its felt g
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
@@ -10888,21 +10908,23 @@ function loop (t) {
     // Fold the engine's wheel-core contacts into rimForce BEFORE the damage step reads it — the
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT, vehicleState.rimHazard)
-    damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
+    damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + _carriedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
     damageModel.held = _inTutorial()   // FEAT-184 (DEC-151): no wear and no impact damage for the whole tutorial (the feedContact below too)
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     if (_tutDrive()) vehicleState.fuel.gal = _galBefore   // FEAT-184 (DEC-151): …and the tutorial burns no fuel ("fuel disabled"); the pump below still fills
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
-    if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout() }
+    if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout(); padHit('blowout') }
     // FEAT-120: the contact one-shots read the same per-step peaks the damage step just priced.
     stepContactAudio(vehicleState, RANGER_PARAMS._tireFz, PHYSICS_DT)
+    stepPadRumble(vehicleState, RANGER_PARAMS, damageModel.flat)   // FEAT-247: slip, road texture, a flat, a bent wheel
     // FEAT-126: a shift forced with the clutch in grinds, and is a damage event in its own right. Its
     // 2 % wear is under the damage screen's per-sample drop threshold, so it raises the alert here,
     // like a landed impact does below.
     if (vehicleState.drivetrain?.missShift) {
       playGearGrind(vehicleState.drivetrain.engineRPM)
+      padHit('missShift')
       if (DAMAGE_PARAMS.enabled && !damageModel.held) damageScreen.alert()
     }
     // SM-3 collision damage: hand the hardest contact on the chassis this step (`hit`, read with
@@ -10914,7 +10936,7 @@ function loop (t) {
       const landed = damageModel.feedContact(
         classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT,
         vehicleState.velocity)
-      if (landed) { damageHUD.noteImpact(landed); damageScreen.alert() }
+      if (landed) { damageHUD.noteImpact(landed); damageScreen.alert(); padHit('impact', Math.min(1, landed.v / 20)) }   // FEAT-247: Δv 20 m/s (45 mph) = full
       // FEAT-146: death (SM-INV-1) — a live story run ends on its first fatal hit.
       if (damageModel.fatalImpact && storySystem.isActive() && !storySystem.isEntering()) _endRun('crash')
     }
@@ -11471,6 +11493,7 @@ function loop (t) {
   updateCamera(camera, vehicleState, frameTime, Math.max(0, Math.min(MAX_FRAME_TIME, drawnT - _cameraDrawnT)))
   _cameraDrawnT = drawnT
   _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
+  flushPadRumble(pad.active && getCameraMode() !== 'freecam')   // FEAT-247: one mixed vibration effect per frame
   debrisSystem.update(_renderAlpha)   // FEAT-36: engine → debris meshes, at the truck's render alpha
 
   // Restore physics position/quaternion — the interpolated copies were render-only.

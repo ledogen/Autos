@@ -21,7 +21,7 @@ The chase camera clips through terrain and walls. The owner accepts the simple f
 Start with the analytic terrain height along the boom (cheap, no engine query), then a ray against the colliders if walls still clip. Ease back out so it does not pop.
 
 ## Tracker
-- [ ] Camera stays above terrain
-- [ ] Camera does not pass through building walls
-- [ ] No popping when the block clears
+- [x] Camera stays above terrain
+- [x] Camera does not pass through building walls (static solids, one ray)
+- [x] No popping when the block clears (tau 0.12 s)
 - [ ] Owner has looked

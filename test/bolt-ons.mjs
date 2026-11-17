@@ -9,6 +9,7 @@
 //   5. Per run (SM-INV-8, BUG-184): start() — the run-start path main.js onRegionLive calls — clears every bolt-on,
 //      its slots, its model and its armour; a save written before the bolt-ons existed restores to stock ones.
 //   6. Sold: each is an inventory part with a shelf weight; the "none" parts are neither.
+//   7. Mass: boltOnKg sums the fitted bolt-ons' massKg and nothing else; no bed toolbox part exists (DEC-372).
 //
 // Pure node: no THREE, no DOM.
 import { PARTS, SLOTS } from '../data/parts.js'
@@ -88,7 +89,18 @@ for (const id of ['roofRack', 'bullBar', 'lightBar']) {
   check(`${id}: an inventory part with a price, mass and shelf weight`, ITEMS[id]?.kind === 'part' && PARTS[id].price > 0 && PARTS[id].massKg > 0 && STOCK_WEIGHT[id] > 0)
   check(`${id}None: nothing to carry or stock`, !ITEMS[id + 'None'] && !(id + 'None' in STOCK_WEIGHT))
 }
-check('the bed toolbox is not wired (held on the freight call)', !Object.values(PARTS).some(p => /toolbox/i.test(p.model ?? '')))
+// ── 7. Mass (DEC-373): the fitted bolt-ons' mass is boltOnKg (main.js → params.fittedKg → the chassis); stock is 0 ──
+parts.start()
+check('stock: no bolt-on mass', parts.boltOnKg() === 0, parts.boltOnKg())
+for (const id of ['roofRack', 'bullBar', 'lightBar']) parts.fit(id)
+const kgAll = PARTS.roofRack.massKg + PARTS.bullBar.massKg + PARTS.lightBar.massKg
+check('all three fitted: their masses sum', Math.abs(parts.boltOnKg() - kgAll) < 1e-9, `${parts.boltOnKg()} vs ${kgAll}`)
+parts.fit('springsHD', null, 'springsFront')
+check('a non-bolt-on swap adds nothing (its stock mass is inside params.mass)', Math.abs(parts.boltOnKg() - kgAll) < 1e-9)
+parts.start()
+check('a new run: 0 again', parts.boltOnKg() === 0)
+
+check('there is no bed toolbox before the alpha (DEC-372)', !Object.values(PARTS).some(p => /toolbox/i.test(p.model ?? '')))
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed')
 process.exit(fails ? 1 : 0)

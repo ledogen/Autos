@@ -315,7 +315,7 @@ export function carcassRadialOffset (corner, psi, runout) {
  *     suspensionRestLength{Front,Rear}, suspensionTravel{Front,Rear}, suspensionBodyOffset{Front,Rear},
  *     bumpStopStiffness, DROOP_STOP_STIFFNESS, arbStiffness{Front,Rear},
  *     tireStiffness, tireDamping, tireStopDampingRatio, wheelRadius, trackFront, trackRear, wheelbase,
- *     weightFront, weightRear, cgHeight, mass, stowedKg, inertia{Pitch,Yaw,Roll}, _rotateVector (injected function),
+ *     weightFront, weightRear, cgHeight, mass, stowedKg, fittedKg, inertia{Pitch,Yaw,Roll}, _rotateVector (injected function),
  *     _hubNormalXZ[4] (initialized by main.js), _bodyOther (physics.js, last step's non-strut force/torque).
  *   Writes: _tireFz[4], _suspForceAccum[4], _hubNormalXZ[4], _bodyStrutF/_bodyStrutT (the body copy's step-mean strut push).
  * @param {number} dt - Outer physics step in seconds (== PHYSICS_DT from main.js).
@@ -439,7 +439,7 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
   let bvx = vehicleState.velocity.x, bvy = vehicleState.velocity.y, bvz = vehicleState.velocity.z
   let bwx = vehicleState.angularVelocity.x, bwy = vehicleState.angularVelocity.y, bwz = vehicleState.angularVelocity.z
   let Dx = 0, Dy = 0, Dz = 0, Tx = 0, Ty = 0, Tz = 0   // the body's displacement and small rotation so far this step
-  const invM = 1 / (params.mass + (params.stowedKg || 0))
+  const invM = 1 / (params.mass + (params.stowedKg || 0) + (params.fittedKg || 0))   // FEAT-204: fitted bolt-ons, as physics.js syncChassisMass
   const ex = rot ? rot(_EX) : _EX, ez = rot ? rot(_EZ) : _EZ   // body x (pitch axis) and z (roll axis); body_up is y (yaw)
   const iPitch = 1 / params.inertiaPitch, iYaw = 1 / params.inertiaYaw, iRoll = 1 / params.inertiaRoll
   const o = params._bodyOther
