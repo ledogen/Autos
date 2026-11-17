@@ -531,6 +531,28 @@ const STEPS = [
       await look(0, 9, 6); await snap('night-bar.png')
       await fit('lightBarNone'); await snap('night-nobar.png'); await fit('lightBar')
     }
+    // FEAT-231 (DEC-352): the bed mat and the bedliner show in the bed only while owned; the liner covers the mat.
+    // FEAT231_SHOTS=1 takes the pictures into wip/feat-231-looks/ (from above the bed).
+    const bedShown = (n) => js(`(() => { let o = window.sky.scene.getObjectByName('${n}'); if (!o) return false
+      for (; o; o = o.parent) if (!o.visible) return false; return true })()`)
+    const bedLook = async (mat, liner, why) => check(await until(async () => await bedShown('bed-mat') === mat && await bedShown('bed-liner') === liner, 8000), why)
+    const shot = async (f) => { if (!process.env.FEAT231_SHOTS) return; mkdirSync('wip/feat-231-looks', { recursive: true })
+      await js(`(() => { const p = window.__vs.position, q = window.__vs.quaternion
+        const c = 1 - 2 * (q.y * q.y + q.z * q.z), s = 2 * (q.x * q.z + q.w * q.y), c2 = 2 * (q.x * q.z - q.w * q.y), c3 = 1 - 2 * (q.x * q.x + q.y * q.y)
+        const r = (x, z) => [x * c + z * s, x * c2 + z * c3], [ox, oz] = r(0, 3.4), cx = p.x + ox, cy = p.y + 2.6, cz = p.z + oz
+        const [tx, tz] = r(0, 1.5), dx = p.x + tx - cx, dy = p.y + 0.1 - cy, dz = p.z + tz - cz
+        window.__view(cx, cy, cz, Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))) })()`)
+      await frames(20, 1500); writeFileSync(`wip/feat-231-looks/${f}`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    await bedLook(false, false, 'a bare bed shows a mat or a liner'); await shot('bare.png')
+    await js(`window.__inv.grant('rubberBedMat')`)
+    await bedLook(true, false, 'the owned mat does not show alone'); await shot('mat.png')
+    await js(`window.__inv.grant('bedliner')`)
+    await bedLook(false, true, 'mat + liner owned does not show the liner alone (it covers the mat)'); await shot('liner.png')
+    if (process.env.FEAT231_SHOTS) { await js(`(() => { const d = window.__debris, k = Object.keys(d._types).find(n => /barrel|drum|crate/i.test(n)) || Object.keys(d._types)[0]
+        const p = window.__vs.position, q = window.__vs.quaternion, c = 1 - 2 * (q.y * q.y + q.z * q.z), s = 2 * (q.x * q.z + q.w * q.y), c2 = 2 * (q.x * q.z - q.w * q.y), c3 = 1 - 2 * (q.x * q.x + q.y * q.y)
+        d.spawn(k, { x: p.x + 1.5 * s, y: p.y + 0.8, z: p.z + 1.5 * c3 }, { x: 0, y: 0, z: 0 }, { pinned: true, noDamage: true }) })()`); await frames(120, 1500); await shot('liner-load.png'); await js('window.__debris.clear()') }
+    for (const id of ['rubberBedMat', 'bedliner']) await js(`window.__inv.consume('${id}')`)
+    await bedLook(false, false, 'the mat / liner still show with neither owned')
     for (let i = 0; i < 3 && await lit(); i++) { await tap('l'); await frames(3, 100) }
     for (const id of ['roofRackNone', 'bullBarNone', 'lightBarNone']) await fit(id)
     check(await want([]), `stock again, yet a bolt-on still shows: ${await state()}`)

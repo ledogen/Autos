@@ -74,5 +74,12 @@ ok(inv.bedMu() === null, 'nothing owned: bare bed (null)')
 inv.grant('rubberBedMat'); ok(inv.bedMu() === 0.30, `mat owned: ${inv.bedMu()}`)
 inv.grant('bedliner');     ok(inv.bedMu() === 0.60, `mat and liner owned: the liner wins (${inv.bedMu()})`)
 
+// FEAT-231 / DEC-352: the look follows owns(): the mat alone, then the liner over it (both owned is valid), gone when dropped.
+const inv2 = new InventorySystem({ slotCap: () => 20, onMassChange: () => {}, onChange: () => {} })
+ok(!inv2.owns('rubberBedMat') && !inv2.owns('bedliner'), 'nothing owned: neither look')
+inv2.grant('bedliner'); ok(inv2.owns('bedliner') && !inv2.owns('rubberBedMat'), 'liner bought first: owned, mat not')
+inv2.grant('rubberBedMat'); ok(inv2.owns('bedliner') && inv2.owns('rubberBedMat'), 'the mat can still be bought with the liner fitted')
+inv2.drop(inv2.list().findIndex(r => r.id === 'bedliner')); ok(!inv2.owns('bedliner') && inv2.bedMu() === 0.30, 'dropping the liner un-fits it (the mat grip returns)')
+
 console.log(fail ? 'FAIL' : 'PASS')
 process.exit(fail)
