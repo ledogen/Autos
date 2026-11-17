@@ -372,4 +372,6 @@ export const GATES = [
     desc: 'the owner\'s tracker pages (.planning/pages/*.html): every inline script parses — a missing comma once shipped the Alpha Lanes page dead' },
   { file: 'cdp-smoke.mjs', subsystem: 'app', cost: 'heavy', browser: true, extraDeps: ['src', 'data', 'index.html', 'vite.config.js'],
     desc: 'INFRA-07 the main.js gate: the real app in Chrome — boot, drive, R, teleport, map, freecam (R-11), lab, story entry, mom\'s camp hold + R closes it (R-12), backtick (R-13), take and start a job, and (FEAT-125) a run end to end on the pad alone — zero console errors; SMOKE_STEPS=boot,pad runs a subset while developing' },
+  { file: 'pad-e2e.mjs', subsystem: 'app', cost: 'heavy', browser: true, extraDeps: ['src', 'data', 'index.html', 'vite.config.js'],
+    desc: 'FEAT-125/FEAT-41 the pad contract in the real app: a scripted fake gamepad drives analog pedals, position steering + assist, last-moved-wins, unplug safety, the button layout, then the menus pad-only and the choices surviving a reload' },
 ]

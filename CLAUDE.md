@@ -186,7 +186,7 @@ not pick is random too (owner, 2026-11-06): free roam, the world built behind th
 
 - **The main.js smoke (INFRA-07):** `node test/cdp-smoke.mjs [--headed]`, or `npm run test:all -- --browser`
   — boots the real app in Chrome (its own Vite, this checkout), drives every mode transition, and fails on
-  any console error. The only gate that covers `main.js`; held back unless `--browser` / `CDP_SMOKE=1`.
+  any console error. The only gate that covers `main.js`; held back unless `--browser` / `CDP_SMOKE=1`; `test/pad-e2e.mjs` (the FEAT-125 pad contract, own Vite) rides the same flag.
 - **Road resolution / fold debugging:** `node test/replay.mjs <place-capture.json>` — reports
   gradeY / hit / runKey / arcS / minR at the marked location and checks surface window-invariance.
   (Captures are produced in-game; press the capture key. `RoadSystem.debugSampleAt()` is the read-only
