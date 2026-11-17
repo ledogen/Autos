@@ -2215,10 +2215,10 @@ const STEPS = [
     // pay for them), so the driver may wake hungry; the lunch she asks for feeds him.
     const stage = () => js('document.getElementById("hm-stage").textContent')   // FEAT-198: hunger's own line
     let morn = await readCards()   // up to her breakfast card, which waits for a lunch eaten (DEC-359)
-    check(await js('window.__tutorial().until') === 'lunch', `no breakfast card waiting for a lunch in the morning: ${JSON.stringify(await js('window.__tutorial()'))}`)
+    // (her breakfast card clears itself the moment a lunch is gone; this run ate two at night, so it may already be down: DEC-359)
     check(await js('window.__inv.use("packedLunch")'), 'no packed lunch for breakfast')
     morn += await readCards()   // Katie's reminder
-    check(morn >= 1, 'no reminder in the morning')
+    check(morn >= 1 && saidAny(/Don't forget, today's the day/), `no reminder in the morning: ${JSON.stringify(said.slice(-3))}`)
     check(await until(async () => !/hungry/.test(await stage()), 1000), `breakfast did not feed the driver ("${await stage()}")`)
     if (await panel()) await tap('Escape')   // her sleep card, if it is still up over the morning
     await strayCheck('on the way to the paycheck')
