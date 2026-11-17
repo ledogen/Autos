@@ -191,6 +191,15 @@ build. THEN, serially on src/road.js (never in parallel): BUG-201 (light sliver 
 fix it", his hypothesis: deg-2 junction legs not trimmed), then BUG-200 (38 % hairpin at the chained fork on seed
 688224244; owner wants fix options, dropping the road is acceptable). DEC-396: main's existing dead ends stay.
 Next free: BUG-202, DEC-397.
+**INTAKE 13:00 (owner answered 4 cards; pairs moved to answered/):** BUG-191 closed ("Drove it: fixed"). FEAT-243
+"Good: land it". Dead campfire + camera: changes asked. RUNNING, three agents, each proves its own branch (merge of
+main + gates + full smoke); merge each into main only when it reports green and never under a running smoke; after
+the last one run ONE confirming smoke on main and refresh the play build:
+- b, CarGame-machine, land/bug-179: BUG-179 landing (see above).
+- s2, CarGame-spare, land/feat-243-particle-shade: FEAT-243 landing prep (vite :3885 stays up).
+- p, CarGame-perf, land/asset-90-dead-campfire: smoke wisps on the dead fire, cooking relights it (DEC-397), camera
+  ray hits tunnel walls (FEAT-246); lands when green, card campfire-camera-r2-look is for his check after.
+Next free: BUG-202, DEC-398.
 **BUILT, HELD for the owner (not on main):**
 - land/food-1117 (CarGame-content): FEAT-250, FEAT-260, FEAT-261, BUG-198; DEC-376..381 (DEC-380 draft). Card
   food-1117-numbers BLOCKS landing. Needs a main merge (keep the BUG-198 top-up before Larry's call in _checkOpeningEnd).
@@ -199,7 +208,6 @@ Next free: BUG-202, DEC-397.
 - land/feat-235-r3 @ f72c5d15 (branch only): cluster round 3 (DEC-391). Card feat235-cluster-r3-look. Its gpu-reset run
   failed on TREE IMPOSTORS ("empty tiles 0 → 8"), unexplained, probably load: re-run `node test/gpu-reset.mjs` on main
   on a quiet machine before believing either way.
-- land/feat-243-particle-shade @ 069b416f (CarGame-spare): dust reads the far shadow map. Card feat243-particle-shade-look.
 **QUEUE:** (1) tutorial round 4 after the owner answers the tutorial card and picks a seed: the handbrake-stops-time
 line (answered/tutorial-test-drives.answer-2026-11-17b.json). (2) After he answers feat69-freight-lists: add approved heavy
 loads, trim killed light ones. (3) ASSET-90 ash-only campfire model (nobody on it).
