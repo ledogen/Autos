@@ -12,6 +12,7 @@ lane: A (tutorial)
 # FEAT-229: The tutorial starts the run in the morning
 
 ## Next steps
+Seed pin (DEC-351) on `land/tut-seed-pin`: 3590618618 pinned, gate constants re-measured, smoke green twice; ready to land (merge after `land/tut-round2`, the smoke edits are seed values + one spot-pick line). Owner: look at `wip/tut-seed-pin/` shots.
 On `land/tut-picnic`: the owner's picnic middle (DEC-345) built — Katie's call at Larry's, mom's gas call, the ranch on a
 waypoint, Katie's camp walk-through (DEC-346..348); Billy (DEC-343, DEC-349) in the dialogue. Owner: the placeholder lines
 (Katie's snack ask, mom's gas lesson and send-off, Katie's three camp cards) and whether her 17:00 talk keeps its words.
@@ -111,3 +112,4 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - 2026-11-16: DEC-344 seed search (lane U, study only, nothing changed): 320 random seeds, 290 valid; pick 3590618618
   (route 112 m vs 144, roadside green 0.35 vs 0.18, joint sun clear; mom's wake sun blocked), runner-up 1273834102.
   Sheets + table: wip/tut-seed-search/RESULTS.md (git-invisible, in CarGame-land-gps). Awaits the owner's pick.
+- 2026-11-16: DEC-351 pin (lane U, `land/tut-seed-pin`): data/tutorial.js, test/tutorial-seed.mjs constants (re-measured, match the study), test/gates.mjs desc, 3 smoke literals. Smoke finding: the BUG-173 shoulder pick read a flat g=0 from unstreamed height at a real 35 % slope and the truck rolled off; the pick now skips g<1e-9. Smoke boot,story,opening,newRun PASS twice. Shots in wip/tut-seed-pin/.

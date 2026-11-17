@@ -116,6 +116,8 @@ export class InventorySystem {
     restBonus () { return this.packed().reduce((s, id) => s + (ITEMS[id].rest ?? 0), 0) }
     /** The vibe segments packed gear fills on the chosen site (camp.js vibeAssist). */
     fills () { return new Set(this.packed().map(id => ITEMS[id].fills).filter(Boolean)) }
+    /** FEAT-231: is this item in the run inventory (the bed mat / liner look follows it). */
+    owns (id) { return runInventory.entries.some(e => e.id === id) }
     /** FEAT-231: the bed floor's grip — the best `bedMu` owned (the bedliner over the mat), null = the bare bed. */
     bedMu () {
         let mu = null

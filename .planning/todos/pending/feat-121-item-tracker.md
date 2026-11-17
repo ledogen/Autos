@@ -761,8 +761,8 @@ Shovel row says `campGateUnevenM` 1.2 m but the code value is 1.5 m.
 | Packed lunch | B–A reward row (residence, farm, vendor) (24 h fresh built) | none | yes, reward row |
 | Bag of peanuts | C–B reward row; stack cap 3; find | stack caps; find | yes |
 | Gummy worms, Spicy chips, Candy bar | whole item, gas-station shelf, C–B reward, stack caps; thumbnails exist | none | needs price + mass numbers |
-| Rubber bed mat | visual (μ 0.30 and the shelf built, FEAT-231) | none | built at $8 [DEFAULT] |
-| Bedliner | thumbnail, visual (item, μ 0.60, shelf, A–S reward built, FEAT-231) | none | built at $20 [DEFAULT], Hardly ever |
+| Rubber bed mat | visual built in code (black slab between the wheelhouses, DEC-352, FEAT-231) | none | built at $8 [DEFAULT] |
+| Bedliner | thumbnail (visual built in code: a charcoal shell over floor, walls and arches, DEC-352; item, μ 0.60, shelf, A–S reward built, FEAT-231) | none | built at $20 [DEFAULT], Hardly ever |
 | Air mattress, Sleeping pad, Deluxe sleeping pad, Blanket, Sleeping bag | general-store shelf (all else ships) | none | yes; price = REWARD_VALUE [DEFAULT] unless owner rules |
 | Rucksack (+ Daypack, Duffel, Frame pack, not ratified) | every source: shelf and reward | none | needs slots, reach, mass, price, gates |
 | GPS unit | whole item; minimap (new UI); story gate that boots the overlay off | none | needs price ($10–30 is a range) |

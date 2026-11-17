@@ -540,6 +540,28 @@ const STEPS = [
       await look(0, 9, 6); await snap('night-bar.png')
       await fit('lightBarNone'); await snap('night-nobar.png'); await fit('lightBar')
     }
+    // FEAT-231 (DEC-352): the bed mat and the bedliner show in the bed only while owned; the liner covers the mat.
+    // FEAT231_SHOTS=1 takes the pictures into wip/feat-231-looks/ (from above the bed).
+    const bedShown = (n) => js(`(() => { let o = window.sky.scene.getObjectByName('${n}'); if (!o) return false
+      for (; o; o = o.parent) if (!o.visible) return false; return true })()`)
+    const bedLook = async (mat, liner, why) => check(await until(async () => await bedShown('bed-mat') === mat && await bedShown('bed-liner') === liner, 8000), why)
+    const shot = async (f) => { if (!process.env.FEAT231_SHOTS) return; mkdirSync('wip/feat-231-looks', { recursive: true })
+      await js(`(() => { const p = window.__vs.position, q = window.__vs.quaternion
+        const c = 1 - 2 * (q.y * q.y + q.z * q.z), s = 2 * (q.x * q.z + q.w * q.y), c2 = 2 * (q.x * q.z - q.w * q.y), c3 = 1 - 2 * (q.x * q.x + q.y * q.y)
+        const r = (x, z) => [x * c + z * s, x * c2 + z * c3], [ox, oz] = r(0, 3.4), cx = p.x + ox, cy = p.y + 2.6, cz = p.z + oz
+        const [tx, tz] = r(0, 1.5), dx = p.x + tx - cx, dy = p.y + 0.1 - cy, dz = p.z + tz - cz
+        window.__view(cx, cy, cz, Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))) })()`)
+      await frames(20, 1500); writeFileSync(`wip/feat-231-looks/${f}`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    await bedLook(false, false, 'a bare bed shows a mat or a liner'); await shot('bare.png')
+    await js(`window.__inv.grant('rubberBedMat')`)
+    await bedLook(true, false, 'the owned mat does not show alone'); await shot('mat.png')
+    await js(`window.__inv.grant('bedliner')`)
+    await bedLook(false, true, 'mat + liner owned does not show the liner alone (it covers the mat)'); await shot('liner.png')
+    if (process.env.FEAT231_SHOTS) { await js(`(() => { const d = window.__debris, k = Object.keys(d._types).find(n => /barrel|drum|crate/i.test(n)) || Object.keys(d._types)[0]
+        const p = window.__vs.position, q = window.__vs.quaternion, c = 1 - 2 * (q.y * q.y + q.z * q.z), s = 2 * (q.x * q.z + q.w * q.y), c2 = 2 * (q.x * q.z - q.w * q.y), c3 = 1 - 2 * (q.x * q.x + q.y * q.y)
+        d.spawn(k, { x: p.x + 1.5 * s, y: p.y + 0.8, z: p.z + 1.5 * c3 }, { x: 0, y: 0, z: 0 }, { pinned: true, noDamage: true }) })()`); await frames(120, 1500); await shot('liner-load.png'); await js('window.__debris.clear()') }
+    for (const id of ['rubberBedMat', 'bedliner']) await js(`window.__inv.consume('${id}')`)
+    await bedLook(false, false, 'the mat / liner still show with neither owned')
     for (let i = 0; i < 3 && await lit(); i++) { await tap('l'); await frames(3, 100) }
     for (const id of ['roofRackNone', 'bullBarNone', 'lightBarNone']) await fit(id)
     check(await want([]), `stock again, yet a bolt-on still shows: ${await state()}`)
@@ -1754,7 +1776,7 @@ const STEPS = [
     { const h0 = await js('window.__day().clockH()'), c0 = await car(); await sleep(800)
       const c1 = await car(); check(await js('window.__day().clockH()') === h0 && Math.hypot(c1.x - c0.x, c1.z - c0.z) < 0.01, 'the sim ran under the tutorial card') }
     await js('document.getElementById("tc-play").click()')
-    check(await until(async () => await js(live) && await world() === '822480141', 60000, 250), `"play" did not load the tutorial seed (world ${await world()}, ${JSON.stringify(await tut())})`)
+    check(await until(async () => await js(live) && await world() === '3590618618', 60000, 250), `"play" did not load the tutorial seed (world ${await world()}, ${JSON.stringify(await tut())})`)
     check((await tut()).returnSeed === '6', `the tutorial's world does not carry seed 6 back: ${JSON.stringify(await tut())}`)
     check(Math.abs(await js('window.__day().clockH()') + 41) < 0.1, `the tutorial's day is not 07:00 on day -1 (clockH ${await js('window.__day().clockH()')})`)
     // DEC-160: the tutorial saves as part of the run, the way back in it.
@@ -1827,12 +1849,12 @@ const STEPS = [
     // all four wheels past the road mesh and its 2.5 m shoulder, inside DEC-219's 15 m), graded under 1.5 % (under the
     // rolling resistance, so a truck with the brake off stays put), clear of hard props within 6 m, and 90 m from every
     // place. The old pick (the first ±9 m point beside the joint) sat on a 13–35 % cross-slope 2.3 m from a trunk: the
-    // truck perched or rolled, by frame timing. Seed 822480141 has no such point within 250 m along the joint's road.
+    // truck perched or rolled, by frame timing. The old tutorial seed 822480141 had no such point within 250 m along the joint's road.
     // The check below is unchanged.
     const sh = await js(`(() => { const v = window.__vs.position, H = window.terrain; let best = null
       for (let dx = -300; dx <= 300; dx += 4) for (let dz = -300; dz <= 300; dz += 4) { const x = v.x + dx, z = v.z + dz
         const g = Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
-        if (g >= 0.015 || (best && g >= best.g)) continue
+        if (g >= 0.015 || g < 1e-9 || (best && g >= best.g)) continue   // g === 0: height not streamed in yet (3590618618 read a flat 0 at a 35 % slope), not a flat spot
         const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
         if (lt < 11 || lt > 14 || window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
         if (!window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length) best = { x, z, g } }
@@ -2216,7 +2238,7 @@ const STEPS = [
     for (const [name, open] of Object.entries(CASES)) {
       await js('document.getElementById("pm-menu").click()')   // out of the last run (or free roam) to the main menu
       await js('document.getElementById("mm-new").click()')
-      await js('document.getElementById("su-seed").value = "822480141"; document.getElementById("su-start").click()')   // data/tutorial.js
+      await js('document.getElementById("su-seed").value = "3590618618"; document.getElementById("su-start").click()')   // data/tutorial.js
       check(await until(() => js(live), 45000, 250), `${name}: the tutorial run never went live`)
       for (let i = 0; i < 12 && !await js('document.getElementById("tut-card").style.display === "flex"'); i++) { await tap('Enter'); await sleep(250) }
       check(await until(() => js('document.getElementById("tut-card").style.display === "flex"'), 3000), `${name}: the firing did not end on the tutorial card`)
@@ -2386,7 +2408,7 @@ const STEPS = [
     for (let i = 0; i < 12 && await js('document.getElementById("tut-card").style.display !== "flex"'); i++) { await btn(0); await sleep(150) }
     check(await js('document.getElementById("tut-card").style.display === "flex"'), 'the pad never reached the tutorial card')
     await padTo('tc-play'); await btn(0)
-    check(await until(async () => await js(live) && await js('window.__worldCode().split("/")[0]') === '822480141' && await dlg(), 60000, 250),
+    check(await until(async () => await js(live) && await js('window.__worldCode().split("/")[0]') === '3590618618' && await dlg(), 60000, 250),
       `A on "play" did not load the tutorial seed with mom's call up: ${JSON.stringify(await js('window.__tutorial()'))}`)
     // Read on to mom's first lesson naming a key (her call's M, the drive's W / S): it reads the pad's button, not the keyboard's.
     const lessonCap = () => js('(k => k && JSON.stringify({ kb: getComputedStyle(k.querySelector(".kc-kb")).display, pad: getComputedStyle(k.querySelector(".kc-pad")).display, key: k.querySelector(".kc-kb").textContent, text: k.querySelector(".kc-pad").textContent }))(document.querySelector("#dlg-text .dlg-key .keycap"))')
