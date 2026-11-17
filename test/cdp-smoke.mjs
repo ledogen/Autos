@@ -2124,9 +2124,18 @@ const STEPS = [
     check(/pull over and check your tire/.test((await eve()).hud), `after the flat the HUD does not say pull over ("${(await eve()).hud}")`)
     await hold('w', 1)
     check(await js('window.__vs.parked && window.__vs.throttle === 0'), `after the flat W still drove: parked ${await js('window.__vs.parked')}, throttle ${await js('window.__vs.throttle')}`)
-    await tap('v'); await readCards()   // the damage screen's card
+    await readCards()   // up to the flat's card: it waits for V (DEC-359)
+    check(await js('window.__tutorial().until') === 'damage', `the flat's card does not wait for V: ${JSON.stringify(await js('window.__tutorial()'))}`)
+    await js('window.__inv.use("spareTire")'); await sleep(300)   // DEC-359: tire work before V is locked (silent)
+    check(await js('!document.getElementById("dmg-screen").classList.contains("picking")'), 'the spare picker opened before the damage screen was looked at (DEC-359)')
+    await tap('v'); await readCards()   // the damage screen's card: it waits for the spare to be tried
+    check(await js('window.__tutorial().until') === 'spare', `the damage card does not wait for the spare: ${JSON.stringify(await js('window.__tutorial()'))}`)
     await tap('Escape')
-    await js('window.__inv.use("spareTire")'); await readCards()   // the spare: flat too
+    await js('window.__inv.use("spareTire")')
+    check(await until(() => js('document.getElementById("dmg-screen").classList.contains("picking")'), 1000), 'the spare opened no tire picker')
+    await js('document.querySelector("#dmg-screen .ds-pbtn[data-track=tireFL]").click()')
+    await js('document.querySelector("#dmg-screen [data-act=pick-do]").click()'); await readCards()   // the spare: flat too (waits for X)
+    check(await js('window.__tutorial().until') === 'recovery', `the spare's card does not wait for the recovery menu: ${JSON.stringify(await js('window.__tutorial()'))}`)
     await tap('Escape')   // the spare's picker; closing it reopens the inventory (parked)
     if (await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 1000)) await tap('Escape')
     console.log('  worst day: the tow')
