@@ -123,6 +123,7 @@ import { FuelStop, towPrice, towHours, stationPriceFactor, drumPositions } from 
 import { playNozzle, playGallonClick, playShutoff, playRegister, setPumpFlow } from './pump-audio.js'
 import { playGearGrind } from './gearbox-audio.js'   // FEAT-126: a missed shift grinds
 import { ensureKnockAudio, setKnockAudio, updateKnockAudio, playSeizeBang, KNOCK_FROM } from './knock-audio.js'   // FEAT-162: the dying engine
+import { padHit, stepPadRumble, flushPadRumble, RUMBLE_PARAMS } from './pad-rumble.js'   // FEAT-247
 import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
 import { playCoin, playStinger, playTickTrain, playClack, playThud, playBlip, playPaperThrow, playPaperSlap, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
@@ -1532,7 +1533,7 @@ document.getElementById('ss-start')?.addEventListener('click', () => _startStory
 // Both pages draw their ◂ value ▸ rows from this one table, keyed by the settings key.
 const _settings = loadSettings()
 const _LIVE = { steerAssist: PAD_PARAMS, steerShape: PAD_PARAMS, clutchAssist: RANGER_PARAMS, abs: RANGER_PARAMS,
-  throttleAssist: RANGER_PARAMS, tractionControl: RANGER_PARAMS, stickDeadzone: PAD_PARAMS }
+  throttleAssist: RANGER_PARAMS, tractionControl: RANGER_PARAMS, stickDeadzone: PAD_PARAMS, vibration: RUMBLE_PARAMS }
 for (const [k, o] of Object.entries(_LIVE)) o[k] = _settings[k]
 const _STOCK_BOX = RANGER_PARAMS.transmission   // 'auto' = the truck's own automatic
 // `difficulty` is not stored: it names the preset the three knobs match ("custom" when none), and
@@ -1564,6 +1565,7 @@ const SELECTORS = {
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
+  vibration:    { name: 'controller vibration', opts: [[0, 'off'], [0.5, 'low'], [1, 'normal'], [1.5, 'high']] },   // FEAT-247 (src/pad-rumble.js)
   uiScale:      { name: 'UI size', opts: [['small', 'small'], ['big', 'big']] },   // FEAT-248: index.html `html[data-ui-scale=big]`
   frameCap:     { name: 'frame rate',      opts: [[60, '60 fps'], [30, '30 fps'], [90, '90 fps'], [120, '120 fps'], [0, 'display rate']] },   // PERF-48, DEC-185
 }
@@ -10797,8 +10799,8 @@ function loop (t) {
     // S-61: stepIgnition clears ignition.event at the top of EVERY step, so on a 2+ step frame a
     // catch on step 1 is gone by the time the frame reads it. Latch the edge here, per step.
     const ignEv = vehicleState.ignition?.event
-    if (ignEv === 'catch') _ignEdge = ignEv
-    else if (ignEv === 'shutoff' && seized(vehicleState)) _ignEdge = 'seize'   // FEAT-162: the running engine seized
+    if (ignEv === 'catch') { _ignEdge = ignEv; padHit('engineStart') }
+    else if (ignEv === 'shutoff' && seized(vehicleState)) { _ignEdge = 'seize'; padHit('engineSeize') }   // FEAT-162: the running engine seized
     if (resetRequested) {
       runLog.on && runLog.event('reset', { camped: !!_campUi })   // FEAT-242: R pressed
       // R-12: R while camped breaks camp first — the same close the dialogue's "break camp" button
@@ -10895,14 +10897,16 @@ function loop (t) {
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
     // SM-3: one bang per puncture. Drained rather than polled so a tire that pops during a
     // catch-up burst of physics steps still gets exactly one.
-    if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout() }
+    if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout(); padHit('blowout') }
     // FEAT-120: the contact one-shots read the same per-step peaks the damage step just priced.
     stepContactAudio(vehicleState, RANGER_PARAMS._tireFz, PHYSICS_DT)
+    stepPadRumble(vehicleState, RANGER_PARAMS, damageModel.flat)   // FEAT-247: slip, road texture, a flat, a bent wheel
     // FEAT-126: a shift forced with the clutch in grinds, and is a damage event in its own right. Its
     // 2 % wear is under the damage screen's per-sample drop threshold, so it raises the alert here,
     // like a landed impact does below.
     if (vehicleState.drivetrain?.missShift) {
       playGearGrind(vehicleState.drivetrain.engineRPM)
+      padHit('missShift')
       if (DAMAGE_PARAMS.enabled && !damageModel.held) damageScreen.alert()
     }
     // SM-3 collision damage: hand the hardest contact on the chassis this step (`hit`, read with
@@ -10914,7 +10918,7 @@ function loop (t) {
       const landed = damageModel.feedContact(
         classifyImpactRegion(hit.point, hit.normal), hit.impulse, RANGER_PARAMS.mass, PHYSICS_DT,
         vehicleState.velocity)
-      if (landed) { damageHUD.noteImpact(landed); damageScreen.alert() }
+      if (landed) { damageHUD.noteImpact(landed); damageScreen.alert(); padHit('impact', Math.min(1, landed.v / 20)) }   // FEAT-247: Δv 20 m/s (45 mph) = full
       // FEAT-146: death (SM-INV-1) — a live story run ends on its first fatal hit.
       if (damageModel.fatalImpact && storySystem.isActive() && !storySystem.isEntering()) _endRun('crash')
     }
@@ -11471,6 +11475,7 @@ function loop (t) {
   updateCamera(camera, vehicleState, frameTime, Math.max(0, Math.min(MAX_FRAME_TIME, drawnT - _cameraDrawnT)))
   _cameraDrawnT = drawnT
   _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
+  flushPadRumble(pad.active && getCameraMode() !== 'freecam')   // FEAT-247: one mixed vibration effect per frame
   debrisSystem.update(_renderAlpha)   // FEAT-36: engine → debris meshes, at the truck's render alpha
 
   // Restore physics position/quaternion — the interpolated copies were render-only.

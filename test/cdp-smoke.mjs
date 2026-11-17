@@ -402,7 +402,7 @@ const STEPS = [
   ['runlog', async () => {
     // FEAT-242 (DEC-358): the run logger, switched on mid-run by its dev handle. The download is intercepted (the anchor
     // click is stubbed, so nothing lands in Downloads): an oil change checked out at the auto shop and a night's sleep
-    // must both be in the part that switching it off downloads, with the header and the 1 s route samples around them.
+    // must both be in the ONE file "Save log now" downloads (BUG-199: nothing downloads per day), with the header and the 1 s route samples around them.
     await js(`(() => { const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
       A.click = function () { if (this.download?.startsWith('autos-run-')) window.__rlSaved.push({ name: this.download, href: this.href }); else window.__rlClick.call(this) } })()`)
     await js('window.__runLog.setOn(true)')
@@ -423,11 +423,13 @@ const STEPS = [
     await tap('Escape')
     await until(async () => !await open(), 2000)
     await js('window.__day().sleep(8, 0.5)')
+    check(await js('window.__rlSaved.length') === 0, 'runlog: something downloaded before the save button was pressed')
     await js('window.__runLog.setOn(false)')
+    await js('window.__runLog.saveNow()')
     const saved = await js('window.__rlSaved.map(s => s.name)')
-    check(saved.length >= 1 && saved.every(n => /^autos-run-6-.*-part\d\d\.jsonl$/.test(n)), `runlog: the parts downloaded are ${JSON.stringify(saved)}`)
+    check(saved.length === 1 && /^autos-run-6-[\dT-]+Z\.jsonl$/.test(saved[0]), `runlog: the files downloaded are ${JSON.stringify(saved)}`)
     await js('void (window.__rlText = null, Promise.all(window.__rlSaved.map(s => fetch(s.href).then(r => r.text()))).then(t => { window.__rlText = t.join("") }))')
-    check(await until(() => js('window.__rlText !== null'), 3000), 'runlog: the downloaded parts could not be read back')
+    check(await until(() => js('window.__rlText !== null'), 3000), 'runlog: the downloaded file could not be read back')
     const got = await js(`(() => { const ev = window.__rlText.trim().split('\\n').map(l => JSON.parse(l))
       const by = (e) => ev.filter(x => x.e === e)
       return { n: ev.length, header: by('header').length, route: by('route').length, buy: by('purchase').map(x => x.lines.map(l => l.label).join()),

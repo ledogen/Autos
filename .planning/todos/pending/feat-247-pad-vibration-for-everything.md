@@ -12,7 +12,7 @@ lane: unplaced
 # FEAT-247: Controller vibration for everything, not only ABS
 
 ## Next steps
-A free lane (Sonnet): list every rumble source that exists, propose the full set (impacts, landings, wheel slip, rough surface, engine start, damage, tire pop), build it behind one strength slider, and write the owed card with the exact reproduce steps.
+Owner drives it with the owed card `feat247-vibration-feel` and tunes the gains in `RUMBLE_GAINS` (src/pad-rumble.js). Landing: `land/rumble-runlog`.
 
 ## Summary
 Rumble works on the owner's 8BitDo 2C (2.4 GHz dongle, Windows) but only ABS triggers it. Add vibration for the rest of the truck's events, then tune by feel with the owner.
@@ -21,8 +21,11 @@ Rumble works on the owner's 8BitDo 2C (2.4 GHz dongle, Windows) but only ABS tri
 Known working setup: 8BitDo Ultimate 2C, 2.4 GHz mode, Windows, Chrome, ABS setting on, brake hard. BUG-92 (rumble silent) stays open for the setups where nothing is felt.
 
 ## Tracker
-- [ ] Inventory of rumble sources today
-- [ ] New sources built, each with its own strength
-- [ ] One master strength setting
-- [ ] Owed card says how to reproduce each
+- [x] Inventory of rumble sources today
+- [x] New sources built, each with its own strength
+- [x] One master strength setting
+- [x] Owed card says how to reproduce each
 - [ ] Owner has tuned the feel
+
+## Log
+- 2026-11-17 lane a: built on land/rumble-runlog: src/pad-rumble.js (one mixer, per-source gains, master on the settings page), hooks in main.js/vehicle.js/contact-audio.js; gate pad-rumble. Cargo strikes: no signal. Unverified: any real controller.
