@@ -167,6 +167,9 @@ export class PartsSystem {
 
     /** FEAT-204: inventory slots the fitted bolt-ons add (the roof rack's 4, DEC-129), on top of params.inventorySlots. */
     extraSlots () { return Object.values(runParts.fitted).reduce((n, id) => n + (PARTS[id]?.slots ?? 0), 0) }
+    /** FEAT-204 (DEC-373): the fitted bolt-ons' mass, kg — main.js puts it on the chassis as params.fittedKg. Only the
+     *  bolt-ons: every other part's stock mass is already inside params.mass (a swap's few kg are not modelled). */
+    boltOnKg () { return Object.entries(runParts.fitted).reduce((kg, [s, id]) => kg + (SLOTS[s]?.bolton ? PARTS[id]?.massKg ?? 0 : 0), 0) }
 
     /** Debug folder (the InventorySystem.addGui pattern): pick any part per socket and fit it new. */
     addGui (gui) {

@@ -12,9 +12,8 @@ lane: B
 # FEAT-204: Visual mods for the alpha — light bar, bed toolbox, roof rack, bull bar
 
 ## Next steps
-Roof rack, bull bar and light bar wired on `land/feat-204-wire` (awaiting landing). Owner: the [DEFAULT] numbers in DEC-342
-(draft), three thumbnails owed (rack and bull bar borrow the lift kit's icon, the light bar the headlight's, data/parts.js `icon`). The bed
-toolbox waits on card feat204-toolbox-freight; wiring it is data only (see the comment above `roofRack` in data/parts.js SLOTS).
+Three bolt-ons on main. On `land/machine-1117` (awaiting landing): the light bar on high beams only, real masses on the chassis,
+no bed toolbox (DEC-372/373). Owner: DEC-342's remaining [DEFAULT]s (prices, armour, light gain) and three thumbnails.
 
 ## Summary
 Four bolt-on parts the player can see on the truck, wanted before the alpha: a light bar, an in-bed toolbox, a roof rack and a bull bar. Each one does something. It does not have to be a large set.
@@ -32,19 +31,24 @@ Four bolt-on parts the player can see on the truck, wanted before the alpha: a l
 - The toolbox takes bed floor: check it against cargo placement and the bed colliders (FEAT-88).
 
 ## Tracker
-- [ ] Four models on the truck, each shown only when the part is fitted (three of four: the toolbox is held)
-- [ ] Light bar adds light; toolbox and roof rack raise the slot cap; bull bar hardens the front end (all but the toolbox)
+- [x] Three models on the truck, each shown only when the part is fitted (no toolbox before the alpha, DEC-372)
+- [x] Light bar adds light (high beam only, DEC-373); the roof rack raises the slot cap; bull bar hardens the front end
+- [x] Each bolt-on's real mass loads the chassis while fitted (DEC-373)
 - [x] The parts are found or bought in a run and are lost on death (auto-shop shelf; not rewards yet)
-- [ ] The toolbox and bed cargo do not overlap
+- [x] ~~The toolbox and bed cargo do not overlap~~ — no toolbox before the alpha; post-alpha plan FEAT-253
 
 ## Decisions
+- 2026-11-17, owner (card feat204-toolbox-freight, DEC-372): "Bail: no bed toolbox; its slots go elsewhere" — "Post alpha, we
+  build a system that allows the Player to position loads in the bed of the truck. … Pre-alpha, remove the toolbox".
+- 2026-11-17, owner (card feat204-wire-look, DEC-373): "Low beams should not turn on the light bar, only high beams should turn
+  it on. Anyway, we can add part masses to these since they are Explicitly modeled that shouldn't be that tricky."
 - 2026-11-16, agent (DEC-342, draft): rack $40 +4 slots, bull bar $35 armorFront ×1.5 durability, light bar $25 head beams ×2
   intensity ×1.47 reach and the no-cutoff pattern, all three "Rarely" on the auto-shop shelf. No new real-time light (DEC-229).
 - 2026-11-13, owner: "4x more inventory slots means +4 slots" — the toolbox and the roof rack each add 4 slots.
 - 2026-11-13, owner: before alpha; light bar is the older 4-reflector incandescent style; toolbox sits right behind the cab.
 
 ## Open questions
-- Does the bull bar cost anything (mass on the front axle is real already; anything else)?
+- Does the bull bar cost anything beyond its 16 kg (now on the chassis, at the CG)?
 
 ## Files
 `data/parts.js` · `src/inventory.js` · `src/damage.js` · `data/vehicle-models.js` · `assets/models/`
@@ -61,3 +65,7 @@ Four bolt-on parts the player can see on the truck, wanted before the alpha: a l
   src/parts.js, `setMods` in src/vehicle-model.js, Bolt-ons node in the service screen. Gate `bolt-ons.mjs`; smoke step `boltons`
   + newRun clears them. Pictures `wip/feat-204-wire/{day-front,day-rear,night-bar,night-nobar}.png`. Stage truck shows stock (it
   always did). A fitted part's mass is still not modelled (parts.js header).
+- 2026-11-17: land/machine-1117 81a50061: light bar lit and gain/reach applied on high beam only, low beam keeps its cutoff.
+  Masses (sourced, data/parts.js): rack 16 → 13, bull bar 22 → 16, light bar 8 → 10 kg; `boltOnKg` → params.fittedKg → chassis
+  mass, suspension, hi-lift, tire load cap and the job load check (at the CG: the ~2 cm CG shift is not modelled, physics.js).
+  Toolbox: no part existed; its notes removed, the .glb stays. bolt-ons gate §7 green. Night look not re-shot.
