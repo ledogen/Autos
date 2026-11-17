@@ -4343,11 +4343,22 @@ export class RoadSystem {
         // fork off its run, both were dropped, and they shipped 4 m apart).
         pairs.sort((a, b) => (!!a.forced - !!b.forced) || (b.region - a.region) || (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0))
         // Role sets. A winner may appear in several pairs (one throat, many forks); what is barred
-        // is a run being both, or ceding twice, at this node.
-        const winners = new Set(), losers = new Set()
+        // is a run ceding twice at this node.
+        // BUG-179 (DEC-366): a run MAY both win and lose here — a CHAIN of forks — when every fork it
+        // wins lies past the fork it loses by MINREG of its own road: B cedes to A at ~45 m and C
+        // still forks off B at 268 m (seed 1684703087 node −1,0,0; barring it shipped A and B as two
+        // roads on one pavement, a 6.12 m tear past the plane hold). Distances are from the node along
+        // the run itself. Chains cannot cycle: each link needs +MINREG along roughly parallel arcs.
+        const CHAIN_GAP = 30   // m — MINREG, the promotion's road-on-both-sides-of-a-fork rule
+        const lostAt = new Map(), wonAt = new Map()   // ck → loser cut / nearest won fork, m from node
         for (const pr of pairs) {
-            if (losers.has(pr.W.ck) || winners.has(pr.L.ck) || losers.has(pr.L.ck)) { this._v2MergeSkipped('role', `${pr.L.ck} would cede to ${pr.W.ck} @${nk} (${pr.region.toFixed(0)} m)`); continue }
-            winners.add(pr.W.ck); losers.add(pr.L.ck)
+            // a MID-SPAN pair keeps the strict rule: it cannot be a link of a chain either way
+            const v = pr.variants[0]
+            const lD = pr.midSpan ? Infinity : fromNode(pr.L, v.lCut), wD = pr.midSpan ? -Infinity : fromNode(pr.W, v.wCut)
+            const chainBad = (lost, won) => lost !== undefined && won !== undefined && won < lost + CHAIN_GAP
+            if (lostAt.has(pr.L.ck) || chainBad(lostAt.get(pr.W.ck), Math.min(wD, wonAt.get(pr.W.ck) ?? Infinity))
+                || chainBad(lD, wonAt.get(pr.L.ck))) { this._v2MergeSkipped('role', `${pr.L.ck} would cede to ${pr.W.ck} @${nk} (${pr.region.toFixed(0)} m)`); continue }
+            lostAt.set(pr.L.ck, lD); wonAt.set(pr.W.ck, Math.min(wD, wonAt.get(pr.W.ck) ?? Infinity))
             out.set(pr.L.ck, {
                 legacy,
                 winner: pr.W.sp, winnerNodeAtStart: pr.W.nodeAtStart,
@@ -5085,11 +5096,23 @@ export class RoadSystem {
         const winnerOk = (spec) => {
             const wkA = g.key(spec.winner[0]), wkB = g.key(spec.winner[1])
             const wck = wkA < wkB ? wkA + '|' + wkB : wkB + '|' + wkA
-            const wRaw = this._v2NodeMerges(g, drop, wkA, false, pass1).get(wck) || this._v2NodeMerges(g, drop, wkB, false, pass1).get(wck)
-            if (!wRaw) return true
+            // BUG-179 (DEC-366): a CHAIN at one node — the winner cedes its end at the SAME node to a third
+            // road. The T forks off the winner's OWN road past that cession, so only the fork (wCut0) must
+            // clear it by MINREG, the role loop's rule. The winner's plan at its OTHER node keeps the
+            // adopted-strand test below, unchanged.
+            const nS = wkA === kA || wkA === kB ? wkA : wkB, nO = nS === wkA ? wkB : wkA
+            const wSame = this._v2NodeMerges(g, drop, nS, false, pass1).get(wck)
+            const wRaw = this._v2NodeMerges(g, drop, nO, false, pass1).get(wck)
+            if (!wSame && !wRaw) return true
             const wS = pass1 ? this._v2RunSample1(g, drop, spec.winner[0], spec.winner[1]) : this._v2RunSample(g, drop, spec.winner[0], spec.winner[1])
             if (!wS) return false
-            const wCut0 = spec.variants[0].wCut, lCut0 = wRaw.variants[0].lCut
+            const wCut0 = spec.variants[0].wCut
+            if (wSame) {
+                const c = wSame.variants[0].lCut
+                if (!(spec.winnerNodeAtStart ? wCut0 >= c + 30 : wCut0 <= c - 30)) return false
+            }
+            if (!wRaw) return true
+            const lCut0 = wRaw.variants[0].lCut
             const adopt = spec.winnerNodeAtStart ? [0, wCut0] : [wCut0, wS.L]
             const wOwn = wRaw.loserNodeAtStart ? [0, lCut0] : [lCut0, wS.L]
             return !(adopt[1] > wOwn[0] + 1 && wOwn[1] > adopt[0] + 1)
