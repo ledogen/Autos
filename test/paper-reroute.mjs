@@ -24,7 +24,7 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS } from '../src/poi.js'
 import { planTour, planTourJob, customersForTier,
-         PaperRouteSystem, resetPaperRun } from '../src/paper-route.js'
+         PaperRouteSystem, resetPaperRun, roadDistFromLarry, roadOrigin } from '../src/paper-route.js'
 import { START_ZONE_R } from '../src/mission.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
@@ -338,8 +338,20 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
         check('…and the new line does NOT contain the porch that was just served',
             !onLine.has(first.id),
             `${first.id} is still on the guide — this is the seed-90 defect`)
-        check('…while everyone still owed a paper is on it',
-            sys.route.customers.filter(c => c.id !== first.id).every(c => onLine.has(c.id)))
+        // BUG-194: the guide is ONE stop, the owed house nearest the truck by road.
+        const owed = sys.route.customers.filter(c => c.id !== first.id)
+        const rd = roadDistFromLarry(road, roadOrigin(road, car), owed)
+        const nearest = [...rd.entries()].sort((a, b) => a[1] - b[1])[0]?.[0]
+        check('…and the guide goes to the NEAREST house still owed, by road (BUG-194)',
+            sys.line().customers.length === 1 && sys.line().customers[0].id === nearest, `${[...onLine]} vs ${nearest}`)
+        // …and a house driven past without a throw becomes the nearest again: park beside the second-nearest
+        // owed house's far side — here, on the nearest one's own door, then take the guide's word.
+        const par0 = sys.route.par
+        car.x = sys.eligible.find(c => c.id === nearest).x; car.z = sys.eligible.find(c => c.id === nearest).z
+        for (let i = 0; i < 12; i++) sys.update(0.25)
+        guard = 0; while (sys.pumpReroute(50) && guard++ < 500) { /* drain */ }
+        check('…it re-plans on its own timer, and par is untouched (BUG-194)',
+            sys.line().customers.length === 1 && sys.route.par === par0)
         // The contract keeps everybody, because the contract is who you owe, not where you are.
         check('…and the CONTRACT still lists every customer, delivered or not',
             sys.route.customers.length === base.customers.length
