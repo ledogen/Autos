@@ -13,12 +13,11 @@ lane: A
 # FEAT-184: the tutorial overhaul — alpha
 
 ## Next steps
-Slice 4 (the tutorial-errand and tutorial-gates cards, 2026-11-15/16) is built on land/tutorial-1116 (lane S): the morning
-snack on mom's few dollars (DEC-276), the manager's paycheck line (DEC-277), the reset's 20 m grace (DEC-281), the two
-evening gates (DEC-282). Left: land it; the owner's playtest, held open on a "test drives" card until the owner signs off;
-the intro expanded to 15 s – 1 min. Owner's words still owed (PLACEHOLDER in data/dialogue.js): `tut-errand`, `tut-pickup`,
-`LARRY_PACK`, and the snack's two new lines `tut-snack`, `tut-snackcamp`; the peanuts' price ($3 [DEFAULT], items.md says
-"under $5").
+Slice 4 landed (5efe7acb, land/tutorial-1116); the tutorial was then rebuilt to the morning-start order under FEAT-229
+(122a606f, DEC-304..308) and the owner's dialogue pass (1bf41b62, DEC-320..326). The tutorial's open items now live in
+FEAT-229. Owner: look cards `tut-dialogue-look` (the lines) and `tutorial-test-drives` (the whole-tutorial playtest, open
+until you sign off). Still owed: the intro expanded to 15 s - 1 min; words for `tut-snack`, `tut-snackcamp` and the
+peanuts' price ($3 [DEFAULT]).
 
 ## Summary
 The tutorial becomes the first part of every run: intro (the firing) → a card asking whether to play the tutorial →
@@ -250,7 +249,7 @@ Relayed by the orchestrator (cargame-c8). Verbatim:
 > "My biggest immediate pain for me right now is having to skip the tutorial to go and assess other meaningful feature
 > tweaks and updates I think what's in our best interest is to split the tutorial into its own menu option and leave it
 > simply as an option for now so I can go and voluntarily test it Then build an intro that plays every single game that
-> is easily skippable. Pretty much the intro cinematic plays where Jay gets fired then you drive to moms and sleep. once
+> is easily skippable. Pretty much the intro cinematic plays where Billy gets fired then you drive to moms and sleep. once
 > you wake up the player is in the game with free will. For alpha, we'll We have the tutorial play first thing And then
 > it will appear as a main menu option thereafter We should enforce the player to play through the basic tutorial To
 > clear the tutorial flag This will include all the main functions We should have a map, inventory, recovery screen
@@ -326,7 +325,7 @@ Relayed by the orchestrator (cargame-c8). Verbatim:
 9. **The worst-day story** (2026-11-07: fired → flat → the spare is flat too → tow → the shop → the night drive). It was
    the career opening's. Does it become the mandatory tutorial's story? Read as yes: the lessons it carries (spare,
    recovery, shop) are on the note's list.
-- Not conflicts, recorded: the player character is named **Jay** (new; for FEAT-148's words). "recovery screen
+- Not conflicts, recorded: the player character is named **Billy** (was "Jay" in the first record; renamed by DEC-343; for FEAT-148's words). "recovery screen
   campaign" is read as "the recovery screen, camping". "She feeds you" matches items.md ("the tutorial's night end fed,
   played or skipped, … three packed lunches (mom's)").
 
@@ -410,7 +409,7 @@ Each stage lands on its own. Stage 1 waits on answers 1–3; stages 3–4 on ans
     in the evening (DEC-282)
   - [ ] The owner's playtest of the whole tutorial (the "test drives" card, open until the owner signs off)
   - [ ] The owner's words for `tut-snack`, `tut-snackcamp`, and the peanuts' price
-- [ ] The smoke's opening step plays the whole sequence
+- [x] The smoke's opening step plays the whole sequence
 
 ## Decisions
 - 2026-11-15, owner (card tutorial-slice2, "changes"): Larry's four cards (DEC-236); "2. correct" (DEC-237); "3. lets have
@@ -519,6 +518,7 @@ Each has a recommendation there.
 `src/economy.js` · `data/dialogue.js` · `test/cdp-smoke.mjs` (the story / opening steps) · `test/run-soak.mjs`
 
 ## Log
+- 2026-11-16: DEC-343 names the main character Billy; the earlier working name "Jay" in this ticket is replaced. Docs only.
 - 2026-11-07 / 11-08: the plan, the beat sheet, the census, stages 1–5 and the menu split (see the history above;
   hashes there).
 - 2026-11-14: landing 1 built on feature/run-shape (Lane A): 115cf26b (ServiceCenter onMom / useMom: one tire on mom,
@@ -580,3 +580,4 @@ Each has a recommendation there.
 - 2026-11-15: (lane U, land/clock-1116, 31389939) DEC-290: the flat's HUD line reads "pull over and check your tire with" +
   the damage screen's keycap (V / pad B, park-badge.js keycap). BUG-181 (f26b0d77): X in the evening plays tut-tow first and
   the recovery menu opens as it ends. cdp-smoke boot,opening PASS with the new tow-card assertion.
+2026-11-16 (bookkeeping sweep): box "smoke opening step plays the whole sequence" ticked: 03fe4c37 / 122a606f walk the rebuilt order; full smoke PASS 33 steps incl. `opening` (wip/orch/smoke-1116-fresh2.log). Slice 4 merged 5efe7acb.

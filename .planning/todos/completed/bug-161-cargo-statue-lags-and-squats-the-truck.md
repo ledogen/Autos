@@ -1,7 +1,7 @@
 ---
 id: BUG-161
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-12
 source: owner, 2026-11-12 inbox — "I was driving a fragile mission with a marble statue as the payload I Noticed that Occasionally the marble statue would lag slightly behind the car It would also appear to push the rear end down and Slow the car a little bit seems like some sort of physics glitch. It was intermittent and only occurred a couple times about two or three seconds Each time this was on a three or four kilometer mission I Want to say that it seemed like it happened more often in positive G maneuvers like hitting a dip Or anytime the road curved upwards, but I'm not sure about that"
@@ -9,10 +9,19 @@ relates: [PERF-42]
 ---
 lane: B
 
-# Fragile cargo (marble statue) lags behind the truck, squats the rear and slows it
+# BUG-161: Fragile cargo (marble statue) lags behind the truck, squats the rear and slows it
 
-## What
+## Next steps
+Gate landed (ef5b7249, test only; no src change). Owner: drive a marble-statue job on the current build, card `bug161-statue-drive`.
+If the lag shows, press the capture key; no sighting on a few jobs -> close.
 
+## Summary
+The owner saw the statue lag, the rear squat and the truck slow, 2–3 s at a time. Headless, on main, the statue is
+honest: it squats the truck by exactly its weight on the springs and rides its seat within 1.3 mm through a launch,
+a stop and dips to 1 m at 25 m/s. Two real mechanisms were found and fixed after that drive (11-12/13); neither was
+proven to be what the owner saw.
+
+## Description
 Intermittent, 2–3 s at a time, a couple of times on a 3–4 km fragile mission. The statue drifts behind
 the truck, the rear end is pushed down and the truck slows. The owner suspects positive-g moments (a dip, a
 road curving upward) but is not sure.
@@ -22,14 +31,29 @@ high vertical load, so the mass acts behind the axle and drags; (2) a slow physi
 seconds) letting the cargo body fall behind the chassis. Reproduce headless with the statue's real mass over
 a dip at speed and log the cargo's offset from its bed seat and the rear strut loads.
 
-## Acceptance
+### The statue on the springs (2026-11-16, `wip/bug-161/squat.mjs`, now freight-strap §9)
+220 kg, the registry box 0.80 × 1.54 × 0.80 m, welded at strapPose (body z 1.025; axles −1.282 / +1.568, wheelbase 2.85):
+81 % of it on the rear, 874 N a rear corner, 205 N a front one.
 
-- [ ] Reproduced headless, with the cause named (hold stretch vs slow step vs other).
-- [ ] The cargo's offset from its seat stays within the hold's slack over a dip at mission speed.
-- [ ] No rear squat or speed loss beyond what the statue's static mass explains.
+| | predicted | measured (laden − unladen) |
+|---|---|---|
+| static rear strut | 874 / 33 000 = 26.5 mm | 26.7 mm |
+| static front strut | 205 / 33 000 = 6.2 mm | 6.0 mm |
+| rear body drop (spring + tire in series, 24.8 kN/m) | 35.2 mm | — |
+| 0.6 m × 20 m dip at 20 m/s: bottom at 1 + v²(d/2)(2π/L)²/g = 2.2 g | 26.5 × 2.2 = 58 mm | 61 mm (in the bump stop) |
 
-## Findings (Lane B, 2026-11-12)
+- Load off its seat: 0.10 mm static, 0.15 launch (WOT 6 s) and full stop, 0.31 in the 0.6 m dip, 1.24 in a 1 m dip at 25 m/s.
+  Its velocity against the bed's at the seat: ≤ 0.09 mm/s. The weld couples in the same step; nothing lags.
+- Speed: WOT 6 s ends 19.48 m/s laden vs 20.35 unladen (16 % more mass, 4 % less speed); the dip leaves 20.17 vs 20.34.
+- Mass is counted once: freight never enters `stowedKg` (inventory.js); the engine body alone carries it.
+- The drawn statue: main.js snapshots truck and debris on every step and draws both at the same alpha (freight-strap §6).
 
+### Approximation found, not the cause
+The suspension's in-step body copy (suspension.js, BUG-140) moves the chassis inside the step with `mass + stowedKg` and
+the tuned inertia; a welded load is not in it. Telling the copy +220 kg moves the dip trace ≤ 2.5 mm (0.6 m dip) and
+≤ 12 mm for a step or two in the 1 m dip (peak 311.0 vs 311.7 mm), static unchanged (`wip/bug-161/copy.mjs`).
+
+### Earlier findings (Lane B, 2026-11-12/13)
 **The hold does not stretch.** `wip/bug-161/dip.mjs` (220 kg statue hull welded at strapPose over a cosine dip,
 optional trimesh deck so the chassis hulls meet it): dips and sags 18–30 m/s, 0.6–1.5 m deep, grades to 15 %, the
 load stays ≤ 1.6 mm off its seat and the end speed matches the unladen line. The physics fingerprint is unchanged.
@@ -97,3 +121,23 @@ slow the truck. Next lead: an in-game capture (the capture key) taken while the 
 
 **Follow-up, not fixed here:** BUG-165. The same fat sphere reaches LOOSE bed cargo between the wheelhouses (firewood,
 the loose tire), held off only by the same filter.
+
+## Tracker
+- [ ] Reproduced headless, with the cause named (hold stretch vs slow step vs other). Not reproduced: the hold does
+  not stretch, the mass is honest; the two mechanisms found are fixed (welded-body skip, weld projection).
+- [x] The cargo's offset from its seat stays within the hold's slack over a dip at mission speed (≤ 1.3 mm).
+- [x] No rear squat or speed loss beyond what the statue's static mass explains (freight-strap §9).
+
+## Open questions
+- Should the in-step body copy carry welded loads' mass and inertia (the complete model)? Recommendation: yes, as its
+  own small ticket; it changes laden ride only, by ≤ 12 mm for a step in a hard dip, and no unladen fingerprint.
+
+## Files
+`src/physics-engine.js` (skipWeldedTo, _projectWelds) · `src/physics.js` · `src/suspension.js` · `test/freight-strap.mjs` §7–9
+
+## Log
+- 2026-11-12/13 (Lane B): ccfda524 / d2c5e2ef welded-body skip; e0b3b03a weld projection; soaks and replays above.
+- 2026-11-16: freight-strap §9 (ddef0113): static squat within 1 mm of m·g split / wheel rate, seat ≤ 1 mm launch+stop,
+  ≤ 2 mm and ≤ weight × 2.2 g squat in the dip, ≤ 0.3 m/s speed. No src change: physics fingerprint identical by
+  construction. freight-strap 1/1 green. Unverified: the owner's in-game sighting.
+- 2026-11-17: CLOSED — owner drove it 2026-11-17: "Drove it: fine now, close BUG-161".

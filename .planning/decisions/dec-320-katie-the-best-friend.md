@@ -1,6 +1,6 @@
 ---
 id: DEC-320
-status: standing
+status: superseded
 decided: 2026-11-16
 area: story
 governs: FEAT-229, FEAT-148, DEC-146, data/dialogue.js, FIRING, Katie, the best friend, the firing, the tutorial

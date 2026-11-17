@@ -30,6 +30,11 @@ export const runParts = {
     fitted: {},     // socket → part id
 }
 
+/** FEAT-204: the bolt-on models a fitted set shows (.glb stems) — each fitted part's `model`, or its `modelWith`
+ *  alternative when that socket holds a part with a model too (DEC-340: the light bar on the rack). Pure. */
+export const modModels = (fitted) => Object.values(fitted).map(id => PARTS[id]).filter(p => p?.model)
+    .map(p => Object.entries(p.modelWith ?? {}).find(([s]) => PARTS[fitted[s]]?.model)?.[1] ?? p.model)
+
 export class PartsSystem {
     /**
      * @param {object} deps
@@ -105,7 +110,7 @@ export class PartsSystem {
         const d = this._damage
         Object.assign(this._params, s.params)
         if (s.grip) this._params._tireGrip.splice(0, 4, ...s.grip)
-        runParts.fitted = { ...s.fitted }
+        runParts.fitted = { ...runParts.fitted, ...s.fitted }   // a socket the save predates (FEAT-204) keeps the start()'s stock
         for (const id in d.condition) d.condition[id] = s.condition[id] ?? 1   // a track the save predates is new (FEAT-202: the oil)
         for (const k of Object.keys(d._durabilityScale)) if (!(k in s.durability)) delete d._durabilityScale[k]
         Object.assign(d._durabilityScale, s.durability)
@@ -120,6 +125,8 @@ export class PartsSystem {
         for (const [k, v] of Object.entries(part.patch)) if (!other || !k.endsWith(other)) this._params[k] = v
         runParts.fitted[socket] = id
         this._rideHeight()
+        // FEAT-204: the bull bar hardens the track it guards (the front panel) by its `armor`; its stock "none" puts 1 back.
+        if (SLOTS[socket].guards) this._damage.setDurability(SLOTS[socket].guards, part.armor ?? 1)
         for (const t of SLOTS[socket].tracks) {
             this._damage.setDurability(t, part.durability ?? FAMILY_DURABILITY[part.family])   // a part's own wins (the sport tire)
             this._damage.set(t, cond)
@@ -157,6 +164,9 @@ export class PartsSystem {
             return [{ apply: c => ({ ...c, [k]: min }) }]
         })
     }
+
+    /** FEAT-204: inventory slots the fitted bolt-ons add (the roof rack's 4, DEC-129), on top of params.inventorySlots. */
+    extraSlots () { return Object.values(runParts.fitted).reduce((n, id) => n + (PARTS[id]?.slots ?? 0), 0) }
 
     /** Debug folder (the InventorySystem.addGui pattern): pick any part per socket and fit it new. */
     addGui (gui) {

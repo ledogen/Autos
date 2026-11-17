@@ -18,6 +18,8 @@
 // see the comment above the PoiSystem construction in main.js).
 
 /** Tunables. Clock only — none of this may ever enter RANGER_PARAMS. */
+import { runLog } from './run-log.js'   // FEAT-242: the opt-in run log (every hook is behind runLog.on)
+
 export const DAY_PARAMS = {
     dayLengthSec:  1440,   // s of real time per in-game day (RATIFIED: 24 minutes)
     dayStartHour:  7,      // hour a run's first day opens at
@@ -247,6 +249,12 @@ export class DaySystem {
         this._push(false)
     }
 
+    /** FEAT-229 (DEC-357): the eyelids alone, at this step's rate, with the clock and the meters held (the tutorial's drive,
+     *  clockHeld) — its sleepy driver blinks without the hours being lived. */
+    blinkOnly (dtSec) {
+        if (this._running && dtSec > 0) this._updateBlinks(dtSec * 24 / DAY_PARAMS.dayLengthSec, dtSec)
+    }
+
     /** Current hour of day, 0..24 continuous. */
     hour () { return this._hour }
 
@@ -306,6 +314,7 @@ export class DaySystem {
     drinkCoffee () {
         this._energyH = Math.min(DAY_PARAMS.fullEnergyH, this._energyH + DAY_PARAMS.coffeeReliefH)
         this._coffeeDebt += DAY_PARAMS.coffeeDebtH
+        runLog.on && runLog.event('drink', { what: 'coffee', energyH: this._energyH, debtH: this._coffeeDebt })
         this._syncGui()
     }
 
@@ -313,6 +322,7 @@ export class DaySystem {
     drinkEnergy () {
         this._energyH = Math.min(DAY_PARAMS.fullEnergyH, this._energyH + DAY_PARAMS.energyDrinkReliefH)
         this._crashes.push({ atH: this.clockH() + DAY_PARAMS.energyDrinkCrashAfterH, h: DAY_PARAMS.energyDrinkCrashH })
+        runLog.on && runLog.event('drink', { what: 'energyDrink', energyH: this._energyH })
         this._syncGui()
     }
 
@@ -320,7 +330,10 @@ export class DaySystem {
      * FEAT-169: a meal — hunger held off for `holdH` from now (items.md §1d). Never shortens a hold
      * already running: a snack after a burger does not make you hungrier [DEFAULT].
      */
-    eat (holdH) { this._fedUntilH = Math.max(this._fedUntilH, this.clockH() + holdH) }
+    eat (holdH) {
+        runLog.on && runLog.event('eat', { holdH, fedLeftH0: this.fedLeftH(), hungry: this.hungry() })
+        this._fedUntilH = Math.max(this._fedUntilH, this.clockH() + holdH)
+    }
 
     /** Past the last meal's hold. The energy box says so in its hunger word and bar (FEAT-198), never a number. */
     hungry () { return DAY_PARAMS.hungerOn && this.clockH() > this._fedUntilH }
@@ -356,7 +369,10 @@ export class DaySystem {
     _crash () {
         if (!this._crashes.length) return
         const now = this.clockH()
-        for (const c of this._crashes) if (c.atH <= now) this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, this._energyH - c.h)
+        for (const c of this._crashes) if (c.atH <= now) {
+            this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, this._energyH - c.h)
+            runLog.on && runLog.event('crash', { lostH: c.h, energyH: this._energyH })
+        }
         this._crashes = this._crashes.filter(c => c.atH > now)
     }
 
@@ -384,6 +400,7 @@ export class DaySystem {
      */
     advanceMinutes (m) {
         const dH = Math.max(0, m) / 60, h0 = this.clockH()
+        runLog.on && runLog.event('timeSkip', { min: m, energyH0: this._energyH })
         this._advanceHours(dH)
         this._energyH = Math.max(-DAY_PARAMS.sleepDebtMaxH, this._energyH - dH - this._hungerCost(h0, h0 + dH))
         this._crash()
@@ -407,7 +424,7 @@ export class DaySystem {
      * @param {number} [rest]       the camp sleeping gear's recovery bonus (items.md §2b), 0.15 = +15%
      */
     sleep (hours, vibe, rest = 0) {
-        const h = Math.max(0, hours)
+        const h = Math.max(0, hours), e0 = this._energyH, debt0 = this._coffeeDebt
         this._fedUntilH += h   // FEAT-173: the hold does not run asleep — a hungry bedtime wakes exactly as hungry
         this._advanceHours(h)
         this._crashes = []   // slept off (DAY_PARAMS energyDrink*)
@@ -416,6 +433,8 @@ export class DaySystem {
         // cannot drift because there is only one of them.
         this._energyH = this.previewWake(h, vibe, rest)
         this._coffeeDebt = 0
+        runLog.on && runLog.event('sleep', { hours: h, vibe, rest, rateH: this.recoveryRate(vibe, rest), energyH0: e0, energyH1: this._energyH,
+            coffeeDebtH: debt0, wakeDay: this.day(), wakeHr: this._hour })
         this._endSkip()
     }
 

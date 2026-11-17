@@ -30,6 +30,12 @@
 //               the truck's limits, so one heavy-duty axle (or three load-range tires) moves nothing
 //   price       $ at day-1 rates — [DEFAULT] placeholders until FEAT-69 prices the repair economy
 //   massKg      real load while stowed in inventory (a fitted part's mass is not modelled)
+//   slots       FEAT-204 bolt-ons: inventory slots it adds while fitted (src/parts.js extraSlots; slots stack,
+//               which a patch of `inventorySlots` could not: two sockets may not share a key)
+//   armor       FEAT-204 bull bar: durability multiplier on its socket's `guards` track (src/parts.js _fit)
+//   model       FEAT-204 bolt-ons: the .glb stem shown on the truck while fitted (assets/models/<stem>.glb);
+//               `modelWith` { socket: stem } swaps it when that socket holds a part with a model too (DEC-340:
+//               the light bar mounts to the roof rack). src/parts.js modModels picks; src/vehicle-model.js setMods shows.
 //   desc        described, never scored: no digits (test/parts.mjs checks)
 //
 // Durability per family is the SM-3 parts lever: damage.js setDurability() on the socket's track.
@@ -69,6 +75,14 @@ export const SLOTS = {
     airFilter:    { name: 'Air filter',        hours: 0.25, tracks: ['airFilter'], fitX: 1 / 3 },
     headlightL:   { name: 'Left headlight',    takes: 'headlight', hours: 0.5, tracks: ['headlightL'] },
     headlightR:   { name: 'Right headlight',   takes: 'headlight', hours: 0.5, tracks: ['headlightR'] },
+    // FEAT-204 bolt-ons (DEC-028: parts on the truck configuration, lost on death). `bolton`: the service screen's
+    // Bolt-ons node lists them. No wear track of their own; the bull bar `guards` the front panel's (its part's
+    // `armor` is that track's durability multiplier). The bed toolbox (ASSET-87, mod-bed-toolbox.glb) is held on the
+    // freight call (card feat204-toolbox-freight): adding it = a socket here, two PARTS rows (slots: 4,
+    // model: 'mod-bed-toolbox') and a STOCK_WEIGHT row. Fitting labour [DEFAULT].
+    roofRack:     { name: 'Roof rack',         hours: 1,    tracks: [], bolton: true },
+    bullBar:      { name: 'Bull bar',          hours: 1.5,  tracks: [], bolton: true, guards: 'armorFront' },
+    lightBar:     { name: 'Light bar',         hours: 1,    tracks: [], bolton: true },
 }
 
 /** FEAT-222: every part id a socket takes (the debug part selector's dropdown; the inverse of socketsFor). */
@@ -258,6 +272,29 @@ export const PARTS = {
                      roadside: true, patch: {}, desc: 'A paper filter. A clean one lets the engine breathe. Swaps in by hand, no shop needed.' },
     headlightStock:{ name: 'Headlight',            slot: 'headlight', family: 'oem', rarity: 'common', price: 6, massKg: 1.5, stock: true,
                      patch: {}, desc: 'A sealed beam lamp, either side.' },
+
+    // ── FEAT-204 bolt-ons (DEC-028/129/340/341). Prices, masses, the armour factor and the light gain are [DEFAULT]
+    //    (DEC-342, draft); the rack's +4 slots are the owner's (DEC-129). The light bar burns with the headlights (L):
+    //    it raises the two head spots' intensity (headlightGain) and range (headlightReach), no lamp of its own (DEC-229).
+//    `icon`: placeholder thumbnails (the lift kit's, the headlight's) until their own are rendered (assets/models/src/items.py).
+    //    Gain 2 ≈ four 55 W pods beside two sealed beams; reach 2^(1/1.8) = 1.47 is where gain 2 lights the ground as
+    //    brightly as the bare beam did at its own range (decay 1.8, vehicle-model.js HEAD_TUNE).
+    roofRackNone:  { name: 'No roof rack',         slot: 'roofRack', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
+                     patch: {}, desc: 'A bare cab roof.' },
+    roofRack:      { name: 'Roof rack',            slot: 'roofRack', family: 'offroad', rarity: 'uncommon', price: 40, massKg: 16,
+                     slots: 4, model: 'mod-roof-rack', icon: 'lift', patch: {},
+                     desc: 'A steel basket clamped to the cab roof. More room for gear.' },
+    bullBarNone:   { name: 'No bull bar',          slot: 'bullBar', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
+                     patch: {}, desc: 'The factory bumper, on its own.' },
+    bullBar:       { name: 'Bull bar',             slot: 'bullBar', family: 'offroad', rarity: 'uncommon', price: 35, massKg: 22,
+                     armor: 1.5, model: 'mod-bull-bar', icon: 'lift', patch: {},
+                     desc: 'A bent steel tube bolted to the frame horns. The front end takes a knock and keeps its shape.' },
+    lightBarNone:  { name: 'No light bar',         slot: 'lightBar', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
+                     patch: { headlightGain: 1, headlightReach: 1 }, desc: 'Just the headlights.' },
+    lightBar:      { name: 'Light bar',            slot: 'lightBar', family: 'offroad', rarity: 'uncommon', price: 25, massKg: 8,
+                     model: 'mod-light-bar-solo', modelWith: { roofRack: 'mod-light-bar-rack' }, icon: 'headlight',
+                     patch: { headlightGain: 2, headlightReach: 1.47 },
+                     desc: 'Four round lamps on a bar, wired to the headlight switch. Night roads open up.' },
 }
 
 /** The stock part for a socket. */

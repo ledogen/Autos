@@ -42,6 +42,7 @@ import { InventorySystem } from '../src/inventory.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP as SU, REPAIR_CAP, SEIZED_REPAIR_X, PATCH, OIL_CHANGE, BEAD, HUB } from '../data/parts.js'
 import { repairTargets } from '../src/service.js'
+import { worstUnder } from '../src/service-screen.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -431,6 +432,16 @@ check('split needs a free slot', si >= 0 && !tight.split(si) && full.list()[si].
     check('dinner meal: a discard eats nothing', (meal.discard(), fed === 0 && w === 100))
     meal.queue('buyAndEat', [0], 'eat')
     check('dinner meal: checkout pays $5, runs 30 min, holds hunger 8 h, stows nothing', meal.checkout() && w === 95 && fed === 8 && hours - h0 === 0.5 && inventory.slotsUsed() === slots)
+}
+
+// FEAT-244: every level of the Maintenance tree wears the worst condition under it — a flat tire (0) reaches its
+// corner and its category, a clean sibling does not hide it, a node with nothing that wears has none.
+{
+  const tire = { c: worstUnder(0, []) }, wheel = { c: worstUnder(0.9, []) }
+  const corner = { c: worstUnder(Math.min(0, 0.9), [tire, wheel, '<html row>']) }
+  const cat = { c: worstUnder(null, [corner, { c: worstUnder(0.95, []) }, { c: worstUnder(null, ['x']) }]) }
+  check('FEAT-244: a flat tire is 0 at the tire, its corner and its category', tire.c === 0 && corner.c === 0 && cat.c === 0)
+  check('FEAT-244: the worst sibling wins, a node with nothing that wears is null', worstUnder(null, [{ c: 0.7 }, { c: 0.4 }, { c: null }]) === 0.4 && worstUnder(null, ['row']) === null)
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nservice gate: ALL OK')

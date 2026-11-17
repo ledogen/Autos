@@ -6,6 +6,9 @@ really an intent question ("should this show a timer?", "should this part have a
 the answer lives here. If an implementation technically satisfies a ticket but violates an
 invariant below, the invariant wins — stop and flag it.
 
+**The main character is Billy (DEC-343).** He is the person who is fired from the burger joint, mom's son, Larry's nephew
+and Katie's best friend. "The player" in these docs means the person at the controls; "Billy" means the character in the story.
+
 **Provenance discipline:** decisions marked **[RATIFIED]** came from the project owner.
 Decisions marked **[DEFAULT]** are strong proposals built on in design conversation but never
 explicitly ratified — treat them as the plan of record, but surface them for confirmation
@@ -291,7 +294,7 @@ under a one-line banner. (3) **The alpha run ends three ways:** reach the expedi
 (SM-INV-1 unchanged — running out of money ends the run as an unaffordable recovery), or **throw in
 the towel** from the pause menu. (4) **Every ending shows a run summary**; the death→new-run loop
 and the garage stay SM-4. (5) **The alpha story is three beats:** the firing, mom (the intro
-ends at her house, where she feeds the player and sets up the story), the expedition camp (DEC-109, replaces the 2026-10-23 wording). (6) With one region, FEAT-103's camp needs no unlock and no
+ends at her house, where she feeds Billy and sets up the story), the expedition camp (DEC-109, replaces the 2026-10-23 wording). (6) With one region, FEAT-103's camp needs no unlock and no
 FEAT-28. (7) **The alpha region is today's 2500 m story circle**; the story world's R1 sector is beta (DEC-053). (8)
 **The alpha is a polished demo**: little content, but what is there is complete — no stubs, no
 placeholder models. Provenance:

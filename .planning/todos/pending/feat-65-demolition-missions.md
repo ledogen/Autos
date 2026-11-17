@@ -28,6 +28,12 @@ lane: A
 > § "Approved plan — slice 1 (owner, 2026-11-01)" at the end. Where it and the August text above it
 > disagree (the pad, gradeRun(ratio ÷ coverage), mailboxes), the approved plan wins.
 
+## Next steps
+
+Slices 1-2 are built (see § Built and the owner drives below). Still owed by the owner: the par-vs-elapsed gap measured on a real
+drive, `hitWindowS` (40 s [DEFAULT]) and the words, counts and rank row. The August Acceptance list below was ticked or struck on
+2026-11-16 against "Acceptance (August list), as it now stands".
+
 ## Request
 
 > I've had a new idea for a type of mission. I think generally speaking this mission type would be
@@ -221,25 +227,25 @@ something to swing it at. **V1 is "hit it with the truck,"** which is the versio
 
 ## Acceptance
 
-- [ ] Owner ruling on the "good deeds" framing recorded here.
-- [ ] Owner ruling on mailboxes recorded here.
-- [ ] `missions.md` gains a **dressing** entry for demolition under coverage — explicitly NOT a sixth
+- [x] Owner ruling on the "good deeds" framing recorded here.
+- [x] Owner ruling on mailboxes recorded here.
+- [x] STRUCK (superseded by the 2026-11-01 share-smashed ruling; own axis row, FEAT-138): `missions.md` gains a **dressing** entry for demolition under coverage — explicitly NOT a sixth
       axis row, with the coverage-inverted argument stated so a later session does not re-litigate it.
-- [ ] Demolition segments are built **without** `stop: true` — par charges no halts (owner ruling).
+- [x] Demolition segments are built **without** `stop: true` — par charges no halts (owner ruling).
       A gate asserts a demolition tour and a point-to-point over the same geometry price identically.
 - [ ] The gap between geometric par and real elapsed (aiming deviation + collision impulses)
       **measured** on a real site and recorded, before any tolerance constant or FLAT rate is picked.
-- [ ] A demolition site spawns deterministically: same `(worldSeed, coords)` → same object positions
+- [x] A demolition site spawns deterministically: same `(worldSeed, coords)` → same object positions
       and yaws, **window-invariant** across streaming entry direction. Gate it the way `story-poi` /
       `camp-zones` are gated.
-- [ ] No object ever intersects the road cross-section; road centerlines bit-identical with and
+- [x] No object ever intersects the road cross-section; road centerlines bit-identical with and
       without demolition sites (the FEAT-46 parity gate, extended).
-- [ ] Objects spawn at rest and stay at rest — no launch, no drift over 60 s of headless stepping.
-- [ ] Every demolition prop is drivable-through at road speed (Shortcut no-blockage rule).
-- [ ] Mission objects are never reclaimed by `DEBRIS_CAP`.
-- [ ] Payout/rank/points flow through the existing `economy.js` path unchanged — **no new economy
+- [x] Objects spawn at rest and stay at rest — no launch, no drift over 60 s of headless stepping.
+- [x] Every demolition prop is drivable-through at road speed (Shortcut no-blockage rule).
+- [x] Mission objects are never reclaimed by `DEBRIS_CAP`.
+- [x] Payout/rank/points flow through the existing `economy.js` path unchanged — **no new economy
       constants beyond the per-object FLAT and the tour tolerance.**
-- [ ] No authored damage values anywhere in the mission.
+- [x] No authored damage values anywhere in the mission.
 
 ## Open
 
@@ -563,3 +569,4 @@ argued for (a)). Answers the clock half of `feat65-clock-pay`; pay was already p
   seeds 1 and 6 is 341 m — 23 s at 54 km/h, 34 s at 36 km/h, which is why the window is 40 s and not 30.
 
 **Owed by the owner:** the GPS behaviour and the sequencing on a drive (`hitWindowS` is a constant — say the number); the words.
+2026-11-16 (bookkeeping sweep): August Acceptance boxes ticked (ruled, deterministic, road-clear, at rest, drivable-through, pinned, economy, no stop:true, no authored damage) or struck (dressing entry); open: par-vs-elapsed gap on a real drive.

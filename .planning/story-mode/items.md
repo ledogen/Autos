@@ -1,5 +1,7 @@
 # Autos — Items catalog
 
+**The main character is Billy (DEC-343).** "The player" means the person at the controls; "Billy" the character in the story.
+
 *Working design notes. **Downstream of `DESIGN.md`** — where this document and the bible disagree,
 the bible wins. Companions: `missions.md`, `run-shape.md`, `opening.md`, `spirits-and-pacts.md`,
 `IDEAS.md`.*

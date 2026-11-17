@@ -7,7 +7,7 @@
  *   Maintenance — FEAT-212 (owner, 2026-11-13): the owner's outline as a tree (TREE below; the outline,
  *                line by line, is in the ticket). One item open per level; selecting an open item closes
  *                it and everything under it, so the top level again collapses everything. Every item
- *                starts closed, and a group's label wears the band of the worst part under it (FEAT-167).
+ *                starts closed, and every label wears the band of the worst part under it (FEAT-167, FEAT-244).
  *                Its leaves: REPAIR (a repairable class: set how far with ◀ ▶, ←/→ or the D-pad, in 5%
  *                steps up to the bench's cap; price and hours follow live), SWAP WITH INVENTORY (only a
  *                part you carry that fits: never shop stock), a corner's SWAP WITH CORNER (FEAT-196: the
@@ -167,12 +167,15 @@ const isFlat = (d, track) => TRACKS[track]?.cls === 'tire' && d.flat[TRACKS[trac
 
 const CORNERS = [['FL', 'Front left'], ['FR', 'Front right'], ['RL', 'Rear left'], ['RR', 'Rear right']]
 const AXLES = ['Front', 'Rear']
-/** A Maintenance tree item: `kids` (items, or a row's HTML) show under it while it is open. `c`, the
- *  condition its label is banded by, is the worst under it unless given. Ids are unique among siblings. */
-const node = (id, label, kids, info = '', c) => {
-  const cs = kids.map(k => k.c).filter(x => x != null)
-  return { id, label, kids, info, c: c ?? (cs.length ? Math.min(...cs) : null) }
+/** FEAT-244: the ONE "worst condition under this node": its own condition (a part's, a flat counting as 0) and
+ *  every kid's, whichever exist; null when nothing under it wears. Used at every level of the tree. */
+export const worstUnder = (own, kids) => {
+  const cs = [own, ...kids.map(k => k.c)].filter(x => x != null)
+  return cs.length ? Math.min(...cs) : null
 }
+/** A Maintenance tree item: `kids` (items, or a row's HTML) show under it while it is open. `c`, the
+ *  condition its label is banded by, is the worst under it (its own `c`, if given, included). Ids are unique among siblings. */
+const node = (id, label, kids, info = '', c) => ({ id, label, kids, info, c: worstUnder(c, kids) })
 /** "T 80%" in its band's colour: the corner line's two conditions (owner: "W:xx% T:xx%, stay minimal"). */
 const pctIn = (label, c, flat = false) => `<span class="sv-desc" style="color:${bandColor(flat ? 0 : c)}">${label} ${Math.round(c * 100)}%</span>`
 
@@ -453,17 +456,19 @@ export class ServiceScreen {
         node('lights', 'Headlights', [['L', 'Left'], ['R', 'Right']].map(([k, l]) => this._part(k, l, { socket: 'headlight' + k, track: 'headlight' + k, acts: sw }))),
         node('panels', 'Body Panels', ['Front', 'Left', 'Right', 'Rear'].map(k => this._part(k, k, { track: 'armor' + k, acts: ['repair'] }))),
       ]),
+      // FEAT-204: the bolt-ons, every socket data/parts.js marks `bolton` (the toolbox joins as a data row).
+      node('boltons', 'Bolt-ons', Object.keys(SLOTS).filter(k => SLOTS[k].bolton).map(k => this._part(k, SLOTS[k].name, { socket: k, acts: sw }))),
     ]
     return `<div class="sv-tree">${this._level(tree, 0)}</div>`
   }
 
-  /** One level of the tree: each item a single button (one pad stop), the open one's kids under it. A group
-   *  with no bar of its own wears its worst part's band on its label. */
+  /** One level of the tree: each item a single button (one pad stop), the open one's kids under it. Every
+   *  label wears the band of the worst part under it (FEAT-244). */
   _level (items, depth) {
     return items.map(n => {
       if (typeof n === 'string') return n
       const open = this.path[depth] === n.id
-      const band = !n.info && n.c != null ? ` style="color:${bandColor(n.c)}"` : ''
+      const band = n.c != null ? ` style="color:${bandColor(n.c)}"` : ''
       return `<button class="sv-line${open ? ' on' : ''}" data-act="node" data-d="${depth}" data-id="${n.id}"${n.attrs ?? ''}>`
         + `<span class="sv-name"${band}>${open ? '▾' : '▸'} ${n.label}</span>${n.info}</button>`
         + (open ? `<div class="sv-kids">${depth && NODE_INFO[n.id] ? this._infoRow(NODE_INFO[n.id]) : ''}${this._level(n.kids, depth + 1)}</div>` : '')
@@ -577,12 +582,14 @@ export class ServiceScreen {
   _buyOpts (e, i) {
     const s = this.service, sockets = socketsFor(e.id)
     const fitQ = sockets.length && s.buyQuote(i, sockets[0]), carry = s.buyQuote(i)
+    const why = s.locked?.(e) ?? null, ok = !why   // DEC-356: a row the shop will not sell now (main.js says why), its buttons off
     return `<div data-slot="${i}"><div class="sv-row"><span class="sv-name sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</span></div>`   // the row's padding: as My items' first line
+      + (why ? `<div class="sv-row"><span class="sv-name sv-desc">${why}</span></div>` : '')
       + (sockets.length ? this._act('Fit on the truck', fitQ, sockets.length > 1   // a tire or wheel names its corner
-        ? sockets.map(sk => btn('buy', where(sk), true, `data-slot="${i}" data-socket="${sk}"`)).join(' ')
-        : btn('buy', 'add to cart', true, `data-slot="${i}" data-socket="${sockets[0]}"`, ' ok')) : '')
-      + (ITEMS[e.id]?.eatIn ? this._act('Eat here', carry, btn('eat', 'add to cart', true, `data-slot="${i}"`, ' ok'))
-        : this._act('Into the inventory', carry, btn('stow', 'add to cart', true, `data-slot="${i}"`, sockets.length ? '' : ' ok'))) + `</div>`
+        ? sockets.map(sk => btn('buy', where(sk), ok, `data-slot="${i}" data-socket="${sk}"`)).join(' ')
+        : btn('buy', 'add to cart', ok, `data-slot="${i}" data-socket="${sockets[0]}"`, ' ok')) : '')
+      + (ITEMS[e.id]?.eatIn ? this._act('Eat here', carry, btn('eat', 'add to cart', ok, `data-slot="${i}"`, ' ok'))
+        : this._act('Into the inventory', carry, btn('stow', 'add to cart', ok, `data-slot="${i}"`, sockets.length ? '' : ' ok'))) + `</div>`
   }
 
   // ── Jobs ────────────────────────────────────────────────────────────────────────────────────────

@@ -5,6 +5,8 @@ every place a job can start or end, and what each one gives and receives. It is 
 `cargo.md`: there, the cargo rows say *from → to* in these names. The dashboard's Places view
 reads this file together with the live code.
 
+**The main character is Billy (DEC-343).** "The player" means the person at the controls; "Billy" the character in the story.
+
 **Live types are not listed here.** Their source of truth is the code. `POI_ROSTER` in
 `src/poi.js` gives the type, count, model, siting and tags, and `SOURCES` in `data/offers.js` gives
 the job types each one posts, its slots and its expiry. The dashboard reads both directly, so

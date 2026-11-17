@@ -12,8 +12,8 @@ lane: Spare
 # BUG-179: Two road legs diverge in height quickly and the surface tears where they meet
 
 ## Next steps
-Owner: pick a fix (Open questions). Root found and measured on land/bug-179 (no src change); the fix is in junction
-promotion, which the owner said to ask about before changing (2026-11-13). Rare: 0 sites on 3 random seeds at R 3 km.
+Owner picked option 1 (2026-11-17, DEC-366): building the chained fork on `land/bug-179` (worktree CarGame-machine).
+He signs off on 10 generated examples before it lands.
 
 ## Summary
 At one place on seed 1684703087 two road legs leave each other with rapidly different elevations, and there is a

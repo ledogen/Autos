@@ -121,3 +121,4 @@ line their text column is wider.
 **2026-11-05, after the hold.** cdp-smoke PASS (21 steps, the service step's new checks included). The
 screenshots are in `wip/feat-167/`. They showed "gone in 12 min" wrapping as "12 / min"; that phrase is now
 kept on one line (f0f30257). Owed: the owner's look.
+- 2026-11-16: DEC-343: the main character is Billy (no change to this ticket; the shop speaks to the player). Docs only.

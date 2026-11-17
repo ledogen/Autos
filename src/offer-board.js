@@ -753,7 +753,7 @@ export class OfferBoard {
             destKind: papers ? null : thing.family === 'demolition' ? 'roadside'
                 : (strictTo || fetch || stops || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             targets: thing.targets ?? null,   // FEAT-65: what stands on that shoulder (src/demolition.js)
-            destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
+            destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger, own: !!thing.own,
             load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise
             loose: thing.loose ?? null, // one loose bed body (src/debris.js kind) — the motorist's tire
             atPickup: thing.atPickup ?? null,   // a fetch's wait at the pickup: { min, park, done } prompts
@@ -1042,7 +1042,7 @@ export class OfferBoard {
             if (sizes.length) sentence.push({ t: ' to ' }, { t: `${sizes.length > 1 ? sizes.slice(0, -1).join(', ') + ' or ' + sizes.at(-1) : sizes[0]} customers`, b: true })
             sentence.push({ t: '.' })
         } else {
-            if (n?.name) sentence.push({ t: ` at ${n.name}` })
+            if (n?.name) sentence.push({ t: ` ${sp.own ? 'from' : 'at'} ${n.name}` })   // `own`: data/offers.js
             const dest = route?.endPoiId ? this.placeLabel(route.endPoiId) : (route?.placeName ?? sp.placeName)
             if (sp.stock) {
                 sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true },

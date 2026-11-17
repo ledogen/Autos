@@ -12,13 +12,13 @@ lane: A (tutorial)
 # FEAT-229: The tutorial starts the run in the morning
 
 ## Next steps
-The owner's dialogue pass (2026-11-16, DEC-320..326) is built on `land/tut-dialogue`: owner reviews the lines (the
-lane report's numbered list). Open owner call: whether story mode's R / pad reset goes for the alpha (DEC-321 kept it).
-Before that pass:
-Lane A built the owner's option 1 on `land/feat-229` (DEC-304..308). Owner: a look at the contact sheet
-(`wip/feat-229/`), the placeholder lines (tutorial sign-off card) and the defaults below. Then the seed re-check against
-the new order (the tutorial-seed gate still measures the old legs). The orchestrator smokes main after the merge (the
-skip now lands at 07:00, so every step after `story` runs a morning free will).
+On main: seed 3590618618 pinned (DEC-351) and round 2 (DEC-353..357) landed; owner drives it (card `tutorial-test-drives`).
+On `land/tut-round2`: the owner's round 2 (DEC-353) built — phone calls ring and click (DEC-354), Katie's lines
+(DEC-355), the peanuts-only snack shelf and the ranch arrival / waypoint (DEC-356, supersedes DEC-346), sleepy after the
+tire, the 06:30 alarm, the joint called "work" (DEC-357); BUG-189's fixes ride along. Owner: the placeholder lines (Katie's
+snack ask, mom's gas lesson and send-off, the two vibe cards, Katie's camp-made card, mom's pick-up lesson), and whether
+mom's in-drive lesson cards are phone calls (DEC-354 leaves them unframed). Earlier look cards stand (`tut-dialogue-look`,
+`tutorial-test-drives`, `feat229-same-landing`, the defaults).
 
 ## Summary
 Today the firing is at 19:30 and the tutorial lasts exactly 24 in-game hours, so free will opens at 19:30: a new player
@@ -56,7 +56,12 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
   Larry's two cards (DEC-326); smoke `opening` updated
 - [ ] Owner: the new lines reviewed; story mode's R / pad reset for the alpha
 - [ ] Owner: placeholder lines and the defaults (clock held + stamps, $6, tired at night, the skipper's line)
+- [x] DEC-345 built: Katie's picnic call at Larry's, mom's gas call, the ranch on a waypoint, Katie teaches the camp (DEC-346..348)
+- [ ] Owner: DEC-345's placeholder lines, and Katie's 17:00 talk now in person (DEC-347)
 - [x] Tutorial seed re-checked against the new order (`test/tutorial-seed.mjs`, DEC-304's legs)
+- [x] DEC-353 built (DEC-354..357): phone frame, Katie's lines, peanuts-only shelf, ranch arrival + waypoint both ways,
+  sleepy after the tire (with blinks on the held clock), the 06:30 alarm, "work"; smoke `opening` walks each
+- [ ] Owner: round 2's placeholders and the mom-lesson-cards-as-calls question (DEC-354)
 
 ## Decisions
 - DEC-299 (owner, 2026-11-15/16): the tutorial is 24 in-game hours, fired about 07:00, free will about 07:00 the next
@@ -74,7 +79,17 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
   camp and the paycheck (supersedes DEC-307); night: slow down, home safe (supersedes DEC-315); morning: Katie reminds,
   Larry's two cards, a skip keeps DEC-236's four (supersedes DEC-236).
 
+- DEC-345 (owner, 2026-11-16): Katie's picnic at the old McGill ranch is the reason for the snack and the camp. DEC-346
+  (supersedes DEC-304): the order stands; the drive to the camping area is on a waypoint with "drive out to the old McGill
+  ranch", and Katie teaches the camp there. DEC-347 (supersedes DEC-324): her 17:00 talk is in person, same six cards and
+  stamp. DEC-348 (supersedes DEC-320): Katie has no model; on the phone except at the camp. DEC-343/349: Billy.
+
+- DEC-353 (owner's round 2): DEC-354 phone calls framed (ring, <click>); DEC-355 Katie's lines; DEC-356 peanuts-only shelf,
+  arrival in the ranch's own zone, a camp short of it clears the pin (supersedes DEC-346); DEC-357 sleepy after the tire,
+  the alarm at 06:30 (paycheck stamped 07:00), the joint is "work" in the tutorial.
+
 ## Open questions
+- DEC-354: are mom's in-drive lesson cards (pedals, flat "Was that a bang?", damage, spare, tow, shop, lights, park) calls?
 - Everything in the dive's form.
 
 ## Links
@@ -87,6 +102,7 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 `src/main.js` (the opening, `OPENING_START`, `FREE_WILL`, `_eveningBeats`) · `data/dialogue.js` · `test/cdp-smoke.mjs`
 
 ## Log
+- 2026-11-16: DEC-343: the main character is Billy; the fired-at-7:30 beat is Billy's. Docs only.
 - 2026-11-15: ticket minted, dive written (lane A). Docs only.
 - 2026-11-16: owner rejected revision 1 (missed same time of day and same place for played and skipped). DEC-299
   written; revision 2 of the dive: four options (joint errands-first, joint trouble-first, mom's, Larry's). Docs only.
@@ -96,3 +112,13 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - 2026-11-16: box 3 on `land/tut-seed-gate`: `test/tutorial-seed.mjs` walks DEC-304's order with main.js's picks; legs 2.00 /
   0.70 / 2.72 / 2.11 / 3.86 (flat at 2.06, tow 0.53 crow) / 0.94 / 2.00 km, 12.5 km, 15 min wheel; TUT_STAMPS read from
   main.js. Gate green. Unguarded: a leg driven (the gate plans, never drives), a beat's trigger in main.js.
+- 2026-11-16: DEC-345 built on `land/tut-picnic` (DEC-346..348; Billy per DEC-343/349). Affected node gates 10/10 green;
+  smoke boot,story,opening,newRun PASS twice (one run in between failed at "make camp": the seated site re-graded "not
+  flat" under load, the risk the step's comment names). Card shots: `wip/tut-picnic/`. Unverified: a real drive to the ranch.
+- 2026-11-16: DEC-344 seed search (lane U, study only, nothing changed): 320 random seeds, 290 valid; pick 3590618618
+  (route 112 m vs 144, roadside green 0.35 vs 0.18, joint sun clear; mom's wake sun blocked), runner-up 1273834102.
+  Sheets + table: wip/tut-seed-search/RESULTS.md (git-invisible, in CarGame-land-gps). Awaits the owner's pick.
+- 2026-11-16: DEC-351 pin (lane U, `land/tut-seed-pin`): data/tutorial.js, test/tutorial-seed.mjs constants (re-measured, match the study), test/gates.mjs desc, 3 smoke literals. Smoke finding: the BUG-173 shoulder pick read a flat g=0 from unstreamed height at a real 35 % slope and the truck rolled off; the pick now skips g<1e-9. Smoke boot,story,opening,newRun PASS twice. Shots in wip/tut-seed-pin/.
+- 2026-11-16: DEC-353 round 2 on `land/tut-round2` (DEC-354..357; BUG-189). Smoke boot,story,opening,newRun PASS first
+  run; card shots `wip/tut-round2/cards/`. Energy at the fix measured −0.42 h (exhausted; no blink could fire in the
+  tutorial before). Unverified: the camp-short-of-the-pin path in a browser (logic only), a real pad.

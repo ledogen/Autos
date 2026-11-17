@@ -12,7 +12,8 @@ lane: B
 # FEAT-233: The pump's own face shows the sale, live, in rolling drums
 
 ## Next steps
-Built on land/feat-233. Orchestrator: land it, then the owner's look card (wip/feat-233/after-*.png; before-*.png for the face as it was).
+Landed (39015cdc, land/feat-233; src/pump-face.js). Owner: look card `feat233-look` (night and day pictures; drum colour; the chase
+camera never sees the face). Ticks the last box.
 
 ## Summary
 While you fuel, the numbers on the 3D pump you are parked at spin with the sale. The 2D overlay stays as it is.

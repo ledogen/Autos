@@ -12,6 +12,8 @@
 //   7. BUG-161: a welded load is part of the truck — its own tire never presses on it, even where
 //      the wheel's query sphere overlaps it with a normal the n.y filter lets through;
 //   8. BUG-161: …and stays on its seat when the engine's swept collision parks the chassis mid-step.
+//   9. BUG-161: the marble statue (its real mass and box) squats the truck by exactly its weight on the springs,
+//      and rides its seat through a launch, a hard stop and a dip at speed, costing no speed beyond its mass.
 
 import * as THREE from 'three'
 import { PROP_MODELS } from '../data/prop-models.js'
@@ -81,12 +83,12 @@ const pal = halfOf(FREIGHT.pottingSoilPallet)
 ok(Math.abs(strapPose(BED, { ...pal, x: 0.70 }, pal.x).y - pal.y - BED.floorY) < 1e-9, 'a 1.0 m pallet with 1.4 m straps still sits on the deck')
 
 // ── 3–5. physics ─────────────────────────────────────────────────────────────────────────────
-async function truck (bumpy) {
+async function truck (bumpy, dip = null) {
   const P = { ...RANGER_PARAMS }
   P._tireFz = [0, 0, 0, 0]; P._suspForceAccum = [0, 0, 0, 0]
   P._hubNormalXZ = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0 }))
   const engine = await createPhysicsEngine()
-  const ground = engine.createBody({ type: 'static', position: { x: 0, y: -5, z: 0 } })
+  const ground = engine.createBody({ type: 'static', position: { x: 0, y: dip ? -300 : -5, z: 0 } })   // a dip runs below y 0
   engine.addBox(ground, { x: 3000, y: 5, z: 3000 }, { friction: 0.9, group: GROUP_TERRAIN })
   const vs = makeVehicleState(P, RUNNING)
   const eq = computeStaticEquilibrium(P)
@@ -95,7 +97,10 @@ async function truck (bumpy) {
   const chassis = createVehicleChassis(engine, vs, P, { bed: BED })
   // The wheels read an analytic road (the chassis box never touches it): ±4 cm of washboard + swell.
   const gy = (x, z) => bumpy ? 0.04 * Math.sin(z * 1.7) + 0.03 * Math.sin(z * 0.53 + x * 0.9) : 0
-  const road = (cx, cy, cz, r) => {
+  const road = dip ? (cx, cy, cz, r) => {   // `dip` (z → ground y): the normal off its slope
+    const n = new THREE.Vector3(0, 1, (dip(cz - 0.05) - dip(cz + 0.05)) / 0.1).normalize(), d = (dip(cz) + r - cy) * n.y
+    return d > 0 ? [{ normal: n, depth: d, contactPoint: new THREE.Vector3(cx, dip(cz), cz) }] : []
+  } : (cx, cy, cz, r) => {
     const d = gy(cx, cz) + r - cy
     return d > 0 ? [{ normal: new THREE.Vector3(0, 1, 0), depth: d, contactPoint: new THREE.Vector3(cx, gy(cx, cz), cz) }] : []
   }
@@ -238,6 +243,57 @@ const sOff = rel.copy(bp).sub(ts.vs.position).applyQuaternion(qi.copy(ts.vs.quat
 ok(sAdv < 0.9, `the strike parks the chassis inside the step (advance ${sAdv.toFixed(2)} of its step, < 0.9) — the case below is live`)
 ok(sOff < 0.012, `BUG-161: the welded load stays on its seat through the parked step: ${(sOff * 1000).toFixed(1)} mm (< 12; unprojected it is the step's shortfall)`)
 ts.engine.dispose()
+
+// 9. BUG-161: the owner saw the marble statue lag behind the truck, squat the rear and slow it. Laden vs unladen, the
+// same inputs: the statue as main.js loads it (FREIGHT.sculptureB's mass, the registry box) at strapPose, welded.
+// Static: its weight splits by the axle lever (seat at body z 1.025, axles at −1.282 / +1.568: 81 % rear, 874 N a rear
+// corner), so the rear struts go down 874 N / 33 kN/m = 26.5 mm and the front 6.2 mm (measured 26.7 / 6.0). The 0.6 m,
+// 20 m cosine dip at 20 m/s pulls v²·(depth/2)·(2π/L)² = 11.8 m/s² at its bottom, 2.2 g in all, so the laden truck
+// may squat its static Δ × 2.2 there (measured 61 mm, 2.3×: it is in the bump stop).
+const STATUE = FREIGHT.sculptureB, SZ = PROP_MODELS[STATUE.model].collision.size
+const SH = { x: SZ[0] / 2, y: SZ[1] / 2, z: SZ[2] / 2 }, SSEAT = strapPose(BED, SH)
+async function statueRun (laden, dip, drive, steps) {
+  const t = await truck(false, dip)
+  let b = null
+  if (laden) {
+    const p = new THREE.Vector3(SSEAT.x, SSEAT.y, SSEAT.z).applyQuaternion(t.vs.quaternion).add(t.vs.position)
+    b = t.engine.createBody({ type: 'dynamic', position: p, quaternion: t.vs.quaternion })
+    t.engine.addBox(b, SH, { density: STATUE.massKg / (8 * SH.x * SH.y * SH.z), friction: 0.6, restitution: 0.1, group: GROUP_DEBRIS })
+    t.engine.createWeldJoint(t.chassis, b, p)
+    t.engine.setBullet(b, true)   // as DebrisSystem flags it in the bed
+  }
+  t.vs.parked = false
+  for (let i = 0; i < 180; i++) t.step()   // settle 3 s
+  const out = []
+  for (let i = 0; i < steps; i++) {
+    drive(t.vs, i)
+    if (i === 0 && b) t.engine.setVelocity(b, t.vs.velocity, t.vs.angularVelocity)
+    t.step()
+    const r = { rear: (t.vs.strutComp[2] + t.vs.strutComp[3]) / 2, front: (t.vs.strutComp[0] + t.vs.strutComp[1]) / 2, speed: -t.vs.velocity.z, off: 0 }
+    if (b) { t.engine.getTransform(b, bp, bq); r.off = rel.copy(bp).sub(t.vs.position).applyQuaternion(qi.copy(t.vs.quaternion).invert()).distanceTo(SSEAT) }
+    out.push(r)
+  }
+  t.engine.dispose()
+  return out
+}
+const zF = mountLocal(0, RANGER_PARAMS).z, zR = mountLocal(2, RANGER_PARAMS).z, share = (SSEAT.z - zF) / (zR - zF)
+const wantR = STATUE.massKg * 9.81 * share / 2 / RANGER_PARAMS.suspensionStiffnessRear
+const wantF = STATUE.massKg * 9.81 * (1 - share) / 2 / RANGER_PARAMS.suspensionStiffnessFront
+const [su, sl0] = [await statueRun(false, null, () => {}, 30), await statueRun(true, null, () => {}, 30)]
+const gotR = sl0.at(-1).rear - su.at(-1).rear, gotF = sl0.at(-1).front - su.at(-1).front
+ok(Math.abs(gotR - wantR) < 0.001 && Math.abs(gotF - wantF) < 0.001,
+  `the ${STATUE.massKg} kg statue squats the rear struts ${(gotR * 1000).toFixed(1)} mm (its weight on the springs: ${(wantR * 1000).toFixed(1)}) and the front ${(gotF * 1000).toFixed(1)} (${(wantF * 1000).toFixed(1)}), each within 1 mm — its mass counted once`)
+const ls = await statueRun(true, null, (vs, i) => { vs.throttle = i < 240 ? 1 : 0; vs.brake = i < 240 ? 0 : 1 }, 330)
+ok(Math.max(...ls.map(r => r.off)) < 0.001, `it rides its seat through a full-throttle launch to ${ls[239].speed.toFixed(1)} m/s and a full stop: ${(Math.max(...ls.map(r => r.off)) * 1000).toFixed(2)} mm off (< 1)`)
+const DV = 20, DD = 0.6, DL = 20, DZ0 = 970
+const dipY = (z) => { const u = (DZ0 - z) / DL; return u > 0 && u < 1 ? -DD * 0.5 * (1 - Math.cos(2 * Math.PI * u)) : 0 }
+const cruise = (vs, i) => { if (i === 0) { vs.velocity.set(0, 0, -DV); vs.wheelOmega = [0, 1, 2, 3].map(() => DV / RANGER_PARAMS.wheelRadius) } vs.throttle = 0.35 }
+const [dipU, dipL] = [await statueRun(false, dipY, cruise, 240), await statueRun(true, dipY, cruise, 240)]
+const dipG = 1 + DV * DV * DD / 2 * (2 * Math.PI / DL) ** 2 / 9.81
+const dipSquat = Math.max(...dipL.map((r, i) => r.rear - dipU[i].rear)), dipOff = Math.max(...dipL.map(r => r.off))
+ok(dipOff < 0.002, `through a ${DD} m dip at ${DV} m/s (${dipG.toFixed(1)} g at its bottom) it stays ${(dipOff * 1000).toFixed(2)} mm off its seat (< 2)`)
+ok(dipSquat < wantR * dipG * 1.15, `…squats the rear at most ${(dipSquat * 1000).toFixed(0)} mm more than unladen (its weight × ${dipG.toFixed(1)} g = ${(wantR * dipG * 1000).toFixed(0)}, + 15 % for the bump stop)`)
+ok(dipU.at(-1).speed - dipL.at(-1).speed < 0.3, `…and leaves it at ${dipL.at(-1).speed.toFixed(2)} m/s against ${dipU.at(-1).speed.toFixed(2)} unladen on the same throttle (< 0.3 slower)`)
 
 console.log(fail ? '\nFREIGHT-STRAP: FAILED' : '\nFREIGHT-STRAP: all checks passed')
 process.exit(fail)

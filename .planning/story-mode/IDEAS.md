@@ -1,5 +1,7 @@
 # Story Mode — Ideas scratchpad
 
+**The main character is Billy (DEC-343).** "The player" means the person at the controls; "Billy" the character in the story.
+
 The low-ceremony companion to [DESIGN.md](DESIGN.md) and [MILESTONES.md](MILESTONES.md): a running
 list of **neat ideas not yet worth a ticket**. Drop a line or a short paragraph; no frontmatter, no
 ritual. This is the surface *below* `.planning/todos/pending/` — when an idea firms up into

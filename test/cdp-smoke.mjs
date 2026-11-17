@@ -377,7 +377,7 @@ const STEPS = [
     check(await until(dlg, 3000), 'no card after the skip (FEAT-184: the last check, then Larry)')
     const dlgText = () => js('document.getElementById("dialogue-panel").textContent')
     check(/last check/.test(await dlgText()), "the manager's last check is not the first card")
-    for (let i = 0; i < 8 && /last check|\[placeholder\]/.test(await dlgText()); i++) { await tap('Enter'); await sleep(100) }
+    for (let i = 0; i < 8 && /last check|\[placeholder\]|Ring ring ring/.test(await dlgText()); i++) { await tap('Enter'); await sleep(100) }   // DEC-354: Larry's call rings first
     // The owner's word stream (feat120-blip): a card fills a word at a time (the intro's 33 words take ~2.6 s);
     // a press fills it in place, the next turns it.
     const shown = () => js('[...document.querySelectorAll("#dlg-text span")].filter(w => !w.children.length && w.style.visibility !== "hidden").length')
@@ -399,6 +399,43 @@ const STEPS = [
     const c0 = await car(); await hold('w', 5); const c1 = await car(), off = Math.hypot(c1.x - c0.x, c1.z - c0.z)
     check(off > 10, `the truck did not drive off from Larry's: ${off.toFixed(1)} m in 5 s of throttle`)
   }],
+  ['runlog', async () => {
+    // FEAT-242 (DEC-358): the run logger, switched on mid-run by its dev handle. The download is intercepted (the anchor
+    // click is stubbed, so nothing lands in Downloads): an oil change checked out at the auto shop and a night's sleep
+    // must both be in the part that switching it off downloads, with the header and the 1 s route samples around them.
+    await js(`(() => { const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
+      A.click = function () { if (this.download?.startsWith('autos-run-')) window.__rlSaved.push({ name: this.download, href: this.href }); else window.__rlClick.call(this) } })()`)
+    await js('window.__runLog.setOn(true)')
+    const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
+    check(p, 'runlog: no auto shop in this region')
+    await seat(p.x, p.z, p.h)
+    await simFor(2)
+    await park(true)
+    const open = () => js('document.getElementById("svc-screen").checkVisibility()')
+    check(await until(open, 2000), 'runlog: parking at the auto shop opened no service screen')
+    // The oil change's button sits deep in the Maintenance tree; the screen handles clicks by delegation, so a button
+    // carrying its data-act is the same press.
+    await js(`(() => { window.__damage.set('oil', 0.5); window.__econ.money = 500
+      const b = document.createElement('button'); b.dataset.act = 'oil'; document.getElementById('svc-screen').appendChild(b); b.click(); b.remove() })()`)
+    await js('document.querySelector("#svc-screen [data-act=checkout]")?.click()')
+    check(await js('window.__econ.money') < 500, 'runlog: the oil change did not check out')
+    await tap('Escape')
+    await until(async () => !await open(), 2000)
+    await js('window.__day().sleep(8, 0.5)')
+    await js('window.__runLog.setOn(false)')
+    const saved = await js('window.__rlSaved.map(s => s.name)')
+    check(saved.length >= 1 && saved.every(n => /^autos-run-6-.*-part\d\d\.jsonl$/.test(n)), `runlog: the parts downloaded are ${JSON.stringify(saved)}`)
+    await js('void (window.__rlText = null, Promise.all(window.__rlSaved.map(s => fetch(s.href).then(r => r.text()))).then(t => { window.__rlText = t.join("") }))')
+    check(await until(() => js('window.__rlText !== null'), 3000), 'runlog: the downloaded parts could not be read back')
+    const got = await js(`(() => { const ev = window.__rlText.trim().split('\\n').map(l => JSON.parse(l))
+      const by = (e) => ev.filter(x => x.e === e)
+      return { n: ev.length, header: by('header').length, route: by('route').length, buy: by('purchase').map(x => x.lines.map(l => l.label).join()),
+        sleep: by('sleep').map(x => x.hours), stamped: ev.filter(x => x.e !== 'part').every(x => x.day != null && x.pos?.length === 3) } })()`)
+    check(got.header === 1 && got.route >= 2 && got.buy.includes('Oil change') && got.sleep.includes(8) && got.stamped,
+      `runlog: the log is missing its header, route samples, the purchase or the sleep: ${JSON.stringify(got)}`)
+    await js('HTMLAnchorElement.prototype.click = window.__rlClick; delete window.__rlSaved; delete window.__rlText')
+  }],
   ['camp', async () => {
     // Mom's doorstep is the one camp face reachable without a zone hunt: pull the brake there.
     const p = await js(`(() => { const m = window.__map2d()._getPois().find(q => q.type === 'momsHouse'); if (!m) return null
@@ -412,6 +449,15 @@ const STEPS = [
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }   // a teleport seats latched
     await tap(' ')
     check(await until(panel, 2000), "parking at mom's opened no camp panel")
+    // FEAT-245: her menu has an inventory button; it opens the inventory, and closing it leaves her menu up.
+    mkdirSync('wip/small-1117', { recursive: true })
+    const shot = async (n) => writeFileSync(`wip/small-1117/${n}.png`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+    await sleep(500); await shot('moms-menu')
+    check(await js('getComputedStyle(document.getElementById("cp-item")).display !== "none"'), "mom's menu has no inventory button (FEAT-245)")
+    await js('document.getElementById("cp-item").click()')
+    check(await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 2000), "mom's inventory button opened no inventory")
+    await tap('Tab')
+    check(await until(() => js('!document.getElementById("inv-screen").classList.contains("open")'), 2000) && await panel(), "closing the inventory did not return to mom's menu")
     const clock = () => js('document.querySelector("#run-hud .rh-clock").textContent')
     const h0 = await clock(); await sleep(3000)
     check(await clock() === h0, `clock ran while at mom's (FEAT-118 hold): ${h0} → ${await clock()}`)
@@ -475,6 +521,89 @@ const STEPS = [
     check(await until(async () => !await panel(), 2000), '"leave" did not close the truck face')
     check(!await lit(), 'breaking camp left the hunt on (BUG-142)')
   }],
+  ['boltons', async () => {
+    // FEAT-204: the roof rack, bull bar and light bar fitted straight onto the truck (window.__parts, no shop, no
+    // inventory row): each model in the scene and shown, the light bar's rack-mount model only with the rack (DEC-340,
+    // swapped live both ways), the rack's +4 slots, the light bar's longer head beams with the lamps on. Back to stock at
+    // the end, lamps as found. The newRun step fits them too and checks a new run clears them. Runs after story:
+    // SMOKE_STEPS=boot,story,boltons. FEAT204_SHOTS=1 also takes the day / night pictures into wip/feat-204-wire/
+    // (it moves the run clock: run it on its own).
+    const fit = (id) => js(`(window.__parts.fit('${id}'), true)`)
+    const shown = (stem) => js(`(() => { let o = window.sky.scene.getObjectByName('mod:${stem}'); if (!o) return false
+      for (; o; o = o.parent) if (!o.visible) return false; return true })()`)
+    const models = ['mod-roof-rack', 'mod-bull-bar', 'mod-light-bar-rack', 'mod-light-bar-solo']
+    const state = async () => { const r = {}; for (const m of models) r[m] = await shown(m); return JSON.stringify(r) }
+    const want = async (on) => until(async () => { for (const m of models) if (await shown(m) !== on.includes(m)) return false; return true }, 8000)
+    check(await js('window.__inv.slotCap()') === 8, 'the stock truck does not have 8 slots')
+    await fit('lightBar')
+    check(await want(['mod-light-bar-solo']), `the light bar alone does not show the solo bar: ${await state()}`)
+    await fit('roofRack')
+    check(await want(['mod-roof-rack', 'mod-light-bar-rack']), `rack + light bar do not show the rack-mount bar: ${await state()}`)
+    await fit('bullBar')
+    const all = ['mod-roof-rack', 'mod-light-bar-rack', 'mod-bull-bar']
+    check(await want(all), `the three bolt-ons are not all shown: ${await state()}`)
+    check(await js('window.__inv.slotCap()') === 12, `the roof rack did not raise the slot cap to 12 (${await js('window.__inv.slotCap()')})`)
+    await fit('roofRackNone')
+    check(await want(['mod-light-bar-solo', 'mod-bull-bar']), `the rack off did not swap back to the solo bar: ${await state()}`)
+    check(await js('window.__inv.slotCap()') === 8, 'the rack off did not take its slots away')
+    await fit('roofRack')
+    check(await want(all), `the rack back on did not swap to the rack-mount bar: ${await state()}`)
+    // The head spots (the two with a cookie map) reach headlightReach × their base range with the bar on.
+    const heads = () => js(`JSON.stringify((() => { const r = []; window.sky.scene.traverse(o => { if (o.isSpotLight && o.map) r.push({ d: +o.distance.toFixed(1), on: o.visible }) }); return r })())`)
+    const lit = async () => JSON.parse(await heads()).every(h => h.on)
+    for (let i = 0; i < 3 && !await lit(); i++) { await tap('l'); await frames(3, 100) }
+    const barred = JSON.parse(await heads())
+    await fit('lightBarNone'); await frames(3, 100)
+    const bare = JSON.parse(await heads())
+    await fit('lightBar'); await frames(3, 100)
+    console.log(`  boltons: head spots with the bar ${JSON.stringify(barred)} · without ${JSON.stringify(bare)}`)
+    check(barred.length === 2 && barred.every((h, i) => h.on && Math.abs(h.d / bare[i].d - 1.47) < 0.01), `the light bar did not lengthen the head beams: ${JSON.stringify({ barred, bare })}`)
+    check(await js(`(() => { let n = 0; window.sky.scene.getObjectByName('mod:mod-light-bar-rack').traverse(o => { if (o.isMesh && /LightBarReflector/.test(o.material.name) && o.material.emissiveIntensity > 0) n++ }); return n > 0 })()`),
+      'the light bar\'s reflectors are dark with the lamps on')
+    if (process.env.FEAT204_SHOTS) {
+      mkdirSync('wip/feat-204-wire', { recursive: true })
+      const snap = async (f) => { await frames(20, 1500); writeFileSync(`wip/feat-204-wire/${f}`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+      const toHour = (h) => js(`window.__day().advanceMinutes(Math.round((((${h} - window.__day().clockH()) % 24 + 24) % 24) * 60))`)
+      // Front-left three-quarter view, 7 m out, eye 2.2 m up, aimed at the cab.
+      const look = (side, back, up) => js(`(() => { const p = window.__vs.position, q = window.__vs.quaternion
+        const r = (x, z) => { const c = 1 - 2 * (q.y * q.y + q.z * q.z), s = 2 * (q.x * q.z + q.w * q.y), c2 = 2 * (q.x * q.z - q.w * q.y), c3 = 1 - 2 * (q.x * q.x + q.y * q.y); return [x * c + z * s, x * c2 + z * c3] }
+        const [ox, oz] = r(${side}, ${back}), cx = p.x + ox, cy = p.y + ${up}, cz = p.z + oz, dx = p.x - cx, dy = p.y + 0.4 - cy, dz = p.z - cz
+        window.__view(cx, cy, cz, Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))) })()`)
+      for (let i = 0; i < 3 && await lit(); i++) { await tap('l'); await frames(3, 100) }
+      await toHour(12); await look(4.5, -6, 2.4); await snap('day-front.png')
+      await look(4.5, 5.5, 2.6); await snap('day-rear.png')
+      await toHour(23)
+      for (let i = 0; i < 3 && !await lit(); i++) { await tap('l'); await frames(3, 100) }
+      await look(0, 9, 6); await snap('night-bar.png')
+      await fit('lightBarNone'); await snap('night-nobar.png'); await fit('lightBar')
+    }
+    // FEAT-231 (DEC-352): the bed mat and the bedliner show in the bed only while owned; the liner covers the mat.
+    // FEAT231_SHOTS=1 takes the pictures into wip/feat-231-looks/ (from above the bed).
+    const bedShown = (n) => js(`(() => { let o = window.sky.scene.getObjectByName('${n}'); if (!o) return false
+      for (; o; o = o.parent) if (!o.visible) return false; return true })()`)
+    const bedLook = async (mat, liner, why) => check(await until(async () => await bedShown('bed-mat') === mat && await bedShown('bed-liner') === liner, 8000), why)
+    const shot = async (f) => { if (!process.env.FEAT231_SHOTS) return; mkdirSync('wip/feat-231-looks', { recursive: true })
+      await js(`(() => { const p = window.__vs.position, q = window.__vs.quaternion
+        const c = 1 - 2 * (q.y * q.y + q.z * q.z), s = 2 * (q.x * q.z + q.w * q.y), c2 = 2 * (q.x * q.z - q.w * q.y), c3 = 1 - 2 * (q.x * q.x + q.y * q.y)
+        const r = (x, z) => [x * c + z * s, x * c2 + z * c3], [ox, oz] = r(0, 3.4), cx = p.x + ox, cy = p.y + 2.6, cz = p.z + oz
+        const [tx, tz] = r(0, 1.5), dx = p.x + tx - cx, dy = p.y + 0.1 - cy, dz = p.z + tz - cz
+        window.__view(cx, cy, cz, Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))) })()`)
+      await frames(20, 1500); writeFileSync(`wip/feat-231-looks/${f}`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    await bedLook(false, false, 'a bare bed shows a mat or a liner'); await shot('bare.png')
+    await js(`window.__inv.grant('rubberBedMat')`)
+    await bedLook(true, false, 'the owned mat does not show alone'); await shot('mat.png')
+    await js(`window.__inv.grant('bedliner')`)
+    await bedLook(false, true, 'mat + liner owned does not show the liner alone (it covers the mat)'); await shot('liner.png')
+    if (process.env.FEAT231_SHOTS) { await js(`(() => { const d = window.__debris, k = Object.keys(d._types).find(n => /barrel|drum|crate/i.test(n)) || Object.keys(d._types)[0]
+        const p = window.__vs.position, q = window.__vs.quaternion, c = 1 - 2 * (q.y * q.y + q.z * q.z), s = 2 * (q.x * q.z + q.w * q.y), c2 = 2 * (q.x * q.z - q.w * q.y), c3 = 1 - 2 * (q.x * q.x + q.y * q.y)
+        d.spawn(k, { x: p.x + 1.5 * s, y: p.y + 0.8, z: p.z + 1.5 * c3 }, { x: 0, y: 0, z: 0 }, { pinned: true, noDamage: true }) })()`); await frames(120, 1500); await shot('liner-load.png'); await js('window.__debris.clear()') }
+    for (const id of ['rubberBedMat', 'bedliner']) await js(`window.__inv.consume('${id}')`)
+    await bedLook(false, false, 'the mat / liner still show with neither owned')
+    for (let i = 0; i < 3 && await lit(); i++) { await tap('l'); await frames(3, 100) }
+    for (const id of ['roofRackNone', 'bullBarNone', 'lightBarNone']) await fit(id)
+    check(await want([]), `stock again, yet a bolt-on still shows: ${await state()}`)
+    check(await js('window.__inv.slotCap()') === 8 && await js('window.__openMenus().length') === 0, 'the step left the slot cap raised or a menu open')
+  }],
   ['inventory', async () => {
     // FEAT-122: parked only (like V) — Tab driving pulses the park sign and opens nothing; parked,
     // Tab toggles the screen and Esc closes it. The grid draws every slot, and the run starts with
@@ -502,6 +631,44 @@ const STEPS = [
     // Parking at the spawn can open mom's camp face, which holds the truck — R closes it (R-12).
     const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
+  }],
+  ['freshBar', async () => {
+    // FEAT-230 slice 2 (DEC-338): a chili dog's freshness bar sits at 6 o'clock over its thumbnail and shortens as the clock
+    // runs (2 h of its 16: 100 % → 87.5 %). Runs after inventory: SMOKE_STEPS=boot,story,inventory,freshBar. Picture:
+    // wip/fresh/bar.png. Leaves no row, no screen open, and the energy as it found it.
+    const open = () => js('document.getElementById("inv-screen").classList.contains("open")')
+    const wasParked = await js('window.__vs.parked')
+    if (!wasParked) { await tap(' '); check(await until(() => js('window.__vs.parked'), 1000), 'Space did not park') }
+    await js(`window.__inv.grant('chiliDog')`)
+    await sleep(100)   // a fixed step: the fresh clock seats the new unit
+    const bar = () => js(`(() => { const i = window.__inv.list().findIndex(r => r.id === 'chiliDog')
+      const s = document.querySelector('#inv-screen .inv-slot[data-slot="' + i + '"]'), b = s?.querySelector('.sl-fresh'), f = b?.firstChild
+      if (!f) return null
+      const S = s.getBoundingClientRect(), B = b.getBoundingClientRect()
+      return { w: f.getBoundingClientRect().width / b.clientWidth, dx: (B.left + B.right) / 2 - (S.left + S.right) / 2, dy: S.bottom - B.bottom } })()`)
+    await tap('Tab'); check(await until(open, 1000), 'Tab opened no inventory screen while parked')
+    const b0 = await bar()
+    check(b0 && b0.w > 0.99, `no full freshness bar on a new chili dog: ${JSON.stringify(b0)}`)
+    check(b0 && Math.abs(b0.dx) < 1.5 && b0.dy >= 0 && b0.dy < 8, `the bar is not at 6 o'clock over the thumbnail: ${JSON.stringify(b0)}`)
+    check(await js(`document.querySelector('#inv-screen .inv-slot[data-slot="0"] .sl-fresh') === null`), 'the Pack (no fresh time) shows a bar')
+    await tap('Escape'); await until(async () => !await open(), 1000)
+    const e0 = await js('window.__day().energyH()')
+    await js('window.__day().advanceMinutes(120)')
+    await sleep(100)
+    await tap('Tab'); await until(open, 1000)
+    const b1 = await bar()
+    check(b1 && Math.abs(b1.w - 0.875) < 0.02, `after 2 h the bar is ${b1 && (b1.w * 100).toFixed(1)} %, not 87.5 %`)
+    await sleep(200)
+    const shot = await client.cmd('Page.captureScreenshot', { format: 'png' })
+    mkdirSync('wip/fresh', { recursive: true }); writeFileSync('wip/fresh/bar.png', Buffer.from(shot.result.data, 'base64'))
+    await tap('Escape')
+    check(await until(async () => !await open(), 1000), 'Esc left the inventory open')
+    await js(`(() => { window.__inv.consume('chiliDog'); window.__day().setEnergy(${e0}) })()`)
+    check(!await js(`window.__inv.list().some(r => r.id === 'chiliDog')`), 'the chili dog row is left behind')
+    if (!wasParked) await tap(' ')
+    const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
+    if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
+    console.log(`  freshBar: ${(b0.w * 100).toFixed(1)} % → ${(b1.w * 100).toFixed(1)} % after 2 h; centred ${b0.dx.toFixed(1)} px, ${b0.dy.toFixed(1)} px off the bottom`)
   }],
   ['campGear', async () => {
     // FEAT-66: what is packed is what stands at camp. A pad at the truck, a packed tent → the tent
@@ -562,12 +729,32 @@ const STEPS = [
     check(await js('window.__inv.use("potatoCooked")'), 'the cooked potato could not be eaten')
     const withKit = await fedLeft()
     check(Math.abs(withKit - 4.8) < 0.01, `kit at camp: held ${withKit.toFixed(3)} h, not 4.8`)
+    // FEAT-230 slice 3: groceries, cooked with the kit deployed (the kit is packed and the camp card is up). 10 h, no +20 % on top.
+    await js(`window.__inv.grant('groceries', 2)`)
+    const gcook = () => js('(b => b && b.style.display !== "none" && b.textContent)(document.getElementById("cp-cook-groceries"))')
+    check(await until(async () => /cook groceries/.test(await gcook() || ''), 2000), 'no groceries line on the camp card with the kit deployed')
+    await sleep(400)
+    const gshot = await client.cmd('Page.captureScreenshot', { format: 'png' })
+    mkdirSync('wip/groceries', { recursive: true }); writeFileSync('wip/groceries/camp-card.png', Buffer.from(gshot.result.data, 'base64'))
+    const g0 = await day('clockH()')
+    await js('document.getElementById("cp-cook-groceries").click()')
+    check(await until(async () => await n('groceriesCooked') === 1, 5000), 'cooking made no cooked groceries')
+    await until(async () => !(await js('document.getElementById("camp-fade").classList.contains("on")')), 5000)
+    check(Math.abs(((await day('clockH()')) - g0) * 60 - 30) < 0.5, 'cooking groceries did not take 30 game min')
+    check(await n('groceries') === 1, `raw groceries after one cook: ${await n('groceries')}`)
+    await js('window.__day()._fedUntilH = window.__day().clockH() - 1')
+    check(await js('window.__inv.use("groceriesCooked")'), 'the cooked groceries could not be eaten')
+    const gHeld = await fedLeft()
+    check(Math.abs(gHeld - 10) < 0.01, `cooked groceries at camp with the kit: held ${gHeld.toFixed(3)} h, not 10 (no x1.2)`)
     // The same meal without the kit packed.
     await js(`(() => { const i = window.__inv; i.unpackItem(i.equippedIndex(), i.packed().indexOf('cookingKit')); i.consume('cookingKit')
       i.grant('potatoCooked'); window.__day()._fedUntilH = window.__day().clockH() - 1 })()`)
     check(await js('window.__inv.use("potatoCooked")'), 'the second cooked potato could not be eaten')
     const noKit = await fedLeft()
     check(Math.abs(noKit - 4) < 0.01, `no kit: held ${noKit.toFixed(3)} h, not 4`)
+    // No kit deployed: the camp card offers no groceries line (one bag is still aboard).
+    check(await until(async () => !(await gcook()), 2000), 'the camp card offers a groceries line without the cooking kit')
+    await js(`window.__inv.consume('groceries')`)   // consumed, not dropped: a dropped bag would sit under "Nearby on the ground" for the tires step
     // And away from camp, with the kit packed again: no bonus.
     await js('document.getElementById("cp-break")?.click()')
     check(await until(async () => !await camp(), 3000), 'break camp left the card up')
@@ -745,9 +932,16 @@ const STEPS = [
     check(await js('!document.getElementById("hud-dock").checkVisibility({ visibilityProperty: true })'), 'the HUD shows behind the service screen')
     // FEAT-212: Maintenance is a tree, one item open per level — Tires, Wheels… → Tires and Wheels → Rear right → Tire
     // shows its swap; selecting the top level again collapses everything.
+    await js('window.__damage.flat[3] = true; document.querySelector("#svc-screen [data-tab=maint]")?.click()')   // FEAT-244: a flat on RR, drawn
     for (const id of ['twbs', 'tw', 'RR', 'tire']) await js(`document.querySelector('#svc-screen [data-act=node][data-id="${id}"]')?.click()`)
     check(await js('/Swap with inventory/.test(document.querySelector("#svc-screen .sv-kids .sv-kids .sv-kids .sv-kids")?.textContent ?? "")'),
       'Maintenance: the rear-right tire opened no swap')
+    // FEAT-244: the flat tire is the failing band at every level down to it: category, group, corner, the tire row.
+    const red = await js(`['twbs', 'tw', 'RR', 'tire'].map(id => getComputedStyle(document.querySelector('#svc-screen [data-act=node][data-id="' + id + '"] .sv-name')).color)`)
+    mkdirSync('wip/small-1117', { recursive: true })
+    writeFileSync('wip/small-1117/repair-flat.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+    check(red.every(c => c === 'rgb(229, 87, 74)'), `FEAT-244: a flat rear-right tire is not red at every level: ${JSON.stringify(red)}`)
+    await js('window.__damage.flat[3] = false; document.querySelector("#svc-screen [data-tab=maint]")?.click()')
     // FEAT-213: an open part's (i) button shows the owner's text, names coloured.
     for (const id of ['brakes']) await js(`document.querySelector('#svc-screen [data-act=node][data-id="${id}"]')?.click()`)
     await js('document.querySelector("#svc-screen [data-act=info]")?.click()')
@@ -806,6 +1000,10 @@ const STEPS = [
     check(await until(open, 2000), `parking at the general store opened no shop (prompt "${await js('document.getElementById("poi-prompt")?.textContent.trim()')}")`)
     const txt = await js('document.querySelector("#svc-screen").textContent')
     check(/Coffee/.test(txt) && !/My Vehicle|My items|Parts Shop/.test(txt), `the store's shop reads: "${txt.slice(0, 200)}"`)
+    // FEAT-121: the camp-gear rows are on the shelf; picture in wip/camp-gear-shelf/
+    check(['Blanket', 'Air mattress', 'Sleeping pad', 'Sleeping bag'].every(n => txt.includes(n)), `the store's shelf lacks the camp gear: "${txt.slice(0, 300)}"`)
+    mkdirSync('wip/camp-gear-shelf', { recursive: true })
+    writeFileSync('wip/camp-gear-shelf/general-store-shelf.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
     await js('window.__econ.money = 50')
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')   // repaints with the new wallet
     const coffees = () => js('window.__inv.list().filter(r => r.id === "coffee").reduce((a, r) => a + r.n, 0) + (window.__inv.pending()?.id === "coffee" ? 1 : 0)')
@@ -825,6 +1023,44 @@ const STEPS = [
     check(await until(async () => !await open(), 1000), 'Esc left the shop open')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
+  }],
+  ['farm', async () => {
+    // FEAT-230 slice 3: a farm sells for the first time (groceries, $5). Parking at one opens the same buy screen as the
+    // general store, its jobs a button inside it ("go to jobs", FEAT-197) that appears only while the farm has an offer up.
+    // A farm with NO offer: the shop, no jobs button. A farm WITH one: the button, the farm's own offer card, accept, a mission.
+    // Pictures: wip/groceries/farm-shop.png (no offer), farm-shop-jobs.png (the jobs button).
+    const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
+    const find = (want) => js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
+      const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden && !q.drop && !q.park && ((b.view(q.id, 0)?.count > 0) === ${want}))
+      return q ? { h: Math.atan2(-q.tx, -q.tz), id: q.id, ...${PAD_SEAT}(q) } : null })()`)
+    const shot = async (f) => { await sleep(600); const r = await client.cmd('Page.captureScreenshot', { format: 'png' }); mkdirSync('wip/groceries', { recursive: true }); writeFileSync(`wip/groceries/${f}`, Buffer.from(r.result.data, 'base64')) }
+    const leave = async () => { await tap('Escape'); await until(async () => !await vis('svc-screen'), 1500); await tap(' '); await sleep(300) }
+    const bare = await find(false)
+    if (bare) {
+      await seat(bare.x, bare.z, bare.h); await park(true)
+      check(await until(() => vis('svc-screen'), 2000), 'parking at a farm with no offer opened no shop')
+      const txt = await js('document.querySelector("#svc-screen").textContent')
+      check(/Groceries/.test(txt) && !/My Vehicle|Parts Shop/.test(txt), `the farm's shop reads: "${txt.slice(0, 200)}"`)
+      check(await js('!document.querySelector("#svc-screen [data-tab=jobs]")'), 'a farm with no offer shows a dead Jobs tab')
+      await shot('farm-shop.png')
+      await leave()
+    } else console.log('  farm: no farm without an offer — the no-offer half skipped')
+    const live = await find(true)
+    if (!live) { console.log('  farm: no farm with an offer up — the jobs half skipped'); return }
+    await seat(live.x, live.z, live.h); await park(true)
+    check(await until(() => vis('svc-screen'), 2000), 'parking at a farm with an offer opened no shop')
+    check(await js('!!document.querySelector("#svc-screen [data-tab=jobs]")'), 'the farm shop has no Jobs tab although an offer is up')   // the tab holds the "go to jobs" button
+    await js('document.querySelector("#svc-screen [data-tab=jobs]").click()')
+    check(await js('!!document.querySelector("#svc-screen [data-act=jobs]")'), 'the farm\'s Jobs tab has no "go to jobs" button')
+    await shot('farm-shop-jobs.png')
+    await js('document.querySelector("#svc-screen [data-act=jobs]").click()')
+    check(await until(() => vis('mp-accept'), 2000), "the farm's jobs button did not bring up the farm's own offer card")
+    await js('document.getElementById("mp-accept").click()')
+    check(await until(async () => await vis('mission-hud') && await js('document.querySelector("#mission-hud .hud-text").textContent.trim()'), 5000), 'accepting the farm offer started no mission')
+    console.log(`  farm: shop, jobs button, offer card, accepted → mission ${await js('window.__mission().state')}`)
+    await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')   // abandon: two clicks (the confirm)
+    check(await until(async () => !await js('window.__mission().isOnJob()'), 3000), 'abandoning the farm job did not end it')
+    await js('window.__mission().exit()')   // the abandoned job's result card hides every POI prompt: close it for the steps that follow
   }],
   ['vendor', async () => {
     // FEAT-232: the food vendor's shop — the burger on its shelf and the dinner meal's "Eat here" line (paid, 30 min, holds
@@ -1538,16 +1774,28 @@ const STEPS = [
     const speaker = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none" && document.getElementById("dlg-speaker").textContent')
     // FEAT-170 stage 4: mom's lessons queue up and hold the sim (and every key) while they are up — read off
     // whatever comes, waiting a beat for a queued one to appear. Returns the speakers' card count.
+    const said = []   // every card readCards read, as "speaker: text" (DEC-345: the calls are checked by their words)
+    const saidAny = re => said.some(t => re.test(t))
     const readCards = async (beatMs = 800, stopAt = null) => {   // stopAt: leave that speaker's card up, unread
       let n = 0
       for (let i = 0; i < 40; i++) {
         if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return n }
         if (stopAt && await speaker() === stopAt) return n
+        // A press on a card still streaming in only fills it (main.js `_dlgFill`), so the same card can be read twice:
+        // it counts, and is recorded, once.
+        const line = `${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent ?? ""')}`
+        if (line === said[said.length - 1]) { await tap('Enter'); await sleep(200); continue }
+        said.push(line)
+        // CARD_SHOTS=<dir>: a screenshot of every card read, for a look at new lines' layout (UI-STYLE)
+        if (process.env.CARD_SHOTS) { mkdirSync(process.env.CARD_SHOTS, { recursive: true })
+          for (let t = null, k = 0; k < 20; k++) { const u = await js('document.getElementById("dlg-text")?.innerHTML'); if (u === t) break; t = u; await sleep(400) }   // typed out
+          writeFileSync(join(process.env.CARD_SHOTS, `${String(said.length).padStart(2, '0')}.png`), Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+          writeFileSync(join(process.env.CARD_SHOTS, 'said.json'), JSON.stringify(said, null, 1)) }
         n++; await tap('Enter'); await sleep(200)
       }
       throw new Error('cards never stopped coming')
     }
-    // DEC-320: the firing opens on Katie's call, wrapping up as Jay arrives; then the manager.
+    // DEC-320: the firing opens on Katie's call, wrapping up as Billy arrives; then the manager.
     check(await until(async () => await speaker() === 'Katie', 3000), `the run did not open on the firing's call (speaker "${await speaker()}")`)
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
       return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), h: window.__day().clockH() } })()`)
@@ -1560,24 +1808,29 @@ const STEPS = [
     // BUG-136: the days before the clock's zero; the HUD read day 0 as "Day 0, -6 am".
     const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
     check(await until(async () => await hudClock() === 'Day -1, 7 am', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day -1, 7 am" (BUG-136)`)
-    let boss = false
-    for (let i = 0; i < 8 && ['Katie', 'The manager'].includes(await speaker()); i++) { boss ||= await speaker() === 'The manager'; await tap('Enter'); await sleep(250) }
+    let boss = false, hung = false
+    for (let i = 0; i < 8 && ['Katie', 'The manager'].includes(await speaker()); i++) {
+      boss ||= await speaker() === 'The manager'; hung ||= !boss && await js('document.getElementById("dlg-text").textContent') === '<click>'
+      await tap('Enter'); await sleep(250) }
     check(boss, 'the firing had no card from the manager')
+    check(hung, "the firing's call did not hang up (<click>) before the manager (DEC-354)")
     // The card: up, the sim held under it; "play" on seed 6 loads the tutorial seed with seed 6 to come back to.
     check(await until(() => js('document.getElementById("tut-card").style.display === "flex"'), 3000), `the firing did not end on the tutorial card: ${JSON.stringify(await tut())}`)
     check((await tut()).phase === 'card', `the card is up but the tutorial reads ${JSON.stringify(await tut())}`)
     { const h0 = await js('window.__day().clockH()'), c0 = await car(); await sleep(800)
       const c1 = await car(); check(await js('window.__day().clockH()') === h0 && Math.hypot(c1.x - c0.x, c1.z - c0.z) < 0.01, 'the sim ran under the tutorial card') }
     await js('document.getElementById("tc-play").click()')
-    check(await until(async () => await js(live) && await world() === '822480141', 60000, 250), `"play" did not load the tutorial seed (world ${await world()}, ${JSON.stringify(await tut())})`)
+    check(await until(async () => await js(live) && await world() === '3590618618', 60000, 250), `"play" did not load the tutorial seed (world ${await world()}, ${JSON.stringify(await tut())})`)
     check((await tut()).returnSeed === '6', `the tutorial's world does not carry seed 6 back: ${JSON.stringify(await tut())}`)
     check(Math.abs(await js('window.__day().clockH()') + 41) < 0.1, `the tutorial's day is not 07:00 on day -1 (clockH ${await js('window.__day().clockH()')})`)
     // DEC-160: the tutorial saves as part of the run, the way back in it.
     check(await until(() => js('window.__autosave()'), 3000) && await js('JSON.parse(localStorage.getItem("autos-run/1")).data.returnSeed') === '6',
       'the tutorial did not save with its way back to seed 6')
-    check(await until(async () => await speaker() === 'Mom', 5000), `the tutorial seed did not open on mom's call (speaker "${await speaker()}")`)
-    for (let i = 0; i < 8 && await speaker() === 'Mom'; i++) { await tap('Enter'); await sleep(250) }
-    await readCards()   // stage 4: the driving lesson follows her call
+    check(await until(async () => await speaker() === 'Phone', 5000), `the tutorial seed did not open on mom's call ringing (speaker "${await speaker()}")`)
+    await readCards()   // her call; stage 4: the driving lesson follows it
+    // DEC-354: a call rings first and hangs up last — the key card (FEAT-184) inside it.
+    { const r = said.findIndex(t => /^Phone: Ring ring ring/.test(t)), k = said.findIndex(t => /^Mom: And honey .* the truck won't start itself/.test(t))
+      check(r === 0 && k > r && said[k + 1] === 'Mom: <click>', `mom's call is not ring, her cards, the key, <click>: ${JSON.stringify(said.slice(0, 7))}`) }
     check(!await speaker(), "mom's call did not close")
     check(await until(async () => (await at()).cam < 9, 3000), 'the camera never came back to the truck')
     // FEAT-229: the FIRING DAY — no job (free will is after the paycheck), the HUD and the GPS to mom's first.
@@ -1642,12 +1895,12 @@ const STEPS = [
     // all four wheels past the road mesh and its 2.5 m shoulder, inside DEC-219's 15 m), graded under 1.5 % (under the
     // rolling resistance, so a truck with the brake off stays put), clear of hard props within 6 m, and 90 m from every
     // place. The old pick (the first ±9 m point beside the joint) sat on a 13–35 % cross-slope 2.3 m from a trunk: the
-    // truck perched or rolled, by frame timing. Seed 822480141 has no such point within 250 m along the joint's road.
+    // truck perched or rolled, by frame timing. The old tutorial seed 822480141 had no such point within 250 m along the joint's road.
     // The check below is unchanged.
     const sh = await js(`(() => { const v = window.__vs.position, H = window.terrain; let best = null
       for (let dx = -300; dx <= 300; dx += 4) for (let dz = -300; dz <= 300; dz += 4) { const x = v.x + dx, z = v.z + dz
         const g = Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
-        if (g >= 0.015 || (best && g >= best.g)) continue
+        if (g >= 0.015 || g < 1e-9 || (best && g >= best.g)) continue   // g === 0: height not streamed in yet (3590618618 read a flat 0 at a 35 % slope), not a flat spot
         const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
         if (lt < 11 || lt > 14 || window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
         if (!window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length) best = { x, z, g } }
@@ -1683,8 +1936,8 @@ const STEPS = [
       if (await speaker()) { heard ||= await handover(); await tap('Enter'); await sleep(200) }
       else { await sleep(800); if (!await speaker() && (await tut()).stop === 'mom') { await park(true); await sleep(800) } }
     }
-    await readCards()
-    check(heard && (await tut()).stop === 'pack', `parked at mom's door, no hand-over in the owner's words: ${JSON.stringify(await tut())}`)
+    await readCards()   // the stop can flip to 'pack' a beat before her card shows: then it is read here
+    check((heard || saidAny(/^Mom: Take this pack over to your uncle/)) && (await tut()).stop === 'pack', `parked at mom's door, no hand-over in the owner's words: ${JSON.stringify(await tut())}`)
     check(await js('window.__econ.money') === 6, `mom's hand-over did not put $6 in the wallet: $${await js('window.__econ.money')}`)
     check(!await js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"'), "her door offered her bed in the morning (DEC-308)")
     await stamped(8, "mom's hand-over")
@@ -1707,6 +1960,13 @@ const STEPS = [
     check(await until(async () => await speaker() === 'Uncle Larry', 5000), `parked at Larry's with his pack, no hand-over (speaker "${await speaker()}", ${JSON.stringify(await tut())})`)
     await readCards()
     check((await tut()).stop === 'snack' && await js("window.__inv.list().some(r => r.id === 'pack')"), `Larry's hand-over did not leave the pack on board and send the day for the snack: ${JSON.stringify(await tut())}`)
+    // DEC-345: his cards over, Katie calls — the picnic at the old McGill ranch, a snack from the station on the way.
+    check(saidAny(/^Katie: .*picnic out at the old McGill ranch/) && saidAny(/^Katie: You know where to go, I'll see you there!/),
+      `at Larry's, no picnic call from Katie in the owner's words: ${JSON.stringify(said.slice(-4))}`)
+    // DEC-355: her call opens on the owner's line and names the peanuts; DEC-354: it rings and hangs up.
+    { const h = said.findIndex(t => t === 'Katie: Hey Billy! How you doing? Sorry about yesterday…'), e = said.findIndex(t => /^Katie: You know where to go/.test(t))
+      check(h > 0 && said[h - 1] === 'Phone: Ring ring ring' && said[e + 1] === 'Katie: <click>' && saidAny(/^Katie: .*bag of peanuts/),
+        `Katie's picnic call is not ring, "Hey Billy!…", the peanuts, <click>: ${JSON.stringify(said.slice(-7))}`) }
     await stamped(9, "Larry's")
     // The station nearest Larry's: a bag of peanuts at its store, then (mom's card) its pump, filled until broke.
     const gs = await js(`(() => { const L = window.__poi().list().find(q => q.type === 'larrysHouse'), d = q => Math.hypot(q.x - L.x, q.z - L.z)
@@ -1723,18 +1983,29 @@ const STEPS = [
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     const nut = 'Array.from(document.querySelectorAll("#svc-screen [data-act=node][data-slot]")).find(r => /Bag of peanuts/.test(r.textContent))'
     check(await js(`!!${nut}`), `the gas station sells no peanuts: "${(await js('document.querySelector("#svc-screen").textContent')).slice(0, 200)}"`)
+    // DEC-356: the snack stop's shelf sells the peanuts alone — any other row says why and its buttons are off.
+    { const other = 'Array.from(document.querySelectorAll("#svc-screen [data-act=node][data-slot]")).find(r => !/Bag of peanuts/.test(r.textContent))'
+      await js(`${other}.click()`)
+      const lk = await js('({ why: /Katie asked for the peanuts/.test(document.querySelector("#svc-screen .sv-kids")?.textContent ?? ""), on: [...document.querySelectorAll("#svc-screen .sv-kids [data-act=stow], #svc-screen .sv-kids [data-act=buy], #svc-screen .sv-kids [data-act=eat]")].filter(b => !b.disabled).length })')
+      check(lk.why && lk.on === 0, `at the snack stop another row is for sale (DEC-356): ${JSON.stringify(lk)}`) }
     await js(`${nut}.click()`)
     await js('document.querySelector("#svc-screen .sv-kids [data-act=stow]").click()')
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')
     check(await until(async () => (await tut()).stop === 'pump', 3000), `buying the peanuts did not send the day to the pump: ${JSON.stringify(await tut())}`)
+    { await js(`${nut}.click()`)   // a second bag: refused, so the gas money stays (DEC-356)
+      check(await js('/one bag will do/.test(document.querySelector("#svc-screen .sv-kids")?.textContent ?? "") && !!document.querySelector("#svc-screen .sv-kids [data-act=stow]")?.disabled'),
+        'the peanuts bought, the shop sells a second bag (DEC-356)') }
     check(!await js('window.__worstDay().pumpsShut'), 'the peanuts bought, the pumps stayed shut (DEC-323)')
     if (await shopUp()) await tap('Escape')
     check(await until(async () => !await shopUp(), 2000), 'Escape did not close the gas station shop')
     // DEC-323: pulling away from the store, mom sends you to a pump.
     check(!await js('/pump/.test(document.getElementById("dlg-text")?.textContent ?? "") && document.getElementById("dialogue-panel").checkVisibility()'), "mom's pump card came before pulling away")
     if (await js('window.__vs.parked')) await tap(' ')
-    check(await until(() => js('/pull up at a pump/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 3000), "pulling away from the store, no pump card from mom")
+    check(await until(() => js('/Ring ring ring|plumb outta gas/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 3000), "pulling away from the store, no call from mom about the gas (DEC-345)")
     await readCards()
+    check(saidAny(/^Mom: .*plumb outta gas/) && saidAny(/^Mom: .*pull up at a pump/), `mom's call did not go on to the gas lesson: ${JSON.stringify(said.slice(-3))}`)
+    { const g = said.findLastIndex(t => /pull up at a pump/.test(t))
+      check(said[g + 1] !== 'Mom: <click>', `mom hung up before the fill-up (DEC-354: she stays on the line): ${JSON.stringify(said.slice(g - 2, g + 2))}`) }
     check(await js('window.__econ.money') === 3, `the peanuts did not leave mom's $3 of gas money: $${await js('window.__econ.money')}`)
     const pz = await js(`(() => { const q = window.__poi().list().find(q => q.id === window.__worstDay().pump.id); return window.__towSeat(q) })()`)
     await tp(pz.x, pz.z, pz.heading); await park(true)
@@ -1749,9 +2020,28 @@ const STEPS = [
     check(await js('window.__econ.money < 0.05'), `the fill-up left money in the wallet: $${await js('window.__econ.money')}`)
     check(await until(async () => (await tut()).stop === 'camp', 3000), `the fill-up did not send the day to the camping area: ${JSON.stringify(await tut())}`)
     await stamped(10, 'the station')
-    // DEC-304: the camping area — Z looks for a site, a re-park asks, "make camp" makes it (no sleep on offer, DEC-308),
-    // the peanuts eaten in camp bring Katie's call (DEC-324) and the 17:00 stamp; then break camp.
-    await readCards()   // the camping area's card
+    // DEC-346: the camping area, the old McGill ranch — mom's send-off, the waypoint already on its door and the HUD's
+    // guiding text; at the waypoint Katie calls (DEC-345) and walks you through it: Z looks for a site (the vibe bar's card),
+    // a re-park asks, "make camp" makes it (no sleep on offer, DEC-308; the snack's card), the peanuts eaten in camp bring
+    // her talk (DEC-347) and the 17:00 stamp; then break camp.
+    await readCards()   // mom's send-off
+    { const f = said.findLastIndex(t => /have fun with Katie/.test(t))
+      check(f >= 0 && said[f + 1] === 'Mom: <click>', `mom's send-off did not hang up her gas call (DEC-354): ${JSON.stringify(said.slice(-3))}`) }
+    const ranch = await js('({ w: window.__map2d()._getWaypoint(), d: window.__tutorial().camp })')
+    check(ranch.w && ranch.d && Math.hypot(ranch.w.x - ranch.d.x, ranch.w.z - ranch.d.z) < 1, `the tank filled, no waypoint on the camping area: ${JSON.stringify(ranch)}`)
+    check(/^drive out to the old McGill ranch · /.test((await eve()).hud), `the drive to the camping area does not read "drive out to the old McGill ranch" ("${(await eve()).hud}")`)
+    const door = await js(`(() => { const d = window.__tutorial().camp, nr = window.__roadSys().queryNearest(d.x, d.z, 30)
+      return { x: nr.point.x, z: nr.point.z, h: Math.atan2(-nr.tangent.x, -nr.tangent.z) } })()`)
+    await js(`window.__seated = false; window.__teleport(${door.x}, ${door.z}, ${door.h}).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the waypoint never seated')
+    check(await until(() => js('/Ring ring ring|already there/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), `at the waypoint, no call from Katie: ${JSON.stringify(await tut())}`)
+    await readCards()
+    check(saidAny(/^Katie: .*Hold B and select the camping menu to look for a campsite\. Then drive slowly down the road to find the best site nearby\. Anything flat enough will do!$/)
+      && said[said.length - 1] !== 'Katie: <click>', `Katie's camp instruction is not the owner's words, or she hung up before the hunt (DEC-355): ${JSON.stringify(said.slice(-3))}`)
+    check(saidAny(/^Katie: Oh, you're already there\? I'm just a couple minutes out\. Go ahead and find a good spot\. I'll just pull over where I see your truck\./),
+      `Katie's arrival call is not the owner's words: ${JSON.stringify(said.slice(-3))}`)
+    check(!await js('window.__map2d()._getWaypoint()'), 'arrived, the waypoint stayed on the map')
+    await simFor(0.5)
     // Graded from the road, as the prompt grades (camp.js evaluate). A pick graded before its chunk streamed in can read
     // otherwise once the truck is there, so each is re-graded from the seat and the next taken if it no longer holds.
     const sites = await js(`(() => { const C = window.__campSys(), R = window.__roadSys(), d = window.__tutorial().camp, out = []
@@ -1769,7 +2059,10 @@ const STEPS = [
     const campPanel = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     const shown = id => js(`getComputedStyle(document.getElementById("${id}")).display !== "none"`)
     check(await until(() => js('document.getElementById("camp-row")?.style.display === "flex"'), 3000), 'no tent at the camping area')
-    await tap('z'); await simFor(0.5)
+    await tap('z')
+    check(await until(() => js('/That.s the vibe/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), 'looking for a campsite, Katie did not explain the vibe bar')
+    await readCards()
+    check(said[said.length - 1] === 'Katie: <click>', `the vibe cards did not hang up Katie's call (DEC-354): ${JSON.stringify(said.slice(-2))}`)
     const makeUp = async () => await campPanel() && await shown('cp-make')
     for (let i = 0; i < 4 && !await makeUp(); i++) { await park(true); await until(makeUp, 1500) }   // the re-park the hunt asks for
     if (!await makeUp()) console.log('  camp: ' + await js(`JSON.stringify((() => { const v = window.__vs.position, g = window.__campSys().evaluate(v.x, v.z)
@@ -1779,13 +2072,34 @@ const STEPS = [
     check(!await shown('cp-truck'), 'the camping area offers the truck as a bed (DEC-308)')
     await js('document.getElementById("cp-make").click()')
     check(await until(() => shown('cp-break'), 6000), 'making camp did not make it')
+    check(await until(() => js('/break out that snack: select inventory and eat the peanuts/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), 'camp made, Katie did not send you to the inventory for the snack (DEC-355)')
+    check(!await js('!!window.__map2d()._getWaypoint()') && !/McGill/.test((await eve()).hud || ''), 'camped, the ranch pin or its line is still up (DEC-356)')
+    await readCards()
     check(!await shown('cp-sleep'), 'the camp offers sleep on the firing day (DEC-308)')
     check(await js("window.__inv.use('bagOfPeanuts')"), 'the peanuts could not be eaten')
     check(await until(() => js('/now that you don.t have a job/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), `eating in camp brought no call from Katie: ${JSON.stringify(await tut())}`)
     await stamped(17, "Katie's call")
     check(await js('!/\\{dir\\}|\\{deeds\\}/.test(document.getElementById("dialogue-panel").textContent)'), "Katie's call left a fill unfilled")
     check(await readCards() >= 6, "Katie's call is not her six cards")
+    { const w = said.findLastIndex(t => /now that you don.t have a job/.test(t))
+      check(said[w] === "Katie: So what are you gonna do now that you don't have a job?" && said[w - 1] !== 'Phone: Ring ring ring' && !said.slice(w).includes('Katie: <click>'),
+        `Katie's talk at the camp is not in person (no "Hey, it's me.", no ring, no click, DEC-355): ${JSON.stringify(said.slice(w - 1, w + 1))}`) }
     if (await js('document.getElementById("inv-screen").classList.contains("open")')) await tap('Escape')
+    // BUG-189: in camp no menu hint to start the truck, and no pedal latches. W held in camp: no hint; focus lost with W
+    // down: W is up (vehicle.js blur). A pad whose trigger reads half-pressed before its first report (the standard
+    // mapping's axis at 0): no throttle until the trigger has been seen at rest, then it drives.
+    { const hint = () => js('document.getElementById("ignition-hint").style.opacity')
+      await key('w', true); await simFor(0.5)
+      check(await hint() !== '1', 'BUG-189: in camp, W raised the "start the truck" hint')
+      await js('window.dispatchEvent(new Event("blur"))'); await simFor(0.5)
+      check(await js('window.__vs.throttle') === 0, `BUG-189: focus lost with W down, the throttle stayed ${await js('window.__vs.throttle')}`)
+      await key('w', false)
+      await padOn(); await btn(4)   // LB (the clutch, inert here) puts the pad in charge
+      await js('__fp.b[7] = 0.5; window.dispatchEvent(Object.assign(new Event("gamepadconnected"), { gamepad: { index: 0 } }))'); await simFor(0.5)
+      check(await js('window.__vs.throttle') === 0 && await hint() !== '1', `BUG-189: a trigger never seen at rest drove: throttle ${await js('window.__vs.throttle')}, hint ${await hint()}`)
+      await js('__fp.b[7] = 0'); await simFor(0.2); await js('__fp.b[7] = 1'); await simFor(0.3)
+      check(await js('window.__vs.throttle') > 0.5, `BUG-189: the trigger seen at rest then pressed did not drive: ${await js('window.__vs.throttle')}`)
+      await js('__fp.b[7] = 0'); await simFor(0.3); await padOff() }
     await js('document.getElementById("cp-break").click()')
     check(await until(async () => !await campPanel(), 3000), 'break camp did not close the camp')
     check((await tut()).stop === 'home', `Katie's call did not send the day home: ${JSON.stringify(await tut())}`)
@@ -1843,9 +2157,14 @@ const STEPS = [
     check(await until(() => js('!window.__damage.flat[0]'), 2000), 'buying a tire for the flat corner did not fix it')
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')   // FEAT-212: the cart
     check(await js('window.__econ.money') === m0, `the tire was not on mom (FEAT-184): $${m0} → $${await js('window.__econ.money')}`)
+    console.log(`  the fix: energy ${(await js('window.__day().energyH()')).toFixed(2)} h before (${await js('window.__day().stage()')})`)
     await tap('Escape'); await tap(' ')   // off the brake: the night drive, whose card holds the sim
     check(await until(async () => /headlights/.test(await js('document.getElementById("dlg-text")?.textContent ?? ""')), 3000), 'no headlights card on the night drive')
     await readCards()
+    // DEC-357: the tire fixed, the driver is SLEEPY, and blinks on the held clock's drive (day.js blinkOnly).
+    check(await js('window.__day().stage()') === 'sleepy', `the tire fixed, the driver is not sleepy (DEC-357): ${await js('window.__day().energyH()')} h`)
+    { const h1 = await clock(); await js('window.__day()._nextBlinkH = 1e-4')
+      check(await until(() => js('!!window.__day()._blink'), 2000) && await clock() === h1, 'DEC-357: no blink on the sleepy night drive, or the clock ran') }
     // Parked at hers: home safe (DEC-325), her hunger line, her sleep card, the timer preset to wake at 07:00 on
     // day 0 — and sleeping ends the firing day.
     // Not seat(): its settle waits on the sim, and the lessons that land on arrival hold it — read them first.
@@ -1860,15 +2179,21 @@ const STEPS = [
     lessons += await readCards()
     check(lessons >= 5, `no welcome, hunger and sleep lessons at hers (${lessons} read, want her welcome, her hunger card and her three sleep cards)`)
     check(await clock() >= -26.51, `her door that night did not stamp 21:30 (clockH ${await clock()})`)
+    check(saidAny(/^Mom: .*Set your alarm clock for 06:30/), `mom's sleep card does not say to set the alarm clock (DEC-357): ${JSON.stringify(said.slice(-3))}`)
     await js('document.getElementById("cp-sleep").click()')
-    const want = await js('Math.round(-17 - window.__day().clockH())')   // 07:00 on day 0 is clockH −17
-    check(await js('+document.getElementById("cp-hours").value') === want, `the evening's sleep timer is not preset to 07:00 (${await js('document.getElementById("cp-hours").value')} h, want ${want})`)
+    const want = await js('Math.round(-17.5 - window.__day().clockH())')   // 06:30 on day 0 is clockH −17.5 (DEC-357's alarm)
+    { const bed = await clock()   // DEC-357: another wake time is refused, "Set this time instead"
+      await js(`document.getElementById("cp-hours").value = "${want + 1}"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))`)
+      await js('document.getElementById("cp-sleep-go").click()'); await sleep(800)
+      check(await clock() === bed && /Set this time instead: wake 06:30/.test(await js('document.getElementById("cp-hours-text").textContent')),
+        `the tutorial's night took another wake time than the alarm (DEC-357): clockH ${await clock()}, "${await js('document.getElementById("cp-hours-text").textContent')}"`) }
+    await js(`document.getElementById("cp-hours").value = "${want}"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))`)
     await js('document.getElementById("cp-sleep-go").click()')
-    check(await until(() => js('window.__day().clockH() >= -17.01'), 6000), `the night did not reach 07:00 (clockH ${await js('window.__day().clockH()')})`)
-    check(Math.abs(await js('window.__day().clockH()') + 17) < 0.02, `the evening's night did not wake at 07:00 sharp on day 0 (clockH ${await js('window.__day().clockH()')})`)
+    check(await until(() => js('window.__day().clockH() >= -17.51'), 6000), `the night did not reach 06:30 (clockH ${await js('window.__day().clockH()')})`)
+    check(Math.abs(await js('window.__day().clockH()') + 17.5) < 0.02, `the evening's night did not wake at 06:30 sharp on day 0 (clockH ${await js('window.__day().clockH()')})`)
     check(!await js('document.getElementById("midnight-card").classList.contains("on")'), "the tutorial's night dropped the midnight overlay")
     const e1 = await eve()
-    check(e1.tut === 'morning' && /last check/.test(e1.hud), `waking did not end the firing day and send the morning for the check: ${JSON.stringify(e1)}`)
+    check(e1.tut === 'morning' && /to work · park there for your last check/.test(e1.hud), `waking did not end the firing day and send the morning to "work" for the check (DEC-357): ${JSON.stringify(e1)}`)
     // The morning: breakfast, then Katie's reminder (DEC-326), the last drive on rails. FEAT-184 stage 5: breakfast is the
     // player's to eat now (her card asks for a packed lunch). FEAT-229: the day's stamps are lived hours (energy and hunger
     // pay for them), so the driver may wake hungry; the lunch she asks for feeds him.
@@ -1898,9 +2223,9 @@ const STEPS = [
     check(back.d < 25 && Math.abs(back.h + 17) < 0.1 && back.tut.phase === 'free' && back.tut.returnSeed === null,
       `seed 6 is not back outside its joint at 07:00 on day 0 in free will: ${JSON.stringify(back)}`)
     check(back.money > cash0, `the last paycheck did not land: $${cash0} → $${back.money}`)
-    check(await until(async () => await speaker() === 'Uncle Larry', 5000), `no Larry's call after the paycheck (speaker "${await speaker()}")`)
-    check(/find yourself some work/.test(await js('document.getElementById("dlg-text").textContent')), "Larry's call after a played tutorial is not DEC-326's")
+    check(await until(async () => await speaker() === 'Phone', 5000), `no Larry's call ringing after the paycheck (speaker "${await speaker()}")`)
     await readCards()
+    check(saidAny(/^Uncle Larry: .*find yourself some work/) && said[said.length - 1] === 'Uncle Larry: <click>', `Larry's call after a played tutorial is not DEC-326's, rung and hung up: ${JSON.stringify(said.slice(-3))}`)
     // FEAT-148: midnight drops its overlay over the road, then clears it (every clock path counts). Day 0 → 1 is the run's
     // first midnight, adopted silently; day 1 → 2 is the first the overlay marks.
     const toMidnight = '{ const d = window.__day(); d.advanceMinutes((24 - (d.clockH() % 24 + 24) % 24) * 60 + 1) }'
@@ -2008,12 +2333,12 @@ const STEPS = [
     for (const [name, open] of Object.entries(CASES)) {
       await js('document.getElementById("pm-menu").click()')   // out of the last run (or free roam) to the main menu
       await js('document.getElementById("mm-new").click()')
-      await js('document.getElementById("su-seed").value = "822480141"; document.getElementById("su-start").click()')   // data/tutorial.js
+      await js('document.getElementById("su-seed").value = "3590618618"; document.getElementById("su-start").click()')   // data/tutorial.js
       check(await until(() => js(live), 45000, 250), `${name}: the tutorial run never went live`)
       for (let i = 0; i < 12 && !await js('document.getElementById("tut-card").style.display === "flex"'); i++) { await tap('Enter'); await sleep(250) }
       check(await until(() => js('document.getElementById("tut-card").style.display === "flex"'), 3000), `${name}: the firing did not end on the tutorial card`)
       await js('document.getElementById("tc-play").click()')
-      check(await until(async () => await speaker() === 'Mom', 5000), `${name}: "play" did not open on mom's call`)
+      check(await until(async () => await speaker() === 'Phone', 5000), `${name}: "play" did not open on mom's call (DEC-354: its ring)`)
       await readCards()
       const pays = open ? await open() : false
       const before = await opened()
@@ -2043,8 +2368,9 @@ const STEPS = [
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     const truck = () => js(`JSON.stringify({ wheel: +window.__damage.get('wheelRR').toFixed(2), tire: +window.__damage.get('tireRR').toFixed(2),
       flat: window.__damage.flat[3], collapsed: window.__damage.collapsed(3), rim: !!window.__vs.rimOnRoad?.[3],
-      alert: document.getElementById('dmg-icon')?.classList.contains('on') ?? null })`)
-    const whole = s => { const t = JSON.parse(s); return !t.flat && !t.collapsed && !t.rim && !t.alert && t.wheel > 0 && t.tire > 0 }
+      alert: document.getElementById('dmg-icon')?.classList.contains('on') ?? null,
+      boltons: ['roofRack', 'bullBar', 'lightBar'].filter(k => !window.__parts.fitted(k).endsWith('None')).length, slots: window.__inv.slotCap() })`)
+    const whole = s => { const t = JSON.parse(s); return !t.flat && !t.collapsed && !t.rim && !t.alert && t.wheel > 0 && t.tire > 0 && t.boltons === 0 && t.slots === 8 }
     // The map's first frame on open: show() then one render(). A sheet rebuilt in slices (a budget, not Infinity) blits
     // the bitmap it already holds until it is done, which after a world change is the last world's. The window's size is
     // held (_sizeStale), as a player's is: a resize wipes the bitmap, and headless the map's width moves between opens.
@@ -2072,6 +2398,7 @@ const STEPS = [
       await js('document.getElementById("su-seed").value = "6"; document.getElementById("su-start").click()')
       check(await until(() => js(live), 45000, 250), 'the wrecked run never went live')
       await skipAndReadLarry()
+      await js("['roofRack', 'bullBar', 'lightBar'].forEach(id => window.__parts.fit(id))")   // FEAT-204: bolt-ons die with the run
       await js(`window.__damage.set('tireRR', 0); window.__damage.set('wheelRR', 0); window.__damage.flat[3] = true
         document.getElementById('dmg-icon').classList.add('on')`)   // the damage alert, unread
       await simFor(0.5)
@@ -2089,7 +2416,7 @@ const STEPS = [
         check(await until(() => js(live), 45000, 250), 'played: the run never went live')
         for (let i = 0; i < 12 && !await js('document.getElementById("tut-card").style.display === "flex"'); i++) { await tap('Enter'); await sleep(250) }
         await js('document.getElementById("tc-play").click()')   // the tutorial seed loads (DEC-157)
-        check(await until(async () => await js(live) && await js('document.getElementById("dlg-speaker").textContent') === 'Mom', 45000, 250), 'played: no mom\'s call on the tutorial seed')
+        check(await until(async () => await js(live) && await js('document.getElementById("dlg-speaker").textContent') === 'Phone', 45000, 250), 'played: no mom\'s call on the tutorial seed (DEC-354: its ring)')
         for (let i = 0; i < 40 && await js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"'); i++) { await tap('Enter'); await sleep(250) }
       },
       skipped: async () => { await newGame(7); check(await until(() => js(live), 45000, 250), 'skipped: the run never went live'); await skipAndReadLarry() },
@@ -2176,7 +2503,7 @@ const STEPS = [
     for (let i = 0; i < 12 && await js('document.getElementById("tut-card").style.display !== "flex"'); i++) { await btn(0); await sleep(150) }
     check(await js('document.getElementById("tut-card").style.display === "flex"'), 'the pad never reached the tutorial card')
     await padTo('tc-play'); await btn(0)
-    check(await until(async () => await js(live) && await js('window.__worldCode().split("/")[0]') === '822480141' && await dlg(), 60000, 250),
+    check(await until(async () => await js(live) && await js('window.__worldCode().split("/")[0]') === '3590618618' && await dlg(), 60000, 250),
       `A on "play" did not load the tutorial seed with mom's call up: ${JSON.stringify(await js('window.__tutorial()'))}`)
     // Read on to mom's first lesson naming a key (her call's M, the drive's W / S): it reads the pad's button, not the keyboard's.
     const lessonCap = () => js('(k => k && JSON.stringify({ kb: getComputedStyle(k.querySelector(".kc-kb")).display, pad: getComputedStyle(k.querySelector(".kc-pad")).display, key: k.querySelector(".kc-kb").textContent, text: k.querySelector(".kc-pad").textContent }))(document.querySelector("#dlg-text .dlg-key .keycap"))')
@@ -2236,7 +2563,7 @@ const STEPS = [
     check(await js('[...document.querySelectorAll("#inv-screen .inv-slot .keycap")].every(k => getComputedStyle(k).display === "none")'), 'the inventory shows quick-slot keys while the pad drives')
     await btn(1); check(await until(() => js('!document.getElementById("inv-screen").classList.contains("open")'), 2000), 'B did not close the inventory')
     // The map (View tap), FEAT-211's approved controls: the D-pad walks the Missions list to a giver (the map snaps to it
-    // and its card shows), D-pad ← / → page its offers, the first B leaves the list with the map still open, the second closes it.
+    // and its card shows), LB / RB page its offers (D-pad ← / → are spare), the first B leaves the list with the map still open, the second closes it.
     await btn(8)
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
     // Not a shop (SHOP_TYPES: its brake opens the shop screen; the jobs are a button in it, FEAT-104) nor Larry's (the paper route):
@@ -2256,9 +2583,14 @@ const STEPS = [
     check(await lid() === giver.id, `the D-pad never reached the giver in the Missions list (${await lid()} · rows ${await js('JSON.stringify(window.__map2d()._rows.map(r => r.id))')})`)
     const hov = () => js('window.__map2d()._hoverPoi === ' + JSON.stringify(giver.id) + ' && window.__map2d()._hoverIdx')
     check(await until(async () => await hov() === 0, 1000), `the list pick did not show the giver's card (${await js('window.__map2d()._hoverPoi')})`)
-    if (giver.n > 1) { await btn(15); check(await hov() === 1, 'D-pad → did not page the giver\'s offers'); await btn(14); check(await hov() === 0, 'D-pad ← did not page back') }
-    else console.log(`  pad: no plain giver with two offers in ${await js('window.__worldCode?.()')}; D-pad ←/→ paging unchecked this run`)
+    // FEAT-239 (owner, 2026-11-16, DEC-337): the shoulders flip the cards as at a POI, D-pad ← / → bind nothing on the map.
+    if (giver.n > 1) { await btn(5); check(await hov() === 1, 'RB did not page the giver\'s offers'); await btn(15); await btn(14); check(await hov() === 1, 'D-pad ← / → moved the map\'s card (they are spare)'); await btn(4); check(await hov() === 0, 'LB did not page back') }
+    else console.log(`  pad: no plain giver with two offers in ${await js('window.__worldCode?.()')}; LB / RB paging unchecked this run`)
+    await btn(15); await btn(14); check(await js('window.__map2d()._tab') === 'missions', 'D-pad ← / → switched the tab')
     await btn(1); check(await js('window.__map2d().isOpen() && window.__map2d()._listId === null'), 'the first B did not leave the list with the map still open')
+    await btn(2); check(await js('window.__map2d()._tab') === 'shopping', 'X did not switch to the Shopping tab')
+    await btn(4); await btn(5); check(await js('window.__map2d()._tab') === 'shopping', 'LB / RB switched the tab (they flip cards)')
+    await btn(2); check(await js('window.__map2d()._tab') === 'missions', 'X did not switch back to Missions')
     await btn(1); check(await until(() => js('!window.__map2d().isOpen()'), 2000), 'the second B did not close the map')
     // At the giver, a LONG RB press: the offer card opens under it, and the brake must stay latched (FEAT-125: the
     // card layout re-sent RB's Space, so the park latched and let go).

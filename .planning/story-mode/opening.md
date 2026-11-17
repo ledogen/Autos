@@ -6,8 +6,11 @@ Companions: `missions.md`, `run-shape.md`, `spirits-and-pacts.md`, `items.md`.*
 **Reconciliation note 2026-07-29:** terminology aligned to DESIGN.md (**spirits**, not sprites —
 the naming is still flagged open in `IDEAS.md`). The uncle's dialogue channel is now specified.
 
+**The main character is Billy (DEC-343, owner 2026-11-16).** Earlier text calls him "the player character"; where a line below
+says the player is fired, stuck at the grill or out on the street, it is Billy. He is mom's son, Larry's nephew and Katie's best friend.
+
 **Amendment 2026-08-05 (owner ruling):** the day job does **not** persist. The game opens on the
-player being **fired** from the burger joint, and they can never work there or earn from it again.
+Billy being **fired** from the burger joint, and he can never work there or earn from it again.
 The income floor is the **newspaper route**, not the grill. The old §"The day job as a hub" said the
 opposite and was itself owner-ratified; it has been replaced by §"The firing" and §"There is no
 day-job income floor" below. This ruling supersedes it.
@@ -16,19 +19,19 @@ day-job income floor" below. This ruling supersedes it.
 
 ## Core opening premise
 
-The game opens on the player character stuck in a **mundane, dead-end day job** — the burger joint,
+The game opens on Billy stuck in a **mundane, dead-end day job** — the burger joint,
 flipping burgers under fluorescent lights. The tone is deliberate boredom: repetition, going nowhere.
 
 This mundanity is the **emotional baseline** for the whole game. Everything that comes later — faster cars, riskier jobs, real freedom — is measured against the drudgery the player starts in. The player should *remember* the grill.
 
 ## The firing (the inciting incident)
 
-**The player is fired from the burger joint, and that is where the game starts.** Not a job they
-choose to leave, and not one they can go back to: they can **never work there again, and never earn
-a cent from it**. The drudgery is established and then taken away in the same beat — the player is
-not escaping the grill, they are out on the street without it.
+**Billy is fired from the burger joint, and that is where the game starts.** Not a job he
+chooses to leave, and not one he can go back to: he can **never work there again, and never earn
+a cent from it**. The drudgery is established and then taken away in the same beat — Billy is
+not escaping the grill, he is out on the street without it.
 
-> The tutorial's order and clock (fired 07:00, errands first, the paycheck the next morning) are the records: DEC-299, DEC-304..308.
+> The tutorial's order and clock (fired 07:00, errands first, the paycheck the next morning) are the records: DEC-299, DEC-305..308 and DEC-346 (which replaced DEC-304); its middle, Katie's picnic at the old McGill ranch, is DEC-345.
 
 This is what makes the uncle's stack of papers land. The paper route isn't a more exciting option
 alongside a safe one; it is the only thing there is.
@@ -121,7 +124,7 @@ as the meta-progression carrier; the Roamer's separate delivery channels.
 **Ratified by the project owner:** the dead-end day job opening, mundanity as emotional baseline, the uncle as the source of paper missions, and route access progressing through the uncle. Tone remains open.
 
 **Ratified by the project owner 2026-08-05, superseding the above:** the game opens with the player
-being **fired** from the burger joint; they can never work there or earn money from it again; there
+being **fired** from the burger joint; Billy can never work there or earn money from it again; there
 is **no day-job income floor** — the newspaper route is the income floor; the burger joint may source
 an unrelated mission later. (The prior ratification of "the day job persisting as a hub/income floor"
 is withdrawn.)

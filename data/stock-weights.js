@@ -73,6 +73,10 @@ export const STOCK_WEIGHT = {
     // 2026-10-22) = Hardly ever, the lowest tier
     rubberBedMat:     4,
     bedliner:         0.25,
+    // FEAT-204 bolt-ons [DEFAULT] Rarely, the lift kit's tier (the other visible off-road part; DEC-342 draft)
+    roofRack:         1,
+    bullBar:          1,
+    lightBar:         1,
 
     // Camp gear (FEAT-168 camp-gear-source, owner 2026-11-06: "camp + shelf") [DEFAULT]: the four the owner
     // named are shelf stock as well as rewards; the bed layers below them are rewards only.
@@ -85,6 +89,7 @@ export const STOCK_WEIGHT = {
     emergencyGas:     4,
     coffee:           10,
     chiliDog:         4,
+    groceries:        4,     // FEAT-230 [DEFAULT]: a chili dog's weight; a farm / general-store reward (B–A) and sold there
     potato:           4,     // FEAT-230 [DEFAULT]: a chili dog's weight; sold at the general store, a farm reward (C–B)
     ductTape:         4,     // sold at the general store (FEAT-104, data/shop-stock.js STOREFRONT), not the auto shop
     energyDrink:      10,
@@ -105,6 +110,6 @@ export const STOCK_WEIGHT = {
 
 /** Weighted for mission rewards but never stocked on an AUTO SHOP's shelf (the owner's reward-only rows). Some
  *  are storefront lines: data/shop-stock.js STOREFRONT, which these weights don't touch. */
-export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog', 'potato', 'ductTape', 'energyDrink', 'dinnerMeal',
+export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog', 'potato', 'groceries', 'ductTape', 'energyDrink', 'dinnerMeal',
     'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar', 'burger', 'packedLunch',
     'blanket', 'airMattress', 'sleepingPad', 'quilt', 'sleepingBag', 'deluxeSleepingPad'])

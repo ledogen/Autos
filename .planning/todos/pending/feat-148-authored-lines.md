@@ -97,3 +97,6 @@ Keep a first line to ~30 characters and a second line to ~60.
   needs…"), so the token needs ruling before the fold (the giver? the recipient?).
 - The FEAT-147 opening cards (FIRING, MOM_CALL, LARRY_WELCOME, TUT in data/dialogue.js) are placeholders
   too; Ruled §3 reworks RUN_INTRO after them.
+
+## Log
+- 2026-11-16: DEC-343: the main character is Billy; authored lines that name or address him use it. Docs only.

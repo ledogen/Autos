@@ -29,6 +29,9 @@
 //            A modelled bed load is ONE number, as built ([m, m]) — the model is fixed, so is its
 //            mass (owner, 2026-10-11); the derivation of each is in cargo.md.
 //   pools    which sources may post it (keys of SOURCES below)
+//   own      (optional, owner 2026-11-17) true = the poster's own thing, needed somewhere else. The
+//            card then says "Earl FROM the Miller place needs their lucky boots delivered to …", so it
+//            reads as "go to my house and get them". Absent = "Earl AT the Miller place".
 //   fetchBy  (optional, FEAT-102) classes that post a FETCH of this thing: "go get it and bring it
 //            back" — drive to a pickup, park there, return to the poster (FEAT-89's fetch shape).
 //   fetchFrom (optional) the pickup classes for a fetch. Defaults to `pools` (where it comes from).
@@ -92,7 +95,7 @@ export const THINGS = [
       pools: ['foodVendor'], deadlineSlack: 0.5, multi: 'takeout orders' },
     { id: 'groceries',  phrase: 'a week of groceries',    family: 'delivery', massKg: [10, 25],
       pools: ['generalStore'], multi: 'grocery orders' },
-    { id: 'medication', phrase: 'their prescription',        family: 'delivery', massKg: [0.2, 0.5],
+    { id: 'medication', phrase: 'a prescription',            family: 'delivery', massKg: [0.2, 0.5],
       pools: ['generalStore'] },
     // Courier, R1 (cargo.md), one thing per row there.
     { id: 'note',       phrase: 'a private note',          family: 'delivery', massKg: [0.1, 0.1],
@@ -102,11 +105,11 @@ export const THINGS = [
     { id: 'lunch',      phrase: 'lunch for their partner', family: 'delivery', massKg: [1, 2],
       pools: HOME },
     { id: 'glasses',    phrase: 'much-needed reading glasses', family: 'delivery', massKg: [0.1, 0.1],
-      pools: HOME },
+      pools: HOME, own: true },
     { id: 'luckyBoots', phrase: 'their lucky boots',       family: 'delivery', massKg: [1.5, 3],
-      pools: HOME },
+      pools: HOME, own: true },
     { id: 'campChair',  phrase: 'a camping chair',         family: 'delivery', massKg: [3, 5],
-      pools: HOME },
+      pools: HOME, own: true },
     // Neighbour to neighbour (owner, 2026-10-08): household → household.
     { id: 'golfClubs',  phrase: 'golf clubs',              family: 'delivery', massKg: [9, 14],
       pools: HOME, to: HOME },
@@ -121,7 +124,7 @@ export const THINGS = [
     { id: 'tractorKeys', phrase: 'keys for the tractor',   family: 'delivery', massKg: [0.1, 0.1],
       pools: ANY_GIVER, to: ['farm'] },
     { id: 'classNotes', phrase: 'their class notes',       family: 'delivery', massKg: [0.3, 1],
-      pools: HOME, to: ['school'] },
+      pools: HOME, to: ['school'], own: true },
     { id: 'deck',       phrase: 'a presentation deck',     family: 'delivery', massKg: [0.5, 1.5],
       pools: ANY_GIVER, to: ['office'] },   // FEAT-153: from any giver; class notes stay household-only (owner, 2026-11-02)
     // FEAT-153 (owner, 2026-11-02): the office and the school give their own jobs. PLACEHOLDER words
@@ -134,7 +137,7 @@ export const THINGS = [
       pools: ['office'], to: ['generalStore', 'gasStation'] },
     // FEAT-153: one thing that ends AT the tackle shop, so it is a destination too. PLACEHOLDER.
     { id: 'reel',       phrase: 'a reel to re-spool',      family: 'delivery', massKg: [0.3, 0.6],
-      pools: HOME, to: ['tackleShop'] },
+      pools: HOME, to: ['tackleShop'], own: true },
     // A 20 lb cylinder: ~7.7 kg of steel, plus 9.1 kg of propane when full. Full ones leave the
     // store or a gas station; empties go back to either from anywhere (owner, 2026-10-07).
     { id: 'propaneFull',  phrase: 'a full 20 lb propane tank',  family: 'delivery', massKg: [16, 18],
@@ -356,6 +359,7 @@ export const REWARDS = [
     { id: 'candyBar',   name: 'Candy bar',   kind: 'food',       gates: ['C', 'B'], cat: 'gasSnack' },
     { id: 'burger',     name: 'Burger',      kind: 'food',       gates: ['C', 'B'], cat: 'grill' },
     { id: 'packedLunch', name: 'Packed lunch', kind: 'food',     gates: ['B', 'A'], cat: 'homemade' },   // residences, farms, the food vendor
+    { id: 'groceries', name: 'Groceries',   kind: 'food',       gates: ['B', 'A'], cat: 'groceries' },   // FEAT-230 slice 3: farm + general store (items.md)
     { id: 'potato',     name: 'Potato',      kind: 'food',       gates: ['C', 'B'], cat: 'produce' },   // FEAT-230: a farm reward only (items.md §1); raw, cooked at camp
     { id: 'spareTire',  name: 'Mounted tire', kind: 'part',       gates: ['A', 'S'], cat: 'tires' },
     // A 2 gal RotoPax: the jerry can (items.md §1), single-use. ~5.7 kg of gas + ~1.5 kg of can.
@@ -412,6 +416,9 @@ export const REWARDS = [
     { id: 'awning',      name: 'Awning',       kind: 'camp', gates: ['A', 'S'], cat: 'camp' },
     { id: 'cookingKit',  name: 'Cooking kit',  kind: 'camp', gates: ['A', 'S'], cat: 'camp' },
     { id: 'deluxeSleepingPad', name: 'Deluxe sleeping pad', kind: 'camp', gates: ['S'], cat: 'camp' },
+    // FEAT-230 (items.md §2): the cooler from the tackle shop (A–S); the Ice King from it and residences (S). Ice is never one.
+    { id: 'cooler',      name: 'Cooler',       kind: 'tool', gates: ['A', 'S'], cat: 'cooler' },
+    { id: 'iceKing',     name: 'Ice King',     kind: 'tool', gates: ['S'], cat: 'iceKing' },
 ]
 
 /** FEAT-168: the reward category of a vehicle part with no REWARDS row, by its slot (data/parts.js). */
@@ -420,6 +427,9 @@ export const PART_REWARD_CAT = {
     springs: 'suspension', dampers: 'suspension',
     arbFront: 'suspension', arbRear: 'suspension', lift: 'suspension',
     engine: 'engine', radiator: 'engine', airFilter: 'engine', headlight: 'engine', diff: 'drivetrain', axle: 'drivetrain',
+    // FEAT-204 bolt-ons [DEFAULT] (DEC-342 draft): with the bed upgrades (FEAT-115 files the rack and light bar there; DEC-028
+    // the bull bar beside them), so the haul givers — the work site and the firewood yard — hand them out
+    roofRack: 'bed', bullBar: 'bed', lightBar: 'bed',
 }
 /** FEAT-168: a part's gates from its rarity, unless a REWARDS row overrides them. */
 export const RARITY_GATES = { common: ['B', 'A'], uncommon: ['A', 'S'], rare: ['S'], legendary: ['S'] }
@@ -433,19 +443,19 @@ export const RARITY_GATES = { common: ['B', 'A'], uncommon: ['A', 'S'], rare: ['
  *          and the office's are [DEFAULT]; the school's is its lunch.
  * Larry's paper route rolls from every category (owner, 2026-10-31: "give him every item").
  */
-const ALL_CATS = ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch', 'produce', 'snack', 'gasSnack', 'grill', 'homemade']
+const ALL_CATS = ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch', 'produce', 'groceries', 'snack', 'gasSnack', 'grill', 'homemade', 'cooler', 'iceKing']
 export const REWARD_CATS = {
     autoShop:         { cats: ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery'] },
     gasStation:       { cats: ['fuel', 'drink', 'food', 'engine', 'tires', 'snack', 'gasSnack'] },
     strandedMotorist: { cats: ['tires', 'recovery', 'fuel', 'engine'] },
-    farm:             { cats: ['tires', 'suspension', 'drivetrain', 'recovery', 'food', 'camp', 'produce', 'homemade'] },
+    farm:             { cats: ['tires', 'suspension', 'drivetrain', 'recovery', 'food', 'camp', 'produce', 'groceries', 'homemade'] },
     workSite:         { cats: ['tires', 'suspension', 'recovery', 'bed'] },
     firewoodYard:     { cats: ['bed', 'recovery', 'camp'] },
-    residence:        { cats: ['food', 'homemade', 'camp', 'brakes', 'drivetrain'], rare: ['tires', 'suspension', 'engine'] },
+    residence:        { cats: ['food', 'homemade', 'camp', 'brakes', 'drivetrain', 'iceKing'], rare: ['tires', 'suspension', 'engine'] },
     foodVendor:       { cats: ['food', 'drink', 'grill', 'homemade'] },
-    generalStore:     { cats: ['food', 'drink', 'snack', 'camp', 'recovery', 'fuel'] },
+    generalStore:     { cats: ['food', 'drink', 'snack', 'groceries', 'camp', 'recovery', 'fuel'] },
     doctor:           { cats: ['drink', 'food'] },
-    tackleShop:       { cats: ['camp', 'food'], rare: ['recovery', 'fuel'] },
+    tackleShop:       { cats: ['camp', 'food', 'cooler', 'iceKing'], rare: ['recovery', 'fuel'] },
     office:           { cats: ['drink', 'food', 'engine'], rare: ['camp'] },
     school:           { cats: ['food', 'drink'], rare: ['lunch'] },
     larrysHouse:      { cats: ALL_CATS },

@@ -12,9 +12,8 @@ lane: B
 # FEAT-216: Damage alerts
 
 ## Next steps
-Re-report / persistence rules built on land/ui-batch (DEC-327, gate test/alert-reports.mjs); waits on the owner's look.
-First build: land/feat-216 (extends main.js `_machineWords`, the FEAT-162 toast). Waits only on the owner's look/words (owed card feat216-look).
-Lane B, after the physics trio (BUG-166 / 167 / 160). The alert's words and look are the owner's to approve.
+Landed (1b3dc2f9, land/ui-batch: DEC-327 persistence/re-report, DEC-330 engine knocking at 20 % / seized at 0, "wheel is damaged").
+Owner: look card `ui-batch-look` (alerts, G meter, cart message) - ticks the last box.
 
 ## Summary
 Sound and visual effects alone do not tell the player the truck is being hurt. Five conditions get an

@@ -1,5 +1,7 @@
 # Autos — Cargo master list
 
+**The main character is Billy (DEC-343).** "The player" means the person at the controls; "Billy" the character in the story.
+
 **Downstream of DESIGN.md, `missions.md` §3 and `items.md` §4.** Where they disagree, those win.
 This file is the burn-down list. It names every thing a delivery can carry, grouped by delivery
 type, and within each type tiered **early → late game** by how valuable or demanding the job is.
@@ -90,7 +92,7 @@ Every courier thing is a phrase on the card. Nothing renders.
 | R1 | a shovel | generalStore → firewoodYard / sawmill / quarry / farm | existing; ~2 kg |
 | R1 | two bags of takeout | foodVendor → any | existing |
 | R1 | a week of groceries | generalStore → any | existing |
-| R1 | their prescription | generalStore → any | existing |
+| R1 | a prescription | generalStore → any | existing |
 | R1 | a hubcap | autoShop → any | existing |
 | R1 | a headlight | autoShop → any | existing |
 | R1 | a taillight | autoShop → any | existing |

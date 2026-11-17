@@ -1,6 +1,6 @@
 ---
 id: DEC-304
-status: standing
+status: superseded
 decided: 2026-11-16
 area: story
 governs: FEAT-229, FEAT-184, DEC-299, src/main.js, data/dialogue.js, test/cdp-smoke.mjs, opening.md, tutorial, the firing day, the morning leg, gas station, camp, camping area

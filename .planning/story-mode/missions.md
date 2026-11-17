@@ -8,6 +8,8 @@ Companions: `opening.md`, `spirits-and-pacts.md`, `items.md`, `IDEAS.md`.*
 rank, day tier) is folded into the bible as its "Ratification pass 2026-08-01" — **DESIGN.md is
 current and wins.** `design-amendments-2026-07-29.md` is a historical provenance record only.
 
+**The main character is Billy (DEC-343).** Where a passage speaks of the person in the story (fired, mom's son, Larry's nephew) it is Billy; "the player" is the person at the controls.
+
 ### Status board
 
 | Decided | Open |
@@ -222,8 +224,8 @@ many as possible. Payout per paper delivered.
 - **Low stakes** — a missed throw costs a tip, not a mission failure. A tutorial that isn't one.
 - **Freedom contrast** — actual movement, after a job that was neither.
 
-**It is the income floor** [RATIFIED 2026-08-05]. The day job does not survive the opening beat — the
-player is fired from the burger joint and can never earn there again (`opening.md`), so the route is
+**It is the income floor** [RATIFIED 2026-08-05]. The day job does not survive the opening beat — Billy
+is fired from the burger joint and can never earn there again (`opening.md`), so the route is
 the *only* thing playing this role. It must therefore be reliably available and reliably poor: the
 floor under *bare completion pays nothing*, guaranteeing a run can't dead-end into zero while paying
 badly enough that leaning on it always reads as an admission of a bad day. Tuning consequence: the
