@@ -292,9 +292,16 @@ export class ServiceScreen {
 
   /** The repair targets behind a repair key: `v:<track>` on the truck, `i:<index>` in the inventory. */
   _targets (key) {
+    const [k, v] = key.split(':'), from = this._line(key)?.from
+    if (k === 'w') return this.service.ownedWheelTargets(+v, from)   // FEAT-196: a mounted pair's wheel
+    return k === 'v' ? this.service.targets(v, from) : this.service.ownedTargets(+v, from)
+  }
+
+  /** BUG-197: the cart line already repairing the part behind a repair key, or null. The bar then edits that line: it
+   *  starts from the line's `from` and its select replaces the line (ServiceCenter.queueRepair). */
+  _line (key) {
     const [k, v] = key.split(':')
-    if (k === 'w') return this.service.ownedWheelTargets(+v)   // FEAT-196: a mounted pair's wheel
-    return k === 'v' ? this.service.targets(v) : this.service.ownedRepairRows().find(r => r.index === +v)?.targets ?? []
+    return k === 'v' ? this.service.repairLine('repair', v) : this.service.repairLine('repairOwned', +v, k === 'w')
   }
 
   /** The chosen target, kept on the list (default: as far as the bench goes). */
@@ -334,8 +341,9 @@ export class ServiceScreen {
       }
       case 'repair': {
         const [k, v] = key.split(':'), t = this._target(key), to = `to ${Math.round(t * 100)}%`
-        if (k === 'v') q('repair', [v, t], v === 'diff' ? 'Change clutches' : `Repair ${TRACKS[v].label} ${to}`)
-        else q('repairOwned', [+v, t, k === 'w'], `Repair ${inv(v)}${k === 'w' ? ' wheel' : ''} ${to}`)
+        // BUG-197: one line per part — a repair already on the cart is corrected, never doubled.
+        if (k === 'v') s.queueRepair('repair', [v, t], v === 'diff' ? 'Change clutches' : `Repair ${TRACKS[v].label} ${to}`)
+        else s.queueRepair('repairOwned', [+v, t, k === 'w'], `Repair ${inv(v)}${k === 'w' ? ' wheel' : ''} ${to}`)
         break
       }
       case 'patch': q('patch', [b.dataset.track], `Patch ${TRACKS[b.dataset.track].label}`); break
@@ -498,7 +506,8 @@ export class ServiceScreen {
   _repairNode (track) {
     const s = this.service, cls = TRACKS[track].cls
     if (!REPAIRS[cls] || (cls === 'wheel' && s.damage.get(track) <= 0)) return null
-    return node('repair', 'Repair', [this._repair(`v:${track}`, s.damage.get(track), (t) => s.repairQuote(track, t))])
+    const from = this._line(`v:${track}`)?.from ?? s.damage.get(track)   // BUG-197: a queued repair is edited from where it began
+    return node('repair', 'Repair', [this._repair(`v:${track}`, from, (t) => s.repairQuote(track, t, from))])
   }
 
   /** Swap with inventory: the parts you carry that fit `socket` (never shop stock). `loose`: a wheel takes
@@ -604,13 +613,13 @@ export class ServiceScreen {
    *  parts, then sell, split, combine (the partners), repair (FEAT-196: a mounted pair's wheel too) and patch. */
   _myItems () {
     const s = this.service
-    const fix = new Map(s.ownedRepairRows().map(r => [r.index, r]))
     const owned = s.inventory.list().filter(r => r.kind === 'part')
     const head = `<div class="sv-slot"><div class="sv-slothead">My items</div>`
     if (!owned.length) return head + dim('You carry no parts.') + `</div>`
     const bq = s.beadQuote()
     const rows = owned.map(r => {
       const key = `i:${r.index}`, cond = r.cond ?? 1, m = PARTS[r.id].mounted, wc = r.wheelCond ?? 1
+      const fromI = this._line(key)?.from ?? cond, fromW = this._line(`w:${r.index}`)?.from ?? wc   // BUG-197
       const flat = r.flat ? '<span class="sv-flat">flat</span>' : ''
       const partners = s.combineOptions(r.index)
       const kids = [
@@ -622,8 +631,8 @@ export class ServiceScreen {
         ...(partners.length ? [node('combine', 'Combine', partners.map(p => `<div class="sv-row">${chip(p.id)}<span class="sv-name">${p.name}</span>`
           + (p.flat ? '<span class="sv-flat">flat</span>' : '') + bar(p.cond ?? 1, p.flat) + `<span class="sv-cost">${cost(bq.price, bq.hours)}</span>`
           + btn('combine', 'combine', true, `data-index="${r.index}" data-with="${p.index}"`, ' ok') + `</div>`))] : []),
-        ...(fix.get(r.index)?.targets.length ? [node('repair', 'Repair', [this._repair(key, cond, (t) => s.ownedQuote(r.index, t))])] : []),
-        ...(m && s.ownedWheelTargets(r.index).length ? [node('wheel', 'Repair the wheel', [this._repair(`w:${r.index}`, wc, (t) => s.ownedQuote(r.index, t, true))])] : []),
+        ...(this._targets(key).length ? [node('repair', 'Repair', [this._repair(key, fromI, (t) => s.ownedQuote(r.index, t, false, fromI))])] : []),
+        ...(m && this._targets(`w:${r.index}`).length ? [node('wheel', 'Repair the wheel', [this._repair(`w:${r.index}`, fromW, (t) => s.ownedQuote(r.index, t, true, fromW))])] : []),
         ...(r.flat ? [this._act('Patch the flat', s.patchQuote(), btn('patchOwned', 'patch', true, `data-index="${r.index}"`, ' ok'))] : []),
       ]
       return node('i' + r.index, chip(r.id) + r.name, kids, m ? pctIn('T', cond, r.flat) + pctIn('W', wc) : flat + bar(cond, r.flat), Math.min(r.flat ? 0 : cond, m ? wc : 1))

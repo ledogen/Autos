@@ -418,6 +418,26 @@ check('split needs a free slot', si >= 0 && !tight.split(si) && full.list()[si].
     once.queue('repair', ['engine', 0.7], 'e'); once.queue('buyAndFit', [0, 'tireFL'], 't')
     check('…a checkout uses them', once.checkout() && owed === 0 && !owes.part && !owes.labour)
     svc.discard()
+
+    // BUG-197 (owner, 2026-11-17): re-selecting a repair already on the cart corrects that line, never adds a second.
+    // The bar edits from where the part began (the line's `from`), so a nudge left from the queued target is offered.
+    setup()
+    const p70 = svc.repairQuote('engine', 0.7), p60 = svc.repairQuote('engine', 0.6)
+    svc.queueRepair('repair', ['engine', 0.7], 'Repair engine to 70%')
+    check('BUG-197: the queued line remembers where the part began', svc.cart.length === 1 && svc.repairLine('repair', 'engine')?.from === 0.5)
+    check('…the bar still offers the steps below the queued target', svc.targets('engine', svc.repairLine('repair', 'engine').from).includes(0.6)
+        && near(svc.repairQuote('engine', 0.6, 0.5).price, p60.price))
+    svc.queueRepair('repair', ['engine', 0.6], 'Repair engine to 60%')
+    check('…re-selected at 60 %: still one line, at the 60 % price, the engine at 60 %', svc.cart.length === 1 && near(svc.cart[0].price, p60.price)
+        && damage.get('engine') === 0.6 && svc.cart[0].label.endsWith('60%'), JSON.stringify(svc.cart.map(l => [l.label, l.price])))
+    svc.queue('changeOil', [], 'oil')
+    svc.queueRepair('repair', ['engine', 0.7], 'Repair engine to 70%')
+    check('…the other lines stay, the corrected one goes last', svc.cart.map(l => l.m).join() === 'changeOil,repair' && near(svc.total().price, svc.cart[0].price + p70.price))
+    const hd = inventory.list().findIndex(r => r.id === 'dampersHD')
+    svc.queueRepair('repairOwned', [hd, 0.7], 'a'); svc.queueRepair('repairOwned', [hd, 0.65], 'b')
+    check('…same for a part in the inventory', svc.cart.filter(l => l.m === 'repairOwned').length === 1 && inventory.list()[hd].cond === 0.65)
+    svc.discard()
+    check('…and a discard puts the engine back', damage.get('engine') === 0.5)
 }
 
 // FEAT-232: the dinner meal — bought and eaten on the spot, in the cart, never stowed
