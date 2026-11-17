@@ -1,6 +1,6 @@
 ---
 id: DEC-346
-status: standing
+status: superseded
 decided: 2026-11-16
 area: story
 governs: FEAT-229, DEC-304, DEC-345, src/main.js, data/dialogue.js, tutorial, the camping area, McGill ranch, waypoint, tut-snackcamp, tut-ranch, tut-vibe, tut-campmade

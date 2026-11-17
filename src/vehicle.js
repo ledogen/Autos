@@ -39,6 +39,9 @@ const _clutchAssist = makeClutchAssist()
 // modified I must NOT also reach for the starter. Plain I is the key.
 document.addEventListener('keydown', e => { if (e.shiftKey && e.key.toLowerCase() === 'r') return; if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') return; const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = true })
 document.addEventListener('keyup',   e => { const k = e.key === ' ' ? ' ' : e.key.toLowerCase(); if (k in keys) keys[k] = false }, true)
+// BUG-189: a key let go while the page had no focus (another window, a system dialog, Cmd held on macOS) sends its keyup
+// elsewhere, and W stayed held "until I tapped the accelerator". Focus lost, every driving key is up.
+globalThis.addEventListener?.('blur', () => { for (const k in keys) keys[k] = false })
 
 // ── Launch hold (story-mode countdown) ───────────────────────────────────────
 // While set, the handbrake is forced ON regardless of driver input — the truck sits at the start
