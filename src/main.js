@@ -62,7 +62,7 @@ import { perfAdd, perfMark, perfDump, perfReset, perfSnapshot, perfEnableUserTim
 let _perfFrame = 0  // frame counter for the ?hitch/?prof auto-dump at load
 let _firstFrameMarked = false  // first animate frame: perf mark (init vs loop time) + one-time hand-offs
 import { RoadMeshSystem } from './road-mesh.js'
-import { DustSystem } from './dust.js'
+import { DustSystem, SUN_SHADE_UNIFORMS } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
 import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'   // the sky, its sun/moon/stars, the daylight and the sky fog — one atmosphere
@@ -11519,6 +11519,14 @@ function loop (t) {
   dustSystem.setLight(_particleLight, _particleAlpha)
   smokeSystem.setLight(_particleLight, _particleAlpha)
   dirtSpraySystem.setLight(_particleLight, _particleAlpha)
+  // FEAT-243: the particle shaders look the terrain's shade up in the far shadow map (dust.js SUN_SHADE_VERT). The
+  // map is null before the first shadow pass and replaced on a tier resize, so it is re-pointed here every frame.
+  const _farMap = sunFar.castShadow && !_labActive ? sunFar.shadow.map : null
+  SUN_SHADE_UNIFORMS.uSunShadow.value = _farMap ? _farMap.depthTexture : null
+  SUN_SHADE_UNIFORMS.uSunShadowOn.value = _farMap ? 1 : 0
+  SUN_SHADE_UNIFORMS.uSunShadowMatrix.value.copy(sunFar.shadow.matrix)
+  SUN_SHADE_UNIFORMS.uSunDir.value.copy(skySystem.sunDirection)
+  skySystem.particleShadeTint(SUN_SHADE_UNIFORMS.uShadeTint.value)
   const _ringGlow = RING_GLOW * (0.2126 * _particleLight.r + 0.7152 * _particleLight.g + 0.0722 * _particleLight.b)
   for (const m of _ringMats) m.emissiveIntensity = _ringGlow
 

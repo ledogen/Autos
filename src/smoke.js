@@ -27,7 +27,7 @@
  */
 
 import * as THREE from 'three'
-import { makeBillboardMesh, rotateByQuat } from './dust.js'
+import { makeBillboardMesh, rotateByQuat, SUN_SHADE_VERT } from './dust.js'
 
 // ── Pool / tuning constants ──────────────────────────────────────────────────
 const POOL_SIZE      = 200     // max simultaneous puffs across all four wheels
@@ -81,10 +81,12 @@ export class TireSmokeSystem {
         varying vec3 vColor;
         varying float vOpacity;
         #include <fog_pars_vertex>
+        ${SUN_SHADE_VERT}
         void main () {
           vUv = uv;
           vColor = aColor;
           vOpacity = aParam.z;
+          vShade = sunShade(aPos);   // FEAT-243: the terrain's shade at the puff centre
           float c = cos(aParam.y), s = sin(aParam.y);
           vec2 corner = mat2(c, s, -s, c) * (position.xy * aParam.x);   // spin, then scale
           vec4 mvPosition = viewMatrix * vec4(aPos, 1.0);               // mesh sits at the origin
@@ -95,6 +97,7 @@ export class TireSmokeSystem {
         uniform sampler2D uMap;
         uniform vec3 uLight;
         uniform float uLightA;
+        varying vec3 vShade;
         varying vec2 vUv;
         varying vec3 vColor;
         varying float vOpacity;
@@ -104,7 +107,7 @@ export class TireSmokeSystem {
           // Day/night: dim the COLOUR and the ALPHA. Colour alone only greys the puff out, and a
           // grey puff on a black road is still obvious — what sells "unlit smoke at night" is the
           // thing becoming transparent. uLightA is luminance(uLight) shaped by its own curve.
-          gl_FragColor = vec4(vColor * tex.rgb * uLight, tex.a * vOpacity * uLightA);
+          gl_FragColor = vec4(vColor * tex.rgb * uLight * vShade, tex.a * vOpacity * uLightA);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           #include <fog_fragment>
