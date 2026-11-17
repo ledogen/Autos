@@ -49,3 +49,4 @@ ASSET-90 (`asset-90-campfire-ashes.md`), DEC-393.
 
 ## Log
 - 2026-11-17 (lane s2): built on `land/camera-campfire`; the dead state is render-only (CampfireFx) plus a `fireOut` flag on the camp card state.
+- 2026-11-17 (lane p, round 2): DEC-397 built. Cook buttons show at a dead fire and a cook relights it; the dead fire smokes (smoke.js FIRE_SMOKE on the tire-smoke pool: no new mesh, draw or light, ~13 puffs alive). Smoke step `deadFire` checks smoke, the relight and a fresh camp. Sheet wip/asset-90/sheet-r2.jpg.

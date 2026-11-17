@@ -53,3 +53,4 @@ DEC-393 (the fire dies after a sleep over two hours) · DEC-083 (closes when the
 ## Log
 - 2026-11-17, lane p: shipped on `land/asset-90-dead-campfire`. Smoke `boot,story,deadFire` PASS (a real 8 h camp sleep
   shows the dead model, a new camp relights). In full sun the paler cinders barely separate from the ash: left for the look.
+- 2026-11-17 (lane p, round 2): owner "good so far but add subtle smoke particle effects to the extinguished fire" — the dead fire now smokes (smoke.js `FIRE_SMOKE`, anchored at FireFlameAnchor), and cooking at it relights it (DEC-397). Sheet wip/asset-90/sheet-r2.jpg.
