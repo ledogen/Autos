@@ -92,7 +92,7 @@ Every courier thing is a phrase on the card. Nothing renders.
 | R1 | a shovel | generalStore → firewoodYard / sawmill / quarry / farm | existing; ~2 kg |
 | R1 | two bags of takeout | foodVendor → any | existing |
 | R1 | a week of groceries | generalStore → any | existing |
-| R1 | their prescription | generalStore → any | existing |
+| R1 | a prescription | generalStore → any | existing |
 | R1 | a hubcap | autoShop → any | existing |
 | R1 | a headlight | autoShop → any | existing |
 | R1 | a taillight | autoShop → any | existing |

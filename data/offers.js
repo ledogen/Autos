@@ -29,6 +29,9 @@
 //            A modelled bed load is ONE number, as built ([m, m]) — the model is fixed, so is its
 //            mass (owner, 2026-10-11); the derivation of each is in cargo.md.
 //   pools    which sources may post it (keys of SOURCES below)
+//   own      (optional, owner 2026-11-17) true = the poster's own thing, needed somewhere else. The
+//            card then says "Earl FROM the Miller place needs their lucky boots delivered to …", so it
+//            reads as "go to my house and get them". Absent = "Earl AT the Miller place".
 //   fetchBy  (optional, FEAT-102) classes that post a FETCH of this thing: "go get it and bring it
 //            back" — drive to a pickup, park there, return to the poster (FEAT-89's fetch shape).
 //   fetchFrom (optional) the pickup classes for a fetch. Defaults to `pools` (where it comes from).
@@ -92,7 +95,7 @@ export const THINGS = [
       pools: ['foodVendor'], deadlineSlack: 0.5, multi: 'takeout orders' },
     { id: 'groceries',  phrase: 'a week of groceries',    family: 'delivery', massKg: [10, 25],
       pools: ['generalStore'], multi: 'grocery orders' },
-    { id: 'medication', phrase: 'their prescription',        family: 'delivery', massKg: [0.2, 0.5],
+    { id: 'medication', phrase: 'a prescription',            family: 'delivery', massKg: [0.2, 0.5],
       pools: ['generalStore'] },
     // Courier, R1 (cargo.md), one thing per row there.
     { id: 'note',       phrase: 'a private note',          family: 'delivery', massKg: [0.1, 0.1],
@@ -102,11 +105,11 @@ export const THINGS = [
     { id: 'lunch',      phrase: 'lunch for their partner', family: 'delivery', massKg: [1, 2],
       pools: HOME },
     { id: 'glasses',    phrase: 'much-needed reading glasses', family: 'delivery', massKg: [0.1, 0.1],
-      pools: HOME },
+      pools: HOME, own: true },
     { id: 'luckyBoots', phrase: 'their lucky boots',       family: 'delivery', massKg: [1.5, 3],
-      pools: HOME },
+      pools: HOME, own: true },
     { id: 'campChair',  phrase: 'a camping chair',         family: 'delivery', massKg: [3, 5],
-      pools: HOME },
+      pools: HOME, own: true },
     // Neighbour to neighbour (owner, 2026-10-08): household → household.
     { id: 'golfClubs',  phrase: 'golf clubs',              family: 'delivery', massKg: [9, 14],
       pools: HOME, to: HOME },
@@ -121,7 +124,7 @@ export const THINGS = [
     { id: 'tractorKeys', phrase: 'keys for the tractor',   family: 'delivery', massKg: [0.1, 0.1],
       pools: ANY_GIVER, to: ['farm'] },
     { id: 'classNotes', phrase: 'their class notes',       family: 'delivery', massKg: [0.3, 1],
-      pools: HOME, to: ['school'] },
+      pools: HOME, to: ['school'], own: true },
     { id: 'deck',       phrase: 'a presentation deck',     family: 'delivery', massKg: [0.5, 1.5],
       pools: ANY_GIVER, to: ['office'] },   // FEAT-153: from any giver; class notes stay household-only (owner, 2026-11-02)
     // FEAT-153 (owner, 2026-11-02): the office and the school give their own jobs. PLACEHOLDER words
@@ -134,7 +137,7 @@ export const THINGS = [
       pools: ['office'], to: ['generalStore', 'gasStation'] },
     // FEAT-153: one thing that ends AT the tackle shop, so it is a destination too. PLACEHOLDER.
     { id: 'reel',       phrase: 'a reel to re-spool',      family: 'delivery', massKg: [0.3, 0.6],
-      pools: HOME, to: ['tackleShop'] },
+      pools: HOME, to: ['tackleShop'], own: true },
     // A 20 lb cylinder: ~7.7 kg of steel, plus 9.1 kg of propane when full. Full ones leave the
     // store or a gas station; empties go back to either from anywhere (owner, 2026-10-07).
     { id: 'propaneFull',  phrase: 'a full 20 lb propane tank',  family: 'delivery', massKg: [16, 18],
