@@ -149,8 +149,9 @@ Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale, play b
 tonight. I have a reset in the pocket." So the two-agent cap is OFF for tonight: one agent per free worktree, grouped by
 code area. A one-shot timer fires at 07:13 with the word "orchestrator" (session-only cron).
 
-**Main:** bd9e6581 (b82f78bd + FEAT-251 lawn furniture, smoke PASS on land/integrate-1117c), NOT pushed, GREEN: smoke PASS 36 steps + 132 affected gates + pad-e2e on land/integrate-1117b
-(CarGame-land-gps/wip/*-integrate-b.log); main differs from that tree by one docs commit. Play build :8002 = bd9e6581.
+**Main:** 9aad7881, NOT pushed, GREEN: confirming smoke PASS 36 steps on exactly this tree
+(wip/orch/smoke-1117-243-179.log). Holds everything below plus BUG-179 chained forks (closed), FEAT-243 dust shading
+(closed), DEC-395 impact floor 5 mph, BUG-191 closed. Play build :8002 = 9aad7881.
 **HOW LANDINGS WORK TONIGHT:** never merge finished branches into main one by one. An Opus integration agent in
 CarGame-land-gps merges them onto `land/integrate-1117<x>` (cut from main), fixes clashes, runs gates + pad-e2e + ONE full
 smoke there; main is then fast-forwarded (`git merge --ff-only`) and the play build refreshed
@@ -185,18 +186,14 @@ DEC superseding DEC-351.
 one-line mask, agent recommends yes. (2) DEC-028 + DEC-340 still say the bed toolbox is in the alpha, MILESTONES.md
 line 81 too; DEC-372 superseded only DEC-129: needs a new record once the owner confirms. (3) truck rolls over the
 0.40 m fire pit dead centre (body collider has nothing below the frame): ticket?
-**BUG-179 SIGNED OFF (owner 11-17 "1. looks good"), LANDING:** Lane B agent in CarGame-machine merges main into
-land/bug-179, gates + fingerprint + full smoke (wip/bug-179/*-land.log). Green → merge into main, refresh the play
-build. THEN, serially on src/road.js (never in parallel): BUG-201 (light sliver at a degree-2 bend, owner: "ticket and
-fix it", his hypothesis: deg-2 junction legs not trimmed), then BUG-200 (38 % hairpin at the chained fork on seed
-688224244; owner wants fix options, dropping the road is acceptable). DEC-396: main's existing dead ends stay.
-Next free: BUG-202, DEC-397.
 **INTAKE 13:00 (owner answered 4 cards; pairs moved to answered/):** BUG-191 closed ("Drove it: fixed"). FEAT-243
 "Good: land it". Dead campfire + camera: changes asked. RUNNING, three agents, each proves its own branch (merge of
 main + gates + full smoke); merge each into main only when it reports green and never under a running smoke; after
 the last one run ONE confirming smoke on main and refresh the play build:
-- b, CarGame-machine, land/bug-179: BUG-179 landing (see above).
-- s2, CarGame-spare, land/feat-243-particle-shade: FEAT-243 landing prep (vite :3885 stays up).
+- b, CarGame-machine, land/bug-201-deg2-sliver (Opus): BUG-201 light sliver at two-road bends; owner's hypothesis:
+  deg-2 legs not trimmed. Card bug201-bend-sliver-look, does NOT land without him. AFTER it (serial on src/road.js):
+  BUG-200, the 38 % hairpin at the chained fork on seed 688224244 (fix options with screenshots; dropping the road is
+  acceptable to him). DEC-396: main's existing dead ends stay.
 - p, CarGame-perf, land/asset-90-dead-campfire: smoke wisps on the dead fire, cooking relights it (DEC-397), camera
   ray hits tunnel walls (FEAT-246); lands when green, card campfire-camera-r2-look is for his check after.
 Next free: BUG-202, DEC-398.
