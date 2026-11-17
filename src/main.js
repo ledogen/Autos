@@ -7035,6 +7035,7 @@ const _campRest = (st) => st?.truck || st?.moms ? 0 : inventorySystem.restBonus(
 const _campHome = (st) => st.moms ? 'moms' : st.truck ? 'truck' : 'camp'
 
 /** Sleep the chosen number of hours at this site's vibe (mom's house 0.5, the truck its own rate). */
+const CAMPFIRE_BURN_H = 2   // a camp fire burns two hours unattended (owner 2026-11-17)
 function _sleepAtCamp () {
   if (!_campUi || _campBusy) return
   let hours = parseInt(document.getElementById('cp-hours')?.value ?? '8', 10) || 8
@@ -7062,7 +7063,10 @@ function _sleepAtCamp () {
     damageModel.engineTempC = DAMAGE_PARAMS.tempAmbientC   // FEAT-51: a night off is a cold engine
     // You wake WHERE YOU SLEPT: the truck is untouched and the dialogue is still up. The pad stays
     // dug for as long as you stay camped; "break camp" is what closes it AND un-digs the bench.
-    _campUi = { ..._campUi, mode: back }
+    // FEAT-264 (DEC-393): a night's sleep of more than two hours at a camp burns the fire out until the camp is broken.
+    const fireOut = back === 'camp' && hours > CAMPFIRE_BURN_H
+    if (fireOut) campfire.setDead(true)
+    _campUi = { ..._campUi, mode: back, fireOut: !!_campUi.fireOut || fireOut }
     _renderCampUI()
   })
 }
@@ -7187,8 +7191,8 @@ function _renderCampUI () {
   show('cp-sleep',  isHome && !noBed)
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
   show('cp-item',   isHome)   // FEAT-245: mom's too (eat and use things at her table); isHome = camp, truck, mom's
-  show('cp-cook',   st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230: the fire is lit all camp
-  show('cp-cook-groceries', st.mode === 'camp' && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
+  show('cp-cook',   st.mode === 'camp' && !st.fireOut && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230: the fire is lit until a night's sleep burns it out (FEAT-264)
+  show('cp-cook-groceries', st.mode === 'camp' && !st.fireOut && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
   show('cp-map',    isHome)
   show('cp-spirits', st.mode === 'camp')
   show('cp-sleep-go',   isSleep)
@@ -7305,7 +7309,7 @@ document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
 for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked', false], ['cp-cook-groceries', 'groceries', 'groceriesCooked', true]]) {
   document.getElementById(btn)?.addEventListener('click', (e) => {
     e.currentTarget.blur()
-    if (!_campUi || _campBusy || _campUi.mode !== 'camp' || (needsKit && !_kitAtCamp())) return
+    if (!_campUi || _campBusy || _campUi.mode !== 'camp' || _campUi.fireOut || (needsKit && !_kitAtCamp())) return
     _campFade(() => { if (inventorySystem.convert(raw, cooked)) daySystem.advanceMinutes(30); _renderCampUI() })
   })
 }
