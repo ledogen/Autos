@@ -18,7 +18,7 @@ const gameH = (e) => (e.day ?? 0) * 24 + (e.hr ?? 0)
 
 export function summarize (events) {
   const s = { events: events.length, days: new Set(), km: 0, teleports: 0, jobs: {}, money: {}, wear: {}, damage: {},
-    top: [], punctures: [], purchases: [], fuel: { gal: 0, sale: 0, visits: 0 }, tows: [], sleeps: [], eats: 0, runs: [] }
+    top: [], punctures: [], purchases: [], fuel: { gal: 0, sale: 0, visits: 0 }, shopH: {}, tows: [], sleeps: [], eats: 0, runs: [] }
   let prev = null, job = null
   for (const e of events) {
     if (e.day != null) s.days.add(e.day)
@@ -59,7 +59,12 @@ export function summarize (events) {
       }
       if (e.state === 'idle') job = null
     }
-    if (e.e === 'purchase') for (const l of e.lines ?? []) s.purchases.push({ day: e.day, label: l.label ?? l.m, price: l.price - (l.earn ?? 0) })
+    if (e.e === 'purchase') for (const l of e.lines ?? []) {
+      s.purchases.push({ day: e.day, label: l.label ?? l.m, price: l.price - (l.earn ?? 0) })
+      // FEAT-69: game hours the checkout skipped, per day: a meal (eat > 0 or a food method) vs everything else (repairs, oil, parts).
+      const t = (s.shopH[e.day] ??= { food: 0, maint: 0 })
+      t[l.eat > 0 || /food|eat|meal|cook/i.test(l.m ?? '') ? 'food' : 'maint'] += l.hours ?? 0
+    }
     if (e.e === 'fuel' && e.sale != null) { s.fuel.gal += e.gal; s.fuel.sale += e.sale; s.fuel.visits++ }
     if (e.e === 'tow') s.tows.push(e)
     if (e.e === 'sleep') s.sleeps.push(e)
@@ -113,6 +118,8 @@ export function report (s, bad = 0) {
   }
   L.push(`\nPURCHASES (${s.purchases.length}) · fuel ${s.fuel.gal.toFixed(1)} gal for ${$(s.fuel.sale)} in ${s.fuel.visits} visits · ${s.tows.length} tows ${$(s.tows.reduce((a, t) => a + t.price, 0))}`)
   for (const p of s.purchases) L.push(`  day ${p.day}: ${p.label} ${$(p.price)}`)
+  L.push('\nSHOP TIME, game h skipped at checkout per day (FEAT-69: maintenance vs food; a purchase with no table time adds none)')
+  for (const [d, h] of Object.entries(s.shopH)) L.push(`  day ${d}: maintenance ${h.maint.toFixed(2)} h · food ${h.food.toFixed(2)} h`)
   L.push(`\nSLEEPS (${s.sleeps.length}) · meals ${s.eats}`)
   for (const e of s.sleeps) L.push(`  day ${e.day}: ${e.hours} h at vibe ${typeof e.vibe === 'number' ? e.vibe.toFixed(2) : e.vibe} · energy ${e.energyH0?.toFixed(1)} → ${e.energyH1?.toFixed(1)} h`)
   return L.join('\n')
