@@ -19,7 +19,6 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
 const args = process.argv.slice(2), opt = (k, d) => (args.find(a => a.startsWith(`--${k}=`)) ?? `=${d}`).split('=')[1]
 const SEEDS = (args.find(a => !a.startsWith('--')) ?? '').split(',').filter(Boolean)
-if (!SEEDS.length) { console.error('usage: node test/leg-overlap-census.mjs <seed,seed,…> (there is no default seed)'); process.exit(2) }
 const R = +opt('r', 1000), TOP = +opt('top', 8), STEP_MIN = 0.10, OUT = 80, WIN = 120
 const W2 = 2 * (P.roadHalfWidth ?? 5)
 
@@ -72,6 +71,7 @@ export function legOverlaps (road, H, R, cx = 0, cz = 0) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
+  if (!SEEDS.length) { console.error('usage: node test/leg-overlap-census.mjs <seed,seed,…> (there is no default seed)'); process.exit(2) }
   const all = []
   for (const S of SEEDS) {
     const t0 = Date.now(), ws = parseWorldSeed(S), road = new RoadSystem(ws, P)
