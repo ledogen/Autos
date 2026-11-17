@@ -18,7 +18,7 @@
 export const STOCK_WEIGHT = {
     // Tires and wheels
     tireOld:          10,
-    tireStandard:     10,
+    tireStandard:     20,    // FEAT-259 (owner, 2026-11-17: "rotate into the store a little bit more often than other items") [DEFAULT]: Often × 2
     tireSport:        4,
     tireOffroad:      1,
     tireLT:           1,
