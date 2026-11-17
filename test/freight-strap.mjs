@@ -60,7 +60,7 @@ ok(fS.base === cS.base && Math.abs(fS.total - fS.base * (1 + FREIGHT_TIP_MULT)) 
   `freight at S pace pays base × ${1 + FREIGHT_TIP_MULT} ($${fS.total}), courier/haul base × 2 ($${cS.total}) on the same par`)
 // The letter is the kg DELIVERED (economy.js RANK_TABLE.freight, PROVISIONAL) — the clock never ranks it.
 const F = rankTable('freight', 1), kgs = Object.values(FREIGHT).map(r => r.massKg)
-// R-18 (2026-10-24): B is 285 kg and C is ZERO — every strapped load earns at least ½ a deed, none is D.
+// R-18 (2026-10-24): B is 300 kg (FEAT-69) and C is ZERO — every strapped load earns at least ½ a deed, none is D.
 ok(amountGrade(785, F) === 'S' && amountGrade(670, F) === 'A' && amountGrade(455, F) === 'B'
   && amountGrade(330, F) === 'B' && amountGrade(80, F) === 'C',
   `freight letters by kg: cinder blocks 785 S · concrete 670 A · ties 455 B · plywood 330 B · propane 80 C (${kgs.filter(k => amountGrade(k, F) !== 'D').length}/${kgs.length} built loads clear C)`)

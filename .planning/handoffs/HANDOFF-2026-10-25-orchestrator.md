@@ -141,61 +141,84 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-16 evening, written for a /clear; rewrite, don't append)
+## Current state (2026-11-17 03:30, second night intake; rewrite, don't append)
 
-Older state: `git show 7e432ba9:.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`. The night of 11-16 is in
-`.planning/handoffs/HANDOFF-2026-11-16-night.md` (owner's copy) and `wip/orch/night-1116.md` (the running log, git-invisible).
-Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale (live), play build :8002 (below).
+Older state: `git show 96af103c:.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`.
+Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale, play build :8002 (below).
+**Owner, 03:10:** "keep the agents busy for at least a couple hours… Feel free to take it all the way up to 100% usage
+tonight. I have a reset in the pocket." So the two-agent cap is OFF for tonight: one agent per free worktree, grouped by
+code area. A one-shot timer fires at 07:13 with the word "orchestrator" (session-only cron).
 
-**Main:** ea373576, 641 ahead of origin, NOT pushed. Last full smoke PASS 35 steps (wip/orch/smoke-1117-round2b.log) on
-f184cc0c; only a docs commit since. Nothing on main is unverified by a smoke.
-**Landed since the night handoff (all local, smoke green each):** BUG-171 continuous leg foot with a per-leg cache
-(DEC-261; closed) · cluster round 1 (FEAT-235, DEC-331) · Katie's picnic (DEC-345..348) + Billy (DEC-343, DEC-349) ·
-five FEAT-204 models promoted (ASSET-85..89) and three wired: rack, bull bar, light bar (DEC-340, DEC-341, DEC-342 DRAFT
-numbers) · BUG-190 antenna, FEAT-244 repair colours, FEAT-245 mom's inventory button (all closed) · FEAT-231 bed mat and
-liner looks (DEC-352) · tutorial seed 3590618618 (DEC-344, DEC-351) · run logger FEAT-242 (DEC-358; closed) · tutorial
-round 2 (DEC-353..357; BUG-189 fixed by reasoning, ticket OPEN until the owner confirms on his pad) · pad-e2e repaired.
-**RUNNING:** nothing. All six lanes free.
+**Main:** bd9e6581 (b82f78bd + FEAT-251 lawn furniture, smoke PASS on land/integrate-1117c), NOT pushed, GREEN: smoke PASS 36 steps + 132 affected gates + pad-e2e on land/integrate-1117b
+(CarGame-land-gps/wip/*-integrate-b.log); main differs from that tree by one docs commit. Play build :8002 = bd9e6581.
+**HOW LANDINGS WORK TONIGHT:** never merge finished branches into main one by one. An Opus integration agent in
+CarGame-land-gps merges them onto `land/integrate-1117<x>` (cut from main), fixes clashes, runs gates + pad-e2e + ONE full
+smoke there; main is then fast-forwarded (`git merge --ff-only`) and the play build refreshed
+(`npm run build && rsync -a --delete dist/ wip/play-build/`). (The 03:22 smoke died because I merged under it.)
+**Landed tonight (all on main):** offer card "from" (e7239312) · BUG-191 ABS (card bug191-abs-drive) · cooler ×1/4
+(DEC-367) · pad/menu batch FEAT-252/254/255, BUG-192/193 (card pad-menus-look; DEC-368/369 DRAFT) · missions batch
+FEAT-256/257, BUG-194/195 (card missions-1117-look) · tutorial round 3 (DEC-359..363; DEC-364 DRAFT "economy unchanged by
+the day renumber" needs the owner's confirmation; card tutorial-test-drives) · UI scale + UI batch 2 (DEC-383/384; card
+ui-1117-look) · FEAT-69: freight deed line 300 kg, oil change $6 (DEC-385..390; card feat69-freight-lists) · a fix so
+the pad can use the inventory while a waiting tutorial card is up (`dlg-waits`, 3095f420; not hand-verified on a pad).
+  (A single small branch: the orchestrator may do the same itself in CarGame-land-gps.)
+**Landed 11-17 round 2:** FEAT-247 vibration (card feat247-vibration-feel) · BUG-199 run log as one file (DEC-392) ·
+FEAT-246 chase-camera collision (0.025 ms/frame; tunnel fix 23859b68) · FEAT-264 dead campfire (DEC-393; card
+camera-campfire-look) · machine batch FEAT-258, BUG-196, BUG-197, FEAT-204, FEAT-259 (DEC-372..374 standing, DEC-375
+DRAFT = the tire/stock numbers; card machine-1117-look).
+**RUNNING at 07:20 (after the 07:13 restart; intake found nothing new: no unanswered inbox note, no new owed answer,
+no untaken dive):**
+- (DONE, HELD for the owner's look) ASSET-90 dead campfire: land/asset-90-dead-campfire @ b8203066 (CarGame-perf),
+  campfire-dead.glb 434 tris, smoke step `deadFire` passes alone, 44 gates green. Card asset90-dead-campfire-look,
+  sheet CarGame-perf/wip/asset-90/sheet.jpg. Needs a main merge + full smoke before landing. Nothing else is running.
+- (LANDED) housekeeping: MILESTONES.md lane rows for 38 tickets; pad-e2e
+  registered as a browser-only gate. Docs/test only: land it when it reports green.
+- Orchestrator's own: `node test/gpu-reset.mjs` on main → wip/orch/gpu-reset-main-1117.log (was the feat-235-r3
+  impostor failure load or real?).
+FEAT-251 lawn furniture is landed (card feat251-lawn-drive; its vite :3888 in CarGame-land-211d is still up).
+**Tutorial seed re-search DONE** (land/tut-seed-search-r2 @ fb8b12af, docs only; study + sheets in
+CarGame-spare-base/wip/tut-seed-search-r2/, overview.jpg): 1000 new seeds, 14 pass the grade limit, 5 candidates on card
+tutorial-seed-pick-r2. Finding: NO seed makes the whole tutorial day gentle (0/1000 under 20 %); the cause is the
+router's 38 % ceiling = road character (DEC-064), the owner's call. On a pick: re-pin per RESULTS.md § "If chosen" + a
+DEC superseding DEC-351.
+**OPEN OWNER QUESTIONS from round 2:** (1) should the camera's wall ray also hit road geometry (tunnel walls/ceiling)?
+one-line mask, agent recommends yes. (2) DEC-028 + DEC-340 still say the bed toolbox is in the alpha, MILESTONES.md
+line 81 too; DEC-372 superseded only DEC-129: needs a new record once the owner confirms. (3) truck rolls over the
+0.40 m fire pit dead centre (body collider has nothing below the frame): ticket?
+**BUG-179 SIGNED OFF (owner 11-17 "1. looks good"), LANDING:** Lane B agent in CarGame-machine merges main into
+land/bug-179, gates + fingerprint + full smoke (wip/bug-179/*-land.log). Green → merge into main, refresh the play
+build. THEN, serially on src/road.js (never in parallel): BUG-201 (light sliver at a degree-2 bend, owner: "ticket and
+fix it", his hypothesis: deg-2 junction legs not trimmed), then BUG-200 (38 % hairpin at the chained fork on seed
+688224244; owner wants fix options, dropping the road is acceptable). DEC-396: main's existing dead ends stay.
+Next free: BUG-202, DEC-397.
+**INTAKE 13:00 (owner answered 4 cards; pairs moved to answered/):** BUG-191 closed ("Drove it: fixed"). FEAT-243
+"Good: land it". Dead campfire + camera: changes asked. RUNNING, three agents, each proves its own branch (merge of
+main + gates + full smoke); merge each into main only when it reports green and never under a running smoke; after
+the last one run ONE confirming smoke on main and refresh the play build:
+- b, CarGame-machine, land/bug-179: BUG-179 landing (see above).
+- s2, CarGame-spare, land/feat-243-particle-shade: FEAT-243 landing prep (vite :3885 stays up).
+- p, CarGame-perf, land/asset-90-dead-campfire: smoke wisps on the dead fire, cooking relights it (DEC-397), camera
+  ray hits tunnel walls (FEAT-246); lands when green, card campfire-camera-r2-look is for his check after.
+Next free: BUG-202, DEC-398.
 **BUILT, HELD for the owner (not on main):**
-- land/feat-235-r2 @ e18554e1 (branch lives in CarGame-content; that worktree is now on land/feat-242-runlog): cluster
-  round 2 (DEC-350). Card feat235-cluster-r2-look. gpu-reset passes on it (run with the branch's own server).
-- land/feat-243-particle-shade @ f91283ff (CarGame-spare): dust/smoke shaded by a horizon test. Card
-  feat243-particle-shade-look. Particle-update cost not settled (1.4 → 1.6-1.8 ms/s, maybe noise).
-- land/bug-179 (census + ticket; no fix): card bug179-fork-chain (options 1-3; agent recommends 1; touches junction
-  promotion, so the owner must pick). His BUG-171 dive answer "chase the road-to-road seam next" waits on that pick.
-**Waiting on the owner (27 cards in owed/):** tutorial-test-drives (round 2 on the new seed; stays open; 6 placeholder
-lines; pad check for BUG-189; camp short of the pin unplayed; mom's driving cards framed as calls or not; the SUNRISE:
-not visible from the player's spot at the joint, mom's in shadow: re-search scoring from the player's position if he
-wants it), feat235-cluster-r2-look, feat243-particle-shade-look, feat204-wire-look (DEC-342 numbers),
-feat204-toolbox-freight (toolbox NOT wired until answered), feat231-looks-look (liner reads as a black void in shade),
-feat242-runlog-try, bug179-fork-chain, fresh-clock-look, tut-dialogue-look, feat69-budget-dive, and the older look /
-make cards. FEAT-241 (random factory colour per run) is ticketed, three open questions, nobody on it.
-**UNTAKEN INTAKE, arrived 23:44-00:16 as the owner play-tested on :8002 (FIRST job after the clear; nothing acted on,
-no replies written; he was still typing at 00:16, so wait until the files are 3 min stale):**
-- `owed/tutorial-test-drives.answer.json` (note, no choice; card stays open): no game freeze during dialogue, and a card
-  that tells the player to press something clears only when they DO it · mom's parking-brake hint must say "at a stop"
-  · seed: opening shot and proximity "awesome" but the grade Larry's → gas station is too steep: expand the search ·
-  mom, not Larry, gives the gas tip, and reminds you of the dashboard gauge · Katie's vibe advice is useless with the
-  camp menu shut (too fast / not flat hides the bar) · AUDIT every menu for a default selection (camp menu has none;
-  main menu exempt; warn where none is right) · a tutorial reset faces the GPS direction · the tire can be changed
-  before it is checked: guardrail it.
-- inbox, five with no reply: 074418-nh2r chase-camera collision (pull toward the pivot) · 074621-co1v a tutorial
-  reset leaves the truck RUNNING · 080832-7d3h B menu navigable by left stick as well as D-pad · 081443-w0pm rumble
-  works on his 8BitDo 2C (2.4 GHz, Windows), felt only on ABS: "add vibrations for everything", make a card, tell him
-  how to reproduce, then test for feel · 081529-w93s ABS badly cuts braking at low speed, sometimes just coasts
-  (throttle lift then brake): a physics bug, Opus.
-**PARTIAL dive, do NOT act until submitted:** ledorepo dives/FEAT-69-one-region-budget.answers.json (status partial).
-His freight note there: threshold to 300 kg, wants a list of freight ideas above 300 kg (and how many are needed for a
-300 kg median) and a list of all freight under 50 kg.
-**Owed by the orchestrator:** (1) PERF-40 bench re-run: the HOST's audio clock is stalled (bench refuses; fix is
-`sudo killall coreaudiod`, the owner's to run), then measure the run logger's cost while driving and check the
-autopilot drives. (2) Lane-table rows in MILESTONES.md for FEAT-230, 231, 233, 236, 238, 223, 239, 241..245.
-(3) Register test/pad-e2e.mjs in the smoke's browser run so it cannot drift (proposed, not done). (4) The owner asked
-"how does hunger work?" just before the clear: answer below was given in chat.
+- land/food-1117 (CarGame-content): FEAT-250, FEAT-260, FEAT-261, BUG-198; DEC-376..381 (DEC-380 draft). Card
+  food-1117-numbers BLOCKS landing. Needs a main merge (keep the BUG-198 top-up before Larry's call in _checkOpeningEnd).
+- land/feat-249-far-shade @ b21696f0 (CarGame-machine): far shadow box grows with the tier (High ±512 m, Ultra ±640 m).
+  Card feat249-far-shade-look. GPU active cycles still owed (bench on a quiet machine, High + Ultra).
+- land/feat-235-r3 @ f72c5d15 (branch only): cluster round 3 (DEC-391). Card feat235-cluster-r3-look. Its gpu-reset run
+  failed on TREE IMPOSTORS ("empty tiles 0 → 8"), unexplained, probably load: re-run `node test/gpu-reset.mjs` on main
+  on a quiet machine before believing either way.
+**QUEUE:** (1) tutorial round 4 after the owner answers the tutorial card and picks a seed: the handbrake-stops-time
+line (answered/tutorial-test-drives.answer-2026-11-17b.json). (2) After he answers feat69-freight-lists: add approved heavy
+loads, trim killed light ones. (3) ASSET-90 ash-only campfire model (nobody on it).
+**Waiting on the owner:** the owed pile. feat242-runlog-try and feat243 answer files are blank. BUG-189 pad check.
+**Owed by the orchestrator:** (1) PERF-40 bench re-run (host audio clock stalled; `sudo killall coreaudiod` is the
+owner's). (2) Lane-table rows in MILESTONES.md for FEAT-230, 231, 233, 236, 238, 223, 239, 241..264. (3) Register
+test/pad-e2e.mjs in the smoke's browser run. (4) A stale shell loop from 11-14 in CarGame-spare: harmless, left alone.
 **Play build for the owner's Windows machine:** http://m4air:8002 = a FROZEN production build of main ea373576 in
 `wip/play-build/`, served by `python3 -m http.server 8002 --bind 100.111.133.99 --directory wip/play-build` (started by
 the orchestrator; it dies with a reboot). Refresh on his word: `npm run build && rsync -a --delete dist/ wip/play-build/`.
-**Next free DEC:** 359 (332-336 unused).
+**Next free DEC:** 396 (DEC-395 = impact floor 5 mph, on main 9ab15f26, play build NOT yet refreshed) (332-336 unused; 372-382 and 394 are with running agents).
 **Gotchas (keep):** (1) agents stall or re-report in loops on background waits: ask for ONE report, TaskStop a finished
 agent that keeps waking, above all when a new agent shares its worktree. (2) Owed and dive answers save as the owner
 types: act only when the file is 3 min stale. (3) DIVE answers land in ledorepo `dives/<slug>.answers.json`: at every

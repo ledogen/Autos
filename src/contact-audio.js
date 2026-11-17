@@ -15,6 +15,7 @@
  * Every voice creates its nodes per event and lets them stop (one-shots; FEAT-120 allows it).
  */
 
+import { padHit } from './pad-rumble.js'   // FEAT-247: the same two events, felt
 import { getAudioContext, getWorldBus, whiteNoiseBuffer } from './engine-audio.js'
 
 let enabled = true
@@ -103,7 +104,10 @@ export function stepContactAudio (vehicleState, tireFz, dt) {
     if (bumpState[i] === 2) continue
     if (f > bumpPeak[i]) { bumpPeak[i] = f; bumpState[i] = 1; continue }
     bumpState[i] = 2
-    if (bumpPeak[i] > BUMP_QUIET_N) playBumpStop(clamp01((bumpPeak[i] - BUMP_QUIET_N) / (BUMP_FULL_N - BUMP_QUIET_N)))
+    if (bumpPeak[i] > BUMP_QUIET_N) {
+      const s = clamp01((bumpPeak[i] - BUMP_QUIET_N) / (BUMP_FULL_N - BUMP_QUIET_N))
+      playBumpStop(s); padHit('bump', s)
+    }
   }
 
   // Landing: the first wheel back down after AIR_MIN_S with all four off.
@@ -113,7 +117,10 @@ export function stepContactAudio (vehicleState, tireFz, dt) {
   else {
     if (airS >= AIR_MIN_S) {
       const vy = -(vehicleState.velocity?.y ?? 0)
-      if (vy > LAND_QUIET_MS) playLanding(clamp01((vy - LAND_QUIET_MS) / (LAND_FULL_MS - LAND_QUIET_MS)))
+      if (vy > LAND_QUIET_MS) {
+        const s = clamp01((vy - LAND_QUIET_MS) / (LAND_FULL_MS - LAND_QUIET_MS))
+        playLanding(s); padHit('land', s)
+      }
     }
     airS = 0
   }

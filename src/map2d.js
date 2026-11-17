@@ -572,7 +572,7 @@ export class Map2D {
         this._onKeyUp = (e) => this._panKeys.delete(e.key.toLowerCase())
         this._onWinResize = () => this._measure()
         this._list?.addEventListener('mouseover', (e) => {   // hovering a row picks it, as the D-pad does
-            if (pad.cardActive() || pad.menuActive()) return   // …unless a card is up over the map: it owns the screen
+            if (pad.cardActive() || pad.menuActive() || !pad.mouseLive) return   // …unless a card is up over the map: it owns the screen; FEAT-255: or the pad has it
             const id = e.target.closest?.('[data-key]')?.dataset.key
             if (id && id !== this._listId) this._pickRow(id)
         })
@@ -1486,7 +1486,7 @@ export class Map2D {
         }
         const s = this._sheet()
         if (!this._padCursor) {
-            if (this._hoverX !== undefined && !pad.panX && !pad.panY) return   // the mouse has it
+            if (this._hoverX !== undefined && pad.mouseLive && !pad.panX && !pad.panY) return   // the mouse has it (FEAT-255: until a pad input says otherwise)
             this._padCursor = true
             this._canvas.style.cursor = 'none'   // one cursor on screen, not two
         }

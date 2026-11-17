@@ -24,7 +24,7 @@
 import {
   ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankTable, payoutFor, pointsFor,
   runEconomy, EconomySystem, formatDeeds, basePay, payRange, splitPayout, bonusEarned, RANKS,
-  expeditionGrade, gradePoints, EXPEDITION,
+  expeditionGrade, gradePoints, EXPEDITION, econDayOf,
 } from '../src/economy.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT, amountGrade, PAR_SLACK } from '../src/par.js'
 import { runState } from '../src/day.js'
@@ -46,6 +46,9 @@ const sumsTo = (base, tip, total) => Math.round((base + tip) * 100) === Math.rou
 const P = ECONOMY_PARAMS
 const AVG_PAR = 180 * PAR_SLACK / 1.15   // the average region-1 job's par: 180 s measured at slack 1.15 (section 1), 234 s at FEAT-69's
 check('pinned: tier table has 30 days, tier(1) === 1', P.dayTierTable.length === 30 && dayTier(1) === 1)
+// DEC-364: the day renumbering (DEC-360, free will opens on day 1) moved no cost. Run-day k read as the OLD main numbering k-1.
+check('DEC-364: run-day 1..8 tiers equal the pre-renumbering ones',
+  [1, 2, 3, 4, 5, 6, 7, 8].every(k => dayTier(econDayOf(k)) === dayTier(k - 1)) && econDayOf(3) === 2 && dayTier(econDayOf(1)) === 1 && dayTier(econDayOf(2)) === 1)
 check('pinned: baseFrac 0.5, fullTipRatio 0.652, tipZero 1.348',
   P.baseFrac === 0.5 && P.fullTipRatio === 0.652 && P.tipZero === 1.348)
 // FEAT-69 RANK SPREAD (owner, 2026-11-06: "S 10% more forgiving. D 30% more forgiving. interpolate between"):
@@ -273,8 +276,8 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   check('haul firewood: S 25 (measured), A/B/C = ceil(85/70/55 % of S) in every region',
     T.haul.firewood.every(t => t.S === 25 && t.A === Math.ceil(0.85 * t.S) && t.B === Math.ceil(0.70 * t.S) && t.C === Math.ceil(0.55 * t.S)),
     JSON.stringify(T.haul.firewood[0]))
-  check('freight R1 (PROVISIONAL): 712 / 570 / 285 / 0 kg — S/A at 125/100 % of the 570 kg rating, B at half it, C at ZERO so every load earns at least ½ a deed (R-18)',
-    ['S', 'A', 'B', 'C'].every((k, i) => rankTable('freight', 1)[k] === [712, 570, 285, 0][i]))
+  check('freight R1 (PROVISIONAL): 712 / 570 / 300 / 0 kg — S/A at 125/100 % of the 570 kg rating, B an even 300 (FEAT-69), C at ZERO so every load earns at least ½ a deed (R-18)',
+    ['S', 'A', 'B', 'C'].every((k, i) => rankTable('freight', 1)[k] === [712, 570, 300, 0][i]))
   check('the table lookup clamps like regionTier (region 0 → 1, region 9 → the last row)',
     rankTable('time', 0) === T.time[0] && rankTable('freight', 9) === T.freight[T.freight.length - 1]
       && rankTable('haul', 1.7, 'firewood') === T.haul.firewood[0])
@@ -370,8 +373,8 @@ check('tipZero is solved from tip(1.0) === 0.5, not picked', near(P.tipZero, 2 *
   const h = (n) => amountGrade(n, H), f = (kg) => amountGrade(kg, F)
   check('haul: 25 → S, 22 → A, 18 → B, 14 → C, 13 → D (each floor is inclusive)',
     h(25) === 'S' && h(30) === 'S' && h(24) === 'A' && h(22) === 'A' && h(18) === 'B' && h(14) === 'C' && h(13) === 'D' && h(0) === 'D')
-  check('freight: 712 → S, 570 → A, 285 → B, anything lighter → C (never D: a strapped load always arrives, R-18)',
-    f(712) === 'S' && f(711.9) === 'A' && f(570) === 'A' && f(428) === 'B' && f(285) === 'B' && f(284) === 'C' && f(1) === 'C')
+  check('freight: 712 → S, 570 → A, 300 → B, anything lighter → C (never D: a strapped load always arrives, R-18)',
+    f(712) === 'S' && f(711.9) === 'A' && f(570) === 'A' && f(428) === 'B' && f(300) === 'B' && f(299) === 'C' && f(1) === 'C')
   check('the letter never improves as pieces are lost',
     Array.from({ length: 31 }, (_, i) => 'DCBAS'.indexOf(h(30 - i))).every((v, i, a) => i === 0 || v <= a[i - 1]))
 }

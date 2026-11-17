@@ -29,6 +29,9 @@
 //            A modelled bed load is ONE number, as built ([m, m]) — the model is fixed, so is its
 //            mass (owner, 2026-10-11); the derivation of each is in cargo.md.
 //   pools    which sources may post it (keys of SOURCES below)
+//   own      (optional, owner 2026-11-17) true = the poster's own thing, needed somewhere else. The
+//            card then says "Earl FROM the Miller place needs their lucky boots delivered to …", so it
+//            reads as "go to my house and get them". Absent = "Earl AT the Miller place".
 //   fetchBy  (optional, FEAT-102) classes that post a FETCH of this thing: "go get it and bring it
 //            back" — drive to a pickup, park there, return to the poster (FEAT-89's fetch shape).
 //   fetchFrom (optional) the pickup classes for a fetch. Defaults to `pools` (where it comes from).
@@ -92,7 +95,7 @@ export const THINGS = [
       pools: ['foodVendor'], deadlineSlack: 0.5, multi: 'takeout orders' },
     { id: 'groceries',  phrase: 'a week of groceries',    family: 'delivery', massKg: [10, 25],
       pools: ['generalStore'], multi: 'grocery orders' },
-    { id: 'medication', phrase: 'their prescription',        family: 'delivery', massKg: [0.2, 0.5],
+    { id: 'medication', phrase: 'a prescription',            family: 'delivery', massKg: [0.2, 0.5],
       pools: ['generalStore'] },
     // Courier, R1 (cargo.md), one thing per row there.
     { id: 'note',       phrase: 'a private note',          family: 'delivery', massKg: [0.1, 0.1],
@@ -102,11 +105,11 @@ export const THINGS = [
     { id: 'lunch',      phrase: 'lunch for their partner', family: 'delivery', massKg: [1, 2],
       pools: HOME },
     { id: 'glasses',    phrase: 'much-needed reading glasses', family: 'delivery', massKg: [0.1, 0.1],
-      pools: HOME },
+      pools: HOME, own: true },
     { id: 'luckyBoots', phrase: 'their lucky boots',       family: 'delivery', massKg: [1.5, 3],
-      pools: HOME },
+      pools: HOME, own: true },
     { id: 'campChair',  phrase: 'a camping chair',         family: 'delivery', massKg: [3, 5],
-      pools: HOME },
+      pools: HOME, own: true },
     // Neighbour to neighbour (owner, 2026-10-08): household → household.
     { id: 'golfClubs',  phrase: 'golf clubs',              family: 'delivery', massKg: [9, 14],
       pools: HOME, to: HOME },
@@ -121,7 +124,7 @@ export const THINGS = [
     { id: 'tractorKeys', phrase: 'keys for the tractor',   family: 'delivery', massKg: [0.1, 0.1],
       pools: ANY_GIVER, to: ['farm'] },
     { id: 'classNotes', phrase: 'their class notes',       family: 'delivery', massKg: [0.3, 1],
-      pools: HOME, to: ['school'] },
+      pools: HOME, to: ['school'], own: true },
     { id: 'deck',       phrase: 'a presentation deck',     family: 'delivery', massKg: [0.5, 1.5],
       pools: ANY_GIVER, to: ['office'] },   // FEAT-153: from any giver; class notes stay household-only (owner, 2026-11-02)
     // FEAT-153 (owner, 2026-11-02): the office and the school give their own jobs. PLACEHOLDER words
@@ -134,7 +137,7 @@ export const THINGS = [
       pools: ['office'], to: ['generalStore', 'gasStation'] },
     // FEAT-153: one thing that ends AT the tackle shop, so it is a destination too. PLACEHOLDER.
     { id: 'reel',       phrase: 'a reel to re-spool',      family: 'delivery', massKg: [0.3, 0.6],
-      pools: HOME, to: ['tackleShop'] },
+      pools: HOME, to: ['tackleShop'], own: true },
     // A 20 lb cylinder: ~7.7 kg of steel, plus 9.1 kg of propane when full. Full ones leave the
     // store or a gas station; empties go back to either from anywhere (owner, 2026-10-07).
     { id: 'propaneFull',  phrase: 'a full 20 lb propane tank',  family: 'delivery', massKg: [16, 18],
@@ -317,11 +320,11 @@ export const THINGS = [
     // of road; the letter is the share smashed. Always a roadside job. The deed is the removal — each
     // giver has an ordinary reason. PLACEHOLDER words and counts.
     // The farmer's old empty drums, set out along his frontage: crushed, they go to the scrapyard in one trip.
-    { id: 'scrapDrums',  phrase: 'his old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
+    { id: 'scrapDrums',  phrase: '{n} old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
       targets: [{ kinds: ['barrel', 'drumOpen'], n: [8, 12], cluster: [1, 3] }] },
     // The county is repaving: the old sign line comes down before the new one goes up, and the last job's
     // barricades are still out. The crew is behind.
-    { id: 'oldSignLine', phrase: 'the old sign line knocked down', family: 'demolition', massKg: [0, 0], pools: ['workSite'],
+    { id: 'oldSignLine', phrase: '{n} old signs and barricades knocked down', family: 'demolition', massKg: [0, 0], pools: ['workSite'],
       targets: [{ kinds: ['signGrade', 'signCurves', 'signRockslide', 'signTee', 'signCross', 'signStop', 'signIcy'],
                   n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
                 { kinds: ['roadBarrier'], n: [2, 3], cluster: [2, 3], face: 'road' }] },
@@ -371,7 +374,9 @@ export const REWARDS = [
     // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
     // barn find is a roadside-find event (items.md §6), not a giver.
     { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'], cat: 'tires' },
-    { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['B', 'A'], cat: 'tires' },
+    // FEAT-259 (owner, 2026-11-17: standard tires should "come up as mission reward more often") [DEFAULT]: C added, so it
+    // competes with the old tire on the easiest gate too (was B / A only: 1.2 % of item rewards against the old tire's 6.6 %).
+    { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['C', 'B', 'A'], cat: 'tires' },
     { id: 'tireSport',  name: 'Sport tire',  kind: 'part',       gates: ['A', 'S'], cat: 'tires' },
     { id: 'tireOffroad', name: 'All-terrain tire', kind: 'part', gates: ['A', 'S'], cat: 'tires' },
     { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'], cat: 'tires' },
@@ -510,7 +515,7 @@ export const REQUISITION = [
     // recycles until it holds 20+ and clears the line in one trip. The card shows the stock on hand.
     { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 20 },
     { id: 'reqCrew',     phrase: 'the crew',       family: 'delivery', from: 'workSite',     massKg: 0, passenger: true },
-    { id: 'reqSigns',    phrase: 'the turn-back signs knocked down', family: 'demolition', from: 'expeditionCamp', massKg: 0,
+    { id: 'reqSigns',    phrase: '{n} turn-back signs, crates and barrels knocked down', family: 'demolition', from: 'expeditionCamp', massKg: 0,
       targets: [{ kinds: ['turnBackSign', 'turnBackSignKeepOut', 'turnBackSignBeware', 'turnBackSignNoEntry'],
                   n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
                 { kinds: ['smallCrate'], n: [3, 5], cluster: [1, 3] }, { kinds: ['barrel'], n: [3, 5], cluster: [1, 2] }] },

@@ -49,6 +49,7 @@ import {
     POI_ADJECTIVE_CHANCE, POI_THE_CHANCE, BUSINESS_TYPES, NAME_FORMS, HOUSEHOLDS, PLACE_NOUNS, LANDMARKS,
 } from '../data/offer-names.js'
 import { djb2, mulberry32 } from './seed.js'
+import { rolledCount } from './demolition.js'   // FEAT-256: the count a demolition card names
 import { STOCK_WEIGHT } from '../data/stock-weights.js'   // the bonus reward pick shares the shelf's weights
 import { basePay, payRange, regionTier, formatMoney, rankTable, fragileLines } from './economy.js'
 import { DAY_PARAMS } from './day.js'
@@ -122,8 +123,9 @@ export function windowPick (at, u, top) {
     return at.reduce((a, x) => (c(x) < c(a) ? x : a))
 }
 
-/** FEAT-168: may an offer born at `bornH` (DaySystem.clockH, day 1 starts at 0) carry REWARDS row `w`? */
-const dayAllows = (w, bornH) => !(w.minDay > Math.floor(bornH / 24) + 1)
+/** FEAT-168: may an offer born at `bornH` (DaySystem.clockH, day 1 starts at 0) carry REWARDS row `w`? DEC-364: `minDay` counts days
+ *  since free will opened (the old numbering's day), and free will opens at clockH 7 on day 1 now (was day 0, clockH -17): one day less. */
+const dayAllows = (w, bornH) => !(w.minDay > Math.floor(bornH / 24))
 
 /** FEAT-168: every reward — the REWARDS rows, then each carried part with no row, under its slot's
  *  category at its rarity's gates (data/offers.js PART_REWARD_CAT / RARITY_GATES). */
@@ -753,7 +755,7 @@ export class OfferBoard {
             destKind: papers ? null : thing.family === 'demolition' ? 'roadside'
                 : (strictTo || fetch || stops || destRoll < DEST_POI_CHANCE ? 'poi' : 'roadside'),
             targets: thing.targets ?? null,   // FEAT-65: what stands on that shoulder (src/demolition.js)
-            destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger,
+            destPick, placeName, to: thing.to ?? null, passenger: !!thing.passenger, own: !!thing.own,
             load: thing.load ?? null,   // FEAT-96: the freight load (data/freight.js) — null otherwise
             loose: thing.loose ?? null, // one loose bed body (src/debris.js kind) — the motorist's tire
             atPickup: thing.atPickup ?? null,   // a fetch's wait at the pickup: { min, park, done } prompts
@@ -1042,14 +1044,16 @@ export class OfferBoard {
             if (sizes.length) sentence.push({ t: ' to ' }, { t: `${sizes.length > 1 ? sizes.slice(0, -1).join(', ') + ' or ' + sizes.at(-1) : sizes[0]} customers`, b: true })
             sentence.push({ t: '.' })
         } else {
-            if (n?.name) sentence.push({ t: ` at ${n.name}` })
+            if (n?.name) sentence.push({ t: ` ${sp.own ? 'from' : 'at'} ${n.name}` })   // `own`: data/offers.js
             const dest = route?.endPoiId ? this.placeLabel(route.endPoiId) : (route?.placeName ?? sp.placeName)
             if (sp.stock) {
                 sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true },
                               { t: ' hauled to ' }, { t: dest, b: true }, { t: '.' })
             } else if (sp.targets) {
                 // FEAT-65: "Earl needs his old drums crushed along the Miller place."
-                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: ' along ' }, { t: dest, b: true }, { t: '.' })
+                // FEAT-256: the count is in the sentence ("needs 10 old signs knocked down"), rolled from the offer's own stream.
+                sentence.push({ t: ' needs ' }, { t: sp.phrase.replace('{n}', route?.targets?.length ?? rolledCount(sp.targets, `demo:${this._seed}:${offer.id}`)), b: true },
+                              { t: ' along ' }, { t: dest, b: true }, { t: '.' })
             } else {
                 // A passenger is the poster themselves: "Earl needs a ride to Rust Belt Auto." A fetch
                 // names its pickup: "Earl needs a full jerry can fetched from Pump & Go."
@@ -1083,10 +1087,8 @@ export class OfferBoard {
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
         if (sp.fragile) terms.push(sp.fragile.tierName)   // what the player is up against (owner, 2026-10-23)
-        // FEAT-65: a demolition job carries nothing; it states the site — how many stand, and that the pay
-        // follows the share smashed (haul's rule, main.js onSettle).
-        if (sp.targets) terms.push(`${route?.targets?.length ?? '?'} to smash`, 'pay per target smashed')
-        else terms.push(sp.stock ? `${sp.stock} bundles available` : `${sp.massKg} kg`)
+        // FEAT-65: a demolition job carries nothing; the count rides the sentence (FEAT-256).
+        if (!sp.targets) terms.push(sp.stock ? `${sp.stock} bundles available` : `${sp.massKg} kg`)
         // R-20: the tip is speed on fragile too; what the condition moves is the BASE (splitFragilePayout
         // pays half of it flat and half × health) — the owner asked, so the card says it.
         if (sp.fragile) terms.push('damage docks the base')
@@ -1171,8 +1173,7 @@ export class OfferBoard {
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
         if (sp.fragile) terms.push(sp.fragile.tierName)
-        if (sp.targets) terms.push(`${route?.targets?.length ?? '?'} to smash`)
-        else terms.push(sp.stock ? `${sp.stock} bundles` : `${sp.massKg} kg`)
+        if (!sp.targets) terms.push(sp.stock ? `${sp.stock} bundles` : `${sp.massKg} kg`)
         if (sp.stock) {
             // The source's own haul offer is the stock on hand (owner, 2026-10-30): a player who wants the
             // line in one trip waits for it. offer.poiId is the source at the camp too (_at).
@@ -1183,7 +1184,7 @@ export class OfferBoard {
             family: sp.family, badge: jobBadge(sp), portrait: null, flavor: null,
             // A template literal for "from": test/offer-board.mjs's import scan. FEAT-65: the demolition line
             // names its site, not a source — the camp gives it.
-            sentence: [{ t: 'The expedition camp', b: true }, { t: ' needs ' }, { t: sp.phrase, b: true },
+            sentence: [{ t: 'The expedition camp', b: true }, { t: ' needs ' }, { t: sp.phrase.replace('{n}', sp.targets ? rolledCount(sp.targets, `demo:${this._seed}:${offer.id}`) : ''), b: true },
                        ...(sp.targets ? [{ t: ' along ' }, { t: route?.placeName ?? sp.placeName, b: true }]
                            : [{ t: ` from ` }, { t: this.placeLabel(offer.poiId) ?? 'its source', b: true }]), { t: '.' }],
             pay: 'Unpaid — the camp’s requisition', terms, times: ['no time limit'], bonus: null,

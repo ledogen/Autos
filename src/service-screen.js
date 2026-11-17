@@ -24,17 +24,16 @@
  *                puts back exactly what was there.
  *                My Items, below it: sell the parts you carry, and repair or patch them as their own items
  *                (a mounted pair's wheel too, FEAT-196).
- *   Jobs       — only while the shop has live offers (owner, 2026-10-20: it still posts work): one
- *                button, "go to jobs" (FEAT-197, owner 2026-11-11). It closes the screen and hands over to
- *                the offers (the offer card over the map); declining them comes back to this screen.
+ *   Jobs       — a BUTTON at the top, not a tab (FEAT-252, owner 2026-11-17), only while the shop has live
+ *                offers (it still posts work; FEAT-197). It closes the screen and hands over to the offers
+ *                (the offer card over the map); declining them comes back to this screen.
  * THE CART (FEAT-212, owner 2026-11-13): every button that costs money or time queues its job (ServiceCenter.queue) —
  * the truck shows it at once, the money and the clock wait for "check out" on the card's foot; "discard" puts it all
  * back; a line's × takes one out. With work in the cart, leaving (Esc / B, back, go to jobs, the brake) asks first.
- * A part that comes off goes straight into My Items (owner 11-04: no sell / keep prompt). "map" opens
- * the map over the screen (owner, 2026-10-21); the screen hides under it and the clock stays held.
+ * A part that comes off goes straight into My Items (owner 11-04: no sell / keep prompt).
  *
  * FEAT-104: a storefront (general store, gas station, food vendor) opens the same screen as a STORE:
- * the Shop tab and its Jobs, nothing else. It is buy only (owner, 2026-10-07): no My Vehicle, no My
+ * the Shop tab and the Jobs button, nothing else. It is buy only (owner, 2026-10-07): no My Vehicle, no My
  * Items, no selling, and the camera stays where it was, since there is nothing on the truck to look at.
  *
  * Described, never scored (SM-INV-10): parts are names, prices are money, conditions are colour bars
@@ -184,17 +183,16 @@ export class ServiceScreen {
    * @param {import('./service.js').ServiceCenter} service
    * @param {object} vehicleState - read-only; the brake coming off closes the screen
    * @param {object} o
-   * @param {() => object[]} o.jobs - this shop's live offers (the Jobs tab shows while there are any)
+   * @param {() => object[]} o.jobs - this shop's live offers (the top Jobs button shows while there are any)
    * @param {() => void} o.openJobs - hand the brake to the offers; their decline reopens this screen (FEAT-197)
-   * @param {() => void} o.openMap - show the map over the screen
    * @param {() => number} o.nowH - the game clock (daySystem.clockH): the shelf's time left
    * @param {(open:boolean) => void} o.onView - the screen opened / closed (main.js: the camera)
    * @param {() => void} o.openDiagnostics - Maintenance's "Vehicle Diagnostics": the V-key damage screen over this one
    */
-  constructor (service, vehicleState, { jobs, openJobs, openMap, nowH, onView, openDiagnostics }) {
+  constructor (service, vehicleState, { jobs, openJobs, nowH, onView, openDiagnostics }) {
     this.service = service
     this.vehicleState = vehicleState
-    Object.assign(this, { jobs, openJobs, openMap, nowH, onView, openDiagnostics })
+    Object.assign(this, { jobs, openJobs, nowH, onView, openDiagnostics })
     this.isOpen = false
     this.tab = 'maint'
     this.name = ''
@@ -292,9 +290,16 @@ export class ServiceScreen {
 
   /** The repair targets behind a repair key: `v:<track>` on the truck, `i:<index>` in the inventory. */
   _targets (key) {
+    const [k, v] = key.split(':'), from = this._line(key)?.from
+    if (k === 'w') return this.service.ownedWheelTargets(+v, from)   // FEAT-196: a mounted pair's wheel
+    return k === 'v' ? this.service.targets(v, from) : this.service.ownedTargets(+v, from)
+  }
+
+  /** BUG-197: the cart line already repairing the part behind a repair key, or null. The bar then edits that line: it
+   *  starts from the line's `from` and its select replaces the line (ServiceCenter.queueRepair). */
+  _line (key) {
     const [k, v] = key.split(':')
-    if (k === 'w') return this.service.ownedWheelTargets(+v)   // FEAT-196: a mounted pair's wheel
-    return k === 'v' ? this.service.targets(v) : this.service.ownedRepairRows().find(r => r.index === +v)?.targets ?? []
+    return k === 'v' ? this.service.repairLine('repair', v) : this.service.repairLine('repairOwned', +v, k === 'w')
   }
 
   /** The chosen target, kept on the list (default: as far as the bench goes). */
@@ -317,7 +322,6 @@ export class ServiceScreen {
     switch (b.dataset.act) {
       case 'close': this.leave(); return
       case 'jobs': this.leave(() => this.openJobs()); return
-      case 'map': this.openMap(); return
       case 'checkout': if (s.checkout()) this._left(); break
       case 'discard': s.discard(); this.paths.shop = []; this._left(); break
       case 'unqueue': this.note = s.remove(+b.dataset.line); this.paths.shop = []; break
@@ -334,8 +338,9 @@ export class ServiceScreen {
       }
       case 'repair': {
         const [k, v] = key.split(':'), t = this._target(key), to = `to ${Math.round(t * 100)}%`
-        if (k === 'v') q('repair', [v, t], v === 'diff' ? 'Change clutches' : `Repair ${TRACKS[v].label} ${to}`)
-        else q('repairOwned', [+v, t, k === 'w'], `Repair ${inv(v)}${k === 'w' ? ' wheel' : ''} ${to}`)
+        // BUG-197: one line per part — a repair already on the cart is corrected, never doubled.
+        if (k === 'v') s.queueRepair('repair', [v, t], v === 'diff' ? 'Change clutches' : `Repair ${TRACKS[v].label} ${to}`)
+        else s.queueRepair('repairOwned', [+v, t, k === 'w'], `Repair ${inv(v)}${k === 'w' ? ' wheel' : ''} ${to}`)
         break
       }
       case 'patch': q('patch', [b.dataset.track], `Patch ${TRACKS[b.dataset.track].label}`); break
@@ -384,16 +389,15 @@ export class ServiceScreen {
     if (!this.isOpen) return
     const s = this.service
     const jobs = this.jobs()
-    if (this.tab === 'jobs' && !jobs.length) this.tab = this.store ? 'shop' : 'maint'
     const tab = (id, label) => `<button class="sv-tab${this.tab === id ? ' on' : ''}" data-act="tab" data-tab="${id}">${label}</button>`
     const [lines, foot] = this._cart(), top = this.card.querySelector('.sv-body')?.scrollTop ?? 0
     this.card.innerHTML =
       `<div class="sv-body"><div class="sv-head"><span class="sv-title">${this.name}${this.store ? '' : ' · service'}</span>`
       + `<span class="sv-wallet">$${formatMoney(s.money())}<br><span class="sv-clock">${formatDue(Math.floor(this.nowH() * 60) / 60)}</span></span>`
-      + btn('map', 'map')
+      + (jobs.length ? btn('jobs', 'jobs') : '')   // FEAT-252 (owner, 2026-11-17): a button, not a tab — it opens the offers on the map
       + `</div>`
-      + `<div class="sv-tabs">${this.store ? tab('shop', 'Shop') : tab('maint', 'Maintenance') + tab('shop', 'Shop')}${jobs.length ? tab('jobs', 'Jobs') : ''}</div>`
-      + (this.tab === 'maint' ? this._maintenance() : this.tab === 'shop' ? this._shop() : this._jobs())
+      + `<div class="sv-tabs">${this.store ? tab('shop', 'Shop') : tab('maint', 'Maintenance') + tab('shop', 'Shop')}</div>`
+      + (this.tab === 'maint' ? this._maintenance() : this._shop())
       + lines + `</div>` + foot
       + BACK_BUTTON   // the card's way out (owner, 2026-10-21: replaces the corner ×)
     this.card.firstChild.scrollTop = top   // a click re-renders the body: it stays where it was scrolled
@@ -427,7 +431,7 @@ export class ServiceScreen {
     const sw = ['swap'], sr = ['swap', 'repair'], rs = ['repair', 'swap']
     const oil = s.oilQuote(), clutch = s.repairQuote('diff', 1)
     const tree = [
-      `<button class="sv-line" data-act="diag"><span class="sv-name">Vehicle Diagnostics</span></button>`,
+      `<button class="sv-line" data-act="diag"><span class="sv-name">▸ Vehicle Diagnostics</span></button>`,
       node('twbs', 'Tires, Wheels, Brakes and Suspension', [
         node('tw', 'Tires and Wheels', [this._alignment(), ...CORNERS.map((_, i) => this._corner(i))]),
         node('brakes', 'Brakes', AXLES.map(a => this._part(a, a, { socket: 'brakes' + a, track: 'brake' + a, acts: sw }))),
@@ -456,7 +460,7 @@ export class ServiceScreen {
         node('lights', 'Headlights', [['L', 'Left'], ['R', 'Right']].map(([k, l]) => this._part(k, l, { socket: 'headlight' + k, track: 'headlight' + k, acts: sw }))),
         node('panels', 'Body Panels', ['Front', 'Left', 'Right', 'Rear'].map(k => this._part(k, k, { track: 'armor' + k, acts: ['repair'] }))),
       ]),
-      // FEAT-204: the bolt-ons, every socket data/parts.js marks `bolton` (the toolbox joins as a data row).
+      // FEAT-204: the bolt-ons, every socket data/parts.js marks `bolton`.
       node('boltons', 'Bolt-ons', Object.keys(SLOTS).filter(k => SLOTS[k].bolton).map(k => this._part(k, SLOTS[k].name, { socket: k, acts: sw }))),
     ]
     return `<div class="sv-tree">${this._level(tree, 0)}</div>`
@@ -498,7 +502,8 @@ export class ServiceScreen {
   _repairNode (track) {
     const s = this.service, cls = TRACKS[track].cls
     if (!REPAIRS[cls] || (cls === 'wheel' && s.damage.get(track) <= 0)) return null
-    return node('repair', 'Repair', [this._repair(`v:${track}`, s.damage.get(track), (t) => s.repairQuote(track, t))])
+    const from = this._line(`v:${track}`)?.from ?? s.damage.get(track)   // BUG-197: a queued repair is edited from where it began
+    return node('repair', 'Repair', [this._repair(`v:${track}`, from, (t) => s.repairQuote(track, t, from))])
   }
 
   /** Swap with inventory: the parts you carry that fit `socket` (never shop stock). `loose`: a wheel takes
@@ -529,7 +534,9 @@ export class ServiceScreen {
     const tire = 'tire' + c, wheel = 'wheel' + c, flat = d.flat[i], tc = d.get(tire), wc = d.get(wheel)
     const swap = s.cornerSwapQuote(), patch = s.patchQuote()
     const tag = (flat ? '<span class="sv-flat">flat</span>' : '') + (wc <= 0 ? '<span class="sv-flat">wheel failed</span>' : '')
-    return node(c, label, [
+    // FEAT-262 (owner, 2026-11-17): the corner line names the tire on it, the part's own name (Old / Standard / Sport / ...), stock or not.
+    const fitted = s.parts.fitted(tire)
+    return node(c, label + (fitted ? ` <span class="sv-desc">${PARTS[fitted].name}</span>` : ''), [
       node('corner', 'Swap with corner', CORNERS.flatMap(([o, ol], to) => to === i ? [] : [
         `<div class="sv-row"><span class="sv-name">${ol}</span>${pctIn('T', d.get('tire' + o), d.flat[to])}${pctIn('W', d.get('wheel' + o))}`
         + `<span class="sv-cost">${cost(swap.price, swap.hours)}</span>` + btn('swap', 'swap', true, `data-a="${i}" data-b="${to}"`) + `</div>`])),
@@ -592,25 +599,18 @@ export class ServiceScreen {
         : this._act('Into the inventory', carry, btn('stow', 'add to cart', ok, `data-slot="${i}"`, sockets.length ? '' : ' ok'))) + `</div>`
   }
 
-  // ── Jobs ────────────────────────────────────────────────────────────────────────────────────────
-
-  /** FEAT-197 (owner, 2026-11-11): one button — the shop's offers on the map; back returns here (main.js openJobs). */
-  _jobs () {
-    return `<div class="sv-slot"><div class="sv-row"><span class="sv-acts">${btn('jobs', 'go to jobs', true, '', ' ok')}</span></div></div>`
-  }
-
   /** My Items (owner, 2026-11-14: "match what you did on the maintenance tab"): the parts you carry as rows of the same
    *  tree, sharing the shelf's one open row. Closed: name and condition (a mounted pair: T and W). Open: the pair's two
    *  parts, then sell, split, combine (the partners), repair (FEAT-196: a mounted pair's wheel too) and patch. */
   _myItems () {
     const s = this.service
-    const fix = new Map(s.ownedRepairRows().map(r => [r.index, r]))
     const owned = s.inventory.list().filter(r => r.kind === 'part')
     const head = `<div class="sv-slot"><div class="sv-slothead">My items</div>`
     if (!owned.length) return head + dim('You carry no parts.') + `</div>`
     const bq = s.beadQuote()
     const rows = owned.map(r => {
       const key = `i:${r.index}`, cond = r.cond ?? 1, m = PARTS[r.id].mounted, wc = r.wheelCond ?? 1
+      const fromI = this._line(key)?.from ?? cond, fromW = this._line(`w:${r.index}`)?.from ?? wc   // BUG-197
       const flat = r.flat ? '<span class="sv-flat">flat</span>' : ''
       const partners = s.combineOptions(r.index)
       const kids = [
@@ -622,8 +622,8 @@ export class ServiceScreen {
         ...(partners.length ? [node('combine', 'Combine', partners.map(p => `<div class="sv-row">${chip(p.id)}<span class="sv-name">${p.name}</span>`
           + (p.flat ? '<span class="sv-flat">flat</span>' : '') + bar(p.cond ?? 1, p.flat) + `<span class="sv-cost">${cost(bq.price, bq.hours)}</span>`
           + btn('combine', 'combine', true, `data-index="${r.index}" data-with="${p.index}"`, ' ok') + `</div>`))] : []),
-        ...(fix.get(r.index)?.targets.length ? [node('repair', 'Repair', [this._repair(key, cond, (t) => s.ownedQuote(r.index, t))])] : []),
-        ...(m && s.ownedWheelTargets(r.index).length ? [node('wheel', 'Repair the wheel', [this._repair(`w:${r.index}`, wc, (t) => s.ownedQuote(r.index, t, true))])] : []),
+        ...(this._targets(key).length ? [node('repair', 'Repair', [this._repair(key, fromI, (t) => s.ownedQuote(r.index, t, false, fromI))])] : []),
+        ...(m && this._targets(`w:${r.index}`).length ? [node('wheel', 'Repair the wheel', [this._repair(`w:${r.index}`, fromW, (t) => s.ownedQuote(r.index, t, true, fromW))])] : []),
         ...(r.flat ? [this._act('Patch the flat', s.patchQuote(), btn('patchOwned', 'patch', true, `data-index="${r.index}"`, ' ok'))] : []),
       ]
       return node('i' + r.index, chip(r.id) + r.name, kids, m ? pctIn('T', cond, r.flat) + pctIn('W', wc) : flat + bar(cond, r.flat), Math.min(r.flat ? 0 : cond, m ? wc : 1))

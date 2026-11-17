@@ -1,6 +1,6 @@
 ---
 id: DEC-322
-status: standing
+status: superseded
 decided: 2026-11-16
 area: story
 governs: FEAT-229, FEAT-184, DEC-155, data/dialogue.js, src/main.js, LARRY_PACK, Larry, the paper route, tutorial skip

@@ -1117,12 +1117,12 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // browser. On, the run's events and a 1 s route sample download by themselves as JSON Lines parts at each new
   // game day and at the run's end — no prompt. Chrome asks ONCE to "allow multiple downloads" from the site.
   const runLogFolder = gui.addFolder('Run logging (FEAT-242)')
-  const _rl = { get on () { return runLog.on }, set on (v) { runLog.setOn(v) }, now: () => runLog.flush('manual'),
-    get events () { return String(runLog.count) }, note: 'Chrome: allow multiple downloads once' }
+  const _rl = { get on () { return runLog.on }, set on (v) { runLog.setOn(v) }, now: () => runLog.saveNow(),
+    get events () { return String(runLog.count) }, get stored () { return runLog.stored } }
   runLogFolder.add(_rl, 'on').name('Run logging')
-  runLogFolder.add(_rl, 'now').name('Download log now')
+  runLogFolder.add(_rl, 'now').name('Save log now')
   runLogFolder.add(_rl, 'events').name('Events recorded').disable().listen()
-  runLogFolder.add(_rl, 'note').name('Note').disable()
+  runLogFolder.add(_rl, 'stored').name('Stored (saved by the button)').disable().listen()
   runLogFolder.close()
 
   // D-11: Pacejka canvas overlay — 300×200 px, positioned to left of the lil-gui panel.

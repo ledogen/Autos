@@ -98,6 +98,14 @@ function walkBack (route) {
 }
 
 /**
+ * FEAT-256: how many targets a dressing rolls — the same first draw of each group's own stream that
+ * siteTargets sizes the group with, so the offer card can say "10 old signs" before the route is planned.
+ */
+export function rolledCount (dressing, key) {
+    return dressing.reduce((sum, grp, gi) => sum + grp.n[0] + Math.floor(mulberry32(djb2(`${key}:g${gi}`))() * (grp.n[1] - grp.n[0] + 1)), 0)
+}
+
+/**
  * The site's targets: [{ kind, x, y, z, yaw, u, g }], y the ground under the target's lowest footprint point
  * (it stands upright — a post is planted plumb), yaw in the model convention (−Z → (−sin, −cos)), u the
  * metres of route before its end (siteGuide reads it), g its cluster ('group.cluster' — FEAT-187: one halo a cluster).

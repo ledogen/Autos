@@ -1,6 +1,6 @@
 ---
 id: DEC-159
-status: standing
+status: superseded
 decided: 2026-11-14
 area: economy
 governs: FEAT-184, DEC-025, src/day.js, src/main.js, dayTier, tutorial

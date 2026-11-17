@@ -1,7 +1,7 @@
 ---
 id: BUG-161
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-12
 source: owner, 2026-11-12 inbox — "I was driving a fragile mission with a marble statue as the payload I Noticed that Occasionally the marble statue would lag slightly behind the car It would also appear to push the rear end down and Slow the car a little bit seems like some sort of physics glitch. It was intermittent and only occurred a couple times about two or three seconds Each time this was on a three or four kilometer mission I Want to say that it seemed like it happened more often in positive G maneuvers like hitting a dip Or anytime the road curved upwards, but I'm not sure about that"
@@ -140,3 +140,4 @@ the loose tire), held off only by the same filter.
 - 2026-11-16: freight-strap §9 (ddef0113): static squat within 1 mm of m·g split / wheel rate, seat ≤ 1 mm launch+stop,
   ≤ 2 mm and ≤ weight × 2.2 g squat in the dip, ≤ 0.3 m/s speed. No src change: physics fingerprint identical by
   construction. freight-strap 1/1 green. Unverified: the owner's in-game sighting.
+- 2026-11-17: CLOSED — owner drove it 2026-11-17: "Drove it: fine now, close BUG-161".

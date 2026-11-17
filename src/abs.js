@@ -4,8 +4,9 @@
  *
  * It sees only what a real ECU sees — four wheel-speed sensors and a longitudinal deceleration
  * sensor, sampled once per loop — and never the truck's true speed or the tire model. Per loop:
- *   • REFERENCE SPEED: the fastest wheel, but never allowed to fall faster than the truck is
- *     measured to be slowing (+ absRefMargin, capped at absRefDecel). When every wheel slips at once
+ *   • REFERENCE SPEED: off the pedal, the faster undriven front; on it, the fastest wheel, but never
+ *     allowed to fall faster than the truck is measured to be slowing (+ absRefMargin, capped at
+ *     absRefDecel) nor rise faster than it is measured to speed up (+ absRefMargin, BUG-191). When every wheel slips at once
  *     (ice, a slide) the reference keeps sliding down at the truck's real rate, so the slip still
  *     shows up. A wheel-only reference at a fixed worst-case slope cannot do this — it falls with the
  *     wheels and the truck spins on undetected rear lock-up — which is why 4x4 ABS (Ford's 4WABS
@@ -73,10 +74,19 @@ export function stepAbs (a, pedal, omega, vel, fwd, params, dt) {
     v[i] = Math.abs(omega[i] || 0) * params.wheelRadius   // sensors read speed, not direction
     if (v[i] > vMax) vMax = v[i]
   }
-  // Off the pedal nothing is braked, so the fastest wheel IS the truck: re-sync (also clears a stale
-  // reference after a teleport or respawn).
-  const slope = Math.min(params.absRefDecel ?? 11.8, Math.max(0, -a.accel) + (params.absRefMargin ?? 1))
-  a.ref = pedal > 0 ? Math.max(vMax, a.ref - slope * dt) : vMax
+  // Off the pedal the undriven fronts roll free, so the faster front IS the truck: re-sync (also clears a
+  // stale reference after a teleport or respawn). Never the rears: under throttle they spin above the road.
+  // On the pedal the reference follows the fastest wheel, slope-limited BOTH ways around the decel
+  // sensor: it falls no faster than the truck is measured to slow (+ margin) and rises no faster than it
+  // is measured to speed up (+ margin). BUG-191: the rise limit is what keeps a rear still spun up from a
+  // throttle lift out of the reference. Before it, lift-then-brake latched ref at the spinning rear
+  // (13 m/s with the truck at 4), every wheel read 70 % slip, all four valves dumped to zero, and with
+  // nothing braking the decel sensor read ~0, so ref crept down at only the 1 m/s² margin: the truck
+  // coasted 20–75 m where locked wheels stop in 1–5 m.
+  const margin = params.absRefMargin ?? 1
+  const down = Math.min(params.absRefDecel ?? 11.8, Math.max(0, -a.accel) + margin)
+  const up = Math.max(0, a.accel) + margin
+  a.ref = pedal > 0 ? Math.min(a.ref + up * dt, Math.max(vMax, a.ref - down * dt)) : Math.max(v[0], v[1])
   a.pulse = false
   a.active = !!params.abs && pedal > 0 && a.ref > (params.absMinSpeed ?? 2.2)
 

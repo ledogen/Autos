@@ -85,3 +85,5 @@ Every tool round re-sends your whole context, so cost grows with what you have R
 If the owner's answer to your card opens follow-on work (a held landing, a next round, a build waiting on a
 number), add `"blocks": "<that work, in plain words>"` to the card's JSON. A card that is only a look at
 finished work carries no `blocks`. The orchestrator sets `order`.
+
+**Owed cards with a list (owner, 2026-11-17):** put every numbered item or option on its own line (a real `\n` in the JSON `text`). A list inside a paragraph is hard to read on the page.

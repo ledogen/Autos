@@ -4,17 +4,32 @@
 // pad-only: main menu → new game (the setup page: mode → free roam, Casual + manual) → start, Start →
 // pause → settings, and the choices surviving a reload.
 //
-//   node test/pad-e2e.mjs [--port=3775] [--headed]     (needs a dev server already serving that port)
+//   node test/pad-e2e.mjs [--port=3775] [--headed]     (no --port: starts its OWN Vite on a free port, like cdp-smoke;
+//                                                      registered `browser: true` in gates.mjs, so run-all --browser runs it)
 //
 // The fake pad replaces navigator.getGamepads AFTER boot (gamepad.js looks it up every frame) and is
 // driven through window.__fp. PAD_PARAMS is reached by importing the exact module URL the app loaded:
 // after an edit Vite serves it as /src/gamepad.js?t=…, and a bare import would load a SECOND
 // instance — whose own poll loop then double-fires every button.
-import { launchChrome, connect, sleep, keyEvent } from './lib/cdp.mjs'
-const PORT = process.argv.find(a => a.startsWith('--port='))?.slice(7) ?? '3775'
-const { cleanup } = launchChrome('about:blank', { port: 9334, headed: process.argv.includes('--headed') })
+import { existsSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { createServer } from 'node:net'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { CHROME, launchChrome, connect, sleep, keyEvent } from './lib/cdp.mjs'
+if (!existsSync(CHROME)) { console.log(`SKIP (no Chrome at ${CHROME})`); process.exit(0) }
+const freePort = () => new Promise(r => { const s = createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)) }) })
+const given = process.argv.find(a => a.startsWith('--port='))?.slice(7)
+const PORT = given ?? await freePort()
+const CDP = await freePort()
+if (!given) {
+  const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
+  const vite = spawn(process.execPath, [join(ROOT, 'node_modules/vite/bin/vite.js'), '--port', String(PORT), '--strictPort'], { cwd: ROOT, stdio: 'ignore' })
+  process.on('exit', () => { try { vite.kill() } catch {} })
+}
+const { cleanup } = launchChrome('about:blank', { port: CDP, headed: process.argv.includes('--headed') })
 await sleep(1500)
-const c = await connect({ port: 9334 })
+const c = await connect({ port: CDP })
 const errs = []
 c.on('Runtime.exceptionThrown', (e) => errs.push(e.exceptionDetails.exception?.description))
 c.on('Runtime.consoleAPICalled', (e) => e.type === 'error' && errs.push(e.args.map(a => a.value).join(' ')))
@@ -68,9 +83,9 @@ s = await vs(); check(s.thr === 0, `unplug with RT floored -> throttle ${s.thr} 
 await js('__fp.b[7] = 0; __fp.on = true; __fp.b[5] = 1'); await sleep(300)
 s = await vs(); check(s.hb, `RB held -> handbrake on (hb=${s.hb})`)
 await js('__fp.b[5] = 0'); await sleep(200)
-// View held 1 s = reset.
-await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)
-s = await vs(); check(s.parked && s.v < 0.2, `View hold resets the truck, parked at rest (parked=${s.parked}, v=${s.v.toFixed(2)})`)
+// D-pad → held 1 s = reset (DEC-362: View's hold no longer resets).
+await js('__fp.b[15] = 1'); await sleep(1300); await js('__fp.b[15] = 0'); await sleep(2500)
+s = await vs(); check(s.parked && s.v < 0.2, `D-pad → hold resets the truck, parked at rest (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(300)
 s = await vs(); check(!s.parked, `RB tap while parked unlatches (parked=${s.parked})`)
 await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(300)
@@ -193,9 +208,9 @@ check(!await mapShown(), 'View closes the map again')
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
 check(!await mapShown(), 'B closes the map')
-// View held resets the truck, parked at rest, as the checks below found it.
-await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)
-s = await vs(); check(s.parked && s.v < 0.2, `after the map, View held puts the truck back parked at rest (parked=${s.parked}, v=${s.v.toFixed(2)})`)
+// D-pad → held resets the truck, parked at rest, as the checks below found it.
+await js('__fp.b[15] = 1'); await sleep(1300); await js('__fp.b[15] = 0'); await sleep(2500)
+s = await vs(); check(s.parked && s.v < 0.2, `after the map, D-pad → held puts the truck back parked at rest (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // Right stick = orbit RATE. Stopped, the view LINGERS where it was pointed (owner, 2026-10-20) until a
 // pedal is pressed; then the chase swings back behind.
 // Bearing of the camera around the truck, relative to directly behind it (deg).
@@ -209,14 +224,14 @@ await sleep(1500); const o2 = await off(); check(Math.abs(o2 - o1) < 3, `1.5 s a
 await sleep(2500); const o3 = await off(); check(Math.abs(o3 - o1) < 3, `stopped, ~4 s after release it still lingers (${o3.toFixed(0)} deg)`)
 // FEAT-194 part 1 + DEC-255: on the AUTOMATIC (this truck) LT at rest is the reverse pedal and releases the park
 // latch like gas (the manual keeps it a pure brake: test/park-brake.mjs). The LT hold backs the truck out, so the
-// View hold below puts it back parked at rest for the checks after.
+// D-pad → hold below puts it back parked at rest for the checks after.
 await js('__fp.b[6] = 0.6'); await sleep(150); await js('__fp.b[6] = 0'); await sleep(100)
 check(!(await vs()).parked, 'DEC-255: an LT tap while parked on the automatic releases the parking brake (reverse pedal)')
 await js('__fp.b[6] = 0.6'); await sleep(1500); await js('__fp.b[6] = 0'); await sleep(100)
 check(!(await vs()).parked, 'DEC-255: LT held 1.5 s on the automatic keeps it released (backing out)')
 await sleep(2000); const o4 = await off(); check(Math.abs(Math.abs(o4) - 180) < 15, `a brake pull from a stop (automatic: reverse, DEC-255) swings the view round to the front, camera.js reverseView (${o4.toFixed(0)} deg)`)
-await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)   // View hold: parked at rest again
-s = await vs(); check(s.parked && s.v < 0.2, `View hold re-parks the truck at rest after the reverse (parked=${s.parked}, v=${s.v.toFixed(2)})`)
+await js('__fp.b[15] = 1'); await sleep(1300); await js('__fp.b[15] = 0'); await sleep(2500)   // D-pad → hold: parked at rest again
+s = await vs(); check(s.parked && s.v < 0.2, `D-pad → hold re-parks the truck at rest after the reverse (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // B no longer aims (owner, 2026-10-21): held in the drive layout it is the icon menu. Off a route the
 // pad has no practice throw now; on one, the right stick aims and RB taps (checked below).
 const reticle = () => js('getComputedStyle(document.getElementById("aim-reticle")).display !== "none"')
@@ -244,6 +259,18 @@ check(hbHold && await js('__sk') === 1 && await js('__fk') === 1, `aiming: RB he
 // The hold's Space edge released the park latch; tap straight back in before the slope rolls it.
 await js('__fp.b[5] = 1'); await sleep(100); await js('__fp.b[5] = 0'); await sleep(300)
 check((await vs()).parked, 'a plain RB tap re-parks it')
+// BUG-193: LB held while the map layout is up (forced), then back to drive with LB still down — the clutch (Shift) engages.
+await js('window.__shk = 0; window.addEventListener("keydown", e => { if (e.key === "Shift") __shk++ }, true); window.__ma0 = __padMod.pad.mapActive; __padMod.pad.mapActive = () => true')
+await js('__fp.b[4] = 1'); await sleep(200)
+const shMap = await js('__shk')
+await js('__padMod.pad.mapActive = __ma0'); await sleep(200)
+check(shMap === 0 && await js('__shk') === 1, `LB held through the map's close: clutch down on the close (Shift in map ${shMap}x, after ${await js('__shk')}x)`)
+await js('__fp.b[4] = 0'); await sleep(150)
+// FEAT-255: a pad press ends hover; only a real mouse move gives it back.
+await js('__fp.b[13] = 1'); await sleep(100); await js('__fp.b[13] = 0'); await sleep(100)
+const mlPad = await js('__padMod.pad.mouseLive')
+await c.cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 300, y: 300 }); await c.cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 340, y: 320 }); await sleep(150)
+check(mlPad === false && await js('__padMod.pad.mouseLive') === true, `pad input sets pad mode (mouseLive ${mlPad}); a mouse move ends it (${await js('__padMod.pad.mouseLive')})`)
 // The pump has A (owner, 2026-10-21): while it is open (pumpActive forced), A is F held, not the upshift.
 // Off the pump F also aims a practice throw, so let that view hold run out after.
 await js('window.__pa0 = __padMod.pad.pumpActive; __padMod.pad.pumpActive = () => true; __fk = 0')
@@ -262,6 +289,11 @@ check(await menuOn() && await pick() === 'inv-icon' && await tag() === 'inventor
 await js('__fp.b[13] = 1'); await sleep(150); await js('__fp.b[13] = 0'); await sleep(150)
 check(await pick() === 'dmg-icon' && await tag() === 'vehicle condition', `D-pad down under B walks to the damage icon, the label follows (${await pick()} · ${await tag()})`)
 await js('__fp.b[12] = 1'); await sleep(150); await js('__fp.b[12] = 0'); await sleep(150)
+// FEAT-254: the left stick walks the B menu too, one step per deflection.
+await js('__fp.axes[1] = 1'); await sleep(200); await js('__fp.axes[1] = 0'); await sleep(150)
+const stDown = await pick()
+await js('__fp.axes[1] = -1'); await sleep(200); await js('__fp.axes[1] = 0'); await sleep(150)
+check(stDown === 'dmg-icon' && await pick() === 'inv-icon', `left stick down / up under B walks the icon menu (${stDown} then ${await pick()})`)
 await js('__fp.b[1] = 0'); await sleep(500)
 check(!before && await inv() && !await menuOn(), `releasing B opens the pick, the inventory (${before} -> ${await inv()})`)
 // FEAT-133: a card — the D-pad moves a highlight over it (first press places it), B backs out.
@@ -277,6 +309,7 @@ check(await inv(), 'a B tap opens the top pick (the inventory)')
 await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)   // B closes the inventory
 await js('document.getElementById("dmg-icon").click()'); await sleep(300)
 const walk = async (track, side, dir, n) => {
+  await js('__padMod.pad.mouseLive = true')   // FEAT-255: the synthetic pointerover below stands for a real mouse move
   await js(`document.querySelectorAll('#dmg-screen .ds-part[data-track="${track}"]')[${side}].dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))`)
   const seen = []
   for (let k = 0; k < n; k++) {

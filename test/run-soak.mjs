@@ -341,7 +341,7 @@ async function take (o) {
   // FEAT-104: every shop opens its screen on the brake; the jobs are its tab.
   if (SHOP_TYPES.has(o.type) && await until(() => vis('svc-screen'), 3000)) {
     if (FOOD_STORES.has(o.type)) await buyFood()   // EATING: the pack tops up on the same stop
-    await js('document.querySelector("#svc-screen [data-tab=jobs]")?.click(); document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+    await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
   }
   if (!await until(() => vis('mp-accept'), 15000)) {
     await skip(o, `no card: ${JSON.stringify(await js(`({ state: window.__mission().state, parked: window.__vs.parked, prompt: document.getElementById('poi-prompt')?.textContent ?? '', camp: !!document.getElementById('camp-panel')?.checkVisibility(), pump: !!document.getElementById('pump-display')?.checkVisibility(), svc: !!document.getElementById('svc-screen')?.checkVisibility() })`))}`)

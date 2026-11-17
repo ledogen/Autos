@@ -1172,7 +1172,7 @@ function viewLanes() {
     return `<div class="lv-og ${key}"><h3 class="subgrp">${title} <span class="count">${rows.length}</span></h3>${rows.map(o => `
       <div class="lv-ow${owedDone(o) ? ' answered' : ''}">
         <div class="lv-row"><span class="lv-tag">${esc(o.kind || '')}</span><span>${inline(esc(o.tk || ''))}</span></div>
-        <div class="txt">${inline(esc(o.text || ''))}</div>
+        <div class="txt">${inline(esc((o.text || '').replace(/[ \t]+(?=\(\d+\)\s|\d+[.)]\s+[A-Z])/g, '\n')))}</div>
         ${o.blocks ? `<div class="blocks">blocks: ${inline(esc(o.blocks))}</div>` : ''}
         ${o.dive ? `<div class="lv-row"><a class="lv-opt" href="/dives/${attr(o.dive)}.html" target="_blank" rel="noopener">open the deep dive</a>${diveTag(o.dive)}</div>` : `
         <div class="lv-opts">${owedOptions(o).map((opt, i) =>
