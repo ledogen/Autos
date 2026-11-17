@@ -166,13 +166,13 @@ the pad can use the inventory while a waiting tutorial card is up (`dlg-waits`, 
 FEAT-246 chase-camera collision (0.025 ms/frame; tunnel fix 23859b68) · FEAT-264 dead campfire (DEC-393; card
 camera-campfire-look) · machine batch FEAT-258, BUG-196, BUG-197, FEAT-204, FEAT-259 (DEC-372..374 standing, DEC-375
 DRAFT = the tire/stock numbers; card machine-1117-look).
-**RUNNING at 05:35:**
-- Orchestrator's own background job in CarGame-land-gps, land/integrate-1117c = main + land/feat-251-lawn (FEAT-251,
-  DEC-394, card feat251-lawn-drive): gates → wip/gates-integrate-c.log, smoke → wip/smoke-integrate-c.log. Green
-  ("RUN-ALL: all" + "SMOKE EXIT 0") → `git merge --ff-only land/integrate-1117c` on main, refresh the play build.
-- u, CarGame-spare-base, land/tut-seed-search-r2 (Opus): seed census ~1006 seeds (resumable
-  wip/tut-seed-search-r2/run.sh), then 5 candidates + sheets + card tutorial-seed-pick-r2. Pinned seed's Larry's →
-  station leg measured: max 38.7 %, 1005 m above 12 % of 2638 m.
+**RUNNING:** nothing (07:05). FEAT-251 lawn furniture landed (card feat251-lawn-drive; its vite :3888 in
+CarGame-land-211d is still up for the owner).
+**Tutorial seed re-search DONE** (land/tut-seed-search-r2 @ fb8b12af, docs only; study + sheets in
+CarGame-spare-base/wip/tut-seed-search-r2/, overview.jpg): 1000 new seeds, 14 pass the grade limit, 5 candidates on card
+tutorial-seed-pick-r2. Finding: NO seed makes the whole tutorial day gentle (0/1000 under 20 %); the cause is the
+router's 38 % ceiling = road character (DEC-064), the owner's call. On a pick: re-pin per RESULTS.md § "If chosen" + a
+DEC superseding DEC-351.
 **OPEN OWNER QUESTIONS from round 2:** (1) should the camera's wall ray also hit road geometry (tunnel walls/ceiling)?
 one-line mask, agent recommends yes. (2) DEC-028 + DEC-340 still say the bed toolbox is in the alpha, MILESTONES.md
 line 81 too; DEC-372 superseded only DEC-129: needs a new record once the owner confirms. (3) truck rolls over the
