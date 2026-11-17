@@ -1,6 +1,6 @@
 ---
 id: DEC-350
-status: standing
+status: superseded
 decided: 2026-11-16
 area: ui
 governs: FEAT-235, FEAT-34, cluster, gauge, speedometer, tachometer, ignition key, warning lights, bezel
