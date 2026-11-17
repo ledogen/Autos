@@ -1148,6 +1148,7 @@ float rsBakedShade () {
     modelActive = true
     modBody = root   // FEAT-204: AFTER the strip above, which would hide a small root child
     setMods(modWant)
+    setBedLook(...bedWant)   // FEAT-231
   }, undefined, (err) => console.warn('[vehicle-model] GLB load failed; keeping primitive truck:', err))
 
   // ── FEAT-204: bolt-on models (data/parts.js `model`; src/parts.js modModels picks the stems) ─────────
@@ -1177,6 +1178,43 @@ float rsBakedShade () {
     }
     for (const [stem, o] of mods) if (o) o.visible = modWant.includes(stem)
     applyHeadlights()   // the light bar's beam shape follows the fit
+  }
+
+  // ── FEAT-231 (DEC-352): the bed mat and the bedliner, as solids built from `spec.bed` (ranger.glb's bed
+  // interior shares RangerPaint with the whole body, so a recolour is not possible; no re-export). Each is ONE merged
+  // box mesh in body-local metres (carGroup is the body frame, as `bed` is). The mat: a black slab between the
+  // wheelhouses, the bed's length. The liner: floor + front wall + side walls + a cover over each wheelhouse, a hair
+  // inside the real surfaces. Owning the liner hides the mat (it lies over it). Shown only while owned (setBedLook).
+  let bedMat = null, bedLiner = null, bedWant = [false, false]
+  function _bedSolid (boxes, color, name) {
+    const geom = mergeGeometries(boxes.map(([x0, x1, y0, y1, z0, z1]) =>
+      new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0).translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2)).map((g) => g.toNonIndexed()))
+    const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, flatShading: true }))
+    mesh.name = name; mesh.receiveShadow = true
+    shadeInBore(mesh)
+    carGroup.add(mesh)
+    return mesh
+  }
+  function setBedLook (mat, liner) {
+    bedWant = [mat, liner]
+    const b = spec.bed
+    if (!modBody || !b) return
+    const e = 0.012   // skin thickness
+    if (mat && !bedMat) {   // 1 cm proud of the rib crests; stops short of the front wall and the tailgate
+      bedMat = _bedSolid([[-b.wheelhouseHalfW, b.wheelhouseHalfW, b.floorY - 0.005, b.floorY + 0.01, b.frontZ + 0.015, b.tailZ - 0.015]], 0x0b0b0c, 'bed-mat')
+    }
+    if (liner && !bedLiner) {
+      const w = b.innerHalfW, top = b.railY - 0.02, f = b.frontZ, t = b.tailZ - 0.003
+      const arch = (sx) => [Math.min(sx * b.wheelhouseHalfW, sx * (w + 0.003)), Math.max(sx * b.wheelhouseHalfW, sx * (w + 0.003)), b.floorY, b.wheelhouseY + e, b.archZ0 - e, b.archZ1 + e]
+      bedLiner = _bedSolid([
+        [-w, w, b.floorY - 0.005, b.floorY + 0.018, f, t],                       // floor
+        [-w, w, b.floorY, top, f - 0.003, f + e],                                // front wall
+        [w - e, w + 0.003, b.floorY, top, f, t], [-w - 0.003, -w + e, b.floorY, top, f, t],   // sides
+        arch(1), arch(-1),                                                       // wheelhouse covers
+      ], 0x2b2d31, 'bed-liner')
+    }
+    if (bedLiner) bedLiner.visible = liner
+    if (bedMat) bedMat.visible = mat && !liner
   }
 
   // PERF-21: every light-COUNT state the lamps can put the scene in. A lit material's program is
@@ -1250,5 +1288,5 @@ float rsBakedShade () {
 
   shadeInBore(carGroup)   // BUG-112: the procedural parts (wheels, the primitive shell)
   return { carGroup, wheelMeshes, syncMeshesToState, setBodyColor, addLightGui, setNightFactor, setHeadlightMode, getHeadlightMode,
-    prewarmLightPrograms, compileLightState, LIGHT_STATE_COUNT, setBoreShade, setBakedShade, headlightSpots, setMods }   // BUG-133: the billboards read the head spots
+    prewarmLightPrograms, compileLightState, LIGHT_STATE_COUNT, setBoreShade, setBakedShade, headlightSpots, setMods, setBedLook }   // BUG-133: the billboards read the head spots
 }
