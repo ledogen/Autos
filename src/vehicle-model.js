@@ -1208,7 +1208,7 @@ float rsBakedShade () {
         [-w, w, b.floorY, top, f - 0.003, f + e],                                // front wall
         [w - e, w + 0.003, b.floorY, top, f, t], [-w - 0.003, -w + e, b.floorY, top, f, t],   // sides
         arch(1), arch(-1),                                                       // wheelhouse covers
-      ], 0x1c1d20, 'bed-liner')
+      ], 0x2b2d31, 'bed-liner')
     }
     if (bedLiner) bedLiner.visible = liner
     if (bedMat) bedMat.visible = mat && !liner
