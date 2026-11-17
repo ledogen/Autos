@@ -206,7 +206,7 @@ export const GATES = [
   { file: 'hilift.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-138: the hi-lift jack (src/hilift.js) on the real stepPhysics — a truck on its side heaved toward upright comes back onto its wheels, cut at the wheels\' balance point inside the 8 s cap; the 5 s cooldown, a truck on its wheels and an ended run all refuse; from the roof one long press rights it; a reliability grid (roof/side × level/±8°/±15° × poses × directions): every level one in one press, rolling < 4 rad/s, every slope one within two' },
   { file: 'abs-stop.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
-    desc: 'ABS (src/abs.js): 25 m/s full-pedal stops off/on at μ 0.8/0.35 — no lock above cut-out, 3–15 Hz front cycling, ≤ 1.2× locked distance, steers where locked fronts plough' },
+    desc: 'ABS (src/abs.js): 25 m/s full-pedal stops off/on at μ 0.8/0.35 — no lock above cut-out, 3–15 Hz front cycling, ≤ 1.2× locked distance, steers where locked fronts plough; BUG-191 full-throttle lift then brake one step later (5–40 km/h, pedal 30/60/100 %): ABS on ≤ 1.5× ABS off and never all four cylinders vented > 0.1 s above cut-out' },
   { file: 'tire-contact.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
     desc: 'FEAT-70 tire cylinder contact (src/tire-contact.js): rolling onto 15/30 cm kerbs (square, chamfered, at 30°) the hub rest height climbs within 2 mm of a dense exact cylinder with no seam jumps; a kerb beside the tire (outside its width) lifts nothing; flat ground exact; a cross-slope keeps its tilted normal; a kerb edge pushes back radially; a buried hub reads the unbounded half-space depth' },
   { file: 'diff-clutch.mjs', subsystem: 'physics', cost: 'fast', extraDeps: [],
