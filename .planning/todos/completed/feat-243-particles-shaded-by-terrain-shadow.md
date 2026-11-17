@@ -1,7 +1,7 @@
 ---
 id: FEAT-243
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-16
 source: owner, 2026-11-16 — "Wheel dust and smoke that's in the shadow of a mountain still appears as Lit by sunlight Is there a cheap way we can change the Brightness of the particles from a simple shade test I'm okay if the particles just inherit the lighting of the ground below them if that's cheaper"
@@ -12,8 +12,12 @@ lane: unplaced
 # FEAT-243: Wheel dust and smoke take the shade of the ground under them
 
 ## Next steps
-Owner look: `wip/feat-243/feat243-sheet2.jpg` in the spare worktree (columns: main | horizon test | shadow map). Built on
-`land/feat-243-particle-shade`; lands with the owner's OK.
+None: closed 2026-11-17, landed via `land/feat-243-particle-shade`.
+
+**Resolution.** Dust, tire smoke and dirt spray read the terrain's shade from the `sunFar` shadow map (one compare per
+vertex at the puff centre) and dim toward `particleShadeTint()` in shade. NOT covered: the truck's own shadow on its
+smoke (the near `sun` map is not sampled), tree shadows (baked atlas, not in `sunFar`), shade beyond ±256 m (FEAT-249),
+and non-sun lights (headlights, bay light, campfire: the particles stay unlit by them). Low tier has no shadows: no shade.
 
 ## Summary
 Dust and smoke in a mountain shadow render as sunlit. Darken them by a cheap shade test, or let them inherit the lighting of the ground below.
@@ -36,11 +40,12 @@ frame) and do not set `lights: true` on the materials (drags in every light unif
 - [x] Particles in terrain shade are darker than particles in sun
 - [x] Cost measured and reported
 - [x] Shade read from the far shadow map in the particle shader; the CPU horizon test is gone
-- [ ] Owner has looked
+- [x] Owner has looked
 
 ## Decisions
 - 2026-11-17, owner: "can't we ask the graphics card about the shadow map?" The CPU horizon test (f91283ff) is retired
   in favour of a shadow-map lookup in the particle vertex shader (the Approach paragraph above).
+- 2026-11-17, owner (card feat243-particle-shade-look): "Good: land it". The shadow-map build ships as is.
 
 ## Files
 `src/dust.js` (SUN_SHADE_UNIFORMS / SUN_SHADE_VERT) · `src/smoke.js` · `src/dirt-spray.js` · `src/sky.js`
@@ -58,3 +63,5 @@ frame) and do not set `lights: true` on the materials (drags in every light unif
   Grid proof (r2-grid.log): 169 discs on a 6 m grid over a shadow edge, read off the frame: horizon-lit median 1.00,
   horizon-shaded 0.445 of their untinted brightness; 11/134 disagree, all on the edge. Particle update 1.22/1.40 ms/s
   (new) vs 1.76/1.63 (horizon build), A-B-A-B; tint push +0.06–0.08 ms/s. Affected 12/12 green; cdp-smoke PASS 35 steps, 0 console errors.
+- 2026-11-17 (s2, landing): owner "Good: land it" (card feat243-particle-shade-look). Merged main (5bb6fc54), no
+  conflicts; campfire has its own materials, debris shares nothing with dust. Closed.

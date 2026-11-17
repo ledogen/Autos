@@ -24,3 +24,7 @@ The far cascade is `sunFar` in main.js (2048², 0.25 m/texel, redrawn every 64 m
 - [ ] No visible lit rim past the shadow map when in a mountain's shade
 - [ ] Cost measured (GPU active cycles, spikes)
 - [ ] Owner has looked
+
+## Log
+- 2026-11-17 (s2): FEAT-243 (landed) has dust, smoke and spray read `sunFar.shadow.matrix` / `sunFar.shadow.map`
+  every frame (main.js, SUN_SHADE_UNIFORMS), so a bigger far box needs no particle change.
