@@ -170,7 +170,7 @@ DRAFT = the tire/stock numbers; card machine-1117-look).
 no untaken dive):**
 - p, CarGame-perf, land/asset-90-dead-campfire (Opus): ASSET-90 ashes-only campfire model + wiring into FEAT-264's
   dead state. Card asset90-dead-campfire-look.
-- s, CarGame-land-gps, land/housekeeping-1117 (Sonnet): MILESTONES.md lane rows for the unplaced tickets; pad-e2e
+- (LANDED) housekeeping: MILESTONES.md lane rows for 38 tickets; pad-e2e
   registered as a browser-only gate. Docs/test only: land it when it reports green.
 - Orchestrator's own: `node test/gpu-reset.mjs` on main → wip/orch/gpu-reset-main-1117.log (was the feat-235-r3
   impostor failure load or real?).
