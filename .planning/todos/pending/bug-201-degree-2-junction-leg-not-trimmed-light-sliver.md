@@ -89,4 +89,4 @@ sheet.mjs.
   0/399 (random), 21/25 → 0/25 (BUG-179 sites). Fingerprint vs main: network, profiles, poi, carve, water, props
   identical; junctions, tiles, surface differ (seed-7 window: 30 of 410,881 physics lattice points moved, ≤ 1.8 cm,
   all inside a deg-2 node's mouth radius). Affected gates 78/78 green (serial; play-area held back as manual).
-  Sheet: the flaps show on main at 7 of the 9 bends (the mild 0.19 m one is not visible at 40 m), none after.
+  Sheet: the flaps show on main at 8 of the 9 bends (the mild 0.19 m one is not visible at 40 m), none after.
