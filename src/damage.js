@@ -658,9 +658,10 @@ export const DAMAGE_PARAMS = {
   // anything, so a truck parked against a fence would be "hit" 60 times a second. Two guards:
   //
   // impactMinMph — the floor a contact must clear to be an impact at all. Resting on the ground is
-  //   worth about 0.09 mph equivalent (one step of the truck's own weight), so 2 mph clears the
-  //   noise by more than an order of magnitude while still catching a gentle nudge into a post.
-  impactMinMph:    2,
+  //   worth about 0.09 mph equivalent (one step of the truck's own weight). 5 mph (DEC-395, owner
+  //   2026-11-17, was 2): a parking-speed nudge costs nothing; his run log showed a 2.75 mph bump
+  //   wearing the radiator and a headlight.
+  impactMinMph:    5,
   // A step only counts toward a collision's impulse while the contact FORCE is above this. The
   // engine's per-step impulses are summed across a burst to get the collision's true impulse, and
   // without a floor a truck leaning on what it hit would keep adding to it forever.
