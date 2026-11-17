@@ -1,8 +1,8 @@
 /**
  * src/smoke.js — AUTOS tire smoke (FEAT — visual polish), plus FEAT-51 hood steam
  *
- * Hood steam rides the same pool as a fifth emitter (see STEAM_* below): an overheating engine is
- * the one non-tire thing that smokes, and a second system would be a second draw call for it.
+ * Hood steam rides the same pool as a fifth emitter (see STEAM_* below), and the dead campfire's wisps
+ * (ASSET-90, DEC-397) as a sixth (FIRE_* below): a second system would be a second draw call for each.
  *
  * Grey burnout/wheelspin smoke, structurally identical to src/dust.js's instanced-billboard
  * puff pool, and built by its makeBillboardMesh (see that file's header for the rendering
@@ -66,6 +66,25 @@ const HOOD_Y            = 1.0  // m above ground — the Ranger's hood line
 const HOOD_BACK         = 0.35 // m behind the front axle — over the engine, not the grille
 const HOOD_HALF_W       = 0.55 // m — steam leaks along the whole hood seam, not one point
 
+// ASSET-90 / DEC-397 — the dead campfire's smoke: thin grey wisps off the ash heap, rising almost straight
+// up, each one swelling as it climbs and fading out. Fed by setFireSmoke (main.js, from CampfireFx).
+// ~FIRE_RATE × mean life ≈ 13 puffs alive: well under the live fire's 32-ember pool, in a draw this
+// mesh already makes. Unlit like every puff here: setLight dims it at night, so it is never self-lit.
+export const FIRE_SMOKE = {
+  rate:     2.5,      // puffs/s
+  lifeMin:  4.0,      // s
+  lifeMax:  6.0,
+  sizeMin:  0.10,     // m — billboard size at birth (the ash heap is ~0.25 m across)
+  sizeMax:  0.18,
+  grow:     6.0,      // final size = birth × (1 + grow): ~0.7–1.3 m at the top of the rise
+  riseMin:  0.22,     // m/s — constant: no settle, the wisp keeps climbing until it fades
+  riseMax:  0.34,
+  spread:   0.10,     // m — birth scatter across the heap
+  drift:    0.06,     // m/s — lateral wander, killed by DRAG, so the column stays mostly vertical
+  opacity:  0.16,     // peak alpha — subtle
+  color:    0x8c8a86, // ash grey
+}
+
 export class TireSmokeSystem {
   /**
    * @param {THREE.Scene} scene
@@ -125,14 +144,20 @@ export class TireSmokeSystem {
         rot: 0,
         r: 1, g: 1, b: 1,
         peak: PEAK_OPACITY,
+        grow: SCALE_GROW,
+        settle: SETTLE,
       })
     }
     this._cursor = 0
-    this._emitAccum = [0, 0, 0, 0, 0]   // four wheels + hood steam
+    this._emitAccum = [0, 0, 0, 0, 0, 0]   // four wheels + hood steam + the dead campfire
+    this._fire = null                    // {x,y,z} of the dead fire's ash heap, or null (setFireSmoke)
     this._smoothIntensity = [0, 0, 0, 0]   // per-wheel ramped intensity (RAMP_TIME below)
     this._smokeColor = new THREE.Color()
     this._tmpColor = new THREE.Color()
   }
+
+  /** ASSET-90: the dead campfire smokes from `at` ({x,y,z}, world), or stops (null). Read each update. */
+  setFireSmoke (at) { this._fire = at }
 
   /** Show/hide the smoke sheet (testing-lab teardown parity with dust — visibility only). */
   setVisible (visible) { this._mesh.visible = visible }
@@ -162,6 +187,8 @@ export class TireSmokeSystem {
     part.life = LIFE_MIN + (LIFE_MAX - LIFE_MIN) * (0.4 + 0.6 * intensity) * (0.8 + Math.random() * 0.4)
     part.scale0 = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * Math.random()
     part.peak = (steam ? STEAM_OPACITY : PEAK_OPACITY) * Math.min(1, 0.35 + intensity)
+    part.grow = SCALE_GROW
+    part.settle = SETTLE
 
     part.x = x + (Math.random() - 0.5) * 0.3
     part.y = y + 0.08 + Math.random() * 0.12
@@ -176,6 +203,26 @@ export class TireSmokeSystem {
     part.vz = (Math.random() - 0.5) * SPREAD + backZ * kick
   }
 
+  _spawnWisp (at) {
+    const F = FIRE_SMOKE, part = this._alloc(), j = 0.9 + Math.random() * 0.2
+    this._tmpColor.set(F.color).multiplyScalar(j)
+    part.r = this._tmpColor.r; part.g = this._tmpColor.g; part.b = this._tmpColor.b
+    part.rot = Math.random() * Math.PI * 2
+    part.active = true
+    part.age = 0
+    part.life = F.lifeMin + (F.lifeMax - F.lifeMin) * Math.random()
+    part.scale0 = F.sizeMin + (F.sizeMax - F.sizeMin) * Math.random()
+    part.peak = F.opacity
+    part.grow = F.grow
+    part.settle = 0
+    part.x = at.x + (Math.random() - 0.5) * F.spread
+    part.y = at.y
+    part.z = at.z + (Math.random() - 0.5) * F.spread
+    part.vx = (Math.random() - 0.5) * 2 * F.drift
+    part.vy = F.riseMin + (F.riseMax - F.riseMin) * Math.random()
+    part.vz = (Math.random() - 0.5) * 2 * F.drift
+  }
+
   _pack () {
     const pos = this._aPos.array, par = this._aParam.array, col = this._aColor.array
     let n = 0
@@ -187,7 +234,7 @@ export class TireSmokeSystem {
       const rampIn = Math.min(1, t * 6)
       const j3 = n * 3
       pos[j3] = part.x; pos[j3 + 1] = part.y; pos[j3 + 2] = part.z
-      par[j3] = part.scale0 * (1 + SCALE_GROW * t)
+      par[j3] = part.scale0 * (1 + part.grow * t)
       par[j3 + 1] = part.rot
       par[j3 + 2] = part.peak * fade * rampIn
       col[j3] = part.r; col[j3 + 1] = part.g; col[j3 + 2] = part.b
@@ -247,7 +294,7 @@ export class TireSmokeSystem {
       if (!part.active) continue
       part.age += dt
       if (part.age >= part.life) { part.active = false; continue }
-      part.vy -= SETTLE * dt
+      part.vy -= part.settle * dt
       const dragF = Math.max(0, 1 - DRAG * dt)
       part.vx *= dragF
       part.vz *= dragF
@@ -345,6 +392,12 @@ export class TireSmokeSystem {
         this._spawn(px + r.x, py + r.y, pz + r.z, steam, 0, 0, 0, true)
       }
     } else this._emitAccum[4] = 0
+
+    // ASSET-90: the dead campfire's wisps — no truck in it at all, just a point and a rate.
+    if (this._fire) {
+      this._emitAccum[5] += FIRE_SMOKE.rate * dt
+      while (this._emitAccum[5] >= 1) { this._emitAccum[5] -= 1; this._spawnWisp(this._fire) }
+    } else this._emitAccum[5] = 0
 
     this._pack()
   }

@@ -11061,6 +11061,7 @@ function loop (t) {
   // same looseSurfaceFactor too: smoke reads it INVERTED (full on pavement, a thin floor off it)
   // while dust and spray read it forward. No lab special-case here — looseSurfaceFactor answers for
   // the lab itself (its own surface, on the pavement effect class), so all four consumers agree.
+  smokeSystem.setFireSmoke(campfire.smokeSource())   // ASSET-90: the dead campfire's wisps ride this pool (DEC-397)
   smokeSystem.update(frameTime, vehicleState, RANGER_PARAMS, _fxGroundY, looseSurfaceFactor)
 
   // Dirt spray — same render-pose timing and ground sampler; additionally gated by

@@ -19,6 +19,8 @@
 //     jitter is what makes nearby ground "move" without a shadow map). Scaled by the sky's
 //     nightFactor the same way the headlight pools are (vehicle-model.js LIGHT_ENV): faint by day,
 //     full at night.
+//   • DEAD (FEAT-264, ASSET-90): the ashes-only model, nothing lit, and thin grey smoke off the heap. The
+//     smoke is NOT built here: smokeSource() names the point and smoke.js's puff pool draws it (DEC-397).
 //
 // NO SHADOWS FROM THE FIRE, for now (owner, 2026-10-01). A shadow-casting PointLight renders six
 // extra shadow passes (a cube map); with no camp props on the pad yet there is nothing near the fire
@@ -184,6 +186,7 @@ export class CampfireFx {
     this._q = new THREE.Quaternion()
     this._v = new THREE.Vector3()
     this._s = new THREE.Vector3()
+    this._smokeAt = new THREE.Vector3()
 
     const live = getModel('campfire').then((rec) => {
       const inst = rec.template.clone(true)
@@ -244,6 +247,15 @@ export class CampfireFx {
     for (const m of this._hotCoals) m.visible = !dead
     for (const m of this._coalMats) m.emissiveIntensity = dead ? 0 : CAMPFIRE_PARAMS.coalGlow
     if (dead) { this._embAlive = 0; this._embers.count = 0 }
+  }
+
+  /**
+   * ASSET-90 / DEC-397: where the dead fire smokes from (the FireFlameAnchor on the ash heap, world space), or null
+   * while it burns or no camp is up. main.js hands it to TireSmokeSystem.setFireSmoke each frame: the wisps ride that
+   * pool and its draw (smoke.js FIRE_SMOKE), so this module stays free of particles of its own.
+   */
+  smokeSource () {
+    return this.root.visible && this._dead ? this._rig.getWorldPosition(this._smokeAt) : null
   }
 
   /** Put it out. The light leaves the light loop entirely (visible=false), so a cold camp costs nothing. */
