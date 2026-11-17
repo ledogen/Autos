@@ -64,7 +64,7 @@ unchanged (one assignment per deg-2 leg; the ribbons sweep fewer sections), so n
 - [x] The owner's hypothesis (legs not trimmed at a deg-2 junction) confirmed or replaced
 - [x] Census on random seeds: how many degree-2 junctions show it, before → after
 - [x] Fixed at the root with a gate that fails before and passes after; fingerprint differences explained
-- [ ] Before/after screenshots for the owner
+- [x] Before/after screenshots for the owner (`wip/bug-201/sheet.jpg`, 9 bends: #17, 5 ordinary, 3 BUG-179 sites)
 
 ## Decisions
 - 2026-11-17, owner: "ticket and fix it"
@@ -88,4 +88,5 @@ sheet.mjs.
 - 2026-11-17 (lane B): fix + gate `deg2-leg-trim` (red on main 1.02 / 0.77 / 1.31 m, green after). Census 79/399 →
   0/399 (random), 21/25 → 0/25 (BUG-179 sites). Fingerprint vs main: network, profiles, poi, carve, water, props
   identical; junctions, tiles, surface differ (seed-7 window: 30 of 410,881 physics lattice points moved, ≤ 1.8 cm,
-  all inside a deg-2 node's mouth radius).
+  all inside a deg-2 node's mouth radius). Affected gates 78/78 green (serial; play-area held back as manual).
+  Sheet: the flaps show on main at 7 of the 9 bends (the mild 0.19 m one is not visible at 40 m), none after.
