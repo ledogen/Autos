@@ -12,7 +12,8 @@ lane: unplaced
 # FEAT-243: Wheel dust and smoke take the shade of the ground under them
 
 ## Next steps
-A free lane: find the cheapest shade test and show before/after.
+Owner look: `wip/feat-243/feat243-sheet.jpg` (top: hill shade before | after; bottom: sun, unchanged). Built on
+`land/feat-243-particle-shade`; lands with the owner's OK.
 
 ## Summary
 Dust and smoke in a mountain shadow render as sunlit. Darken them by a cheap shade test, or let them inherit the lighting of the ground below.
@@ -21,6 +22,14 @@ Dust and smoke in a mountain shadow render as sunlit. Darken them by a cheap sha
 Real-time shadows are off (DEC-227), so find what the terrain uses for its shading (baked or analytic) and sample that at the emitter. Measure the cost; no new per-particle work on the main thread if it can be avoided.
 
 ## Tracker
-- [ ] Particles in terrain shade are darker than particles in sun
-- [ ] Cost measured and reported
+- [x] Particles in terrain shade are darker than particles in sun
+- [x] Cost measured and reported
 - [ ] Owner has looked
+
+## Log
+- 2026-11-16 (spare lane): terrain shade is the sun's realtime cascades (`sunFar` ±256 m, terrain casts); no CPU
+  value existed, so `sunVisibility` (sky.js) runs a 20-sample horizon test on `analyticHeight` at the truck, re-run
+  per 1 m / 0.25 s; `particleShadeTint` = particleLight(key × vis) / particleLight(key), baked into dust/smoke/spray
+  colour at spawn (sparks untouched). Cost: +0.15 ms/s main thread (≈ 0.05 ms per sample), draw calls unchanged. Not
+  covered: tree shadows (baked atlas), the truck's own shadow, POIs, headlights/bay light (particles are unlit).
+  Gate particle-shade; affected 12/12 green; smoke boot,story,tires PASS.
