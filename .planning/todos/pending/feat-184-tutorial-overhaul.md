@@ -509,7 +509,7 @@ Each has a recommendation there.
    A returning player who picks the tutorial gets a second load at the card. *Rec: accept it; first-timers never see it.*
 2. **Which world a played tutorial continues in.** It ends at the tutorial seed's burger joint; a returning player's
    run was a random world. *Rec: a run that plays the tutorial is played on the tutorial seed (as the first one is).*
-3. **The day counter.** Costs ride the day (DEC-025: dayTier = 1.065^(day − 1), day 0 counts as day 1). A skip enters
+3. **The day counter.** (Round 3, DEC-360/364: renumbered for the player's eyes only; every economy reader counts `econDayOf(day) = day - 1`, so nothing moved.) Costs ride the day (DEC-025: dayTier = 1.065^(day − 1), day 0 counts as day 1). A skip enters
    free will on day 0 at 19:30, a played tutorial on day 1 at 19:30. The tutorial player's first working morning is
    day 2 (1.065×) against the skipper's day 1 (1.00×), and stays one step up for the whole run. *Rec: both enter free will on the same day number;
    the tutorial's 24 h are the day before.*
@@ -599,3 +599,16 @@ Each has a recommendation there.
   the recovery menu opens as it ends. cdp-smoke boot,opening PASS with the new tow-card assertion.
 2026-11-16 (bookkeeping sweep): box "smoke opening step plays the whole sequence" ticked: 03fe4c37 / 122a606f walk the rebuilt order; full smoke PASS 33 steps incl. `opening` (wip/orch/smoke-1116-fresh2.log). Slice 4 merged 5efe7acb.
 - 2026-11-17 lane a: round 3 built on land/tut-round3 (action cards `until`, tire lock, reset, day 0/1, Larry's two cards, View hold). Affected gates run; cdp-smoke steps updated for the day numbers and waiting cards, not run.
+- 2026-11-17 lane a (land/tut-round3): the renumbering moves NO economy number (DEC-364, draft). Everything keyed on the day number reads `econDayOf(day) = day - 1` (economy.js): dayTier + terms via main.js getDay, expeditionGrade (run-end), stationPriceFactor (fuel jitter), the moon phase; offer-board's minDay gate reads `floor(bornH/24)` (was +1, clockH is 24 h higher now). Also found and unaffected: runLog's day stamps (new numbers only), the midnight overlay (relative), the HUD clock/offer deadlines (display). Main vs branch, same elapsed time since free will opened (grades B,B; minDay 3 gate at 12:00):
+  | run-day | main day | branch day | tier main | tier branch | grade m/b | minDay 3 m/b |
+  | 1 | 0 | 1 | 1.00 | 1.00 | S/S | no/no |
+  | 2 | 1 | 2 | 1.00 | 1.00 | S/S | no/no |
+  | 3 | 2 | 3 | 1.07 | 1.07 | S/S | no/no |
+  | 4 | 3 | 4 | 1.13 | 1.13 | S/S | yes/yes |
+  | 5 | 4 | 5 | 1.21 | 1.21 | S/S | yes/yes |
+  | 6 | 5 | 6 | 1.29 | 1.29 | S/S | yes/yes |
+  | 7 | 6 | 7 | 1.37 | 1.37 | S/S | yes/yes |
+  | 8 | 7 | 8 | 1.46 | 1.46 | A/A | yes/yes |
+  | tutorial | -1 | 0 | 1.00 | 1.00 | S/S | n/a |
+  Pinned in test/economy.mjs (DEC-364 check) and test/offer-board.mjs (LSD early/late split now at bornH 72, 4-day window). tools/run-log-summary.mjs labels day 0 "(tutorial)"; its hour maths was day-offset-free. OLD SAVES: a pre-round-3 free-will save (day 0+) loads with the day counter one lower than a new run's and costs one tier lower per day (econDay = day - 1 on the old number); an old mid-tutorial save (day -1) stays in the tutorial and ends it at the new free-will clock. No migration written (dev saves, no player has one; a few lines would not cover offers' bornH and fedUntilH).
+- 2026-11-17 lane a: cdp-smoke fixed for round 3 (the key, V, the spare try, L, park, breakfast, skipMenus' key); full smoke result in the lane report. pad-e2e's two View-hold resets now hold D-pad right.
