@@ -794,6 +794,55 @@ const STEPS = [
     check(back === have, `potatoes across save → reload → Continue: ${have} → ${back}`)
     console.log(`  cook: 2→1 raw, 0→1 cooked, +${(dh * 60).toFixed(1)} min; hold kit ${withKit.toFixed(2)} h / none ${noKit.toFixed(2)} h / away ${away.toFixed(2)} h; save ${have} → ${back}`)
   }],
+  ['deadFire', async () => {
+    // FEAT-264 + ASSET-90 (DEC-393): a camp sleep over two hours swaps the live fire for the ashes-only model, and a new
+    // camp lights it again. Runs after story: SMOKE_STEPS=boot,story,deadFire. ASSET90_SHOTS=1 also takes the day / dusk
+    // pictures into wip/asset-90/ (live, the pre-ASSET-90 dead look, the new one; wide and close).
+    const fire = () => js(`(() => { const r = window.sky.scene.getObjectByName('campfire'); if (!r || !r.visible) return null
+      const has = (c, m) => { let f = false; c.traverse(o => { if (o.isMesh && [].concat(o.material).some(x => x.name.includes(m))) f = true }); return f }
+      return { live: r.children.some(c => c.visible && has(c, 'FireLog')), dead: r.children.some(c => c.visible && has(c, 'FireCinder')) } })()`)
+    const openCamp = async () => {
+      await js(`[...document.querySelectorAll('.lil-gui .controller')].find(c => c.textContent.trim() === 'skip to camp dialogue')?.querySelector('button')?.click()`)
+      check(await js('document.body.classList.contains("camp-on")'), 'no camp pad at the truck for the camp shortcut')
+    }
+    await openCamp()
+    check(await until(async () => (await fire())?.live === true && !(await fire()).dead, 8000), `a fresh camp does not show the live fire: ${JSON.stringify(await fire())}`)
+    const shots = !!process.env.ASSET90_SHOTS
+    const snap = async (f) => { if (!shots) return; mkdirSync('wip/asset-90', { recursive: true }); await frames(20, 1500)
+      writeFileSync(`wip/asset-90/${f}`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    const toHour = (h) => js(`window.__day().advanceMinutes(Math.round((((${h} - window.__day().clockH()) % 24 + 24) % 24) * 60))`)
+    // wide: 5 m out and 2.6 m up, the truck behind the fire; close: 1.3 m out, 0.9 m up, looking down into the ring
+    const look = (d, up) => js(`(() => { const p = new window.__vs.position.constructor(); window.sky.scene.getObjectByName('campfire').getWorldPosition(p)
+      const v = window.__vs.position, a = Math.atan2(p.x - v.x, p.z - v.z), cx = p.x + Math.sin(a) * ${d}, cz = p.z + Math.cos(a) * ${d}, cy = p.y + ${up}
+      const dx = p.x - cx, dy = p.y + 0.05 - cy, dz = p.z - cz
+      window.__view(cx, cy, cz, Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))) })()`)
+    const pair = async (tag) => { await look(5, 2.6); await snap(`${tag}-wide.png`); await look(1.3, 0.9); await snap(`${tag}-close.png`) }
+    if (shots) { await toHour(13); await pair('live-day'); await toHour(19.6); await pair('live-dusk') }
+    if (shots) await tap('c', { shift: true })   // back to the camp camera so the card's buttons are live
+    const shown = (id) => js(`(b => b && getComputedStyle(b).display !== "none")(document.getElementById("${id}"))`)
+    check(await until(() => shown('cp-sleep'), 3000), 'the camp card offers no sleep')
+    await js('document.getElementById("cp-sleep").click()')
+    await js('document.getElementById("cp-hours").value = "8"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
+    const h0 = await js('window.__day().clockH()')
+    await js('document.getElementById("cp-sleep-go").click()')
+    check(await until(async () => (await js('window.__day().clockH()')) > h0 + 2.5, 8000), 'the 8 h camp sleep did not run')
+    check(await until(async () => (await fire())?.dead === true && !(await fire()).live, 8000), `after an 8 h camp sleep the fire is not the dead model: ${JSON.stringify(await fire())}`)
+    if (shots) {
+      const old = (on) => js(`window.sky.scene.getObjectByName('campfire').children.forEach(c => { let l = false, d = false
+        c.traverse(o => { if (o.isMesh) for (const x of [].concat(o.material)) { l ||= x.name.includes('FireLog'); d ||= x.name.includes('FireCinder') } })
+        if (l) c.visible = ${on}; if (d) c.visible = ${!on} })`)
+      for (const [h, t] of [[13, 'day'], [19.6, 'dusk']]) {
+        await toHour(h); await until(() => js('!document.getElementById("midnight-card").classList.contains("on")'), 8000)
+        await pair(`dead-${t}`); await old(true); await pair(`old-${t}`); await old(false)
+      }
+      await tap('c', { shift: true })
+    }
+    await js('document.getElementById("cp-break")?.click()')
+    check(await until(async () => !await js('document.body.classList.contains("camp-on")'), 3000), 'break camp left the camp scene up')
+    await openCamp()
+    check(await until(async () => (await fire())?.live === true && !(await fire()).dead, 4000), `a new camp after the dead one does not relight: ${JSON.stringify(await fire())}`)
+    await js('document.getElementById("cp-break")?.click()')
+  }],
   ['tires', async () => {
     // SM-3 roadside tire work (owner, 2026-10-22): using the spare or the plug kit opens the damage
     // screen's picker; nothing happens until a tire is picked and the timed button confirmed. The
