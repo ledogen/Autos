@@ -64,4 +64,5 @@ frame) and do not set `lights: true` on the materials (drags in every light unif
   horizon-shaded 0.445 of their untinted brightness; 11/134 disagree, all on the edge. Particle update 1.22/1.40 ms/s
   (new) vs 1.76/1.63 (horizon build), A-B-A-B; tint push +0.06–0.08 ms/s. Affected 12/12 green; cdp-smoke PASS 35 steps, 0 console errors.
 - 2026-11-17 (s2, landing): owner "Good: land it" (card feat243-particle-shade-look). Merged main (5bb6fc54), no
-  conflicts; campfire has its own materials, debris shares nothing with dust. Closed.
+  conflicts; campfire has its own materials, debris shares nothing with dust. Affected 12/12 green, gpu-reset PASS, cdp-smoke PASS 36 steps / 0 errors; grid on
+  seed 63850: shaded discs 0.464, lit 1.000 (wip/feat-243/land-check.jpg). Closed.
