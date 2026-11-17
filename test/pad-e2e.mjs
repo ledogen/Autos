@@ -4,17 +4,32 @@
 // pad-only: main menu → new game (the setup page: mode → free roam, Casual + manual) → start, Start →
 // pause → settings, and the choices surviving a reload.
 //
-//   node test/pad-e2e.mjs [--port=3775] [--headed]     (needs a dev server already serving that port)
+//   node test/pad-e2e.mjs [--port=3775] [--headed]     (no --port: starts its OWN Vite on a free port, like cdp-smoke;
+//                                                      registered `browser: true` in gates.mjs, so run-all --browser runs it)
 //
 // The fake pad replaces navigator.getGamepads AFTER boot (gamepad.js looks it up every frame) and is
 // driven through window.__fp. PAD_PARAMS is reached by importing the exact module URL the app loaded:
 // after an edit Vite serves it as /src/gamepad.js?t=…, and a bare import would load a SECOND
 // instance — whose own poll loop then double-fires every button.
-import { launchChrome, connect, sleep, keyEvent } from './lib/cdp.mjs'
-const PORT = process.argv.find(a => a.startsWith('--port='))?.slice(7) ?? '3775'
-const { cleanup } = launchChrome('about:blank', { port: 9334, headed: process.argv.includes('--headed') })
+import { existsSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { createServer } from 'node:net'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { CHROME, launchChrome, connect, sleep, keyEvent } from './lib/cdp.mjs'
+if (!existsSync(CHROME)) { console.log(`SKIP (no Chrome at ${CHROME})`); process.exit(0) }
+const freePort = () => new Promise(r => { const s = createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)) }) })
+const given = process.argv.find(a => a.startsWith('--port='))?.slice(7)
+const PORT = given ?? await freePort()
+const CDP = await freePort()
+if (!given) {
+  const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
+  const vite = spawn(process.execPath, [join(ROOT, 'node_modules/vite/bin/vite.js'), '--port', String(PORT), '--strictPort'], { cwd: ROOT, stdio: 'ignore' })
+  process.on('exit', () => { try { vite.kill() } catch {} })
+}
+const { cleanup } = launchChrome('about:blank', { port: CDP, headed: process.argv.includes('--headed') })
 await sleep(1500)
-const c = await connect({ port: 9334 })
+const c = await connect({ port: CDP })
 const errs = []
 c.on('Runtime.exceptionThrown', (e) => errs.push(e.exceptionDetails.exception?.description))
 c.on('Runtime.consoleAPICalled', (e) => e.type === 'error' && errs.push(e.args.map(a => a.value).join(' ')))
