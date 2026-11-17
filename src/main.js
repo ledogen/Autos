@@ -1437,6 +1437,8 @@ const partsSystem = new PartsSystem({ params: RANGER_PARAMS, damage: damageModel
   TRUCK = truckConfig(DEFAULT_VEHICLE_MODEL, partsSystem.loadUpgrades())
   damageModel.publish(RANGER_PARAMS)
   setMods(modModels(runParts.fitted))   // FEAT-204: the bolt-ons on the truck (setMods: createVehicleModel, below; never called before it)
+  RANGER_PARAMS.fittedKg = partsSystem.boltOnKg()   // …and their mass on the chassis (DEC-373; the chassis is built later on first boot)
+  window.__syncChassisMass?.()
   inventoryScreen.render()              // …and the slots a roof rack adds or takes away
 } })
 window.__parts = partsSystem   // dev handle — test/cdp-smoke.mjs fits the FEAT-204 bolt-ons
@@ -3779,6 +3781,8 @@ function _pourStopLeak () {
 // ── FEAT-122: the inventory ────────────────────────────────────────────────────────────────
 // One grant path (rewards now; the shop and finds later). Stowed kit is real load: every change
 // pushes its mass onto the chassis. start() empties it when the region goes live (story deps).
+// FEAT-204 (DEC-373): what the springs and tires carry beyond the truck itself — stowed kit plus fitted bolt-ons.
+const _carriedKg = () => inventorySystem.stowedKg() + (RANGER_PARAMS.fittedKg || 0)
 const inventorySystem = new InventorySystem({
   slotCap: () => RANGER_PARAMS.inventorySlots + partsSystem.extraSlots(),   // FEAT-204: the roof rack's +4
   onMassChange: (kg) => { RANGER_PARAMS.stowedKg = kg; syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS) },
@@ -5480,7 +5484,7 @@ const _HAUL_PIECE = PROP_MODELS.firewoodBundleA.collision.size   // one bundle; 
 function _offerVerdict (offer, pieces = null) {
   const sp = offerBoard.spec(offer)
   // FEAT-122: stowed kit counts toward the same payload as the cargo (owner, 2026-10-16).
-  const massKg = (sp?.stock && pieces != null ? pieces * HAUL_BUNDLE_KG : sp?.massKg ?? 0) + inventorySystem.stowedKg()
+  const massKg = (sp?.stock && pieces != null ? pieces * HAUL_BUNDLE_KG : sp?.massKg ?? 0) + _carriedKg()
   if (sp?.stock) return loadVerdict(TRUCK, { massKg, size: _HAUL_PIECE, form: 'loose' })
   const row = sp?.load ? FREIGHT[sp.load] : null
   return row ? loadVerdict(TRUCK, { massKg, size: PROP_MODELS[row.model].collision.size, form: row.form }) : null
@@ -5498,7 +5502,7 @@ function _haulPick (offer) {
   if (!sp?.stock || sp.line || !(j?.par > 0)) return null   // FEAT-103: a line's load is fixed and free
   const { payTier, region } = economySystem.terms()
   const price = stockPrice(j.par, payTier, sp.payMult)
-  const hardN = Math.floor((massLimits(TRUCK).hardKg - inventorySystem.stowedKg()) / HAUL_BUNDLE_KG)
+  const hardN = Math.floor((massLimits(TRUCK).hardKg - _carriedKg()) / HAUL_BUNDLE_KG)
   const afford = price > 0 ? Math.floor(economySystem.money() / price + 1e-9) : sp.stock
   const max = Math.max(0, Math.min(sp.stock, hardN, afford))
   const n = Math.max(1, Math.min(max, parseInt(document.getElementById('mp-count')?.value, 10) || max))
@@ -10827,7 +10831,7 @@ function loop (t) {
 
     // FEAT-36: debris pre-step — render snapshot + cargo-in-bed bullet flag (see debris.js).
     debrisSystem.beforeStep(vehicleChassis, DEFAULT_VEHICLE_MODEL.bed ?? null)
-    hiLift.step(vehicleState, RANGER_PARAMS.mass + (RANGER_PARAMS.stowedKg || 0), PHYSICS_DT, _now())   // FEAT-138
+    hiLift.step(vehicleState, RANGER_PARAMS.mass + (RANGER_PARAMS.stowedKg || 0) + (RANGER_PARAMS.fittedKg || 0), PHYSICS_DT, _now())   // FEAT-138
     const _galBefore = vehicleState.fuel.gal   // FEAT-184: the evening burns none (put back after the damage step)
     _fragilePre()    // BUG-166: the fragile load's velocity before the step, for its felt g
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
@@ -10840,7 +10844,7 @@ function loop (t) {
     // Fold the engine's wheel-core contacts into rimForce BEFORE the damage step reads it — the
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT, vehicleState.rimHazard)
-    damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + inventorySystem.stowedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
+    damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + _carriedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
     damageModel.held = _inTutorial()   // FEAT-184 (DEC-151): no wear and no impact damage for the whole tutorial (the feedContact below too)
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     if (_tutDrive()) vehicleState.fuel.gal = _galBefore   // FEAT-184 (DEC-151): …and the tutorial burns no fuel ("fuel disabled"); the pump below still fills

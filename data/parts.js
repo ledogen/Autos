@@ -29,7 +29,8 @@
 //   load        FEAT-112 load ratings it brings (springs / dampers / tires) — the weakest part sets
 //               the truck's limits, so one heavy-duty axle (or three load-range tires) moves nothing
 //   price       $ at day-1 rates — [DEFAULT] placeholders until FEAT-69 prices the repair economy
-//   massKg      real load while stowed in inventory (a fitted part's mass is not modelled)
+//   massKg      real load while stowed in inventory. Fitted, only a bolt-on's mass is added to the chassis (DEC-373,
+//               src/parts.js boltOnKg): every other part's stock mass is already inside params.mass
 //   slots       FEAT-204 bolt-ons: inventory slots it adds while fitted (src/parts.js extraSlots; slots stack,
 //               which a patch of `inventorySlots` could not: two sockets may not share a key)
 //   armor       FEAT-204 bull bar: durability multiplier on its socket's `guards` track (src/parts.js _fit)
@@ -77,9 +78,8 @@ export const SLOTS = {
     headlightR:   { name: 'Right headlight',   takes: 'headlight', hours: 0.5, tracks: ['headlightR'] },
     // FEAT-204 bolt-ons (DEC-028: parts on the truck configuration, lost on death). `bolton`: the service screen's
     // Bolt-ons node lists them. No wear track of their own; the bull bar `guards` the front panel's (its part's
-    // `armor` is that track's durability multiplier). The bed toolbox (ASSET-87, mod-bed-toolbox.glb) is held on the
-    // freight call (card feat204-toolbox-freight): adding it = a socket here, two PARTS rows (slots: 4,
-    // model: 'mod-bed-toolbox') and a STOCK_WEIGHT row. Fitting labour [DEFAULT].
+    // `armor` is that track's durability multiplier). There is no bed toolbox before the alpha (owner, 2026-11-17,
+    // DEC-372): the model ships (ASSET-87) and waits on FEAT-253's bed-load placement. Fitting labour [DEFAULT].
     roofRack:     { name: 'Roof rack',         hours: 1,    tracks: [], bolton: true },
     bullBar:      { name: 'Bull bar',          hours: 1.5,  tracks: [], bolton: true, guards: 'armorFront' },
     lightBar:     { name: 'Light bar',         hours: 1,    tracks: [], bolton: true },
@@ -274,27 +274,35 @@ export const PARTS = {
                      patch: {}, desc: 'A sealed beam lamp, either side.' },
 
     // ── FEAT-204 bolt-ons (DEC-028/129/340/341). Prices, masses, the armour factor and the light gain are [DEFAULT]
-    //    (DEC-342, draft); the rack's +4 slots are the owner's (DEC-129). The light bar burns with the headlights (L):
+    //    (DEC-342, draft); the rack's +4 slots are the owner's (DEC-129). The light bar burns with the HIGH beams only (L, DEC-373):
     //    it raises the two head spots' intensity (headlightGain) and range (headlightReach), no lamp of its own (DEC-229).
 //    `icon`: placeholder thumbnails (the lift kit's, the headlight's) until their own are rendered (assets/models/src/items.py).
     //    Gain 2 ≈ four 55 W pods beside two sealed beams; reach 2^(1/1.8) = 1.47 is where gain 2 lights the ground as
     //    brightly as the bare beam did at its own range (decay 1.8, vehicle-model.js HEAD_TUNE).
     roofRackNone:  { name: 'No roof rack',         slot: 'roofRack', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
                      patch: {}, desc: 'A bare cab roof.' },
-    roofRack:      { name: 'Roof rack',            slot: 'roofRack', family: 'offroad', rarity: 'uncommon', price: 40, massKg: 16,
+    // Masses (DEC-373, agent's figures from real parts; DEC-342's 16 / 22 / 8 were placeholders):
+    //  · rack 13 kg: the Curt C18115 steel roof basket (1.05 x 0.94 m) is ~13 kg (29 lb, etrailer Q&A); ours is 1.15 x
+    //    0.56 m, so ~0.85x its frame tube (~11 kg), plus ~2 kg of roof clamps.
+    //  · bull bar 16 kg: Westin's Ultimate Bull Bar 32-3985 for the Ranger (one hoop + crossbar, 2.5-3 in tube) is listed
+    //    at 34 lb; our 68 mm x 3 mm wall hoop + 60 mm crossbar + two mount plates comes to ~16-18 kg by length.
+    //  · light bar 10 kg: four 6 in halogen pods (KC Daylighter, 3.1 lb = 1.4 kg each) 5.6 kg, the solo bridge bar (1.4 m of
+    //    1.5 in tube) ~2.7 kg, brackets + relay harness ~1.5 kg. Rack-mounted it leaves the bridge bar off (~7 kg); one
+    //    figure for both is an approximation of ~3 kg.
+    roofRack:      { name: 'Roof rack',            slot: 'roofRack', family: 'offroad', rarity: 'uncommon', price: 40, massKg: 13,
                      slots: 4, model: 'mod-roof-rack', icon: 'lift', patch: {},
                      desc: 'A steel basket clamped to the cab roof. More room for gear.' },
     bullBarNone:   { name: 'No bull bar',          slot: 'bullBar', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
                      patch: {}, desc: 'The factory bumper, on its own.' },
-    bullBar:       { name: 'Bull bar',             slot: 'bullBar', family: 'offroad', rarity: 'uncommon', price: 35, massKg: 22,
+    bullBar:       { name: 'Bull bar',             slot: 'bullBar', family: 'offroad', rarity: 'uncommon', price: 35, massKg: 16,
                      armor: 1.5, model: 'mod-bull-bar', icon: 'lift', patch: {},
                      desc: 'A bent steel tube bolted to the frame horns. The front end takes a knock and keeps its shape.' },
     lightBarNone:  { name: 'No light bar',         slot: 'lightBar', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
                      patch: { headlightGain: 1, headlightReach: 1 }, desc: 'Just the headlights.' },
-    lightBar:      { name: 'Light bar',            slot: 'lightBar', family: 'offroad', rarity: 'uncommon', price: 25, massKg: 8,
+    lightBar:      { name: 'Light bar',            slot: 'lightBar', family: 'offroad', rarity: 'uncommon', price: 25, massKg: 10,
                      model: 'mod-light-bar-solo', modelWith: { roofRack: 'mod-light-bar-rack' }, icon: 'headlight',
                      patch: { headlightGain: 2, headlightReach: 1.47 },
-                     desc: 'Four round lamps on a bar, wired to the headlight switch. Night roads open up.' },
+                     desc: 'Four round lamps on a bar, wired to the high beams. Night roads open up.' },
 }
 
 /** The stock part for a socket. */

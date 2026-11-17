@@ -456,7 +456,7 @@ export class ServiceScreen {
         node('lights', 'Headlights', [['L', 'Left'], ['R', 'Right']].map(([k, l]) => this._part(k, l, { socket: 'headlight' + k, track: 'headlight' + k, acts: sw }))),
         node('panels', 'Body Panels', ['Front', 'Left', 'Right', 'Rear'].map(k => this._part(k, k, { track: 'armor' + k, acts: ['repair'] }))),
       ]),
-      // FEAT-204: the bolt-ons, every socket data/parts.js marks `bolton` (the toolbox joins as a data row).
+      // FEAT-204: the bolt-ons, every socket data/parts.js marks `bolton`.
       node('boltons', 'Bolt-ons', Object.keys(SLOTS).filter(k => SLOTS[k].bolton).map(k => this._part(k, SLOTS[k].name, { socket: k, acts: sw }))),
     ]
     return `<div class="sv-tree">${this._level(tree, 0)}</div>`
