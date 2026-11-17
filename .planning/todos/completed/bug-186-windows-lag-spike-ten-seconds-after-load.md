@@ -82,3 +82,4 @@ src/main.js (`_lampSweepStep`), src/vehicle-model.js (`compileLightState`)
 - 2026-11-16 (Perf lane): cause counted at cpu×4 (late lamp sweep's blocking draws, 86 → 3 in 3–9 s); fix 669b13eb on land/bug-186.
   Affected gates 10/10 green, cdp-smoke left for main. Unverified: Windows/D3D itself, story mode.
 - 2026-11-16: landed on main (local). Closed.
+- 2026-11-17: owner confirmed on Windows: "Spike is gone".
