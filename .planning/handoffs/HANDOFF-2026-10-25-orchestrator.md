@@ -191,10 +191,12 @@ line 81 too; DEC-372 superseded only DEC-129: needs a new record once the owner 
 "Good: land it". Dead campfire + camera: changes asked. RUNNING, three agents, each proves its own branch (merge of
 main + gates + full smoke); merge each into main only when it reports green and never under a running smoke; after
 the last one run ONE confirming smoke on main and refresh the play build:
-- b, CarGame-machine, land/bug-201-deg2-sliver (Opus): BUG-201 light sliver at two-road bends; owner's hypothesis:
-  deg-2 legs not trimmed. Card bug201-bend-sliver-look, does NOT land without him. AFTER it (serial on src/road.js):
-  BUG-200, the 38 % hairpin at the chained fork on seed 688224244 (fix options with screenshots; dropping the road is
-  acceptable to him). DEC-396: main's existing dead ends stay.
+- BUG-201 BUILT, HELD for the owner's look: land/bug-201-deg2-sliver @ 9cf85a9e. His hypothesis confirmed (a deg-2
+  node never set leg.mouth, so legs overran the connector by 2.5–10.5 m); census 79/399 bends → 0; gate
+  test/deg2-leg-trim.mjs; 78 gates green. Card bug201-bend-sliver-look, sheet CarGame-machine/wip/bug-201/sheet.jpg.
+  Landing: integration branch + smoke.
+- b, CarGame-machine, land/bug-200-hairpin-grade (Opus, cut ON TOP of bug-201): BUG-200 investigation → options card
+  bug200-hairpin-grade-pick. The owner picks; nothing lands.
 Next free: BUG-202, DEC-398.
 **BUILT, HELD for the owner (not on main):**
 - land/food-1117 (CarGame-content): FEAT-250, FEAT-260, FEAT-261, BUG-198; DEC-376..381 (DEC-380 draft). Card
