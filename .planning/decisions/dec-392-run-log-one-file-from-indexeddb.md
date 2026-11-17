@@ -4,7 +4,7 @@ status: standing
 decided: 2026-11-17
 area: process
 governs: BUG-199, FEAT-242, src/run-log.js, run log
-supersedes: DEC-358 (only the automatic download "every day or after every mission")
+supersedes: 
 ---
 
 # DEC-392: The run log is kept in the browser and saved as one file
