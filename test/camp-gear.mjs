@@ -73,7 +73,7 @@ async function topIn (key, x0, x1, z0, z1) {
 }
 // Pad-frame footprint: the model's −Z faces −v (camp-gear.js padYaw), so local z runs along v; local x
 // runs along u with a sign that follows the road side, so take it symmetric.
-const placed = [['fire', 'campfire'], ...camp.filter(([, it]) => it.model).map(([, it]) => [it.campSlot, it.model])]
+const placed = [['fire', 'campfire'], ['fire', 'campfireDead'], ...camp.filter(([, it]) => it.model).map(([, it]) => [it.campSlot, it.model])]
 const prints = []
 for (const [slot, key] of placed) {
   const b = await bounds(key), s = CAMP_SLOTS[slot], hx = Math.max(-b.min.x, b.max.x)

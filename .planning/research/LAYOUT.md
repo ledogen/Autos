@@ -101,7 +101,7 @@ FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `
 
 **Rendering & atmosphere** — `sky.js` (time-of-day, ACES) · `moon.js` · `shadow-fade.js` ·
 `camera.js` (chase/cockpit/fly) · `vehicle-model.js` (procedural truck + cast lights) ·
-`model-service.js` (FEAT-59 .glb import service) · `campfire.js` (FEAT-66 lit campfire: ASSET-24 + flames/embers/point light) · `smoke.js` · `dust.js` (also owns the shared billboard sheet `makeBillboardMesh` + `rotateByQuat`, used by smoke/dirt-spray) · `dirt-spray.js` ·
+`model-service.js` (FEAT-59 .glb import service) · `campfire.js` (FEAT-66 lit campfire: ASSET-24 + flames/embers/point light; FEAT-264 swaps in ASSET-90 `campfire-dead.glb` when it burns out) · `smoke.js` · `dust.js` (also owns the shared billboard sheet `makeBillboardMesh` + `rotateByQuat`, used by smoke/dirt-spray) · `dirt-spray.js` ·
 `map2d.js` (M-key dev map).
 
 **Audio** — `engine-audio.js` · `gearbox-audio.js` (FEAT-126 missed-shift grind) · `knock-audio.js` (FEAT-162 rod knock + seize bang) · `tire-audio.js` (tonal stick-slip) · `wind-audio.js` · `heartbeat-audio.js` (FEAT-87 rank-bar lub-dub) · `glass-audio.js` (FEAT-87 rank tile shatter; FEAT-97 fragile cargo hits) · `pump-audio.js` (FEAT-50 gas pump: nozzle, flow, gallon bell, shutoff, register).
