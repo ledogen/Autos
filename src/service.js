@@ -89,6 +89,7 @@ export class ServiceCenter {
      *   stock() / unstock(i)       this shop's shelf now (src/shop-stock.js shelf / take)
      *   freeRepairs() / useFreeRepair()   repairs owed for nothing (expedition-rewards); optional
      *   onMom(id, k) / useMom(id, k)   on mom (FEAT-184): part `id`'s k = 'part' or 'labour' is free, once; optional
+     *   locked(e)                  DEC-356: why shelf entry `e` is not for sale now (a short line), or null; optional
      *   onChange()                 something changed; the screen re-renders
      */
     constructor (deps) {

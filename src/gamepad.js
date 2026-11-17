@@ -199,6 +199,16 @@ export function padKick () {
 }
 
 const deadzone = (v, d) => Math.abs(v) < d ? 0 : Math.sign(v) * (Math.abs(v) - d) / (1 - d)
+// BUG-189 (owner, 2026-11-16: in camp the "start the truck" hint came up untouched; started, the engine sat on the limiter
+// "until I tapped the accelerator"): a trigger drives only once it has been SEEN AT REST since its pad (re)connected. The
+// Gamepad API's standard mapping reads some pads' triggers off an axis, (v + 1) / 2, and until that axis's first report
+// v is 0: a phantom half pedal that holds until the trigger is touched. A connect event re-arms that pad's two triggers.
+const trigArmed = new Set()   // `${pad index}:${button}` once seen at rest
+function trigger (gp, i) {
+  const v = gp.buttons[i]?.value ?? 0, k = `${gp.index}:${i}`
+  if (v <= PAD_PARAMS.triggerDeadzone) trigArmed.add(k)
+  return trigArmed.has(k) ? deadzone(v, PAD_PARAMS.triggerDeadzone) : 0
+}
 
 function sendKey (type, key) {
   const shiftKey = key.startsWith('Shift+')   // a chord row ('Shift+R'): the key with Shift held
@@ -229,8 +239,8 @@ function poll () {
   for (const gp of navigator.getGamepads()) {
     if (!gp || gp.mapping !== 'standard') continue
     any = true
-    thr = Math.max(thr, deadzone(gp.buttons[7].value, PAD_PARAMS.triggerDeadzone))
-    brk = Math.max(brk, deadzone(gp.buttons[6].value, PAD_PARAMS.triggerDeadzone))
+    thr = Math.max(thr, trigger(gp, 7))
+    brk = Math.max(brk, trigger(gp, 6))
     const s = deadzone(gp.axes[0], PAD_PARAMS.stickDeadzone)
     if (Math.abs(s) > Math.abs(steer)) steer = s
     const py = deadzone(gp.axes[1], PAD_PARAMS.stickDeadzone)
@@ -342,5 +352,7 @@ function poll () {
 if (typeof navigator !== 'undefined' && navigator.getGamepads) {
   // Synthetic events are untrusted, so the pad's own replayed keys never hand control back.
   document.addEventListener('keydown', e => { if (e.isTrusted && !e.repeat) pad.active = false }, true)
+  for (const ev of ['gamepadconnected', 'gamepaddisconnected'])   // BUG-189: a (re)connected pad's triggers wait for rest
+    globalThis.addEventListener?.(ev, e => { trigArmed.delete(`${e.gamepad.index}:6`); trigArmed.delete(`${e.gamepad.index}:7`) })
   requestAnimationFrame(poll)
 }
