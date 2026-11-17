@@ -399,6 +399,43 @@ const STEPS = [
     const c0 = await car(); await hold('w', 5); const c1 = await car(), off = Math.hypot(c1.x - c0.x, c1.z - c0.z)
     check(off > 10, `the truck did not drive off from Larry's: ${off.toFixed(1)} m in 5 s of throttle`)
   }],
+  ['runlog', async () => {
+    // FEAT-242 (DEC-358): the run logger, switched on mid-run by its dev handle. The download is intercepted (the anchor
+    // click is stubbed, so nothing lands in Downloads): an oil change checked out at the auto shop and a night's sleep
+    // must both be in the part that switching it off downloads, with the header and the 1 s route samples around them.
+    await js(`(() => { const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
+      A.click = function () { if (this.download?.startsWith('autos-run-')) window.__rlSaved.push({ name: this.download, href: this.href }); else window.__rlClick.call(this) } })()`)
+    await js('window.__runLog.setOn(true)')
+    const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
+    check(p, 'runlog: no auto shop in this region')
+    await seat(p.x, p.z, p.h)
+    await simFor(2)
+    await park(true)
+    const open = () => js('document.getElementById("svc-screen").checkVisibility()')
+    check(await until(open, 2000), 'runlog: parking at the auto shop opened no service screen')
+    // The oil change's button sits deep in the Maintenance tree; the screen handles clicks by delegation, so a button
+    // carrying its data-act is the same press.
+    await js(`(() => { window.__damage.set('oil', 0.5); window.__econ.money = 500
+      const b = document.createElement('button'); b.dataset.act = 'oil'; document.getElementById('svc-screen').appendChild(b); b.click(); b.remove() })()`)
+    await js('document.querySelector("#svc-screen [data-act=checkout]")?.click()')
+    check(await js('window.__econ.money') < 500, 'runlog: the oil change did not check out')
+    await tap('Escape')
+    await until(async () => !await open(), 2000)
+    await js('window.__day().sleep(8, 0.5)')
+    await js('window.__runLog.setOn(false)')
+    const saved = await js('window.__rlSaved.map(s => s.name)')
+    check(saved.length >= 1 && saved.every(n => /^autos-run-6-.*-part\d\d\.jsonl$/.test(n)), `runlog: the parts downloaded are ${JSON.stringify(saved)}`)
+    await js('void (window.__rlText = null, Promise.all(window.__rlSaved.map(s => fetch(s.href).then(r => r.text()))).then(t => { window.__rlText = t.join("") }))')
+    check(await until(() => js('window.__rlText !== null'), 3000), 'runlog: the downloaded parts could not be read back')
+    const got = await js(`(() => { const ev = window.__rlText.trim().split('\n').map(l => JSON.parse(l))
+      const by = (e) => ev.filter(x => x.e === e)
+      return { n: ev.length, header: by('header').length, route: by('route').length, buy: by('purchase').map(x => x.lines.map(l => l.label).join()),
+        sleep: by('sleep').map(x => x.hours), stamped: ev.filter(x => x.e !== 'part').every(x => x.day != null && x.pos?.length === 3) } })()`)
+    check(got.header === 1 && got.route >= 2 && got.buy.includes('Oil change') && got.sleep.includes(8) && got.stamped,
+      `runlog: the log is missing its header, route samples, the purchase or the sleep: ${JSON.stringify(got)}`)
+    await js('HTMLAnchorElement.prototype.click = window.__rlClick; delete window.__rlSaved; delete window.__rlText')
+  }],
   ['camp', async () => {
     // Mom's doorstep is the one camp face reachable without a zone hunt: pull the brake there.
     const p = await js(`(() => { const m = window.__map2d()._getPois().find(q => q.type === 'momsHouse'); if (!m) return null
