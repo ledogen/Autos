@@ -968,7 +968,11 @@ const STEPS = [
     // and the brake both ask (check out or discard) and the brake holds; discard puts the corners back and lets it go.
     // FR is pinned too (a new game starts with one old front tire, FEAT-201), and an item already open is left open
     // (selecting it again would close it: the key walk above leaves the first section open).
-    await js('window.__damage.set("tireFL", 0.5); window.__damage.set("tireFR", 1); document.querySelector("#svc-screen [data-tab=maint]")?.click()')
+    // FEAT-254: the Shop tab wakes with a highlighted shelf row, which previews on the truck; leaving the tab lifts the preview a
+    // frame later and restores the snapshot taken BEFORE a poke. So leave the tab, let the frames run, then poke.
+    await js('document.querySelector("#svc-screen [data-tab=maint]")?.click()')
+    await frames(3, 50)
+    await js('window.__damage.set("tireFL", 0.5); window.__damage.set("tireFR", 1)')
     for (const id of ['twbs', 'tw', 'FL', 'corner']) await js(`(e => e && !e.classList.contains('on') && e.click())(document.querySelector('#svc-screen [data-act=node][data-id="${id}"]'))`)
     const cm0 = await js('window.__econ.money')
     await js(`document.querySelector('#svc-screen [data-act=swap][data-a="0"][data-b="1"]')?.click()`)
