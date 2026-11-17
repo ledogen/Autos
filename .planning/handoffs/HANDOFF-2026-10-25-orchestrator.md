@@ -185,17 +185,17 @@ DEC superseding DEC-351.
 one-line mask, agent recommends yes. (2) DEC-028 + DEC-340 still say the bed toolbox is in the alpha, MILESTONES.md
 line 81 too; DEC-372 superseded only DEC-129: needs a new record once the owner confirms. (3) truck rolls over the
 0.40 m fire pit dead centre (body collider has nothing below the frame): ticket?
+**BUG-179 SIGNED OFF (owner 11-17 "1. looks good"), LANDING:** Lane B agent in CarGame-machine merges main into
+land/bug-179, gates + fingerprint + full smoke (wip/bug-179/*-land.log). Green → merge into main, refresh the play
+build. THEN, serially on src/road.js (never in parallel): BUG-201 (light sliver at a degree-2 bend, owner: "ticket and
+fix it", his hypothesis: deg-2 junction legs not trimmed), then BUG-200 (38 % hairpin at the chained fork on seed
+688224244; owner wants fix options, dropping the road is acceptable). DEC-396: main's existing dead ends stay.
+Next free: BUG-202, DEC-397.
 **BUILT, HELD for the owner (not on main):**
 - land/food-1117 (CarGame-content): FEAT-250, FEAT-260, FEAT-261, BUG-198; DEC-376..381 (DEC-380 draft). Card
   food-1117-numbers BLOCKS landing. Needs a main merge (keep the BUG-198 top-up before Larry's call in _checkOpeningEnd).
 - land/feat-249-far-shade @ b21696f0 (CarGame-machine): far shadow box grows with the tier (High ±512 m, Ultra ±640 m).
   Card feat249-far-shade-look. GPU active cycles still owed (bench on a quiet machine, High + Ultra).
-- land/bug-179 @ c172b590 (CarGame-machine): chained forks + round 2 (d0f216e5) drops the dead-end tails (9 → 0).
-  76 gates green, fingerprint identical to main, build cost +1 % (noise), ribbon tris +1.1 %. Owner 11-17: the tear
-  fix "is a clear improvement", dead ends not wanted, "all i really need fixed" is the tear; perf matters to his call.
-  Card bug179-chained-forks-look (rewritten), sheet wip/bug-179/chained-forks-sheet.jpg (19 tiles). Open: the #9
-  hairpin (38 % climb, undriven), a light sliver at the #17 bend, main's own 51 dead ends (same root, separate change).
-  On his yes: merge main, re-run gates, land via an integration branch + smoke.
 - land/feat-235-r3 @ f72c5d15 (branch only): cluster round 3 (DEC-391). Card feat235-cluster-r3-look. Its gpu-reset run
   failed on TREE IMPOSTORS ("empty tiles 0 → 8"), unexplained, probably load: re-run `node test/gpu-reset.mjs` on main
   on a quiet machine before believing either way.
