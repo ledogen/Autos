@@ -26,6 +26,8 @@
 export const GATES = [
   { file: 'frame-cap.mjs', subsystem: 'perf', cost: 'fast', extraDeps: [],
     desc: 'BUG-169/PERF-48: the render frame cap draws cap fps (display rate when 0) fed synthetic rAF timestamps at 60/90/120/144/240 Hz, for caps 30/60/90/120/display' },
+  { file: 'leg-overlap-tear.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-179 (DEC-366): two legs of one node never tear on shared pavement — the capture seed whose chained fork the merge plan used to drop (6.12 m)' },
   { file: 'road-minradius.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-12: DENSE realized centerline min-radius the ribbon sweeps, every run of the headless graph network over several stream centres — the fold metric' },
   { file: 'centerline-curvature.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
