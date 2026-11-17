@@ -1816,7 +1816,7 @@ const STEPS = [
     const sh = await js(`(() => { const v = window.__vs.position, H = window.terrain; let best = null
       for (let dx = -300; dx <= 300; dx += 4) for (let dz = -300; dz <= 300; dz += 4) { const x = v.x + dx, z = v.z + dz
         const g = Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
-        if (g >= 0.015 || (best && g >= best.g)) continue
+        if (g >= 0.015 || g < 1e-9 || (best && g >= best.g)) continue   // g === 0: height not streamed in yet (3590618618 read a flat 0 at a 35 % slope), not a flat spot
         const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
         if (lt < 11 || lt > 14 || window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
         if (!window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length) best = { x, z, g } }
