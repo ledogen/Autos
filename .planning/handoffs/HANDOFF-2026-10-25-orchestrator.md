@@ -158,37 +158,31 @@ and never merge while a smoke runs (the 03:22 smoke died to exactly that). Last 
 (6a74de22; card bug191-abs-drive) · DEC-367 cooler ×1/4 (6c4280e8) · pad/menu batch FEAT-252/254/255, BUG-192/193 (card
 pad-menus-look; DEC-368/369 are DRAFT) · missions batch FEAT-256/257, BUG-194/195 (card missions-1117-look; DEC-370/371).
 BUG-199 ticketed (run log part lost to Chrome's multiple-download block).
-**RUNNING (six agents; each mints its own tickets from the ids given, writes one owed card, never lands):**
-- Lane A, CarGame-run-shape, land/tut-round3 (Sonnet): make tutorial round 3 landable = economy unchanged by the day
-  renumber (day 0 tutorial, runs start day 1) + the smoke's card steps. Round 3 itself is built @ b69b124b, DEC-359..363.
-- Lane B, CarGame-machine, land/bug-179 (Opus): finish chained forks: the seed-4243617325 regression (1.5 → 25.3 m), the
-  dead-end spurs, 10th example, sheet, fingerprint, card bug179-chained-forks-look. Owner signs off BEFORE main (DEC-366).
-- UI batch 2, CarGame-spare-base, land/ui-1117 (Sonnet): FEAT-248 UI scale, FEAT-262, FEAT-263, gradient, plot labels,
-  white 10 % line. DEC-383..384. Card ui-1117-look.
-- Budget, CarGame-land-211d, land/feat-69-budget (Sonnet): the FEAT-69 dive answers (300 kg freight line, the two lists,
-  oil change $6, pace). DEC-385..390. Card feat69-freight-lists.
-- Lane p, CarGame-perf, land/machine-1117 (Opus): FEAT-258, BUG-196, BUG-197, FEAT-204 (toolbox out, light bar on high
-  beams, part masses), FEAT-259 (standard tires + stock turnover; numbers to the owner). DEC-372..375.
-- Lane C, CarGame-content, land/food-1117 (Opus): FEAT-250 hunger counter (+ cooler stack slots, 24 h spoil, $0.35/h),
-  FEAT-260 store foods, BUG-198 three free meals, FEAT-261 coffee. DEC-376..382. Card food-1117-numbers BLOCKS landing.
-**LANDING ORDER when they report:** most touch src/main.js, so land one at a time, each merging main first, one smoke
-each (or one smoke per pair if the diffs are disjoint). Lane A first (tutorial), then U, s2, p. Lane B and Lane C wait
-for the owner (sign-off / numbers).
-**QUEUE (tickets NOT minted yet unless an id is shown; next free ticket ids FEAT-262.., BUG-199..):**
-1. UI batch 2 (Sonnet): FEAT-248 UI scale Small/Big · sharper main-menu gradient (inbox aktp) · centre-softening plot axis
-   labels "axis" + "steering" (7ehx) · FEAT-262 maintenance menu names the tire type (o1a3) · FEAT-263 diagnostic screen
-   reachable from the maintenance menu (lfg2) · the 10 % line on the fragile damage indicator white, not gray (fw8s).
-2. FEAT-235 cluster (Sonnet; land/feat-235 = V1, land/feat-235-r2 = V2): back to V1 + V2's ignition location and frame
-   shape, V1's two-tone pod/gauges, bottom notch narrower, left pod bottom edge down (owed/feat235-cluster-r2-look.answer.json).
-3. FEAT-69 dive (SUBMITTED, no .taken): S line for a player 30 % slower · freight deed line 300 kg, median freight job
-   300 kg, pay scales with weight: SEND the list of freight ideas above 300 kg + how many are needed, and all freight
-   under 50 kg · pace 1.5–2 jobs a day · oil change $8 → $6 · run length 6 until the recorded run.
-4. Tutorial round 4 (after A lands): seed re-search for a gentler Larry's → gas station grade (Opus) · mention in the
+**RUNNING at 04:20 (each mints its own tickets from the ids given, writes one owed card, never lands):**
+- Smoke fix, CarGame-land-gps, land/smoke-service-fix (Sonnet): first fix committed 2d1288ec ("smoke's corner-swap step
+  pokes tires only after the Shop tab's preview has lifted"), not yet reported. LAND THIS FIRST.
+- Lane B, CarGame-machine, land/bug-179 (Opus): finish chained forks (regression on seed 4243617325, spurs, 10th example,
+  sheet, card bug179-chained-forks-look). Owner signs off BEFORE main (DEC-366).
+- Lane p, CarGame-perf, land/machine-1117 (Opus): FEAT-258, BUG-196, BUG-197, FEAT-204, FEAT-259. DEC-372..375.
+- Lane C, CarGame-content, land/food-1117 (Opus): FEAT-250, FEAT-260, BUG-198, FEAT-261. DEC-376..382. Card
+  food-1117-numbers BLOCKS landing.
+- u, CarGame-spare-base, land/feat-235-r3 (Sonnet): cluster round 3 (V1 + V2's ignition place and frame shape). DEC-391.
+- a, CarGame-run-shape, land/rumble-runlog (Sonnet): FEAT-247 vibration + BUG-199 run log as one file. DEC-392.
+- s2, CarGame-land-211d, land/camera-campfire (Sonnet): FEAT-246 camera collision + FEAT-264 dead campfire (+ ASSET-90
+  ticket only). DEC-393.
+**BUILT, WAITING TO LAND once main is green (merge main into each first; most touch main.js and cdp-smoke.mjs):**
+1. land/tut-round3 (branch only; was in CarGame-run-shape): tutorial round 3 + economy unchanged by the renumber
+   (DEC-359..363, DEC-364 DRAFT for the owner). Its own full smoke PASSED 35 steps. Card tutorial-test-drives (open).
+2. land/ui-1117 @ 5b56acc4 (branch only): UI scale Small/Big ×1.5 (DEC-383), gradient, plot labels, FEAT-262, FEAT-263.
+   Check `grep -a FAIL /tmp/ui1117-gates.log` first. Card ui-1117-look. Sheet CarGame-spare-base/wip/ui-1117/sheet.jpg.
+3. land/feat-69-budget @ c85fd7b4 (branch only): freight deed line 300 kg, oil change $6, DEC-385..390. Check
+   /private/tmp/claude-501/scr/gates.log first. Card feat69-freight-lists (the owner approves/kills loads).
+**QUEUE:**
+1. Tutorial round 4 (after round 3 lands): seed re-search for a gentler Larry's → gas station grade (Opus) · say in the
    tutorial that time does not pass while parked with the handbrake (answered/tutorial-test-drives.answer-2026-11-17b.json)
-   · his answers to the three questions on the tutorial card.
-5. FEAT-264 campfire dead after > 2 h of sleep (no flames, no smoke) + ASSET-90 an ash-only campfire model, no logs (j5xw).
-6. FEAT-247 pad vibration for everything (card with reproduce steps) · FEAT-246 chase-camera collision.
-7. FEAT-249 shade past the far shadow map (Opus) · FEAT-251 lawn furniture knocks over (Opus).
+   · his answers to the questions on the tutorial card.
+2. FEAT-249 shade past the far shadow map (Opus) · FEAT-251 lawn furniture knocks over (Opus).
+3. After the owner answers feat69-freight-lists: add approved heavy loads, trim killed light ones.
 **BUILT, HELD for the owner (not on main):** land/feat-243-particle-shade @ 069b416f (CarGame-spare): dust/smoke/spray
 read the far shadow map (round 2). Card feat243-particle-shade-look; his answer file there is blank (opened only).
 **Waiting on the owner:** the owed pile. feat242-runlog-try and feat243 answer files are blank. BUG-189 pad check.
@@ -198,7 +192,7 @@ test/pad-e2e.mjs in the smoke's browser run. (4) A stale shell loop from 11-14 i
 **Play build for the owner's Windows machine:** http://m4air:8002 = a FROZEN production build of main ea373576 in
 `wip/play-build/`, served by `python3 -m http.server 8002 --bind 100.111.133.99 --directory wip/play-build` (started by
 the orchestrator; it dies with a reboot). Refresh on his word: `npm run build && rsync -a --delete dist/ wip/play-build/`.
-**Next free DEC:** 391 (332-336 unused; 372-390 are handed to tonight's agents, see RUNNING).
+**Next free DEC:** 394 (332-336 unused; 372-382 and 391-393 are with running agents).
 **Gotchas (keep):** (1) agents stall or re-report in loops on background waits: ask for ONE report, TaskStop a finished
 agent that keeps waking, above all when a new agent shares its worktree. (2) Owed and dive answers save as the owner
 types: act only when the file is 3 min stale. (3) DIVE answers land in ledorepo `dives/<slug>.answers.json`: at every
