@@ -151,10 +151,13 @@ docs, the dashboard list fix, and e7239312 (offer card says "from" for a househo
 "a prescription"; affected gates 33/33 green, no browser smoke yet: run one at the next landing).
 **RUNNING (two agents, the cap):**
 - Lane A, CarGame-run-shape, land/tut-round3 (Sonnet): tutorial round 3 = the owner's 11-17 notes (FEAT-184), DEC-359..365.
-- Lane B, CarGame-machine, land/bug-191 (Opus): BUG-191 ABS cuts braking at low speed.
+- Lane B, CarGame-machine, land/bug-179 (Opus): BUG-179 option 1 (chained forks), ten examples, DEC-366; owner signs
+  off before main (new card bug179-chained-forks-look).
+**LANDED 02:15:** BUG-191 (ABS vented all four brakes after a throttle lift; fix in src/abs.js) merged at 6a74de22. Smoke
+on main running: wip/orch/smoke-1117-abs.log (also the first smoke over e7239312). Ticket stays open for the owner's drive
+(card bug191-abs-drive). Refresh the :8002 play build after a green smoke so he can drive it on Windows.
 **QUEUE, in this order, one fresh agent each as a lane frees (owner said "intake and start crunchin"):**
-1. BUG-179 option 1 (Opus; branch land/bug-179 exists, no worktree): build "allow a chain of forks at one junction", show
-   TEN generated chained-fork examples, owner signs off BEFORE main (answer still in owed/bug179-fork-chain.answer.json).
+1. (spawned) BUG-179.
 2. UI batch (Sonnet, a land worktree off main): FEAT-248 UI scale Small/Big · FEAT-252 shop Jobs button replaces Map ·
    FEAT-254 default-selection audit + B menu left stick · sharper main-menu gradient (inbox aktp) · centre-softening plot
    axis labels "axis" and "steering" (inbox 7ehx).
@@ -183,7 +186,7 @@ task file): harmless, left alone.
 **Play build for the owner's Windows machine:** http://m4air:8002 = a FROZEN production build of main ea373576 in
 `wip/play-build/`, served by `python3 -m http.server 8002 --bind 100.111.133.99 --directory wip/play-build` (started by
 the orchestrator; it dies with a reboot). Refresh on his word: `npm run build && rsync -a --delete dist/ wip/play-build/`.
-**Next free DEC:** 366 (332-336 unused; 359-365 are Lane A's).
+**Next free DEC:** 367 (332-336 unused; 359-365 are Lane A's, 366 Lane B's).
 **Gotchas (keep):** (1) agents stall or re-report in loops on background waits: ask for ONE report, TaskStop a finished
 agent that keeps waking, above all when a new agent shares its worktree. (2) Owed and dive answers save as the owner
 types: act only when the file is 3 min stale. (3) DIVE answers land in ledorepo `dives/<slug>.answers.json`: at every
