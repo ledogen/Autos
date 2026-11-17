@@ -141,61 +141,49 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-16 evening, written for a /clear; rewrite, don't append)
+## Current state (2026-11-17 02:00, after the night intake; rewrite, don't append)
 
-Older state: `git show 7e432ba9:.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`. The night of 11-16 is in
-`.planning/handoffs/HANDOFF-2026-11-16-night.md` (owner's copy) and `wip/orch/night-1116.md` (the running log, git-invisible).
-Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale (live), play build :8002 (below).
+Older state: `git show 4c5673a6:.planning/handoffs/HANDOFF-2026-10-25-orchestrator.md`.
+Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale, play build :8002 (below).
 
-**Main:** ea373576, 641 ahead of origin, NOT pushed. Last full smoke PASS 35 steps (wip/orch/smoke-1117-round2b.log) on
-f184cc0c; only a docs commit since. Nothing on main is unverified by a smoke.
-**Landed since the night handoff (all local, smoke green each):** BUG-171 continuous leg foot with a per-leg cache
-(DEC-261; closed) · cluster round 1 (FEAT-235, DEC-331) · Katie's picnic (DEC-345..348) + Billy (DEC-343, DEC-349) ·
-five FEAT-204 models promoted (ASSET-85..89) and three wired: rack, bull bar, light bar (DEC-340, DEC-341, DEC-342 DRAFT
-numbers) · BUG-190 antenna, FEAT-244 repair colours, FEAT-245 mom's inventory button (all closed) · FEAT-231 bed mat and
-liner looks (DEC-352) · tutorial seed 3590618618 (DEC-344, DEC-351) · run logger FEAT-242 (DEC-358; closed) · tutorial
-round 2 (DEC-353..357; BUG-189 fixed by reasoning, ticket OPEN until the owner confirms on his pad) · pad-e2e repaired.
-**RUNNING:** nothing. All six lanes free.
+**Main:** 095c3b1a + this handoff commit, NOT pushed. Since the last full smoke (f184cc0c, PASS 35 steps) main gained only
+docs, the dashboard list fix, and e7239312 (offer card says "from" for a household's own thing, per-item `own` flag;
+"a prescription"; affected gates 33/33 green, no browser smoke yet: run one at the next landing).
+**RUNNING (two agents, the cap):**
+- Lane A, CarGame-run-shape, land/tut-round3 (Sonnet): tutorial round 3 = the owner's 11-17 notes (FEAT-184), DEC-359..365.
+- Lane B, CarGame-machine, land/bug-191 (Opus): BUG-191 ABS cuts braking at low speed.
+**QUEUE, in this order, one fresh agent each as a lane frees (owner said "intake and start crunchin"):**
+1. BUG-179 option 1 (Opus; branch land/bug-179 exists, no worktree): build "allow a chain of forks at one junction", show
+   TEN generated chained-fork examples, owner signs off BEFORE main (answer still in owed/bug179-fork-chain.answer.json).
+2. UI batch (Sonnet, a land worktree off main): FEAT-248 UI scale Small/Big · FEAT-252 shop Jobs button replaces Map ·
+   FEAT-254 default-selection audit + B menu left stick · sharper main-menu gradient (inbox aktp) · centre-softening plot
+   axis labels "axis" and "steering" (inbox 7ehx).
+3. FEAT-235 cluster (Sonnet; land/feat-235 = V1, land/feat-235-r2 = V2): back to V1, bring V2's ignition location and
+   frame shape, keep V1's two-tone pod/gauges, bottom notch narrower so the left pod sits in the crook, left pod's bottom
+   edge down to match its left margin (answer in owed/feat235-cluster-r2-look.answer.json).
+4. FEAT-204 parts (Sonnet): REMOVE the bed toolbox pre-alpha (FEAT-253 holds the post-alpha plan) · light bar on HIGH
+   beams only · part masses for the modelled mods (answers: owed/feat204-toolbox-freight, owed/feat204-wire-look).
+5. FEAT-250 hunger satiety counter + six foods + cooler stacking + 24 h spoil + $0.35/h (numbers to the owner on a card).
+6. FEAT-69 dive (SUBMITTED, no .taken yet): S line tuned for a player 30 % slower · freight deed threshold 300 kg, median
+   freight job 300 kg, pay scales with weight: SEND a list of freight ideas above 300 kg + how many are needed, and a list
+   of all freight under 50 kg · pace 1.5–2 jobs a day · oil change $8 → $6 · run length stays 6 until the recorded run.
+7. Tutorial seed re-search (Opus): the Larry's → gas station grade is too steep; expand the search, keep the opening shot
+   and proximity he called "awesome".
+8. FEAT-247 pad vibration for everything (Sonnet; card with reproduce steps) · FEAT-246 chase-camera collision.
+9. FEAT-249 shade past the far shadow map (Opus) · FEAT-251 lawn furniture knocks over (Opus).
 **BUILT, HELD for the owner (not on main):**
-- land/feat-235-r2 @ e18554e1 (branch lives in CarGame-content; that worktree is now on land/feat-242-runlog): cluster
-  round 2 (DEC-350). Card feat235-cluster-r2-look. gpu-reset passes on it (run with the branch's own server).
-- land/feat-243-particle-shade @ f91283ff (CarGame-spare): dust/smoke shaded by a horizon test. Card
-  feat243-particle-shade-look. Particle-update cost not settled (1.4 → 1.6-1.8 ms/s, maybe noise).
-- land/bug-179 (census + ticket; no fix): card bug179-fork-chain (options 1-3; agent recommends 1; touches junction
-  promotion, so the owner must pick). His BUG-171 dive answer "chase the road-to-road seam next" waits on that pick.
-**Waiting on the owner (27 cards in owed/):** tutorial-test-drives (round 2 on the new seed; stays open; 6 placeholder
-lines; pad check for BUG-189; camp short of the pin unplayed; mom's driving cards framed as calls or not; the SUNRISE:
-not visible from the player's spot at the joint, mom's in shadow: re-search scoring from the player's position if he
-wants it), feat235-cluster-r2-look, feat243-particle-shade-look, feat204-wire-look (DEC-342 numbers),
-feat204-toolbox-freight (toolbox NOT wired until answered), feat231-looks-look (liner reads as a black void in shade),
-feat242-runlog-try, bug179-fork-chain, fresh-clock-look, tut-dialogue-look, feat69-budget-dive, and the older look /
-make cards. FEAT-241 (random factory colour per run) is ticketed, three open questions, nobody on it.
-**UNTAKEN INTAKE, arrived 23:44-00:16 as the owner play-tested on :8002 (FIRST job after the clear; nothing acted on,
-no replies written; he was still typing at 00:16, so wait until the files are 3 min stale):**
-- `owed/tutorial-test-drives.answer.json` (note, no choice; card stays open): no game freeze during dialogue, and a card
-  that tells the player to press something clears only when they DO it · mom's parking-brake hint must say "at a stop"
-  · seed: opening shot and proximity "awesome" but the grade Larry's → gas station is too steep: expand the search ·
-  mom, not Larry, gives the gas tip, and reminds you of the dashboard gauge · Katie's vibe advice is useless with the
-  camp menu shut (too fast / not flat hides the bar) · AUDIT every menu for a default selection (camp menu has none;
-  main menu exempt; warn where none is right) · a tutorial reset faces the GPS direction · the tire can be changed
-  before it is checked: guardrail it.
-- inbox, five with no reply: 074418-nh2r chase-camera collision (pull toward the pivot) · 074621-co1v a tutorial
-  reset leaves the truck RUNNING · 080832-7d3h B menu navigable by left stick as well as D-pad · 081443-w0pm rumble
-  works on his 8BitDo 2C (2.4 GHz, Windows), felt only on ABS: "add vibrations for everything", make a card, tell him
-  how to reproduce, then test for feel · 081529-w93s ABS badly cuts braking at low speed, sometimes just coasts
-  (throttle lift then brake): a physics bug, Opus.
-**PARTIAL dive, do NOT act until submitted:** ledorepo dives/FEAT-69-one-region-budget.answers.json (status partial).
-His freight note there: threshold to 300 kg, wants a list of freight ideas above 300 kg (and how many are needed for a
-300 kg median) and a list of all freight under 50 kg.
-**Owed by the orchestrator:** (1) PERF-40 bench re-run: the HOST's audio clock is stalled (bench refuses; fix is
-`sudo killall coreaudiod`, the owner's to run), then measure the run logger's cost while driving and check the
-autopilot drives. (2) Lane-table rows in MILESTONES.md for FEAT-230, 231, 233, 236, 238, 223, 239, 241..245.
-(3) Register test/pad-e2e.mjs in the smoke's browser run so it cannot drift (proposed, not done). (4) The owner asked
-"how does hunger work?" just before the clear: answer below was given in chat.
+- land/feat-243-particle-shade @ 069b416f (CarGame-spare): dust/smoke/spray read the far shadow map in the shader (round
+  2, the horizon test is deleted). Card feat243-particle-shade-look rewritten; his answer file there is blank (opened only).
+- land/feat-235-r2 @ e18554e1: superseded by queue item 3.
+**Waiting on the owner:** 34 files in owed/. feat242-runlog-try and feat243 answer files are blank. BUG-189 pad check.
+**Owed by the orchestrator:** (1) PERF-40 bench re-run (host audio clock stalled; `sudo killall coreaudiod` is the
+owner's). (2) Lane-table rows in MILESTONES.md for FEAT-230, 231, 233, 236, 238, 223, 239, 241..254. (3) Register
+test/pad-e2e.mjs in the smoke's browser run. (4) A stale shell loop from 11-14 in CarGame-spare (waits on an empty
+task file): harmless, left alone.
 **Play build for the owner's Windows machine:** http://m4air:8002 = a FROZEN production build of main ea373576 in
 `wip/play-build/`, served by `python3 -m http.server 8002 --bind 100.111.133.99 --directory wip/play-build` (started by
 the orchestrator; it dies with a reboot). Refresh on his word: `npm run build && rsync -a --delete dist/ wip/play-build/`.
-**Next free DEC:** 359 (332-336 unused).
+**Next free DEC:** 366 (332-336 unused; 359-365 are Lane A's).
 **Gotchas (keep):** (1) agents stall or re-report in loops on background waits: ask for ONE report, TaskStop a finished
 agent that keeps waking, above all when a new agent shares its worktree. (2) Owed and dive answers save as the owner
 types: act only when the file is 3 min stale. (3) DIVE answers land in ledorepo `dives/<slug>.answers.json`: at every
