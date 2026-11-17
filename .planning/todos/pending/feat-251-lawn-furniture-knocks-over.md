@@ -61,4 +61,6 @@ Bound = 2·m·v/M. The truck's vertical speed moves < 0.03 m/s (no kick). Step c
 data/prop-models.js, src/main.js (`_updateOrnaments`), src/poi.js (`satSolid` comment), test/lawn-knock.mjs, test/gates.mjs.
 
 ## Log
-- 2026-11-17 (s2): built on land/feat-251-lawn. Gate lawn-knock green; affected gates and fingerprints: see the report.
+- 2026-11-17 (s2): built on land/feat-251-lawn. Affected gates 48/48 green (--serial, cdp-smoke not run on a branch).
+  fingerprint-physics and fingerprint-world ALL IDENTICAL to main 099f883f: the world print hashes satellite placement,
+  and the colliders are derived at runtime (satSolid), so no entry moves. Unverified: an in-game drive (owed card).
