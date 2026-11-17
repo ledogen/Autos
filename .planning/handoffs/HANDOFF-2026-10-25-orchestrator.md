@@ -149,8 +149,8 @@ Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale, play b
 tonight. I have a reset in the pocket." So the two-agent cap is OFF for tonight: one agent per free worktree, grouped by
 code area. A one-shot timer fires at 07:13 with the word "orchestrator" (session-only cron).
 
-**Main:** b82f78bd, NOT pushed, GREEN: smoke PASS 36 steps + 132 affected gates + pad-e2e on land/integrate-1117b
-(CarGame-land-gps/wip/*-integrate-b.log); main differs from that tree by one docs commit. Play build :8002 = b82f78bd.
+**Main:** bd9e6581 (b82f78bd + FEAT-251 lawn furniture, smoke PASS on land/integrate-1117c), NOT pushed, GREEN: smoke PASS 36 steps + 132 affected gates + pad-e2e on land/integrate-1117b
+(CarGame-land-gps/wip/*-integrate-b.log); main differs from that tree by one docs commit. Play build :8002 = bd9e6581.
 **HOW LANDINGS WORK TONIGHT:** never merge finished branches into main one by one. An Opus integration agent in
 CarGame-land-gps merges them onto `land/integrate-1117<x>` (cut from main), fixes clashes, runs gates + pad-e2e + ONE full
 smoke there; main is then fast-forwarded (`git merge --ff-only`) and the play build refreshed
