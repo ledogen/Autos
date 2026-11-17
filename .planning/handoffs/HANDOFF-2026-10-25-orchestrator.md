@@ -149,42 +149,40 @@ Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale, play b
 tonight. I have a reset in the pocket." So the two-agent cap is OFF for tonight: one agent per free worktree, grouped by
 code area. A one-shot timer fires at 07:13 with the word "orchestrator" (session-only cron).
 
-**Main:** 53cc3b6b + docs, NOT pushed. **SMOKE RED on main (04:00):** step "service" fails alone
-(`SMOKE_STEPS=boot,story,service`: "the corner swap did not queue on the cart"), after merging land/pad-menus (ac4a06c2)
-and land/missions-1117 (53cc3b6b; one conflict in `_updateParkTriggers` resolved by hand). A Sonnet agent in
-CarGame-land-gps on land/smoke-service-fix is finding the cause (game or smoke). LAND NOTHING ELSE until it is green,
-and never merge while a smoke runs (the 03:22 smoke died to exactly that). Last green smoke: 9b6e3daa
-(wip/orch/smoke-1117-abs2.log); play build :8002 = 9b6e3daa. Landed tonight: e7239312 offer card "from" · BUG-191 ABS
-(6a74de22; card bug191-abs-drive) · DEC-367 cooler ×1/4 (6c4280e8) · pad/menu batch FEAT-252/254/255, BUG-192/193 (card
-pad-menus-look; DEC-368/369 are DRAFT) · missions batch FEAT-256/257, BUG-194/195 (card missions-1117-look; DEC-370/371).
-BUG-199 ticketed (run log part lost to Chrome's multiple-download block).
-**RUNNING at 04:20 (each mints its own tickets from the ids given, writes one owed card, never lands):**
-- Smoke fix, CarGame-land-gps, land/smoke-service-fix (Sonnet): first fix committed 2d1288ec ("smoke's corner-swap step
-  pokes tires only after the Shop tab's preview has lifted"), not yet reported. LAND THIS FIRST.
-- Lane B, CarGame-machine, land/bug-179 (Opus): finish chained forks (regression on seed 4243617325, spurs, 10th example,
-  sheet, card bug179-chained-forks-look). Owner signs off BEFORE main (DEC-366).
-- Lane p, CarGame-perf, land/machine-1117 (Opus): FEAT-258, BUG-196, BUG-197, FEAT-204, FEAT-259. DEC-372..375.
+**Main:** 5c6241b8 + docs, NOT pushed, GREEN: full smoke PASS 36 steps on exactly this tree
+(CarGame-land-gps/wip/smoke-integrate.log), 50 affected gates green, pad-e2e ALL OK. Play build :8002 = 5c6241b8.
+**HOW LANDINGS WORK TONIGHT:** never merge finished branches into main one by one. An Opus integration agent in
+CarGame-land-gps merges them onto `land/integrate-1117<x>` (cut from main), fixes clashes, runs gates + pad-e2e + ONE full
+smoke there; main is then fast-forwarded (`git merge --ff-only`) and the play build refreshed
+(`npm run build && rsync -a --delete dist/ wip/play-build/`). (The 03:22 smoke died because I merged under it.)
+**Landed tonight (all on main):** offer card "from" (e7239312) · BUG-191 ABS (card bug191-abs-drive) · cooler ×1/4
+(DEC-367) · pad/menu batch FEAT-252/254/255, BUG-192/193 (card pad-menus-look; DEC-368/369 DRAFT) · missions batch
+FEAT-256/257, BUG-194/195 (card missions-1117-look) · tutorial round 3 (DEC-359..363; DEC-364 DRAFT "economy unchanged by
+the day renumber" needs the owner's confirmation; card tutorial-test-drives) · UI scale + UI batch 2 (DEC-383/384; card
+ui-1117-look) · FEAT-69: freight deed line 300 kg, oil change $6 (DEC-385..390; card feat69-freight-lists) · a fix so
+the pad can use the inventory while a waiting tutorial card is up (`dlg-waits`, 3095f420; not hand-verified on a pad).
+**RUNNING at 04:40:**
+- Integration round 2, CarGame-land-gps, land/integrate-1117b (Opus): land/rumble-runlog (FEAT-247 vibration, card
+  feat247-vibration-feel; BUG-199 run log one file, DEC-392) + land/camera-campfire (FEAT-246, FEAT-264, DEC-393, card
+  camera-campfire-look). Fast-forward main to its head when it reports green.
+- Lane p, CarGame-perf, land/machine-1117 (Opus): all five built and committed (FEAT-258, BUG-196, BUG-197, FEAT-204,
+  FEAT-259; DEC-372..375; card machine-1117-look), finishing its gate run. NEXT integration round.
 - Lane C, CarGame-content, land/food-1117 (Opus): FEAT-250, FEAT-260, BUG-198, FEAT-261. DEC-376..382. Card
-  food-1117-numbers BLOCKS landing.
-- u, CarGame-spare-base, land/feat-235-r3 (Sonnet): cluster round 3 (V1 + V2's ignition place and frame shape). DEC-391.
-- a, CarGame-run-shape, land/rumble-runlog (Sonnet): FEAT-247 vibration + BUG-199 run log as one file. DEC-392.
-- s2, CarGame-land-211d, land/camera-campfire (Sonnet): FEAT-246 camera collision + FEAT-264 dead campfire (+ ASSET-90
-  ticket only). DEC-393.
-**BUILT, WAITING TO LAND once main is green (merge main into each first; most touch main.js and cdp-smoke.mjs):**
-1. land/tut-round3 (branch only; was in CarGame-run-shape): tutorial round 3 + economy unchanged by the renumber
-   (DEC-359..363, DEC-364 DRAFT for the owner). Its own full smoke PASSED 35 steps. Card tutorial-test-drives (open).
-2. land/ui-1117 @ 5b56acc4 (branch only): UI scale Small/Big ×1.5 (DEC-383), gradient, plot labels, FEAT-262, FEAT-263.
-   Check `grep -a FAIL /tmp/ui1117-gates.log` first. Card ui-1117-look. Sheet CarGame-spare-base/wip/ui-1117/sheet.jpg.
-3. land/feat-69-budget @ c85fd7b4 (branch only): freight deed line 300 kg, oil change $6, DEC-385..390. Check
-   /private/tmp/claude-501/scr/gates.log first. Card feat69-freight-lists (the owner approves/kills loads).
-**QUEUE:**
-1. Tutorial round 4 (after round 3 lands): seed re-search for a gentler Larry's → gas station grade (Opus) · say in the
-   tutorial that time does not pass while parked with the handbrake (answered/tutorial-test-drives.answer-2026-11-17b.json)
-   · his answers to the questions on the tutorial card.
-2. FEAT-249 shade past the far shadow map (Opus) · FEAT-251 lawn furniture knocks over (Opus).
-3. After the owner answers feat69-freight-lists: add approved heavy loads, trim killed light ones.
-**BUILT, HELD for the owner (not on main):** land/feat-243-particle-shade @ 069b416f (CarGame-spare): dust/smoke/spray
-read the far shadow map (round 2). Card feat243-particle-shade-look; his answer file there is blank (opened only).
+  food-1117-numbers BLOCKS landing (the owner's numbers).
+- s2, CarGame-land-211d, land/feat-251-lawn (Opus): lawn furniture knocks over. DEC-394. Card feat251-lawn-drive.
+- b, CarGame-machine, land/feat-249-far-shade (Opus): shade past the far shadow map. Card feat249-far-shade-look.
+- u, CarGame-spare-base, land/tut-seed-search-r2 (Opus): tutorial seed re-search; the owner picks (card
+  tutorial-seed-pick-r2); the pin does not change.
+**BUILT, HELD for the owner (not on main):**
+- land/bug-179 @ 1863415d (branch only): chained forks, 4 tears fixed, 0 new, 12 examples; open risk = dead-end stubs.
+  Card bug179-chained-forks-look (sign off / changes / drop). Needs a main merge before landing.
+- land/feat-235-r3 @ f72c5d15 (branch only): cluster round 3 (DEC-391). Card feat235-cluster-r3-look. Its gpu-reset run
+  failed on TREE IMPOSTORS ("empty tiles 0 → 8"), unexplained, probably load: re-run `node test/gpu-reset.mjs` on main
+  on a quiet machine before believing either way.
+- land/feat-243-particle-shade @ 069b416f (CarGame-spare): dust reads the far shadow map. Card feat243-particle-shade-look.
+**QUEUE:** (1) tutorial round 4 after the owner answers the tutorial card and picks a seed: the handbrake-stops-time
+line (answered/tutorial-test-drives.answer-2026-11-17b.json). (2) After he answers feat69-freight-lists: add approved heavy
+loads, trim killed light ones. (3) ASSET-90 ash-only campfire model (nobody on it).
 **Waiting on the owner:** the owed pile. feat242-runlog-try and feat243 answer files are blank. BUG-189 pad check.
 **Owed by the orchestrator:** (1) PERF-40 bench re-run (host audio clock stalled; `sudo killall coreaudiod` is the
 owner's). (2) Lane-table rows in MILESTONES.md for FEAT-230, 231, 233, 236, 238, 223, 239, 241..264. (3) Register
@@ -192,7 +190,7 @@ test/pad-e2e.mjs in the smoke's browser run. (4) A stale shell loop from 11-14 i
 **Play build for the owner's Windows machine:** http://m4air:8002 = a FROZEN production build of main ea373576 in
 `wip/play-build/`, served by `python3 -m http.server 8002 --bind 100.111.133.99 --directory wip/play-build` (started by
 the orchestrator; it dies with a reboot). Refresh on his word: `npm run build && rsync -a --delete dist/ wip/play-build/`.
-**Next free DEC:** 394 (332-336 unused; 372-382 and 391-393 are with running agents).
+**Next free DEC:** 395 (332-336 unused; 372-382 and 394 are with running agents).
 **Gotchas (keep):** (1) agents stall or re-report in loops on background waits: ask for ONE report, TaskStop a finished
 agent that keeps waking, above all when a new agent shares its worktree. (2) Owed and dive answers save as the owner
 types: act only when the file is 3 min stale. (3) DIVE answers land in ledorepo `dives/<slug>.answers.json`: at every
