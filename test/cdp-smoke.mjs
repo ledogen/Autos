@@ -2538,7 +2538,7 @@ const STEPS = [
     // FEAT-184 stage 3: the key's card comes first and the pedals' card only once the engine runs — with no card up and
     // the engine off, hold Y (the ignition) until it catches.
     for (let i = 0; i < 16 && !/^Drive safe/.test(await txt()); i++) {
-      if (!await dlg() && await js('window.__vs.ignition?.state !== "running"')) await hold(3, 2000)
+      if ((!await dlg() || await js('window.__tutorial().until') === 'engine') && await js('window.__vs.ignition?.state !== "running"')) await hold(3, 2000)   // DEC-359: the key card waits for the key
       else { await btn(0); await sleep(150) }
     }
     const steerWords = () => js('[...document.querySelectorAll("#dlg-text > .kc-kb, #dlg-text > .kc-pad")].filter(e => getComputedStyle(e).display !== "none").map(e => e.textContent).join("|")')
