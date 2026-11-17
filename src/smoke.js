@@ -74,15 +74,15 @@ export const FIRE_SMOKE = {
   rate:     2.5,      // puffs/s
   lifeMin:  4.0,      // s
   lifeMax:  6.0,
-  sizeMin:  0.10,     // m — billboard size at birth (the ash heap is ~0.25 m across)
-  sizeMax:  0.18,
-  grow:     6.0,      // final size = birth × (1 + grow): ~0.7–1.3 m at the top of the rise
+  sizeMin:  0.15,     // m — billboard size at birth (the ash heap is ~0.25 m across)
+  sizeMax:  0.25,
+  grow:     7.0,      // final size = birth × (1 + grow): ~1.2–2 m at the top of the rise, faded by then
   riseMin:  0.22,     // m/s — constant: no settle, the wisp keeps climbing until it fades
   riseMax:  0.34,
   spread:   0.10,     // m — birth scatter across the heap
   drift:    0.06,     // m/s — lateral wander, killed by DRAG, so the column stays mostly vertical
-  opacity:  0.16,     // peak alpha — subtle
-  color:    0x8c8a86, // ash grey
+  opacity:  0.42,     // peak alpha before the puff texture's own soft edge — subtle
+  color:    0xa8a6a0, // ash grey
 }
 
 export class TireSmokeSystem {

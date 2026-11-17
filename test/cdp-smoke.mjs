@@ -257,6 +257,48 @@ const STEPS = [
     home = await car()
     check(fin(home.x, home.y, home.z), `truck position not finite: ${JSON.stringify(home)}`)
   }],
+  ['boreCam', async () => {
+    // FEAT-246: seed 6's nomenu spawn is in a bore (a test seed). The right stick swings the chase camera a full turn
+    // round the truck; at every sample it must stay INSIDE the bore (nothing of the road group, the lining and crown, or
+    // the static solids between truck and camera) and out of the truck. Also times the probe at that pose (makeBoomProbe;
+    // GROUP_STATIC | GROUP_ROAD = 24n, the old static-only ray = 8n). ASSET90_SHOTS=1 then steers the truck up against the
+    // lining and swings the camera into it: a picture with the old ray, then the new one.
+    const under = await js('(p => window.__terrain().analyticHeight(p.x, p.z) > p.y + 3)(window.__vs.position)')
+    if (!under) { console.log('  boreCam: spawn not under the heightfield, skipped'); return }
+    const jsa = async (expr) => (await client.cmd('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: expr })).result?.result?.value
+    const setMask = (m) => jsa(`(async () => { const { makeBoomProbe } = await import('/src/camera-boom.js'); const { setCameraBoomProbe } = await import('/src/camera.js')
+      setCameraBoomProbe(makeBoomProbe(window.__physicsEngine, (x, z) => window.__terrain().analyticHeight(x, z), ${m})) })()`)
+    const los = () => js(`(() => { const p = window.__vs.position, c = window.__cam().position, d = c.clone().sub(p), l = d.length()
+      return { blocked: !!window.__physicsEngine.castRay(p, d.normalize(), l, { collidesWith: 24n }), boom: +l.toFixed(2) } })()`)
+    const probeUs = (m) => jsa(`(async () => { const { makeBoomProbe } = await import('/src/camera-boom.js')
+      const pr = makeBoomProbe(window.__physicsEngine, (x, z) => window.__terrain().analyticHeight(x, z), ${m})
+      const p = window.__vs.position.clone(), c = window.__cam().position.clone(), t = []
+      for (let k = 0; k < 21; k++) { const t0 = performance.now(); for (let i = 0; i < 500; i++) pr(p, c); t.push((performance.now() - t0) / 500) }
+      return t.sort((a, b) => a - b)[10] * 1000 })()`)
+    await frames(60, 2000)   // the boot's camera settles behind the truck first
+    const us = await probeUs('24n'), us8 = await probeUs('8n')
+    await padOn()
+    let minBoom = 1e9
+    for (let k = 0; k < 24; k++) {
+      await js('__fp.axes[2] = 1'); await frames(3, 100)
+      const q = await los(); minBoom = Math.min(minBoom, q.boom)
+      check(!q.blocked && q.boom > 1, `the chase camera swung round in the bore is behind the lining or the crown, or in the truck: ${JSON.stringify(q)}`)
+    }
+    await js('__fp.axes[2] = 0')
+    let old = null, now = null
+    if (process.env.ASSET90_SHOTS) {
+      mkdirSync('wip/asset-90', { recursive: true })
+      const shot = async (f) => { await frames(20, 700); writeFileSync(`wip/asset-90/${f}`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+      await padOff(); await key('d', true); await hold('w', 4); await key('d', false); await hold(' ', 2); await padOn()   // steered into the lining
+      await setMask('8n')
+      for (let k = 0; k < 60 && !(await los()).blocked; k++) { await js('__fp.axes[2] = 1'); await frames(2, 60) }
+      await js('__fp.axes[2] = 0'); await shot('bore-before.png'); old = await los()
+      await setMask('24n'); await shot('bore-after.png'); now = await los()
+    }
+    await padOff(); await frames(10, 300)
+    console.log(`  boreCam: a full swing, boom ≥ ${minBoom} m, never behind the lining; probe ${us?.toFixed(1)} us median (static-only ray ${us8?.toFixed(1)} us)`
+      + (old ? `; pictures: old ray ${JSON.stringify(old)}, new ${JSON.stringify(now)}` : ''))
+  }],
   ['drive', async () => {
     const c0 = await car()
     await hold('w', 8)
@@ -795,9 +837,10 @@ const STEPS = [
     console.log(`  cook: 2→1 raw, 0→1 cooked, +${(dh * 60).toFixed(1)} min; hold kit ${withKit.toFixed(2)} h / none ${noKit.toFixed(2)} h / away ${away.toFixed(2)} h; save ${have} → ${back}`)
   }],
   ['deadFire', async () => {
-    // FEAT-264 + ASSET-90 (DEC-393): a camp sleep over two hours swaps the live fire for the ashes-only model, and a new
-    // camp lights it again. Runs after story: SMOKE_STEPS=boot,story,deadFire. ASSET90_SHOTS=1 also takes the day / dusk
-    // pictures into wip/asset-90/ (live, the pre-ASSET-90 dead look, the new one; wide and close).
+    // FEAT-264 + ASSET-90 (DEC-393, DEC-397): a camp sleep over two hours swaps the live fire for the ashes-only model,
+    // which smokes; cooking at it relights it; a new camp lights it again. Runs after story: SMOKE_STEPS=boot,story,deadFire.
+    // ASSET90_SHOTS=1 also takes the dead fire's smoke (day / dusk / night, wide and close, two frames 1 s apart) and the
+    // relit fire into wip/asset-90/.
     const fire = () => js(`(() => { const r = window.sky.scene.getObjectByName('campfire'); if (!r || !r.visible) return null
       const has = (c, m) => { let f = false; c.traverse(o => { if (o.isMesh && [].concat(o.material).some(x => x.name.includes(m))) f = true }); return f }
       return { live: r.children.some(c => c.visible && has(c, 'FireLog')), dead: r.children.some(c => c.visible && has(c, 'FireCinder')) } })()`)
@@ -808,17 +851,16 @@ const STEPS = [
     await openCamp()
     check(await until(async () => (await fire())?.live === true && !(await fire()).dead, 8000), `a fresh camp does not show the live fire: ${JSON.stringify(await fire())}`)
     const shots = !!process.env.ASSET90_SHOTS
-    const snap = async (f) => { if (!shots) return; mkdirSync('wip/asset-90', { recursive: true }); await frames(20, 1500)
+    const snap = async (f, settle = 1500) => { if (!shots) return; mkdirSync('wip/asset-90', { recursive: true }); await frames(settle ? 20 : 1, settle)
       writeFileSync(`wip/asset-90/${f}`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
     const toHour = (h) => js(`window.__day().advanceMinutes(Math.round((((${h} - window.__day().clockH()) % 24 + 24) % 24) * 60))`)
-    // wide: 5 m out and 2.6 m up, the truck behind the fire; close: 1.3 m out, 0.9 m up, looking down into the ring
-    const look = (d, up) => js(`(() => { const p = new window.__vs.position.constructor(); window.sky.scene.getObjectByName('campfire').getWorldPosition(p)
+    // wide: 5 m out and 2.6 m up, the truck behind the fire; close: 1.6 m out, 1.0 m up, looking down into the ring
+    const look = (d, up, aim = 0.05) => js(`(() => { const p = new window.__vs.position.constructor(); window.sky.scene.getObjectByName('campfire').getWorldPosition(p)
       const v = window.__vs.position, a = Math.atan2(p.x - v.x, p.z - v.z), cx = p.x + Math.sin(a) * ${d}, cz = p.z + Math.cos(a) * ${d}, cy = p.y + ${up}
-      const dx = p.x - cx, dy = p.y + 0.05 - cy, dz = p.z - cz
+      const dx = p.x - cx, dy = p.y + ${aim} - cy, dz = p.z - cz
       window.__view(cx, cy, cz, Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))) })()`)
-    const pair = async (tag) => { await look(5, 2.6); await snap(`${tag}-wide.png`); await look(1.3, 0.9); await snap(`${tag}-close.png`) }
-    if (shots) { await toHour(13); await pair('live-day'); await toHour(19.6); await pair('live-dusk') }
-    if (shots) await tap('c', { shift: true })   // back to the camp camera so the card's buttons are live
+    await js(`window.__inv.grant('potato', 1)`)   // for the relight below (DEC-397)
+    if (await js('document.getElementById("resume-card").style.display === "flex"')) await tap('F8')   // a resumed run opens frozen (FEAT-42); any key but a bare modifier lifts it
     const shown = (id) => js(`(b => b && getComputedStyle(b).display !== "none")(document.getElementById("${id}"))`)
     check(await until(() => shown('cp-sleep'), 3000), 'the camp card offers no sleep')
     await js('document.getElementById("cp-sleep").click()')
@@ -827,16 +869,28 @@ const STEPS = [
     await js('document.getElementById("cp-sleep-go").click()')
     check(await until(async () => (await js('window.__day().clockH()')) > h0 + 2.5, 8000), 'the 8 h camp sleep did not run')
     check(await until(async () => (await fire())?.dead === true && !(await fire()).live, 8000), `after an 8 h camp sleep the fire is not the dead model: ${JSON.stringify(await fire())}`)
+    // DEC-397: the dead fire smokes — puffs of the shared smoke pool alive within 3 m of it, rising above the heap.
+    const puffs = () => js(`(() => { const p = new window.__vs.position.constructor(); window.sky.scene.getObjectByName('campfire').getWorldPosition(p)
+      let n = 0, top = -1e9; window.sky.scene.traverse(o => { const a = o.geometry?.attributes?.aPos; if (!a) return
+        for (let i = 0; i < o.geometry.instanceCount; i++) if (Math.hypot(a.getX(i) - p.x, a.getZ(i) - p.z) < 3) { n++; top = Math.max(top, a.getY(i) - p.y) } })
+      return { n, top } })()`)
+    check(await until(async () => { const q = await puffs(); return q.n >= 4 && q.top > 0.5 }, 8000), `the dead fire does not smoke: ${JSON.stringify(await puffs())}`)
     if (shots) {
-      const old = (on) => js(`window.sky.scene.getObjectByName('campfire').children.forEach(c => { let l = false, d = false
-        c.traverse(o => { if (o.isMesh) for (const x of [].concat(o.material)) { l ||= x.name.includes('FireLog'); d ||= x.name.includes('FireCinder') } })
-        if (l) c.visible = ${on}; if (d) c.visible = ${!on} })`)
-      for (const [h, t] of [[13, 'day'], [19.6, 'dusk']]) {
+      for (const [h, t] of [[13, 'day'], [19.6, 'dusk'], [23.5, 'night']]) {
         await toHour(h); await until(() => js('!document.getElementById("midnight-card").classList.contains("on")'), 8000)
-        await pair(`dead-${t}`); await old(true); await pair(`old-${t}`); await old(false)
+        await look(5, 1.8, 0.8); await snap(`smoke-${t}-wide-a.png`); await sleep(1000); await snap(`smoke-${t}-wide-b.png`, 0)
+        await look(2.2, 0.9, 0.6); await snap(`smoke-${t}-close-a.png`); await sleep(1000); await snap(`smoke-${t}-close-b.png`, 0)
       }
-      await tap('c', { shift: true })
+      await toHour(13); await until(() => js('!document.getElementById("midnight-card").classList.contains("on")'), 8000)
+      await tap('c', { shift: true })   // back to the camp camera so the card's buttons are live
     }
+    // DEC-397: the cook buttons show at the dead fire, and a cook relights it at once.
+    check(await until(() => shown('cp-cook'), 3000), 'no cook button at the dead fire with a raw potato aboard')
+    await js('document.getElementById("cp-cook").click()')
+    check(await until(async () => (await fire())?.live === true && !(await fire()).dead, 2000), `cooking at the dead fire did not relight it: ${JSON.stringify(await fire())}`)
+    await until(async () => !(await js('document.getElementById("camp-fade").classList.contains("on")')), 5000)
+    check(await js('(() => { let l = false; window.sky.scene.getObjectByName("campfire").traverse(o => { if (o.isPointLight && o.visible) l = true }); return l })()'), 'the relit fire has no light')
+    if (shots) { await look(5, 2.6); await snap('relit-day-wide.png'); await look(1.6, 1.0); await snap('relit-day-close.png'); await tap('c', { shift: true }) }
     await js('document.getElementById("cp-break")?.click()')
     check(await until(async () => !await js('document.body.classList.contains("camp-on")'), 3000), 'break camp left the camp scene up')
     await openCamp()
