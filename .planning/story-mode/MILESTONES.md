@@ -661,6 +661,16 @@ player damage screen (FEAT-90). Open:
 | FEAT-203 | tire iron + floor jack — the spare change is 2 h bare, 30 min with both (owner, 2026-11-13) |
 | FEAT-207 | rear-axle gear ratios as findable parts, shorter ratios rarer (owner, 2026-11-13) |
 | FEAT-209 | dynamic gas prices — each station within ±5 % of the day's price (owner, 2026-11-13) |
+| FEAT-230 | cooking at camp — the potato, groceries, and the cooking kit's job |
+| FEAT-231 | bed friction — the rubber mat (μ 0.30) and the bedliner (μ 0.60) |
+| FEAT-233 | the pump's own face shows the sale, live, in rolling drums |
+| FEAT-244 | every repair menu level is coloured by its worst component — ✅ closed |
+| FEAT-250 | hunger is a satiety counter that foods stack into; six new foods |
+| FEAT-258 | bump start — already turning above 300 rpm, the key press starts the engine |
+| FEAT-259 | standard tires turn up more often; new stock arrives faster |
+| FEAT-262 | maintenance names the tire fitted on each corner |
+| FEAT-263 | open the vehicle diagnostics from the maintenance menu |
+| FEAT-264 | the campfire is dead after a long sleep |
 
 ### Places and Missions — POI classes, the job budget, delivery [OWNER, 2026-10-07]
 
@@ -682,6 +692,9 @@ owner's name for it.
 | Camp gear slots — what the shop sells renders at camp (items.md visible-kit rule) | FEAT-66 | open |
 | POI model pools — register the built models | FEAT-74 | open — produce stall is its own farm POI (2026-10-16) |
 | Placeholder-replacing models: office, doctor's office, job site, school | ASSET-69, ASSET-70, ASSET-71, ASSET-73 | ✅ closed — 71 shipped 89c519d5, 69/70/73 shipped 10ff0f8f (owner approved 2026-10-31) |
+| Lawn furniture gets knocked flying; only the fire pit is solid | FEAT-251 | open |
+| Shops: a Jobs button at the top replaces the Map button | FEAT-252 | open |
+| An inventory button at mom's house | FEAT-245 | ✅ closed |
 
 **Mission types** (the delivery content carried forward from SM-2, plus demolition):
 
@@ -708,6 +721,9 @@ owner's name for it.
 | Cargo protection — bubble wrap, furniture pad, heavy-duty pad | FEAT-116 | open — needs FEAT-97, FEAT-104 |
 | Pay grows with regional reputation, not the day | FEAT-117 | open — numbers from FEAT-69 |
 | The camp is a planning pause | FEAT-118 | **done** 2026-10-15 (c89995b) |
+| Demolition offers name the count in the sentence | FEAT-256 | open |
+| Paper-route recipients get the GPS turn arrow | FEAT-257 | open |
+| Post-alpha: the player positions loads in the bed; bed accessories block cargo | FEAT-253 | open |
 
 ### Next up — build order [2026-10-24, the alpha]
 
@@ -858,6 +874,19 @@ tickets land in this lane automatically and need no row; only features are liste
 | FEAT-86 | lichen on boulders and stones |
 | FEAT-107 | rain |
 | FEAT-108 | hydroplaning — puddles at the road's low points |
+| FEAT-223 | shadows on the truck itself (shade, tunnels) |
+| FEAT-236 | the whip antenna leans back with speed |
+| FEAT-238 | GPS chevrons dimmer at night |
+| FEAT-239 | pad: switching mission cards is the same control on the map and at a POI — ✅ closed |
+| FEAT-241 | each run's truck gets a random factory colour |
+| FEAT-242 | opt-in run logger that auto-downloads a JSON log (DEC-358) — ✅ closed |
+| FEAT-243 | wheel dust and smoke take the shade of the ground under them |
+| FEAT-246 | the chase camera cannot pass through walls or terrain |
+| FEAT-247 | controller vibration for everything, not only ABS |
+| FEAT-248 | UI scale setting: Small (today) and Big (TV) |
+| FEAT-249 | mountain shade does not stop at the edge of the shadow map |
+| FEAT-254 | pad menus: something is always selected, and the B menu takes the left stick |
+| FEAT-255 | pad mode: a resting mouse is ignored until it moves |
 
 ---
 
