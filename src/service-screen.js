@@ -24,17 +24,16 @@
  *                puts back exactly what was there.
  *                My Items, below it: sell the parts you carry, and repair or patch them as their own items
  *                (a mounted pair's wheel too, FEAT-196).
- *   Jobs       — only while the shop has live offers (owner, 2026-10-20: it still posts work): one
- *                button, "go to jobs" (FEAT-197, owner 2026-11-11). It closes the screen and hands over to
- *                the offers (the offer card over the map); declining them comes back to this screen.
+ *   Jobs       — a BUTTON at the top, not a tab (FEAT-252, owner 2026-11-17), only while the shop has live
+ *                offers (it still posts work; FEAT-197). It closes the screen and hands over to the offers
+ *                (the offer card over the map); declining them comes back to this screen.
  * THE CART (FEAT-212, owner 2026-11-13): every button that costs money or time queues its job (ServiceCenter.queue) —
  * the truck shows it at once, the money and the clock wait for "check out" on the card's foot; "discard" puts it all
  * back; a line's × takes one out. With work in the cart, leaving (Esc / B, back, go to jobs, the brake) asks first.
- * A part that comes off goes straight into My Items (owner 11-04: no sell / keep prompt). "map" opens
- * the map over the screen (owner, 2026-10-21); the screen hides under it and the clock stays held.
+ * A part that comes off goes straight into My Items (owner 11-04: no sell / keep prompt).
  *
  * FEAT-104: a storefront (general store, gas station, food vendor) opens the same screen as a STORE:
- * the Shop tab and its Jobs, nothing else. It is buy only (owner, 2026-10-07): no My Vehicle, no My
+ * the Shop tab and the Jobs button, nothing else. It is buy only (owner, 2026-10-07): no My Vehicle, no My
  * Items, no selling, and the camera stays where it was, since there is nothing on the truck to look at.
  *
  * Described, never scored (SM-INV-10): parts are names, prices are money, conditions are colour bars
@@ -184,17 +183,16 @@ export class ServiceScreen {
    * @param {import('./service.js').ServiceCenter} service
    * @param {object} vehicleState - read-only; the brake coming off closes the screen
    * @param {object} o
-   * @param {() => object[]} o.jobs - this shop's live offers (the Jobs tab shows while there are any)
+   * @param {() => object[]} o.jobs - this shop's live offers (the top Jobs button shows while there are any)
    * @param {() => void} o.openJobs - hand the brake to the offers; their decline reopens this screen (FEAT-197)
-   * @param {() => void} o.openMap - show the map over the screen
    * @param {() => number} o.nowH - the game clock (daySystem.clockH): the shelf's time left
    * @param {(open:boolean) => void} o.onView - the screen opened / closed (main.js: the camera)
    * @param {() => void} o.openDiagnostics - Maintenance's "Vehicle Diagnostics": the V-key damage screen over this one
    */
-  constructor (service, vehicleState, { jobs, openJobs, openMap, nowH, onView, openDiagnostics }) {
+  constructor (service, vehicleState, { jobs, openJobs, nowH, onView, openDiagnostics }) {
     this.service = service
     this.vehicleState = vehicleState
-    Object.assign(this, { jobs, openJobs, openMap, nowH, onView, openDiagnostics })
+    Object.assign(this, { jobs, openJobs, nowH, onView, openDiagnostics })
     this.isOpen = false
     this.tab = 'maint'
     this.name = ''
@@ -317,7 +315,6 @@ export class ServiceScreen {
     switch (b.dataset.act) {
       case 'close': this.leave(); return
       case 'jobs': this.leave(() => this.openJobs()); return
-      case 'map': this.openMap(); return
       case 'checkout': if (s.checkout()) this._left(); break
       case 'discard': s.discard(); this.paths.shop = []; this._left(); break
       case 'unqueue': this.note = s.remove(+b.dataset.line); this.paths.shop = []; break
@@ -384,16 +381,15 @@ export class ServiceScreen {
     if (!this.isOpen) return
     const s = this.service
     const jobs = this.jobs()
-    if (this.tab === 'jobs' && !jobs.length) this.tab = this.store ? 'shop' : 'maint'
     const tab = (id, label) => `<button class="sv-tab${this.tab === id ? ' on' : ''}" data-act="tab" data-tab="${id}">${label}</button>`
     const [lines, foot] = this._cart(), top = this.card.querySelector('.sv-body')?.scrollTop ?? 0
     this.card.innerHTML =
       `<div class="sv-body"><div class="sv-head"><span class="sv-title">${this.name}${this.store ? '' : ' · service'}</span>`
       + `<span class="sv-wallet">$${formatMoney(s.money())}<br><span class="sv-clock">${formatDue(Math.floor(this.nowH() * 60) / 60)}</span></span>`
-      + btn('map', 'map')
+      + (jobs.length ? btn('jobs', 'jobs') : '')   // FEAT-252 (owner, 2026-11-17): a button, not a tab — it opens the offers on the map
       + `</div>`
-      + `<div class="sv-tabs">${this.store ? tab('shop', 'Shop') : tab('maint', 'Maintenance') + tab('shop', 'Shop')}${jobs.length ? tab('jobs', 'Jobs') : ''}</div>`
-      + (this.tab === 'maint' ? this._maintenance() : this.tab === 'shop' ? this._shop() : this._jobs())
+      + `<div class="sv-tabs">${this.store ? tab('shop', 'Shop') : tab('maint', 'Maintenance') + tab('shop', 'Shop')}</div>`
+      + (this.tab === 'maint' ? this._maintenance() : this._shop())
       + lines + `</div>` + foot
       + BACK_BUTTON   // the card's way out (owner, 2026-10-21: replaces the corner ×)
     this.card.firstChild.scrollTop = top   // a click re-renders the body: it stays where it was scrolled
@@ -590,13 +586,6 @@ export class ServiceScreen {
         : btn('buy', 'add to cart', ok, `data-slot="${i}" data-socket="${sockets[0]}"`, ' ok')) : '')
       + (ITEMS[e.id]?.eatIn ? this._act('Eat here', carry, btn('eat', 'add to cart', ok, `data-slot="${i}"`, ' ok'))
         : this._act('Into the inventory', carry, btn('stow', 'add to cart', ok, `data-slot="${i}"`, sockets.length ? '' : ' ok'))) + `</div>`
-  }
-
-  // ── Jobs ────────────────────────────────────────────────────────────────────────────────────────
-
-  /** FEAT-197 (owner, 2026-11-11): one button — the shop's offers on the map; back returns here (main.js openJobs). */
-  _jobs () {
-    return `<div class="sv-slot"><div class="sv-row"><span class="sv-acts">${btn('jobs', 'go to jobs', true, '', ' ok')}</span></div></div>`
   }
 
   /** My Items (owner, 2026-11-14: "match what you did on the maintenance tab"): the parts you carry as rows of the same

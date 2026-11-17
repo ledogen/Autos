@@ -3879,7 +3879,7 @@ function _placePoiLight () {
   _poiLight.color.setHex(L.color); _poiLight.intensity = L.intensity; _poiLight.distance = L.distance
 }
 const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
-  // The shop still posts work (FEAT-167: its Jobs tab). FEAT-197 (owner, 2026-11-11): the tab's one button,
+  // The shop still posts work (FEAT-167). FEAT-197 / FEAT-252: the top Jobs button,
   // "go to jobs", hands the brake to the offers — the offer card over the map, as parking does elsewhere —
   // and their decline comes back to this screen (_declineOffer).
   jobs: () => _servicePoi ? _takeableOffers(_servicePoi.id, daySystem.clockH()) : [],
@@ -3889,7 +3889,6 @@ const serviceScreen = new ServiceScreen(serviceCenter, vehicleState, {
     missionSystem.enterFromPoi(_servicePoi, offers, _planOffer)
     _jobsShop = _servicePoi
   },
-  openMap: () => map2d.toggle(),
   openDiagnostics: () => damageScreen.open(),   // FEAT-212: Maintenance's first item, the V-key screen over the shop's
   nowH: () => daySystem.clockH(),
   // A front three-quarter view of the parked truck while the screen is open (owner, 2026-10-22): the
@@ -3940,7 +3939,7 @@ function _openShop (shop) {
 
 /**
  * The offer card's DECLINE (its button, and Esc / pad B through _cardBackButton) — and the dinner invitation's.
- * FEAT-197: offers put up by a shop's "go to jobs" go back to that shop's screen, on its Jobs tab, while the
+ * FEAT-197: offers put up by a shop's "go to jobs" go back to that shop's screen while the
  * truck is still parked there. Space (the brake release) declines without this: it drives off.
  */
 function _declineOffer () {
@@ -3949,8 +3948,6 @@ function _declineOffer () {
   missionSystem.exit()
   if (!shop || _serviceInReach()?.id !== shop.id || !vehicleState.parked) return
   _openShop(shop)
-  serviceScreen.tab = 'jobs'
-  serviceScreen.render()
 }
 
 // BUG-187: the parked offer cards (a giver's, Larry's route) are menus of the place the truck stands at, like the pump:
@@ -6437,7 +6434,9 @@ function _updateParkTriggers (zParked = false) {
   const shop = serviceScreen.isOpen ? null : _serviceInReach()
   if (serviceScreen.isOpen || shop) {
     // FEAT-212: an open service screen hands the damage screen over (its Vehicle Diagnostics); a storefront's never.
-    damageScreen.blocked = !serviceScreen.isOpen || serviceScreen.store
+    // BUG-192 (owner, 2026-11-17): only an OPEN storefront blocks them. It used to read `!isOpen ||`, so backing out of
+    // the shop left the truck parked in reach with the inventory and the B menu still locked ("park").
+    damageScreen.blocked = serviceScreen.isOpen && serviceScreen.store
     if (shop && (pulled || _towOwed)) {
       _towOwed = false
       const store = _openShop(shop)
