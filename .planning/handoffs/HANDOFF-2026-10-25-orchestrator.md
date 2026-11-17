@@ -190,8 +190,12 @@ line 81 too; DEC-372 superseded only DEC-129: needs a new record once the owner 
   food-1117-numbers BLOCKS landing. Needs a main merge (keep the BUG-198 top-up before Larry's call in _checkOpeningEnd).
 - land/feat-249-far-shade @ b21696f0 (CarGame-machine): far shadow box grows with the tier (High ±512 m, Ultra ±640 m).
   Card feat249-far-shade-look. GPU active cycles still owed (bench on a quiet machine, High + Ultra).
-- land/bug-179 @ 1863415d (branch only): chained forks, 4 tears fixed, 0 new, 12 examples; open risk = dead-end stubs.
-  Card bug179-chained-forks-look (sign off / changes / drop). Needs a main merge before landing.
+- land/bug-179 @ c172b590 (CarGame-machine): chained forks + round 2 (d0f216e5) drops the dead-end tails (9 → 0).
+  76 gates green, fingerprint identical to main, build cost +1 % (noise), ribbon tris +1.1 %. Owner 11-17: the tear
+  fix "is a clear improvement", dead ends not wanted, "all i really need fixed" is the tear; perf matters to his call.
+  Card bug179-chained-forks-look (rewritten), sheet wip/bug-179/chained-forks-sheet.jpg (19 tiles). Open: the #9
+  hairpin (38 % climb, undriven), a light sliver at the #17 bend, main's own 51 dead ends (same root, separate change).
+  On his yes: merge main, re-run gates, land via an integration branch + smoke.
 - land/feat-235-r3 @ f72c5d15 (branch only): cluster round 3 (DEC-391). Card feat235-cluster-r3-look. Its gpu-reset run
   failed on TREE IMPOSTORS ("empty tiles 0 → 8"), unexplained, probably load: re-run `node test/gpu-reset.mjs` on main
   on a quiet machine before believing either way.
@@ -206,7 +210,7 @@ test/pad-e2e.mjs in the smoke's browser run. (4) A stale shell loop from 11-14 i
 **Play build for the owner's Windows machine:** http://m4air:8002 = a FROZEN production build of main ea373576 in
 `wip/play-build/`, served by `python3 -m http.server 8002 --bind 100.111.133.99 --directory wip/play-build` (started by
 the orchestrator; it dies with a reboot). Refresh on his word: `npm run build && rsync -a --delete dist/ wip/play-build/`.
-**Next free DEC:** 395 (332-336 unused; 372-382 and 394 are with running agents).
+**Next free DEC:** 396 (DEC-395 = impact floor 5 mph, on main 9ab15f26, play build NOT yet refreshed) (332-336 unused; 372-382 and 394 are with running agents).
 **Gotchas (keep):** (1) agents stall or re-report in loops on background waits: ask for ONE report, TaskStop a finished
 agent that keeps waking, above all when a new agent shares its worktree. (2) Owed and dive answers save as the owner
 types: act only when the file is 3 min stale. (3) DIVE answers land in ledorepo `dives/<slug>.answers.json`: at every
