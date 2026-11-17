@@ -7659,7 +7659,7 @@ function _renderMissionUI () {
       break
     }
     default:
-      show(panel, false); show(hud, _tutDrive() || _waypointOn())
+      show(panel, false); show(hud, (_tutDrive() && !!_eveTarget()) || _waypointOn())   // DEC-356: camped at the ranch, no line
       unmountExportRow('mission-panel')
       if (m.error) console.info('[mission]', m.error)
       if (_tutDrive()) {   // FEAT-170: no job, only the way home (FEAT-184: the morning's, to the paycheck)
