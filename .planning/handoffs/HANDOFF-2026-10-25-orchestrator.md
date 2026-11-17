@@ -201,8 +201,7 @@ Next free: BUG-202, DEC-398.
 **BUILT, HELD for the owner (not on main):**
 - land/food-1117 (CarGame-content): FEAT-250, FEAT-260, FEAT-261, BUG-198; DEC-376..381 (DEC-380 draft). Card
   food-1117-numbers BLOCKS landing. Needs a main merge (keep the BUG-198 top-up before Larry's call in _checkOpeningEnd).
-- land/feat-249-far-shade @ b21696f0 (CarGame-machine): far shadow box grows with the tier (High ±512 m, Ultra ±640 m).
-  Card feat249-far-shade-look. GPU active cycles still owed (bench on a quiet machine, High + Ultra).
+- FEAT-249 CLOSED 11-17 "good enough on main" (owner); land/feat-249-far-shade @ b21696f0 kept, never land it unasked.
 - land/feat-235-r3 @ f72c5d15 (branch only): cluster round 3 (DEC-391). Card feat235-cluster-r3-look. Its gpu-reset run
   failed on TREE IMPOSTORS ("empty tiles 0 → 8"), unexplained, probably load: re-run `node test/gpu-reset.mjs` on main
   on a quiet machine before believing either way.
