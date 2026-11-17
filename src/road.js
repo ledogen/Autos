@@ -4345,11 +4345,14 @@ export class RoadSystem {
         // Role sets. A winner may appear in several pairs (one throat, many forks); what is barred
         // is a run ceding twice at this node.
         // BUG-179 (DEC-366): a run MAY both win and lose here — a CHAIN of forks — when every fork it
-        // wins lies past the fork it loses by MINREG of its own road: B cedes to A at ~45 m and C
-        // still forks off B at 268 m (seed 1684703087 node −1,0,0; barring it shipped A and B as two
-        // roads on one pavement, a 6.12 m tear past the plane hold). Distances are from the node along
-        // the run itself. Chains cannot cycle: each link needs +MINREG along roughly parallel arcs.
-        const CHAIN_GAP = 30   // m — MINREG, the promotion's road-on-both-sides-of-a-fork rule
+        // wins lies past the fork it loses by the T's hold reach (JN_HOLD_MAX_SURFACE), so the later
+        // fork lands on B's own road, not the stretch still held to A's trunk. At MINREG (30 m) seed
+        // 1826998337 node −1,2,0 lost its second T (forks 52 m apart; a 5.0 m step where main has 0.1).
+        // The case: B cedes to A at ~45 m and C still forks off B at 268 m (seed 1684703087 node −1,0,0;
+        // barring it shipped A and B as two roads on one pavement, a 6.12 m tear past the plane hold).
+        // Distances are from the node along the run itself. Chains cannot cycle: each link needs +60 m
+        // along roughly parallel arcs.
+        const CHAIN_GAP = JN_HOLD_MAX_SURFACE   // m — past the reach B is still held to A's trunk, so C forks off B's OWN road
         const lostAt = new Map(), wonAt = new Map()   // ck → loser cut / nearest won fork, m from node
         for (const pr of pairs) {
             // a MID-SPAN pair keeps the strict rule: it cannot be a link of a chain either way
@@ -5098,7 +5101,7 @@ export class RoadSystem {
             const wck = wkA < wkB ? wkA + '|' + wkB : wkB + '|' + wkA
             // BUG-179 (DEC-366): a CHAIN at one node — the winner cedes its end at the SAME node to a third
             // road. The T forks off the winner's OWN road past that cession, so only the fork (wCut0) must
-            // clear it by MINREG, the role loop's rule. The winner's plan at its OTHER node keeps the
+            // clear it by JN_HOLD_MAX_SURFACE, the role loop's rule. The winner's plan at its OTHER node keeps the
             // adopted-strand test below, unchanged.
             const nS = wkA === kA || wkA === kB ? wkA : wkB, nO = nS === wkA ? wkB : wkA
             const wSame = this._v2NodeMerges(g, drop, nS, false, pass1).get(wck)
@@ -5109,7 +5112,7 @@ export class RoadSystem {
             const wCut0 = spec.variants[0].wCut
             if (wSame) {
                 const c = wSame.variants[0].lCut
-                if (!(spec.winnerNodeAtStart ? wCut0 >= c + 30 : wCut0 <= c - 30)) return false
+                if (!(spec.winnerNodeAtStart ? wCut0 >= c + JN_HOLD_MAX_SURFACE : wCut0 <= c - JN_HOLD_MAX_SURFACE)) return false
             }
             if (!wRaw) return true
             const lCut0 = wRaw.variants[0].lCut
