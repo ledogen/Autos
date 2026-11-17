@@ -12,7 +12,8 @@ lane: unplaced
 # FEAT-243: Wheel dust and smoke take the shade of the ground under them
 
 ## Next steps
-A free lane: build the approach under Decisions (sample the far shadow map in the particle shader) and show before/after.
+Owner look: `wip/feat-243/feat243-sheet2.jpg` in the spare worktree (columns: main | horizon test | shadow map). Built on
+`land/feat-243-particle-shade`; lands with the owner's OK.
 
 ## Summary
 Dust and smoke in a mountain shadow render as sunlit. Darken them by a cheap shade test, or let them inherit the lighting of the ground below.
@@ -34,7 +35,16 @@ frame) and do not set `lights: true` on the materials (drags in every light unif
 ## Tracker
 - [x] Particles in terrain shade are darker than particles in sun
 - [x] Cost measured and reported
+- [x] Shade read from the far shadow map in the particle shader; the CPU horizon test is gone
 - [ ] Owner has looked
+
+## Decisions
+- 2026-11-17, owner: "can't we ask the graphics card about the shadow map?" The CPU horizon test (f91283ff) is retired
+  in favour of a shadow-map lookup in the particle vertex shader (the Approach paragraph above).
+
+## Files
+`src/dust.js` (SUN_SHADE_UNIFORMS / SUN_SHADE_VERT) · `src/smoke.js` · `src/dirt-spray.js` · `src/sky.js`
+(particleShadeTint) · `src/main.js` (the per-frame uniform push) · `test/particle-shade.mjs`
 
 ## Log
 - 2026-11-16 (spare lane): terrain shade is the sun's realtime cascades (`sunFar` ±256 m, terrain casts); no CPU
@@ -43,3 +53,8 @@ frame) and do not set `lights: true` on the materials (drags in every light unif
   colour at spawn (sparks untouched). Cost: +0.15 ms/s main thread (≈ 0.05 ms per sample), draw calls unchanged. Not
   covered: tree shadows (baked atlas), the truck's own shadow, POIs, headlights/bay light (particles are unlit).
   Gate particle-shade; affected 12/12 green; smoke boot,story,tires PASS.
+- 2026-11-17 (spare lane, round 2): shadow-map lookup (facc71c8). One `sampler2DShadow` compare per vertex at the puff
+  centre, lifted 2 m toward the sun; off when sunFar casts no shadow / map null / lab; tint = particleShadeTint().
+  Grid proof (r2-grid.log): 169 discs on a 6 m grid over a shadow edge, read off the frame: horizon-lit median 1.00,
+  horizon-shaded 0.445 of their untinted brightness; 11/134 disagree, all on the edge. Particle update 1.22/1.40 ms/s
+  (new) vs 1.76/1.63 (horizon build), A-B-A-B; tint push +0.06–0.08 ms/s. Affected 12/12 green; smoke: see below.
