@@ -86,7 +86,7 @@ import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_M
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
 import { DaySystem, DAY_PARAMS, STAGE_COLOR, HUNGER_COLOR, clockHeld } from './day.js'   // FEAT-47: story-mode day clock (drives the sky)
-import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines, expeditionGrade, gradePoints } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
+import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines, expeditionGrade, gradePoints, econDayOf } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem, runInventory, entryKg, startingPack } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
 import { ITEMS, foodHoldH } from '../data/items.js'
@@ -3719,7 +3719,7 @@ const LUNAR_DAYS = 29.53
 const _moonFree = skySystem._cycle
 let _moonDay = null
 function _syncMoon () {
-  const d = daySystem._running ? daySystem.day() : null
+  const d = daySystem._running ? econDay() : null
   if (d === _moonDay) return
   _moonDay = d
   const c = d == null ? null : ((d / LUNAR_DAYS + seedFor(worldSeed, 'moon') / 2 ** 32) % 1 + 1) % 1   // DEC-360: the tutorial's day 0 too
@@ -3735,8 +3735,9 @@ const daySystem = new DaySystem({
 // in free roam nothing constructs terms and nothing settles, so it is inert. Run-layer state
 // lives in economy.js's runEconomy — a SIBLING of day.js's runState, because the wallet moves at
 // mission settlement, which is not a day/sleep boundary (SM-INV-12).
+const econDay = () => econDayOf(daySystem.day())   // DEC-364 (economy.js econDayOf)
 const economySystem = new EconomySystem({
-  getDay: () => daySystem.day(),
+  getDay: () => econDay(),
   // getRegion: the per-region payout multiplier's index (FEAT-53, owner 2026-08-17). Pinned to 1
   // because multi-region progression is FEAT-28 / SM-4 and does not exist yet — story.js builds
   // exactly ONE bounded region. When SM-4 lands, this is the single line that has to change.
@@ -5988,7 +5989,7 @@ let _pumpBounceT = 0      // s left on the counters' settle-bounce
 /** FEAT-168: fuel rides the day tier like parts and the tow, to the cent. FEAT-209: each station sits within ±5 % of
  *  that day price. $/gal at pump POI `q` now: what its pump locks on open, and what the map's Shopping list shows. */
 function _pumpPrice (q) {
-  return Math.round(RANGER_PARAMS.fuelPricePerGal * economySystem.tierNow() * stationPriceFactor(worldSeed, q.id, daySystem.day()) * 100) / 100
+  return Math.round(RANGER_PARAMS.fuelPricePerGal * economySystem.tierNow() * stationPriceFactor(worldSeed, q.id, econDay()) * 100) / 100
 }
 
 /** The pump island whose zone the truck is in (story mode, no dialogue up), or null. */
@@ -10272,7 +10273,7 @@ function _runEndHtml (kind) {
 function _expeditionRows (row, req) {
   const grades = req.map(l => l.grade).filter(Boolean)
   if (!grades.length) return ''
-  const g = expeditionGrade(grades, daySystem.day())
+  const g = expeditionGrade(grades, econDay())
   const sweep = grades.length === req.length && grades.every(x => 'AS'.includes(x))
   let best = null, isNew = false
   try {

@@ -478,10 +478,10 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     const home = { bonus: 0, garage: 0 }, lunch = { school: 0, elsewhere: 0 }   // FEAT-168 off-list pulls
     for (let seed = 1; seed <= 200; seed++) {
         const b = make(seed)
-        for (let t = T0; t < T0 + 24 * 3; t += 2) for (const q of POIS) {
+        for (let t = T0; t < T0 + 24 * 4; t += 2) for (const q of POIS) {
             for (const o of b.offers(q.id, t)) {
                 const bonus = b.spec(o).bonus
-                if (bonus?.rewardId === 'diffLSD') lsd[o.bornH < 48 ? 'early' : 'late']++
+                if (bonus?.rewardId === 'diffLSD') lsd[o.bornH < 72 ? 'early' : 'late']++
                 if (bonus?.rewardId === 'schoolLunch') lunch[q.type === 'school' ? 'school' : q.type === 'larrysHouse' ? 'larry' : 'elsewhere']++
                 if (bonus && q.type === 'residence') {
                     home.bonus++; if (REWARD_CATS.residence.rare.includes(catOf[bonus.rewardId])) home.garage++

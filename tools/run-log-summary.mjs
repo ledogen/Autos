@@ -88,7 +88,7 @@ const where = (e) => `day ${e.day} ${String(Math.floor(e.hr ?? 0)).padStart(2, '
 
 export function report (s, bad = 0) {
   const L = []
-  L.push(`events ${s.events}${bad ? ` (${bad} unparseable lines skipped)` : ''} · days ${s.days.join(', ') || '—'} · ${s.km.toFixed(1)} km driven · ${s.teleports} reseats/tows`)
+  L.push(`events ${s.events}${bad ? ` (${bad} unparseable lines skipped)` : ''} · days ${s.days.map(d => d === 0 ? '0 (tutorial)' : d).join(', ') || '—'} · ${s.km.toFixed(1)} km driven · ${s.teleports} reseats/tows`)
   for (const r of s.runs) L.push(`  ${r.how} · seed ${r.seed} · day ${r.day} · wallet ${$(r.wallet)}`)
   L.push('\nJOBS (type: n · real min · game h · pay · deeds · ranks)')
   for (const [t, j] of Object.entries(s.jobs)) {

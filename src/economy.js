@@ -254,6 +254,11 @@ export function regionTier (region) {
     return t[i]
 }
 
+/** DEC-364: the day number every ECONOMY reader (dayTier, expeditionGrade, fuel jitter, moon) counts in. DEC-360 renumbered the
+ *  run for the player's eyes (free will opens on day 1, was day 0); for the same time since free will opened this returns the
+ *  old number, so no cost, gate or grade moved. Anything new keyed on the day number takes `econDayOf(daySystem.day())`. */
+export const econDayOf = (day) => day - 1
+
 /** Payout multiplier for a run day. Step function of the table; past the table's last day holds; day <1 clamps. */
 export function dayTier(day) {
     const t = ECONOMY_PARAMS.dayTierTable

@@ -122,8 +122,9 @@ export function windowPick (at, u, top) {
     return at.reduce((a, x) => (c(x) < c(a) ? x : a))
 }
 
-/** FEAT-168: may an offer born at `bornH` (DaySystem.clockH, day 1 starts at 0) carry REWARDS row `w`? */
-const dayAllows = (w, bornH) => !(w.minDay > Math.floor(bornH / 24) + 1)
+/** FEAT-168: may an offer born at `bornH` (DaySystem.clockH, day 1 starts at 0) carry REWARDS row `w`? DEC-364: `minDay` counts days
+ *  since free will opened (the old numbering's day), and free will opens at clockH 7 on day 1 now (was day 0, clockH -17): one day less. */
+const dayAllows = (w, bornH) => !(w.minDay > Math.floor(bornH / 24))
 
 /** FEAT-168: every reward — the REWARDS rows, then each carried part with no row, under its slot's
  *  category at its rarity's gates (data/offers.js PART_REWARD_CAT / RARITY_GATES). */
