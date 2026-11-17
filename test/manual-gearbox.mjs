@@ -21,7 +21,7 @@ import * as THREE from 'three'
 import { stepPhysics } from '../src/physics.js'
 import { computeStaticEquilibrium } from '../src/suspension.js'
 import { stepDrivetrain } from '../src/drivetrain.js'
-import { makeIgnitionState, RUNNING } from '../src/ignition.js'
+import { makeIgnitionState, stepIgnition, OFF, RUNNING } from '../src/ignition.js'
 import { makeFuelState } from '../src/fuel.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { TRANSMISSIONS } from '../data/transmissions.js'
@@ -313,6 +313,19 @@ console.log('\n14. FEAT-185: mash to any gear, the shift time after the last pre
   for (let i = 0; i < 3; i++) { d.vs.shiftRequest = -1; step(d.P, d.vs, 1) }
   n = 0; while (dt(d.vs).shifting && n++ < 300) step(d.P, d.vs, 1)
   check(dt(d.vs).mGear === 0, `mashing down from 1st while rolling stops at N, R refused (gear ${dt(d.vs).mGear})`)
+}
+console.log('\n15. bump start (FEAT-258): rolled in 2nd with the key off, the wheels turn the engine; a press starts it')
+{
+  const { P, vs } = fresh({ gear: 2, v0: 5 })
+  vs.ignition = makeIgnitionState(OFF)
+  step(P, vs, 30)
+  const spun = dt(vs).engineRPM
+  check(vs.ignition.state === OFF && spun > P.ignitionBumpStartRPM, `key off, clutch biting at ${(vf(vs) * MPH).toFixed(1)} mph: the wheels turn it at ${spun.toFixed(0)} rpm`)
+  stepIgnition(vs, P, DT, true); step(P, vs, 1)
+  check(vs.ignition.state === RUNNING, `one press: running (${vs.ignition.state})`)
+  const v0 = vf(vs)
+  step(P, vs, 90, () => { stepIgnition(vs, P, DT, false); vs.throttle = 0.6 })
+  check(vs.ignition.state === RUNNING && vf(vs) > v0 + 0.5, `and it pulls: ${(v0 * MPH).toFixed(1)} → ${(vf(vs) * MPH).toFixed(1)} mph on 60 % throttle`)
 }
 console.log(`\nMANUAL-GEARBOX GATE: ${failures ? `${failures} FAILURE(S)` : 'all checks passed ✓'}`)
 process.exit(failures ? 1 : 0)

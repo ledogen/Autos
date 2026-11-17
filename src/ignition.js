@@ -6,6 +6,10 @@
  *   OFF      press and hold → CRANKING (starter engaged, engine spun to ignitionCrankRPM, no drive torque)
  *   CRANKING cranked long enough → RUNNING (engine catches, settles to idle)
  *   CRANKING released early → back to OFF, crank progress DISCARDED. You have to crank again.
+ *   OFF      press with the engine ALREADY turning above ignitionBumpStartRPM → RUNNING at once (FEAT-258, owner
+ *            2026-11-17: the bump start — rolled in gear with the clutch biting, or still spinning down after a
+ *            shutoff). The starter's own spin-down after an aborted crank does not count (`starterSpin`), or a
+ *            tap-release-tap would start any engine at once: crank speed (ignitionCrankRPM 450) sits above the 300.
  *   RUNNING  tap the key   → OFF (ignition cut; the engine is then dragged by the driveline, see drivetrain.js)
  *
  * The catch time is the whole point of the feature: it interpolates from ignitionCatchTime (a healthy
@@ -38,6 +42,7 @@ export function makeIgnitionState (state = RUNNING) {
     startHeld: false,  // key physically held at START — drives the 2 o'clock detent past the catch
     prevKey: false,    // key state last step — rising-edge detection (press, not hold)
     event: null,       // one-shot this step: 'crank' | 'catch' | 'abort' | 'shutoff'. Consumed by audio.
+    starterSpin: false, // FEAT-258: the engine's speed is the starter's, left over from an aborted crank
   }
 }
 
@@ -76,6 +81,11 @@ export function stepIgnition (vehicleState, params, dt, keyDown) {
   const press = held && !ign.prevKey
   ign.event = null
 
+  // FEAT-258: last step's engine speed (drivetrain.js writes it after this runs); absent drivetrain = at rest.
+  const rpm = vehicleState.drivetrain?.engineRPM ?? 0
+  const bumpRPM = params.ignitionBumpStartRPM ?? 300
+  if (rpm <= bumpRPM) ign.starterSpin = false
+
   // FEAT-162: a running engine that seizes dies on the spot, the way a dry tank does (fuel.js).
   if (ign.state === RUNNING && seized(vehicleState)) { ign.state = OFF; ign.crank = 0; ign.event = 'shutoff' }
   else if (ign.state === RUNNING) {
@@ -83,7 +93,12 @@ export function stepIgnition (vehicleState, params, dt, keyDown) {
     // key off at 50 mph, and the truck then coasts on a dragged engine rather than freewheeling.
     if (press) { ign.state = OFF; ign.crank = 0; ign.startHeld = false; ign.event = 'shutoff' }
   } else {
-    if (ign.state === OFF && press) {       // fresh press → engage the starter
+    if (ign.state === OFF && press && rpm > bumpRPM && !ign.starterSpin && catchTime(vehicleState, params) < Infinity) {
+      ign.state = RUNNING                   // FEAT-258 bump start: already turning, it fires on the press
+      ign.crank = 0
+      ign.startHeld = true
+      ign.event = 'catch'
+    } else if (ign.state === OFF && press) {       // fresh press → engage the starter
       ign.state = CRANKING
       ign.crank = 0
       ign.startHeld = true
@@ -106,6 +121,7 @@ export function stepIgnition (vehicleState, params, dt, keyDown) {
         ign.state = OFF
         ign.crank = 0
         ign.event = 'abort'
+        ign.starterSpin = true   // FEAT-258: what the engine is turning at now is the starter's, not a bump start
       }
     }
   }
