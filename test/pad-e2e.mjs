@@ -244,6 +244,18 @@ check(hbHold && await js('__sk') === 1 && await js('__fk') === 1, `aiming: RB he
 // The hold's Space edge released the park latch; tap straight back in before the slope rolls it.
 await js('__fp.b[5] = 1'); await sleep(100); await js('__fp.b[5] = 0'); await sleep(300)
 check((await vs()).parked, 'a plain RB tap re-parks it')
+// BUG-193: LB held while the map layout is up (forced), then back to drive with LB still down — the clutch (Shift) engages.
+await js('window.__shk = 0; window.addEventListener("keydown", e => { if (e.key === "Shift") __shk++ }, true); window.__ma0 = __padMod.pad.mapActive; __padMod.pad.mapActive = () => true')
+await js('__fp.b[4] = 1'); await sleep(200)
+const shMap = await js('__shk')
+await js('__padMod.pad.mapActive = __ma0'); await sleep(200)
+check(shMap === 0 && await js('__shk') === 1, `LB held through the map's close: clutch down on the close (Shift in map ${shMap}x, after ${await js('__shk')}x)`)
+await js('__fp.b[4] = 0'); await sleep(150)
+// FEAT-255: a pad press ends hover; only a real mouse move gives it back.
+await js('__fp.b[13] = 1'); await sleep(100); await js('__fp.b[13] = 0'); await sleep(100)
+const mlPad = await js('__padMod.pad.mouseLive')
+await c.cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 300, y: 300 }); await c.cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 340, y: 320 }); await sleep(150)
+check(mlPad === false && await js('__padMod.pad.mouseLive') === true, `pad input sets pad mode (mouseLive ${mlPad}); a mouse move ends it (${await js('__padMod.pad.mouseLive')})`)
 // The pump has A (owner, 2026-10-21): while it is open (pumpActive forced), A is F held, not the upshift.
 // Off the pump F also aims a practice throw, so let that view hold run out after.
 await js('window.__pa0 = __padMod.pad.pumpActive; __padMod.pad.pumpActive = () => true; __fk = 0')
@@ -262,6 +274,11 @@ check(await menuOn() && await pick() === 'inv-icon' && await tag() === 'inventor
 await js('__fp.b[13] = 1'); await sleep(150); await js('__fp.b[13] = 0'); await sleep(150)
 check(await pick() === 'dmg-icon' && await tag() === 'vehicle condition', `D-pad down under B walks to the damage icon, the label follows (${await pick()} · ${await tag()})`)
 await js('__fp.b[12] = 1'); await sleep(150); await js('__fp.b[12] = 0'); await sleep(150)
+// FEAT-254: the left stick walks the B menu too, one step per deflection.
+await js('__fp.axes[1] = 1'); await sleep(200); await js('__fp.axes[1] = 0'); await sleep(150)
+const stDown = await pick()
+await js('__fp.axes[1] = -1'); await sleep(200); await js('__fp.axes[1] = 0'); await sleep(150)
+check(stDown === 'dmg-icon' && await pick() === 'inv-icon', `left stick down / up under B walks the icon menu (${stDown} then ${await pick()})`)
 await js('__fp.b[1] = 0'); await sleep(500)
 check(!before && await inv() && !await menuOn(), `releasing B opens the pick, the inventory (${before} -> ${await inv()})`)
 // FEAT-133: a card — the D-pad moves a highlight over it (first press places it), B backs out.
@@ -277,6 +294,7 @@ check(await inv(), 'a B tap opens the top pick (the inventory)')
 await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)   // B closes the inventory
 await js('document.getElementById("dmg-icon").click()'); await sleep(300)
 const walk = async (track, side, dir, n) => {
+  await js('__padMod.pad.mouseLive = true')   // FEAT-255: the synthetic pointerover below stands for a real mouse move
   await js(`document.querySelectorAll('#dmg-screen .ds-part[data-track="${track}"]')[${side}].dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))`)
   const seen = []
   for (let k = 0; k < n; k++) {
