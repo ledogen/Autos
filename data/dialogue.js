@@ -87,7 +87,7 @@ export const MOM_CALL = [
     { speaker: 'Mom', phone: true, text: `He what?&hellip; I can't believe it. Just like that, after all the time you've been there.` },
     { speaker: 'Mom', phone: true, text: `Come on by the house, honey. I've got something for you.` },
     { speaker: 'Mom', phone: true, text: `Press <span class="dlg-key">M</span> for the map if you forgot the way.` },
-    { speaker: 'Mom', phone: true, text: `And honey &mdash; the truck won't start itself. `
+    { speaker: 'Mom', phone: true, until: 'engine', text: `And honey &mdash; the truck won't start itself. `
         + `<span class="kc-kb">Hold <span class="dlg-key">I</span></span><span class="kc-pad">Hold <span class="dlg-key">Y</span></span> to turn the key.` },
 ]
 
@@ -110,15 +110,12 @@ export const BOSS_CHECK = [
     { speaker: 'The manager', text: `And just so you have no excuse to come back, here's your last check.` },
 ]
 
-/** FEAT-184 (DEC-305, DEC-322): parked at Larry's with his old pack — the first time Billy speaks with him: mom told him,
- *  the paper route (DEC-236's first card, recycled), then he gives you the pack, bedroll and all. */
+/** FEAT-184 (DEC-305, DEC-322 → DEC-361): parked at Larry's with his old pack — the first time Billy speaks with him. Two cards
+ *  at most (owner, 2026-11-17: six was "way too long"): the greasebeard line and his sketch, then the work, the pack and the
+ *  camp. The wording past the owner's sketch ("hang onto my old pack, bedroll and all") is a placeholder. */
 export const LARRY_PACK = [
-    { speaker: 'Uncle Larry', text: `Hey sport, listen, your mom told me what happened. What a shame that is.` },
-    { speaker: 'Uncle Larry', text: `Just remember, if you need a little cash you can always sling a few papers on the route for me. `
-        + `If you prove you can deliver fast enough I can even expand the route.` },
-    { speaker: 'Uncle Larry', text: `What's that? You brought my old pack? Ah well, thanks kiddo.` },
-    { speaker: 'Uncle Larry', text: `Say, I think it would be a great idea if you hang onto it &mdash; bedroll and all. `
-        + `I think it could come in handy while you're out and about.` },
+    { speaker: 'Uncle Larry', text: `Hey sport, I heard ol' <i>greasebeard</i> let you go. It's too bad you got fired.` },
+    { speaker: 'Uncle Larry', text: `I have some work if you need it. Hang onto my old pack, bedroll and all, and remember to check out the expedition camp.` },
 ]
 
 /**
@@ -131,8 +128,8 @@ export const TUT = {
     'tut-offer': [{ speaker: 'Mom', text: `That's the job card: who's asking, what it pays, how long you've got. `
         + `Every job has one. Take it when you're ready.` }],
     'tut-rank': [{ speaker: 'Mom', text: `The bar up top is the clock on this job. Keep it in the good part and you'll earn the tip.` }],
-    'tut-fuel': [{ speaker: 'Uncle Larry', text: `Fill up here. That old truck drinks &mdash; watch the gauge, `
-        + `because running dry out there means a tow you can't afford.` }],
+    'tut-fuel': [{ speaker: 'Mom', text: `Fill up here. That old truck drinks &mdash; keep an eye on the fuel gauge on the dashboard, `
+        + `because running dry out there means a tow you can't afford.` }],   // DEC-363: mom's, not Larry's (placeholder words)
     'tut-service': [{ speaker: 'Uncle Larry', text: `The shop fixes what you broke and sells what you need. `
         + `Every repair has a price on it &mdash; drive gentle and you'll keep more of your pay.` }],
     'tut-sleep': [{ speaker: 'Uncle Larry', text: `Getting late. Find flat ground off the road and make camp, or sleep at your mom's. `
@@ -162,23 +159,23 @@ export const TUT = {
     // stays on the line through the fill-up (`holds`), and her send-off (tut-snackcamp) hangs up.
     'tut-gas': [
         { speaker: 'Mom', phone: true, text: `Hey, is everything alright? I almost forgot, when I looked over the truck last night I noticed it was plumb outta gas.` },
-        { speaker: 'Mom', phone: true, holds: true, text: `[placeholder] You're right there, honey. Back out of that spot, pull up at a pump and fill her up.` },
+        { speaker: 'Mom', phone: true, holds: true, text: `[placeholder] You're right there, honey. Back out of that spot, pull up at a pump and fill her up. You can check how much is in the tank on the fuel gauge on the dashboard.` },
     ],
     // FEAT-184 (DEC-151): the handbrake held at the station's pump while money is left. PLACEHOLDER words.
     'tut-fillup': [{ speaker: 'Mom', phone: true, answered: true, holds: true, text: `Not yet, honey &mdash; fill it right up. Every last dollar: you won't get far on fumes.` }],
     // FEAT-184 stage 4, the worst day: the flat halfway home, the screen it shows on, the spare that's flat too, the tow,
     // and the shop it lands at (main.js _eveningBeats, _pickSpare, _toggleRecovery, _updateParkTriggers).
-    'tut-flat': [{ speaker: 'Mom', text: `Was that a bang? That's a flat, honey. Pull over, set the handbrake, `
+    'tut-flat': [{ speaker: 'Mom', until: 'damage', text: `Was that a bang? That's a flat, honey. Pull over, come to a full stop, set the handbrake, `
         + `and press <span class="dlg-key">V</span> to look at it.` }],
-    'tut-damage': [{ speaker: 'Mom', text: `That's your truck, part by part, and how worn each one is: green is fine, `
+    'tut-damage': [{ speaker: 'Mom', until: 'spare', text: `That's your truck, part by part, and how worn each one is: green is fine, `
         + `red is trouble. The front left's flat. Put your spare on: <span class="dlg-key">Tab</span>, then the mounted tire.` }],
-    'tut-spareflat': [{ speaker: 'Mom', text: `The spare's flat too? Of course it is. Call a tow: `
+    'tut-spareflat': [{ speaker: 'Mom', until: 'recovery', text: `The spare's flat too? Of course it is. Call a tow: `
         + `<span class="dlg-key">X</span> is the recovery menu.` }],
     'tut-tow': [{ speaker: 'Mom', text: `The tow takes you to the nearest auto shop. It's on me this time.` }],
     // FEAT-184 (DEC-151): the tire is on mom — one mounted tire and its fitting, paid at the cart's check out (FEAT-212). PLACEHOLDER words.
     'tut-shopfix': [{ speaker: 'Mom', text: `Get a good tire on that corner &mdash; that one's on me. Check out at the counter, then come home, it's late.` }],
     // Stage 5: the night drive home after the shop.
-    'tut-lights': [{ speaker: 'Mom', text: `It's pitch dark out there. `
+    'tut-lights': [{ speaker: 'Mom', until: 'lights', text: `It's pitch dark out there. `
         + `<span class="kc-kb"><span class="dlg-key">L</span> turns</span><span class="kc-pad">the <span class="dlg-key">left stick</span> click turns</span> `
         + `the headlights on. Follow the line home.` },
         { speaker: 'Mom', text: `And remember, honey: slowing down is the best way to avoid crashing.` }],   // DEC-325
@@ -186,7 +183,7 @@ export const TUT = {
     'tut-drive': [{ speaker: 'Mom', text: `Drive safe, honey. <span class="dlg-key">W</span> and <span class="dlg-key">S</span> `
         + `are the gas and the brake; steer with <span class="kc-kb"><span class="dlg-key">A</span> and <span class="dlg-key">D</span></span>`
         + `<span class="kc-pad">the <span class="dlg-key">left stick</span></span>. Follow the line home.` }],   // FEAT-174: kc-kb / kc-pad, one per input
-    'tut-park': [{ speaker: 'Mom', text: `Pull in at mine and stop. A tap of <span class="dlg-key">Space</span> sets the handbrake &mdash; `
+    'tut-park': [{ speaker: 'Mom', until: 'park', text: `Pull in at mine and come to a full stop first. Then a tap of <span class="dlg-key">Space</span> sets the handbrake &mdash; `
         + `that's parking, and parking is how you get anything done around here.` }],
     // At hers that night, when her sleep card opens: glad you're home safe (DEC-325), then hunger and energy (DEC-315: the
     // owner's words; true of day.js — past the last meal's hold energy drains faster than an hour per hour, and low energy
@@ -201,7 +198,7 @@ export const TUT = {
     ],
     // The morning: breakfast at hers (it feeds you), then Katie's word about the paycheck (DEC-326).
     // FEAT-184 stage 5: breakfast is yours to eat — one of her packed lunches, from the inventory.
-    'tut-breakfast': [{ speaker: 'Mom', text: `Morning! Eat something before you go &mdash; you'll run out of steam early on an empty stomach. `
+    'tut-breakfast': [{ speaker: 'Mom', until: 'lunch', text: `Morning! Eat something before you go &mdash; you'll run out of steam early on an empty stomach. `
         + `<span class="dlg-key">Tab</span>, and pick one of the lunches I packed you.` }],
     // FEAT-184 (DEC-153, DEC-326): after breakfast, Katie's reminder — the last drive on rails, back to the joint for the check.
     'tut-morning': [{ speaker: KATIE, phone: true, text: `Morning, Billy! Don't forget, today's the day you go get your last paycheck.` }],
@@ -210,7 +207,7 @@ export const TUT = {
     // couple bucks" is the peanuts' price plus the gas money she does not mention (DEC-306). The pick-up lesson is a
     // PLACEHOLDER; its keys are the game's (D-pad ↓ / G).
     'tut-handover': [{ speaker: 'Mom', text: `Take this pack over to your uncle. He left it behind. Also, here's a couple bucks for food.` }],
-    'tut-pickup': [{ speaker: 'Mom', text: `[placeholder] Park next to it and `
+    'tut-pickup': [{ speaker: 'Mom', until: 'pickup', text: `[placeholder] Park next to it and `
         + `<span class="kc-kb">press <span class="dlg-key">G</span></span><span class="kc-pad">press <span class="dlg-key">D-pad ↓</span></span> `
         + `to load anything loose nearby. Then run it over to Larry's.` }],
     // FEAT-229 (DEC-346): the tank filled, mom sends you on your way (PLACEHOLDER words); the line already runs to the
@@ -222,7 +219,7 @@ export const TUT = {
     // the line through the hunt (`holds`) and the vibe cards hang up. The vibe cards are PLACEHOLDER words.
     'tut-ranch': [
         { speaker: KATIE, phone: true, text: `Oh, you're already there? I'm just a couple minutes out. Go ahead and find a good spot. I'll just pull over where I see your truck.` },
-        { speaker: KATIE, phone: true, holds: true, text: `<span class="kc-kb">Press <span class="dlg-key">Z</span></span><span class="kc-pad">Hold <span class="dlg-key">B</span> and select the camping menu</span> `
+        { speaker: KATIE, phone: true, holds: true, until: 'campmenu', text: `<span class="kc-kb">Press <span class="dlg-key">Z</span></span><span class="kc-pad">Hold <span class="dlg-key">B</span> and select the camping menu</span> `
             + `to look for a campsite. Then drive slowly down the road to find the best site nearby. Anything flat enough will do!` },
     ],
     'tut-vibe': [
@@ -231,7 +228,7 @@ export const TUT = {
             + `Fill the bar as far as you can, then park and make camp.` },
     ],
     // DEC-355: at camp the side menu is not there (B is the card's back), so she names the camp card's own button.
-    'tut-campmade': [{ speaker: KATIE, text: `[placeholder] Nice spot! Go ahead and break out that snack: select <span class="dlg-key">inventory</span> and eat the peanuts.` }],
+    'tut-campmade': [{ speaker: KATIE, until: 'snack', text: `[placeholder] Nice spot! Go ahead and break out that snack: select <span class="dlg-key">inventory</span> and eat the peanuts.` }],
     // DEC-324 → DEC-347: what now, the expedition camp and its good deeds (DEC-236's cards 2–4 in her voice), and the
     // paycheck — too late today; now said in person, she having pulled over by your truck (no model is drawn). {dir} and
     // {deeds} are filled from the game, as RUN_INTRO's are (main.js _fillCamp).

@@ -68,9 +68,9 @@ s = await vs(); check(s.thr === 0, `unplug with RT floored -> throttle ${s.thr} 
 await js('__fp.b[7] = 0; __fp.on = true; __fp.b[5] = 1'); await sleep(300)
 s = await vs(); check(s.hb, `RB held -> handbrake on (hb=${s.hb})`)
 await js('__fp.b[5] = 0'); await sleep(200)
-// View held 1 s = reset.
-await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)
-s = await vs(); check(s.parked && s.v < 0.2, `View hold resets the truck, parked at rest (parked=${s.parked}, v=${s.v.toFixed(2)})`)
+// D-pad → held 1 s = reset (DEC-362: View's hold no longer resets).
+await js('__fp.b[15] = 1'); await sleep(1300); await js('__fp.b[15] = 0'); await sleep(2500)
+s = await vs(); check(s.parked && s.v < 0.2, `D-pad → hold resets the truck, parked at rest (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(300)
 s = await vs(); check(!s.parked, `RB tap while parked unlatches (parked=${s.parked})`)
 await js('__fp.b[5] = 1'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(300)
@@ -193,9 +193,9 @@ check(!await mapShown(), 'View closes the map again')
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
 check(!await mapShown(), 'B closes the map')
-// View held resets the truck, parked at rest, as the checks below found it.
-await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)
-s = await vs(); check(s.parked && s.v < 0.2, `after the map, View held puts the truck back parked at rest (parked=${s.parked}, v=${s.v.toFixed(2)})`)
+// D-pad → held resets the truck, parked at rest, as the checks below found it.
+await js('__fp.b[15] = 1'); await sleep(1300); await js('__fp.b[15] = 0'); await sleep(2500)
+s = await vs(); check(s.parked && s.v < 0.2, `after the map, D-pad → held puts the truck back parked at rest (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // Right stick = orbit RATE. Stopped, the view LINGERS where it was pointed (owner, 2026-10-20) until a
 // pedal is pressed; then the chase swings back behind.
 // Bearing of the camera around the truck, relative to directly behind it (deg).
@@ -209,14 +209,14 @@ await sleep(1500); const o2 = await off(); check(Math.abs(o2 - o1) < 3, `1.5 s a
 await sleep(2500); const o3 = await off(); check(Math.abs(o3 - o1) < 3, `stopped, ~4 s after release it still lingers (${o3.toFixed(0)} deg)`)
 // FEAT-194 part 1 + DEC-255: on the AUTOMATIC (this truck) LT at rest is the reverse pedal and releases the park
 // latch like gas (the manual keeps it a pure brake: test/park-brake.mjs). The LT hold backs the truck out, so the
-// View hold below puts it back parked at rest for the checks after.
+// D-pad → hold below puts it back parked at rest for the checks after.
 await js('__fp.b[6] = 0.6'); await sleep(150); await js('__fp.b[6] = 0'); await sleep(100)
 check(!(await vs()).parked, 'DEC-255: an LT tap while parked on the automatic releases the parking brake (reverse pedal)')
 await js('__fp.b[6] = 0.6'); await sleep(1500); await js('__fp.b[6] = 0'); await sleep(100)
 check(!(await vs()).parked, 'DEC-255: LT held 1.5 s on the automatic keeps it released (backing out)')
 await sleep(2000); const o4 = await off(); check(Math.abs(Math.abs(o4) - 180) < 15, `a brake pull from a stop (automatic: reverse, DEC-255) swings the view round to the front, camera.js reverseView (${o4.toFixed(0)} deg)`)
-await js('__fp.b[8] = 1'); await sleep(1300); await js('__fp.b[8] = 0'); await sleep(2500)   // View hold: parked at rest again
-s = await vs(); check(s.parked && s.v < 0.2, `View hold re-parks the truck at rest after the reverse (parked=${s.parked}, v=${s.v.toFixed(2)})`)
+await js('__fp.b[15] = 1'); await sleep(1300); await js('__fp.b[15] = 0'); await sleep(2500)   // D-pad → hold: parked at rest again
+s = await vs(); check(s.parked && s.v < 0.2, `D-pad → hold re-parks the truck at rest after the reverse (parked=${s.parked}, v=${s.v.toFixed(2)})`)
 // B no longer aims (owner, 2026-10-21): held in the drive layout it is the icon menu. Off a route the
 // pad has no practice throw now; on one, the right stick aims and RB taps (checked below).
 const reticle = () => js('getComputedStyle(document.getElementById("aim-reticle")).display !== "none"')

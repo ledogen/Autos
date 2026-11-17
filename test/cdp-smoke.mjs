@@ -189,7 +189,7 @@ const strayCheck = async (what) => {
 // FEAT-170: every new run opens on the firing; holding M a second (the prompt says so) skips it. FEAT-184 (owner,
 // 2026-11-14, DEC-152, DEC-159, DEC-299): it lands outside the burger joint at 07:00 on day 0, free will (no job in hand). Wall-clock:
 // the hold is a real-time timer, not sim time.
-const skipDone = () => js('window.__tutorial().phase === "free" && window.__mission().state === "idle" && window.__day().clockH() > -17.1')
+const skipDone = () => js('window.__tutorial().phase === "free" && window.__mission().state === "idle" && window.__day().clockH() > 6.9')
 const skipPeek = () => js('JSON.stringify({ tut: window.__tutorial(), ms: window.__mission().state, h: window.__day().clockH() })')
 // FEAT-184 (DEC-148): the prompt reads "hold M to skip tutorial"; `confirm` (the first playthrough ever, or a chosen
 // tutorial): the first hold only asks "are you sure you want to skip the tutorial", and a second hold skips.
@@ -369,7 +369,7 @@ const STEPS = [
     const a = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position
       return { d: Math.hypot(v.x - q.x, v.z - q.z), h: window.__day().clockH() } })()`)
     // BUG-135: on the road in front of it (25 m) — never on its pad.
-    check(a.d < 25 && Math.abs(a.h + 17) < 0.1, `the skip is not at the burger joint at 07:00 on day 0: ${JSON.stringify(a)}`)
+    check(a.d < 25 && Math.abs(a.h - 7) < 0.1, `the skip is not at the burger joint at 07:00 on day 1: ${JSON.stringify(a)}`)
     // FEAT-173: fed from the run's start, with mom's three lunches.
     const food = await js('({ fed: window.__day().snapshot().fedUntilH - window.__day().clockH(), lunch: window.__inv.list().find(e => e.id === "packedLunch")?.n ?? 0 })')
     check(food.fed > 0 && food.lunch === 3, `the skip is not fed with mom's three packed lunches (FEAT-173): ${JSON.stringify(food)}`)
@@ -1775,7 +1775,7 @@ const STEPS = [
     const tut = () => js('window.__tutorial()')
     const speaker = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none" && document.getElementById("dlg-speaker").textContent')
     // FEAT-170 stage 4: mom's lessons queue up and hold the sim (and every key) while they are up — read off
-    // whatever comes, waiting a beat for a queued one to appear. Returns the speakers' card count.
+    // whatever comes (a card that waits for an action, DEC-359, is left up for the caller to do), waiting a beat for a queued one to appear. Returns the speakers' card count.
     const said = []   // every card readCards read, as "speaker: text" (DEC-345: the calls are checked by their words)
     const saidAny = re => said.some(t => re.test(t))
     const readCards = async (beatMs = 800, stopAt = null) => {   // stopAt: leave that speaker's card up, unread
@@ -1783,6 +1783,9 @@ const STEPS = [
       for (let i = 0; i < 40; i++) {
         if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return n }
         if (stopAt && await speaker() === stopAt) return n
+        if (await js('window.__tutorial().until')) { await sleep(1500)   // typed out, then recorded once
+          const w = `${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent ?? ""')}`; if (w !== said[said.length - 1]) said.push(w)
+          return n }   // DEC-359: a card that waits for an action stays up (the game runs under it); the caller does the action, which clears it
         // A press on a card still streaming in only fills it (main.js `_dlgFill`), so the same card can be read twice:
         // it counts, and is recorded, once.
         const line = `${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent ?? ""')}`
@@ -1806,10 +1809,10 @@ const STEPS = [
     check(b.cam > 9, `the camera is ${b.cam.toFixed(1)} m from the truck — not on the joint's orbit`)
     check(b.h === a.h, `the day clock ran under the firing (${a.h} → ${b.h})`)
     // DEC-299: about 07:00; FEAT-184 (DEC-159): day −1, so a played tutorial enters free will on day 0
-    check(Math.abs(a.h + 41) < 0.1, `the firing is not at 07:00 on day -1 (clockH ${a.h})`)
+    check(Math.abs(a.h + 17) < 0.1, `the firing is not at 07:00 on day 0 (clockH ${a.h})`)
     // BUG-136: the days before the clock's zero; the HUD read day 0 as "Day 0, -6 am".
     const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
-    check(await until(async () => await hudClock() === 'Day -1, 7 am', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day -1, 7 am" (BUG-136)`)
+    check(await until(async () => await hudClock() === 'Day 0, 7 am', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day 0, 7 am" (BUG-136)`)
     let boss = false, hung = false
     for (let i = 0; i < 8 && ['Katie', 'The manager'].includes(await speaker()); i++) {
       boss ||= await speaker() === 'The manager'; hung ||= !boss && await js('document.getElementById("dlg-text").textContent') === '<click>'
@@ -1824,16 +1827,18 @@ const STEPS = [
     await js('document.getElementById("tc-play").click()')
     check(await until(async () => await js(live) && await world() === '3590618618', 60000, 250), `"play" did not load the tutorial seed (world ${await world()}, ${JSON.stringify(await tut())})`)
     check((await tut()).returnSeed === '6', `the tutorial's world does not carry seed 6 back: ${JSON.stringify(await tut())}`)
-    check(Math.abs(await js('window.__day().clockH()') + 41) < 0.1, `the tutorial's day is not 07:00 on day -1 (clockH ${await js('window.__day().clockH()')})`)
+    check(Math.abs(await js('window.__day().clockH()') + 17) < 0.1, `the tutorial's day is not 07:00 on day 0 (clockH ${await js('window.__day().clockH()')})`)
     // DEC-160: the tutorial saves as part of the run, the way back in it.
     check(await until(() => js('window.__autosave()'), 3000) && await js('JSON.parse(localStorage.getItem("autos-run/1")).data.returnSeed') === '6',
       'the tutorial did not save with its way back to seed 6')
     check(await until(async () => await speaker() === 'Phone', 5000), `the tutorial seed did not open on mom's call ringing (speaker "${await speaker()}")`)
-    await readCards()   // her call; stage 4: the driving lesson follows it
+    await readCards()   // her call, up to the key card (DEC-359: it waits for the key, the game runs under it)
+    check(await js('window.__tutorial().until') === 'engine', `mom's call did not stop at the key card: ${JSON.stringify(await js('window.__tutorial()'))}`)
+    await crank(); await readCards()   // the key catches: her <click>, then the driving lesson
     // DEC-354: a call rings first and hangs up last — the key card (FEAT-184) inside it.
     { const r = said.findIndex(t => /^Phone: Ring ring ring/.test(t)), k = said.findIndex(t => /^Mom: And honey .* the truck won't start itself/.test(t))
       check(r === 0 && k > r && said[k + 1] === 'Mom: <click>', `mom's call is not ring, her cards, the key, <click>: ${JSON.stringify(said.slice(0, 7))}`) }
-    check(!await speaker(), "mom's call did not close")
+    // (the call closes on <click>; the pedals' card follows at once, so no 'speaker is gone' check here)
     check(await until(async () => (await at()).cam < 9, 3000), 'the camera never came back to the truck')
     // FEAT-229: the FIRING DAY — no job (free will is after the paycheck), the HUD and the GPS to mom's first.
     const eve = () => js(`(() => ({ s: window.__mission().state, tut: window.__tutorial().phase, gps: !!window.__gps(),
@@ -1845,8 +1850,7 @@ const STEPS = [
       `the day does not open on mom's line, a near-empty tank and an empty wallet ("${e0.hud}", ${await js('window.__vs.fuel.gal.toFixed(2)')} gal, $${await js('window.__econ.money')})`)
     check(await until(async () => (await eve()).gps, 5000), "the GPS has no way to mom's")
     // BUG-135: the played run's start, the joint's lay-by, drives off too.
-    await crank()
-    await readCards()   // FEAT-184 stage 3: the pedals' card (and the gauge's) once the key has caught
+    await readCards()   // FEAT-184 stage 3: the pedals' card (and the gauge's)
     if (await js('window.__vs.parked')) await tap(' ')
     { const c0 = await car(); await hold('w', 5); const c1 = await car(), d = Math.hypot(c1.x - c0.x, c1.z - c0.z)
       check(d > 10, `the truck did not drive off from the burger joint: ${d.toFixed(1)} m in 5 s of throttle`) }
@@ -1924,7 +1928,7 @@ const STEPS = [
       await readCards(); await simFor(1)
     }
     const clock = () => js('window.__day().clockH()')
-    const stamped = async (h, what) => check(await until(async () => Math.abs(await clock() - (h - 48)) < 0.6, 2000), `${what}: the clock is not stamped ${h}:00 on day -1 (clockH ${await clock()})`)
+    const stamped = async (h, what) => check(await until(async () => Math.abs(await clock() - (h - 24)) < 0.6, 2000), `${what}: the clock is not stamped ${h}:00 on day 0 (clockH ${await clock()})`)
     console.log(`  firing day: ${JSON.stringify(await wd())}`)
     // Mom's door: parked there, her hand-over (the owner's line) and her money — the peanuts' $3 and the unspoken $3 of gas.
     const mom = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
@@ -2122,9 +2126,18 @@ const STEPS = [
     check(/pull over and check your tire/.test((await eve()).hud), `after the flat the HUD does not say pull over ("${(await eve()).hud}")`)
     await hold('w', 1)
     check(await js('window.__vs.parked && window.__vs.throttle === 0'), `after the flat W still drove: parked ${await js('window.__vs.parked')}, throttle ${await js('window.__vs.throttle')}`)
-    await tap('v'); await readCards()   // the damage screen's card
+    await readCards()   // up to the flat's card: it waits for V (DEC-359)
+    check(await js('window.__tutorial().until') === 'damage', `the flat's card does not wait for V: ${JSON.stringify(await js('window.__tutorial()'))}`)
+    await js('window.__inv.use("spareTire")'); await sleep(300)   // DEC-359: tire work before V is locked (silent)
+    check(await js('!document.getElementById("dmg-screen").classList.contains("picking")'), 'the spare picker opened before the damage screen was looked at (DEC-359)')
+    await tap('v'); await readCards()   // the damage screen's card: it waits for the spare to be tried
+    check(await js('window.__tutorial().until') === 'spare', `the damage card does not wait for the spare: ${JSON.stringify(await js('window.__tutorial()'))}`)
     await tap('Escape')
-    await js('window.__inv.use("spareTire")'); await readCards()   // the spare: flat too
+    await js('window.__inv.use("spareTire")')
+    check(await until(() => js('document.getElementById("dmg-screen").classList.contains("picking")'), 1000), 'the spare opened no tire picker')
+    await js('document.querySelector("#dmg-screen .ds-pbtn[data-track=tireFL]").click()')
+    await js('document.querySelector("#dmg-screen [data-act=pick-do]").click()'); await readCards()   // the spare: flat too (waits for X)
+    check(await js('window.__tutorial().until') === 'recovery', `the spare's card does not wait for the recovery menu: ${JSON.stringify(await js('window.__tutorial()'))}`)
     await tap('Escape')   // the spare's picker; closing it reopens the inventory (parked)
     if (await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 1000)) await tap('Escape')
     console.log('  worst day: the tow')
@@ -2162,7 +2175,9 @@ const STEPS = [
     console.log(`  the fix: energy ${(await js('window.__day().energyH()')).toFixed(2)} h before (${await js('window.__day().stage()')})`)
     await tap('Escape'); await tap(' ')   // off the brake: the night drive, whose card holds the sim
     check(await until(async () => /headlights/.test(await js('document.getElementById("dlg-text")?.textContent ?? ""')), 3000), 'no headlights card on the night drive')
-    await readCards()
+    await readCards()   // up to the lights' card, which waits for L (DEC-359)
+    check(await js('window.__tutorial().until') === 'lights', `the headlights card does not wait for L: ${JSON.stringify(await js('window.__tutorial()'))}`)
+    await tap('l'); await readCards()   // it clears on the lights; her slow-down card follows
     // DEC-357: the tire fixed, the driver is SLEEPY, and blinks on the held clock's drive (day.js blinkOnly).
     check(await js('window.__day().stage()') === 'sleepy', `the tire fixed, the driver is not sleepy (DEC-357): ${await js('window.__day().energyH()')} h`)
     { const h1 = await clock(); await js('window.__day()._nextBlinkH = 1e-4')
@@ -2176,14 +2191,15 @@ const STEPS = [
     // her sleep card (and its lessons) may already be open on arrival — then no second park, whose Space would turn them.
     const panel = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     let lessons = await readCards()
+    if (await js('window.__tutorial().until') === 'park') { await simFor(1); await park(true); lessons += await readCards() }   // DEC-359: her park card waits for the full stop + handbrake
     if (!await panel()) { await simFor(1); await park(true) }   // the 0.5 m drop lands, then a fresh pull
     check(await until(panel, 3000), "parking at mom's that night opened no sleep card")
     lessons += await readCards()
     check(lessons >= 5, `no welcome, hunger and sleep lessons at hers (${lessons} read, want her welcome, her hunger card and her three sleep cards)`)
-    check(await clock() >= -26.51, `her door that night did not stamp 21:30 (clockH ${await clock()})`)
+    check(await clock() >= -2.51, `her door that night did not stamp 21:30 (clockH ${await clock()})`)
     check(saidAny(/^Mom: .*Set your alarm clock for 06:30/), `mom's sleep card does not say to set the alarm clock (DEC-357): ${JSON.stringify(said.slice(-3))}`)
     await js('document.getElementById("cp-sleep").click()')
-    const want = await js('Math.round(-17.5 - window.__day().clockH())')   // 06:30 on day 0 is clockH −17.5 (DEC-357's alarm)
+    const want = await js('Math.round(6.5 - window.__day().clockH())')   // 06:30 on day 1 is clockH 6.5 (DEC-357's alarm)
     { const bed = await clock()   // DEC-357: another wake time is refused, "Set this time instead"
       await js(`document.getElementById("cp-hours").value = "${want + 1}"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))`)
       await js('document.getElementById("cp-sleep-go").click()'); await sleep(800)
@@ -2191,8 +2207,8 @@ const STEPS = [
         `the tutorial's night took another wake time than the alarm (DEC-357): clockH ${await clock()}, "${await js('document.getElementById("cp-hours-text").textContent')}"`) }
     await js(`document.getElementById("cp-hours").value = "${want}"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))`)
     await js('document.getElementById("cp-sleep-go").click()')
-    check(await until(() => js('window.__day().clockH() >= -17.51'), 6000), `the night did not reach 06:30 (clockH ${await js('window.__day().clockH()')})`)
-    check(Math.abs(await js('window.__day().clockH()') + 17.5) < 0.02, `the evening's night did not wake at 06:30 sharp on day 0 (clockH ${await js('window.__day().clockH()')})`)
+    check(await until(() => js('window.__day().clockH() >= 6.49'), 6000), `the night did not reach 06:30 (clockH ${await js('window.__day().clockH()')})`)
+    check(Math.abs(await js('window.__day().clockH()') - 6.5) < 0.02, `the evening's night did not wake at 06:30 sharp on day 1 (clockH ${await js('window.__day().clockH()')})`)
     check(!await js('document.getElementById("midnight-card").classList.contains("on")'), "the tutorial's night dropped the midnight overlay")
     const e1 = await eve()
     check(e1.tut === 'morning' && /to work · park there for your last check/.test(e1.hud), `waking did not end the firing day and send the morning to "work" for the check (DEC-357): ${JSON.stringify(e1)}`)
@@ -2200,8 +2216,11 @@ const STEPS = [
     // player's to eat now (her card asks for a packed lunch). FEAT-229: the day's stamps are lived hours (energy and hunger
     // pay for them), so the driver may wake hungry; the lunch she asks for feeds him.
     const stage = () => js('document.getElementById("hm-stage").textContent')   // FEAT-198: hunger's own line
-    check(await readCards() >= 2, 'no breakfast and no reminder in the morning')
+    let morn = await readCards()   // up to her breakfast card, which waits for a lunch eaten (DEC-359)
+    // (her breakfast card clears itself the moment a lunch is gone; this run ate two at night, so it may already be down: DEC-359)
     check(await js('window.__inv.use("packedLunch")'), 'no packed lunch for breakfast')
+    morn += await readCards()   // Katie's reminder
+    check(morn >= 1 && saidAny(/Don't forget, today's the day/), `no reminder in the morning: ${JSON.stringify(said.slice(-3))}`)
     check(await until(async () => !/hungry/.test(await stage()), 1000), `breakfast did not feed the driver ("${await stage()}")`)
     if (await panel()) await tap('Escape')   // her sleep card, if it is still up over the morning
     await strayCheck('on the way to the paycheck')
@@ -2222,8 +2241,8 @@ const STEPS = [
     check(await until(async () => await js(live) && await world() === '6', 60000, 250), `the paycheck did not load seed 6 back (world ${await world()}, ${JSON.stringify(await tut())})`)
     const back = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position
       return { d: Math.hypot(v.x - q.x, v.z - q.z), h: window.__day().clockH(), money: window.__econ.money, tut: window.__tutorial() } })()`)
-    check(back.d < 25 && Math.abs(back.h + 17) < 0.1 && back.tut.phase === 'free' && back.tut.returnSeed === null,
-      `seed 6 is not back outside its joint at 07:00 on day 0 in free will: ${JSON.stringify(back)}`)
+    check(back.d < 25 && Math.abs(back.h - 7) < 0.1 && back.tut.phase === 'free' && back.tut.returnSeed === null,
+      `seed 6 is not back outside its joint at 07:00 on day 1 in free will: ${JSON.stringify(back)}`)
     check(back.money > cash0, `the last paycheck did not land: $${cash0} → $${back.money}`)
     check(await until(async () => await speaker() === 'Phone', 5000), `no Larry's call ringing after the paycheck (speaker "${await speaker()}")`)
     await readCards()
@@ -2254,9 +2273,12 @@ const STEPS = [
     const readCards = async (beatMs = 800) => {
       for (let i = 0; i < 40; i++) {
         if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return }
+        const u = await js('window.__tutorial().until')   // DEC-359: a card that waits for an action: the key is turned, any other is left up (the skip below ends it)
+        if (u === 'engine') { await crank(); await sleep(500); continue }   // the HUD poll clears the card
+        if (u) return
         await tap('Enter'); await sleep(200)
       }
-      throw new Error('cards never stopped coming')
+      throw new Error(`cards never stopped coming: ${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent')} ${await js('JSON.stringify({ ign: window.__vs.ignition?.state, t: window.__tutorial(), q: window.__mission().state })')}`)
     }
     const tp = async (x, z, h) => {
       await js(`window.__seated = false; window.__teleport(${x}, ${z}, ${h}).then(() => { window.__seated = true })`)
@@ -2518,7 +2540,7 @@ const STEPS = [
     // FEAT-184 stage 3: the key's card comes first and the pedals' card only once the engine runs — with no card up and
     // the engine off, hold Y (the ignition) until it catches.
     for (let i = 0; i < 16 && !/^Drive safe/.test(await txt()); i++) {
-      if (!await dlg() && await js('window.__vs.ignition?.state !== "running"')) await hold(3, 2000)
+      if ((!await dlg() || await js('window.__tutorial().until') === 'engine') && await js('window.__vs.ignition?.state !== "running"')) await hold(3, 2000)   // DEC-359: the key card waits for the key
       else { await btn(0); await sleep(150) }
     }
     const steerWords = () => js('[...document.querySelectorAll("#dlg-text > .kc-kb, #dlg-text > .kc-pad")].filter(e => getComputedStyle(e).display !== "none").map(e => e.textContent).join("|")')

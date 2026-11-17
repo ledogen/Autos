@@ -24,7 +24,7 @@
 import {
   ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankTable, payoutFor, pointsFor,
   runEconomy, EconomySystem, formatDeeds, basePay, payRange, splitPayout, bonusEarned, RANKS,
-  expeditionGrade, gradePoints, EXPEDITION,
+  expeditionGrade, gradePoints, EXPEDITION, econDayOf,
 } from '../src/economy.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT, amountGrade, PAR_SLACK } from '../src/par.js'
 import { runState } from '../src/day.js'
@@ -46,6 +46,9 @@ const sumsTo = (base, tip, total) => Math.round((base + tip) * 100) === Math.rou
 const P = ECONOMY_PARAMS
 const AVG_PAR = 180 * PAR_SLACK / 1.15   // the average region-1 job's par: 180 s measured at slack 1.15 (section 1), 234 s at FEAT-69's
 check('pinned: tier table has 30 days, tier(1) === 1', P.dayTierTable.length === 30 && dayTier(1) === 1)
+// DEC-364: the day renumbering (DEC-360, free will opens on day 1) moved no cost. Run-day k read as the OLD main numbering k-1.
+check('DEC-364: run-day 1..8 tiers equal the pre-renumbering ones',
+  [1, 2, 3, 4, 5, 6, 7, 8].every(k => dayTier(econDayOf(k)) === dayTier(k - 1)) && econDayOf(3) === 2 && dayTier(econDayOf(1)) === 1 && dayTier(econDayOf(2)) === 1)
 check('pinned: baseFrac 0.5, fullTipRatio 0.652, tipZero 1.348',
   P.baseFrac === 0.5 && P.fullTipRatio === 0.652 && P.tipZero === 1.348)
 // FEAT-69 RANK SPREAD (owner, 2026-11-06: "S 10% more forgiving. D 30% more forgiving. interpolate between"):
