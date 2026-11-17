@@ -2271,7 +2271,9 @@ const STEPS = [
     const readCards = async (beatMs = 800) => {
       for (let i = 0; i < 40; i++) {
         if (!await speaker()) { await sleep(beatMs); if (!await speaker()) return }
-        if (await js('window.__tutorial().until')) return   // DEC-359: waits for an action; the skip below ends it
+        const u = await js('window.__tutorial().until')   // DEC-359: a card that waits for an action: the key is turned, any other is left up (the skip below ends it)
+        if (u === 'engine') { await crank(); continue }
+        if (u) return
         await tap('Enter'); await sleep(200)
       }
       throw new Error('cards never stopped coming')
