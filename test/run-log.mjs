@@ -2,8 +2,9 @@
 //
 //   §1 OFF costs nothing: event()/tick() return before touching the bound state, the damage model builds no wear
 //      accumulator and opens no event, and nothing is buffered or downloaded.
-//   §2 ON: every line is stamped; tick() samples once per second of sim time; a new game day downloads a part;
-//      parts are numbered part01, part02, … and carry the seed; JSON Lines round-trip line for line.
+//   §2 ON: every line is stamped; tick() samples once per second of sim time; a new game day STORES a part
+//      (BUG-199: no download per day); the run end and "Save log now" download ONE file joining every part, named
+//      by seed and start; JSON Lines round-trip line for line.
 //   §3 damage: continuous wear lands in the route sample by track and cause; an impact and a bump stop that pops a
 //      worn tire each log one event with the measured quantity, the threshold it was read against and the
 //      condition before → after — the "should that rock have popped my tire" question.
@@ -28,7 +29,7 @@ console.log('§1 off costs nothing')
   let threw = false
   try { runLog.event('x', { a: 1 }); runLog.tick(5); runLog.start('new') } catch { threw = true }
   ok(!threw && runLog._buf.length === 0 && runLog.count === 0, 'event/tick/start return at their first line: nothing read, nothing held')
-  ok(runLog.flush() === null && saved.length === 0, 'nothing to download')
+  ok(runLog.flush() === null && saved.length === 0 && await runLog.saveNow() === null, 'nothing to store or download')
   const d = new DamageModel({ params: {} })
   for (let i = 0; i < 10; i++) d.step({ slipVel: [3, 3, 3, 3], bumpForce: [i < 5 ? 90000 : 0, 0, 0, 0] }, {}, 1 / 60)
   d.applyImpact('front', 1800 * 15, 1800)
@@ -60,14 +61,24 @@ console.log('\n§2 on: stamps, the 1 s sample, parts by day')
   const held = runLog._buf.slice()
   clock.d = 2
   runLog.tick(1)
-  ok(saved.length === 1 && /^autos-run-abc_123-[\dT-]+Z-part01\.jsonl$/.test(saved[0].name), `a new game day downloads part01 (${saved[0].name})`)
-  const back = parseLines(saved[0].text)
-  ok(back.bad === 0 && back.events.length === held.length + 1 && JSON.stringify(back.events[1]) === held[1] && back.events.at(-1).e === 'part',
-    'JSON Lines round-trip line for line, closed by a part line')
+  await runLog._pending
+  ok(saved.length === 0 && (await runLog.store.all()).length === 1, 'a new game day stores a part and downloads nothing (Chrome blocks a second automatic download)')
   ok(runLog._buf.length === 1, 'the buffer is let go after each part (memory stays flat): only the new day\'s sample is held')
   runLog.event('runEnd', { kind: 'towel' })
-  ok(saved.length === 2 && saved[1].name.endsWith('-part02.jsonl') && runLog._buf.length === 0, 'the run end downloads part02 by itself')
-  ok(parseLines(saved[1].text + '{"e":"cut').bad === 1, 'a cut-off last line is skipped, the rest still parse')
+  await runLog._pending; await runLog.saveNow(false)   // saveNow(false) is what the run end calls; wait for its own call
+  ok(saved.length >= 1 && /^autos-run-abc_123-[\dT-]+Z\.jsonl$/.test(saved.at(-1).name), `the run end downloads ONE file (${saved.at(-1)?.name})`)
+  const back = parseLines(saved.at(-1).text)
+  ok(back.bad === 0 && JSON.stringify(back.events[1]) === held[1] && back.events.filter(e => e.e === 'part').length === 2 && back.events.at(-2).e === 'runEnd',
+    'the file is the stored parts joined in order: JSON Lines round-trip, one part line per stored part')
+  ok((await runLog.store.all()).length === 2, 'the automatic run-end save keeps the parts stored')
+  const n = saved.length
+  ok(await runLog.saveNow() && saved.length === n + 1 && saved.at(-1).text === saved[n - 1].text && (await runLog.store.all()).length === 0 && runLog.stored === 'nothing stored',
+    '"Save log now" (a click) downloads the same single file, then clears the store')
+  ok(parseLines(saved.at(-1).text + '{"e":"cut').bad === 1, 'a cut-off last line is skipped, the rest still parse')
+  runLog.start('new'); runLog.setOn(false); await runLog._pending
+  ok(runLog.on === false && saved.length === n + 1 && (await runLog.store.all()).length === 1, 'turning it off stores what is held, downloads nothing')
+  await runLog.saveNow()   // empty the store for the next sections
+  runLog.setOn(true)
 }
 
 console.log('\n§3 damage: wear by cause, events with their thresholds')
@@ -97,7 +108,8 @@ console.log('\n§3 damage: wear by cause, events with their thresholds')
   ok(b?.fzN === 20000 && b.strutVel === 3 && b.vel.join() === '0,-4,-8', '…with the tire load, the strut closing speed and the truck velocity')
   ok(runLog.count - n0 >= 2, 'one line per event')
   runLog.setOn(false)
-  ok(runLog.on === false && saved.at(-1).text.includes('"e":"bumpStop"'), 'turning it off downloads what was held')
+  await runLog.saveNow()
+  ok(runLog.on === false && saved.at(-1).text.includes('"e":"bumpStop"'), 'turning it off then saving has the bump stop in the file')
 }
 
 console.log('\n§4 the summary script on a fixture run')

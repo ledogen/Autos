@@ -208,9 +208,10 @@ not pick is random too (owner, 2026-11-06): free roam, the world built behind th
 - **Run logger (FEAT-242, DEC-358 — the one diagnostic that ships in `src/`, opt-in, off by default):** debug panel
   (backtick) → *Run logging (FEAT-242)* → tick *Run logging*. `src/run-log.js` then records the run's events (missions,
   every damage event with its measured force/speed and the threshold it was read against, wear by cause, purchases,
-  fuel, eating, sleep, camp, tows, resets, alerts, run end) plus a 1 s route sample, and downloads JSON Lines parts
-  (`autos-run-<seed>-<start>-partNN.jsonl`, the browser's download folder) at each new game day and at the run end —
-  no prompt. Read them with `node tools/run-log-summary.mjs <parts…>`; for one event, `grep`/`jq` the part.
+  fuel, eating, sleep, camp, tows, resets, alerts, run end) plus a 1 s route sample, keeps the log as JSON Lines parts in IndexedDB (BUG-199: Chrome blocks a second automatic download, so
+  nothing downloads per day) and downloads ONE file, `autos-run-<seed>-<start>.jsonl` (the browser's download folder),
+  at the run end and from the folder's *Save log now* button (which then clears the store; after a reload or crash the
+  same button offers the stored parts). Read it with `node tools/run-log-summary.mjs <file…>`; for one event, `grep`/`jq` it.
 - **Physics identity proof:** `node test/fingerprint-physics.mjs --out=a.json [--compare=b.json]` — running full-state hash over 900 steps on bumpy ground, round and out-of-round tires.
 - **Regression gates (registered in `test/gates.mjs`):** `npm test` runs **only the AFFECTED gates** — those
   whose transitive import closure (computed live by `run-all.mjs`, + each gate's `extraDeps`) intersects

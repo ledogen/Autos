@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // tools/run-log-summary.mjs — FEAT-242: a run summary from the run logger's JSON Lines parts (src/run-log.js).
 //
-//   node tools/run-log-summary.mjs ~/Downloads/autos-run-<seed>-<start>-part*.jsonl
+//   node tools/run-log-summary.mjs ~/Downloads/autos-run-<seed>-<start>.jsonl
 //
-// Parts are read in the order given (a shell glob sorts part01, part02, … correctly). A line that does not parse —
+// BUG-199: the logger saves ONE file (its stored parts joined); older logs are several partNN files, read in the order given. A line that does not parse —
 // a part cut off mid-write — is skipped and counted. `summarize(lines)` is exported for test/run-log.mjs.
 
 import { readFileSync } from 'node:fs'
