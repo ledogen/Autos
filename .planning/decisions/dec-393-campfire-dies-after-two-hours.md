@@ -2,7 +2,7 @@
 id: DEC-393
 status: standing
 decided: 2026-11-17
-area: camp
+area: story
 governs: FEAT-264, ASSET-90, src/campfire.js, camp fire, sleep
 supersedes:
 ---
