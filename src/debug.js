@@ -30,6 +30,7 @@ import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
 import { gripLoad } from './tire.js'
 import { VEHICLES } from '../data/vehicles.js'
 import { resolveBuild } from './version.js'
+import { runLog } from './run-log.js'   // FEAT-242: the run-logging folder
 import { THROW_PARAMS } from './throw.js'                      // FEAT-61 Phase F: throw feel
 import { PAPER_PARAMS, RR_PARAMS } from './paper-route.js'     // FEAT-61 Phase F: payout + re-plan
 import { DAMAGE_PARAMS, TRACKS, TRACK_IDS } from './damage.js' // SM-3: component condition model
@@ -1111,6 +1112,18 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // D-04: Read-only Logger hint — shows the \ key without being interactive
   const _loggerHint = { hint: '\\ to record' }
   gui.add(_loggerHint, 'hint').name('Logger').disable()
+
+  // FEAT-242 (DEC-358): the opt-in run logger (src/run-log.js). Off by default; the choice is remembered in this
+  // browser. On, the run's events and a 1 s route sample download by themselves as JSON Lines parts at each new
+  // game day and at the run's end — no prompt. Chrome asks ONCE to "allow multiple downloads" from the site.
+  const runLogFolder = gui.addFolder('Run logging (FEAT-242)')
+  const _rl = { get on () { return runLog.on }, set on (v) { runLog.setOn(v) }, now: () => runLog.flush('manual'),
+    get events () { return String(runLog.count) }, note: 'Chrome: allow multiple downloads once' }
+  runLogFolder.add(_rl, 'on').name('Run logging')
+  runLogFolder.add(_rl, 'now').name('Download log now')
+  runLogFolder.add(_rl, 'events').name('Events recorded').disable().listen()
+  runLogFolder.add(_rl, 'note').name('Note').disable()
+  runLogFolder.close()
 
   // D-11: Pacejka canvas overlay — 300×200 px, positioned to left of the lil-gui panel.
   // Pitfall 8: right:320px avoids overlap with lil-gui which is right:0.

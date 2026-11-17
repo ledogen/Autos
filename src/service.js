@@ -34,6 +34,7 @@ import { TRACKS, TIRE_IDS, WHEEL_IDS } from './damage.js'
 import { shelfPrice } from './shop-stock.js'
 import { ITEMS } from '../data/items.js'   // FEAT-232: a shelf meal's eatIn / eatH / hold
 import { swapCorners } from './recovery.js'
+import { runLog } from './run-log.js'   // FEAT-242: the opt-in run log (every hook is behind runLog.on)
 
 const cents = (x) => Math.round(x * 100) / 100
 const EPS = 1e-9
@@ -194,6 +195,8 @@ export class ServiceCenter {
         if (t.spend > 0) d.spend(t.spend)
         if (t.hours > 0) d.advanceHours(t.hours)
         for (const l of this.cart) if (l.eat > 0) d.eat?.(l.eat)   // after the table time, so the hold runs from the last bite
+        runLog.on && runLog.event('purchase', { at: 'service', ...t, wallet: d.money(),
+            lines: this.cart.map(l => ({ m: l.m, label: l.label, args: l.args, price: l.price, earn: l.earn, hours: l.hours, eat: l.eat, free: l.free, mom: l.mom.length })) })
         this.cart = []; this._snap = null
         this.onChange()
         return true

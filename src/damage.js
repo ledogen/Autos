@@ -36,6 +36,9 @@
 // the "imports nothing from the physics stack" seam below still holds.)
 import { mulberry32 } from './seed.js'
 import { DAY_PARAMS } from './day.js'
+// FEAT-242 (DEC-358): the opt-in run logger. Every hook below is behind `runLog.on`, so with logging off the
+// model does exactly what it did before and allocates nothing for it.
+import { runLog } from './run-log.js'
 
 // ── Track registry ────────────────────────────────────────────────────────────────────────────────
 // id → { label, cls, region }. `region` names which armor piece protects it (null = unprotected);
@@ -800,6 +803,8 @@ const clampAbs = (x, m) => (x >  m ? m : x < -m ? -m : x)
 // ── The model ─────────────────────────────────────────────────────────────────────────────────────
 
 /** Brake friction POWER on one wheel [W]: torque × wheel speed (see the brake-wear note in step). */
+const r2 = (v) => Math.round(v * 100) / 100
+
 function brakePower (brakeT, omega, i) { return Math.abs(brakeT[i] || 0) * Math.abs(omega?.[i] || 0) }
 
 export class DamageModel {
@@ -871,6 +876,7 @@ export class DamageModel {
    * full-speed impact that in story mode could set fatalImpact.
    */
   resetTransients () {
+    runLog.on && runLog.event('reseat', {})   // FEAT-242: every reseat (R, teleport, tow, a story seat) comes through here
     this._burst = null
     this._velRing = null
     this._bumpPeak.fill(0)
@@ -920,11 +926,49 @@ export class DamageModel {
    * Apply an insult to one track. `insult` is in that track's integrated signal units; `durability`
    * is how many of those units it takes to go from new to destroyed.
    */
-  wear (id, insult, durability) {
+  wear (id, insult, durability, cause = 'drive') {
     if (insult <= 0) return
     const scale = DAMAGE_PARAMS.wearScale[TRACKS[id].cls] ?? 1
     if (scale <= 0) return
-    this.condition[id] = Math.max(0, this.get(id) - insult * scale / this._dur(id, durability))
+    const c0 = this.get(id)
+    this.condition[id] = Math.max(0, c0 - insult * scale / this._dur(id, durability))
+    if (runLog.on) this._logWear(id, c0 - this.condition[id], cause)
+  }
+
+  // ── FEAT-242 run log ───────────────────────────────────────────────────────────────────────────
+  // Continuous wear is summed per track per cause and drained into each 1 s route sample (drainWearLog); the
+  // wear an EVENT deals (an impact, a bump stop, a rim strike) goes onto that event instead (_evOpen/_evClose),
+  // so the two never count the same loss twice.
+
+  _logWear (id, d, cause) {
+    if (!(d > 0) || this._evt) return   // an open event reads its cost off the condition diff at its close
+    const acc = (this._wearAcc ??= {})
+    const t = (acc[id] ??= {})
+    t[cause] = (t[cause] ?? 0) + d
+  }
+
+  /** The continuous wear since the last call, { track: { cause: condition lost } }, or null when none. */
+  drainWearLog () {
+    const acc = this._wearAcc
+    if (!acc) return null
+    this._wearAcc = null
+    for (const id in acc) for (const k in acc[id]) acc[id][k] = Math.round(acc[id][k] * 1e7) / 1e7
+    return acc
+  }
+
+  _evOpen () { this._evt = { flat: this.flat.slice(), cond: { ...this.condition } } }
+
+  /** Close the open event: what it cost each track (before → after), which tires it popped, and `data`. */
+  _evClose (type, data) {
+    const ev = this._evt
+    this._evt = null
+    const dmg = {}
+    for (const id of TRACK_IDS) {
+      if (this.get(id) !== ev.cond[id]) dmg[id] = [Math.round(ev.cond[id] * 1e4) / 1e4, Math.round(this.get(id) * 1e4) / 1e4]
+    }
+    const popped = []
+    for (let i = 0; i < 4; i++) if (this.flat[i] && !ev.flat[i]) popped.push(i)
+    runLog.event(type, { ...data, dmg, popped })
   }
 
   // ── Effect multipliers (what the physics stack reads) ───────────────────────────────────────────
@@ -1189,6 +1233,7 @@ export class DamageModel {
     const P = DAMAGE_PARAMS
     const v = impactSpeed(impulseNs, mass)
     if (v <= 0) return { v: 0, passed: 1, fatal: false }
+    if (runLog.on) this._evOpen()
 
     // Armor condition BEFORE this hit decides what gets through — a hit cannot protect itself.
     const armorId = ARMOR_REGIONS[region]
@@ -1224,6 +1269,9 @@ export class DamageModel {
     const fatal = P.fatalEnabled && v >= fatalMph(armorBefore) * MPH
     if (fatal && !this.fatalImpact) this.fatalImpact = { region, v, mph: v / MPH, armor: armorBefore }
 
+    if (this._evt) this._evClose('impact', { region, impulseNs: Math.round(impulseNs), mass, mph: r2(v / MPH), passed: r2(passed),
+      armorBefore: r2(armorBefore), fatal, fatalMph: P.fatalEnabled ? r2(fatalMph(armorBefore)) : null,
+      triggerMph: P.impactMinMph, alignFromMph: P.alignMinMph, toe: this.toeOffsetDeg.map(r2), camber: this.camberOffsetDeg.map(r2) })
     return { v, passed, fatal }
   }
 
@@ -1455,10 +1503,14 @@ export class DamageModel {
     }
 
     // FEAT-126: a shift forced with the clutch in (one-shot from the manual gearbox sim).
-    if (vehicleState.drivetrain?.missShift) this.wear('transmission', P.transMissWear, 1)
+    if (vehicleState.drivetrain?.missShift) {
+      if (runLog.on) this._evOpen()
+      this.wear('transmission', P.transMissWear, 1)
+      if (this._evt) this._evClose('missShift', { gear: vehicleState.drivetrain.gear, rpm: Math.round(vehicleState.drivetrain.engineRPM) })
+    }
     // FEAT-166: the clutch-type LSD's packs wear with the heat they slip.
     const diffW = vehicleState.drivetrain?.diffSlipW
-    if (diffW > 0) this.wear('diff', diffW * dt, P.durDiffClutch)
+    if (diffW > 0) this.wear('diff', diffW * dt, P.durDiffClutch, 'diffSlip')
 
     const slipVel  = vehicleState.slipVel
     const tireFlat = vehicleState.tireFlat
@@ -1472,7 +1524,7 @@ export class DamageModel {
         const v = Math.max(0, (slipVel[i] || 0) - P.tireSlipFloor)
         const f = Math.abs(tireFlat?.[i] || 0)
         if (v <= 0 && f <= 0) continue
-        this.wear(TIRE_IDS[i], (v + P.tireWCorner * f) * dt, P.durTire)
+        this.wear(TIRE_IDS[i], (v + P.tireWCorner * f) * dt, P.durTire, 'slip')
       }
     }
 
@@ -1484,9 +1536,9 @@ export class DamageModel {
     const onRim = vehicleState.rimOnRoad
     for (let i = 0; i < 4; i++) {
       if (!this.flat[i] || v2 <= 0) continue
-      if (!onRim[i]) { this.wear(TIRE_IDS[i], v2 * dt, P.durFlatTire); continue }
-      this.wear(WHEEL_IDS[i], v2 * dt, P.durFlatRim)
-      this.wear(i % 2 ? 'armorRight' : 'armorLeft', v2 * dt, P.durFlatArmor)
+      if (!onRim[i]) { this.wear(TIRE_IDS[i], v2 * dt, P.durFlatTire, 'flatTire'); continue }
+      this.wear(WHEEL_IDS[i], v2 * dt, P.durFlatRim, 'onRim')
+      this.wear(i % 2 ? 'armorRight' : 'armorLeft', v2 * dt, P.durFlatArmor, 'onRim')
     }
 
     // ── Brakes: ∫(friction POWER × time) = the energy the pads actually dissipate ─────────────
@@ -1498,8 +1550,8 @@ export class DamageModel {
     // gentle crawl-speed drag costs far less than the same torque at 60 mph.
     if (brakeT) {
       const omega = vehicleState.wheelOmega
-      this.wear('brakeFront', (brakePower(brakeT, omega, 0) + brakePower(brakeT, omega, 1)) * dt, P.durBrake)
-      this.wear('brakeRear',  (brakePower(brakeT, omega, 2) + brakePower(brakeT, omega, 3)) * dt, P.durBrake)
+      this.wear('brakeFront', (brakePower(brakeT, omega, 0) + brakePower(brakeT, omega, 1)) * dt, P.durBrake, 'braking')
+      this.wear('brakeRear',  (brakePower(brakeT, omega, 2) + brakePower(brakeT, omega, 3)) * dt, P.durBrake, 'braking')
     }
 
     // ── Wheels: RIM STRIKE events, per corner, on peak tire deflection ────────────────────────
@@ -1521,7 +1573,7 @@ export class DamageModel {
         const f = isRoad ? (road[i] || 0) : (rimF[i] || 0)
         if (f > this._strikePeak[i]) this._strikeRoad[i] = isRoad
         const peak = this._strikePeak[i]
-        if (f > peak) { this._strikePeak[i] = f; continue }
+        if (f > peak) { this._strikePeak[i] = f; if (runLog.on) this._peakAt(1, i, vehicleState, params); continue }
         // Release is judged in the PEAK's own measurement. When a road strike lets go, the road
         // residual drops to 0 and the "winner" flips to the debris reading; judged on the debris
         // yield, which sits ABOVE the road one since R-02 (85 vs 46 kN), a 46-85 kN road strike
@@ -1535,7 +1587,15 @@ export class DamageModel {
           ? (this.flat[i] ? yieldRoad : Math.min(P.rimPinchRoadMult * staticW, k * yieldRoad))
           : k * yieldN
         if (peak > tripPeak && (fPeak <= tripPeak || fPeak < peak * P.eventDecayFrac)) {
+          if (runLog.on) this._evOpen()
           this._landRimStrike(i, peak, staticW, peakRoad)
+          if (this._evt) {
+            const inflated = !this._evt.flat[i]
+            this._evClose('rimStrike', { corner: i, source: peakRoad ? 'road' : 'debris', forceN: Math.round(peak), staticN: Math.round(staticW), inflated,
+              yieldN: Math.round((peakRoad ? P.rimYieldRoadMult : P.rimYieldMult) * staticW * (inflated ? P.rimInflatedMult : 1)),
+              fullN: Math.round((peakRoad ? P.rimFullRoadMult : P.rimFullMult) * staticW),
+              pinchN: peakRoad && inflated ? Math.round(P.rimPinchRoadMult * staticW) : null, ...this._peakLog?.[1][i] })
+          }
           this._strikePeak[i] = 0
         } else if (fPeak <= tripPeak) {
           this._strikePeak[i] = 0
@@ -1556,7 +1616,12 @@ export class DamageModel {
       for (let i = 0; i < 4; i++) {
         this._pinchE[i] = this._pinchE[i] * keep + (work?.[i] || 0)
         if (this.flat[i]) continue
-        if ((hz?.[i] || 0) >= popN || this._pinchE[i] >= P.hazardPinchEnergyJ) { this.flat[i] = true; this.popped.push(i) }
+        if ((hz?.[i] || 0) >= popN || this._pinchE[i] >= P.hazardPinchEnergyJ) {
+          this.flat[i] = true; this.popped.push(i)
+          runLog.on && runLog.event('puncture', { corner: i, cause: 'hazard', hit: 'rock', tripped: (hz?.[i] || 0) >= popN ? 'force' : 'pinch',
+            hazardN: Math.round(hz?.[i] || 0), popN: Math.round(popN), pinchJ: r2(this._pinchE[i]), pinchPopJ: P.hazardPinchEnergyJ,
+            softN: Math.round(vehicleState.rimHazardSoft?.[i] || 0), ...this._cornerLog(i, vehicleState, params) })
+        }
       }
     }
 
@@ -1570,13 +1635,22 @@ export class DamageModel {
       for (let i = 0; i < 4; i++) {
         const f = Math.abs(bumpF[i] || 0)
         const peak = this._bumpPeak[i]
-        if (f > peak) { this._bumpPeak[i] = f; continue }            // still building
+        if (f > peak) { this._bumpPeak[i] = f; if (runLog.on) this._peakAt(0, i, vehicleState, params); continue }   // still building
         // Banked on decay as well as release, for the same reason as the rim strike: a truck that
         // settles onto its stops and stays there would otherwise never bank the landing that put
         // it there. A steady resting load does not decay, so it is never banked twice.
         const floorN = i < 2 ? P.springForceFloorFront : P.springForceFloorRear
         if (peak > floorN && (f <= floorN || f < peak * P.eventDecayFrac)) {
+          if (runLog.on) this._evOpen()
           this._landBumpStop(i, peak, params)
+          if (this._evt) {
+            const tc = Math.min(this.get(TIRE_IDS[i]), this.tireCondCap)
+            this._evClose('bumpStop', { corner: i, peakN: Math.round(peak), floorN, refN: i < 2 ? P.springBumpRefNFront : P.springBumpRefNRear,
+              tireCondCap: r2(this.tireCondCap), punctureN: Number.isFinite(this.punctureThreshold(tc)) ? Math.round(this.punctureThreshold(tc)) : null,
+              punctureFromCond: P.punctureCond, wasFlat: this._evt.flat[i],
+              wheelOnsetN: params?.bumpStopStiffness ? Math.round(wheelBumpOnsetN(floorN, params.bumpStopStiffness, params.bumpStopProgressiveM || 0.05, P.wheelBumpEnergyMult)) : null,
+              alignFloorN: P.alignBumpFloorN, ...this._peakLog?.[0][i] })
+          }
           this._bumpPeak[i] = 0
         } else if (f <= floorN) {
           this._bumpPeak[i] = 0
@@ -1596,8 +1670,8 @@ export class DamageModel {
                 + Math.max(0, Math.abs(strutVel[1] || 0) - P.damperVelFloor)
       const vR = Math.max(0, Math.abs(strutVel[2] || 0) - P.damperVelFloor)
                 + Math.max(0, Math.abs(strutVel[3] || 0) - P.damperVelFloor)
-      this.wear('damperFront', vF * dt, P.durDamper)
-      this.wear('damperRear',  vR * dt, P.durDamper)
+      this.wear('damperFront', vF * dt, P.durDamper, 'strutVel')
+      this.wear('damperRear',  vR * dt, P.durDamper, 'strutVel')
     }
 
     // WHEELS have no continuous wear source, by design (owner, 2026-08-20): a wheel is bent by
@@ -1622,14 +1696,14 @@ export class DamageModel {
         // punishing one. This is one of the two couplings between tracks in the model, and it is
         // deliberate: the filter has no effect of its own, it makes something else worse. FEAT-202:
         // the oil is the second coupling of the same kind (oilEngineMultiplier), worn by the same insult.
-        this.wear('engine', insult * this.engineWearMultiplier() * dt, P.durEngine)
-        this.wear('airFilter', insult * P.filterDustMult * dt, P.durFilter)
-        this.wear('oil', insult * dt, P.durOil)
+        this.wear('engine', insult * this.engineWearMultiplier() * dt, P.durEngine, 'rpmLoad')
+        this.wear('airFilter', insult * P.filterDustMult * dt, P.durFilter, 'rpmLoad')
+        this.wear('oil', insult * dt, P.durOil, 'rpmLoad')
       }
     }
 
     // Overheat: the honest temp signal wears the engine, severity-weighted (degrees over × time).
-    if (this.engineTempC > P.tempHotC) this.wear('engine', (this.engineTempC - P.tempHotC) * dt, P.durOverheat)
+    if (this.engineTempC > P.tempHotC) this.wear('engine', (this.engineTempC - P.tempHotC) * dt, P.durOverheat, 'overheat')
 
     // FEAT-33 seam (owner ruling 2026-09-04): the engine track IS the crank-time input. ignition.js
     // interpolates catch time ignitionCatchTime → ignitionCatchTimeWorn (0.25 s → 2 s) on this,
@@ -1637,6 +1711,20 @@ export class DamageModel {
     vehicleState.engineHealth = this.get('engine')
 
     this.publish(params)
+  }
+
+  /** FEAT-242: one corner's state at a logged event — the tire's condition and air, its load and how fast it was
+   *  closing, and the truck's velocity (world frame) — so a pop can be read against what hit it. */
+  _cornerLog (i, vs, params) {
+    const v = vs.velocity
+    return { tireCond: r2(this.get(TIRE_IDS[i])), wheelCond: r2(this.get(WHEEL_IDS[i])), fzN: Math.round(params?._tireFz?.[i] || 0),
+      strutVel: r2(vs.strutCompVel?.[i] || 0), omega: r2(vs.wheelOmega?.[i] || 0), vel: v ? [r2(v.x), r2(v.y), r2(v.z)] : null }
+  }
+
+  /** FEAT-242: hold the corner's state at the step a bump stop (kind 0) or rim strike (1) peaked — the event banks
+   *  a step or more later, when the load has already let go. */
+  _peakAt (kind, i, vs, params) {
+    (this._peakLog ??= [[], []])[kind][i] = this._cornerLog(i, vs, params)
   }
 
   /** The state-derived signals step() publishes on vehicleState every step, wearing or not: the corners down to their

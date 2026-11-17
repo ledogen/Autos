@@ -19,6 +19,7 @@
  */
 
 import { mulberry32, seedFor, hash32 } from './seed.js'
+import { runLog } from './run-log.js'   // FEAT-242: the opt-in run log (every hook is behind runLog.on)
 
 /**
  * FEAT-209: a station's price relative to the day's (owner, 2026-11-13: ±5 %, "so one station is
@@ -94,6 +95,8 @@ export class FuelStop {
     /** Handbrake down: the sale is final. Returns { gal, sale } (sale rounded to the cent) and closes. */
     settle () {
         const r = { gal: this.gal, sale: Math.round(this.sale * 100) / 100 }
+        runLog.on && runLog.event('fuel', { poiId: this.poiId, gal: Math.round(r.gal * 1000) / 1000, pricePerGal: this.price, sale: r.sale,
+            cansGal: this.cans.reduce((g, c) => g + c.gal, 0) })
         this.state = 'idle'
         this.poiId = null
         this.receipt = r
