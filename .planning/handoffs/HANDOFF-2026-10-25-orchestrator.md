@@ -166,8 +166,15 @@ the pad can use the inventory while a waiting tutorial card is up (`dlg-waits`, 
 FEAT-246 chase-camera collision (0.025 ms/frame; tunnel fix 23859b68) · FEAT-264 dead campfire (DEC-393; card
 camera-campfire-look) · machine batch FEAT-258, BUG-196, BUG-197, FEAT-204, FEAT-259 (DEC-372..374 standing, DEC-375
 DRAFT = the tire/stock numbers; card machine-1117-look).
-**RUNNING:** nothing (07:05). FEAT-251 lawn furniture landed (card feat251-lawn-drive; its vite :3888 in
-CarGame-land-211d is still up for the owner).
+**RUNNING at 07:20 (after the 07:13 restart; intake found nothing new: no unanswered inbox note, no new owed answer,
+no untaken dive):**
+- p, CarGame-perf, land/asset-90-dead-campfire (Opus): ASSET-90 ashes-only campfire model + wiring into FEAT-264's
+  dead state. Card asset90-dead-campfire-look.
+- s, CarGame-land-gps, land/housekeeping-1117 (Sonnet): MILESTONES.md lane rows for the unplaced tickets; pad-e2e
+  registered as a browser-only gate. Docs/test only: land it when it reports green.
+- Orchestrator's own: `node test/gpu-reset.mjs` on main → wip/orch/gpu-reset-main-1117.log (was the feat-235-r3
+  impostor failure load or real?).
+FEAT-251 lawn furniture is landed (card feat251-lawn-drive; its vite :3888 in CarGame-land-211d is still up).
 **Tutorial seed re-search DONE** (land/tut-seed-search-r2 @ fb8b12af, docs only; study + sheets in
 CarGame-spare-base/wip/tut-seed-search-r2/, overview.jpg): 1000 new seeds, 14 pass the grade limit, 5 candidates on card
 tutorial-seed-pick-r2. Finding: NO seed makes the whole tutorial day gentle (0/1000 under 20 %); the cause is the
