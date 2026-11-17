@@ -5,6 +5,8 @@
  * Terrain: the boom is sampled at BOOM_STEPS points and the first one below groundAt(x,z)+clearance is bisected
  * back to the edge. Walls: `wallDist` is the caller's one ray cast (distance along the boom to the first solid, or
  * null); the camera stops `margin` short of it. Never returns more than 1 (never further than desired).
+ * A pivot already below groundAt+clearance is UNDER the heightfield (a tunnel bore: the analytic surface is the
+ * mountain above), so the terrain test is skipped there; collapsing to the pivot put the camera inside the truck.
  */
 export const BOOM_CLEARANCE = 0.45   // m above the ground: clears the near plane and the heightfield's facets
 export const BOOM_WALL_MARGIN = 0.35 // m short of a wall
@@ -17,6 +19,7 @@ export function boomFreeFraction (pivot, desired, groundAt, wallDist = null, cle
   let t = 1
   if (wallDist !== null) t = Math.max(0, Math.min(1, (wallDist - margin) / len))
   const blocked = u => pivot.y + dy * u < groundAt(pivot.x + dx * u, pivot.z + dz * u) + clearance
+  if (blocked(0)) return t
   let lo = 0
   for (let i = 1; i <= BOOM_STEPS; i++) {
     const u = t * i / BOOM_STEPS
