@@ -199,7 +199,7 @@ for (const type of ['tackleShop']) for (let h = 0; h < 20000; h++) {
 check('FEAT-230: the tackle shop rolls nothing but the Ice King; it and the general store a quarter as often as the jerry can',
   junk === 0 && kings > 0 && STOREFRONT.tackleShop.weights.iceKing === STOREFRONT.gasStation.weights.jerryCan / 4
   && STOREFRONT.generalStore.weights.iceKing === STOREFRONT.gasStation.weights.jerryCan / 4)
-const before = { coffee: 3, energyDrink: 4, chiliDog: 5, ductTape: 8, emergencyGas: 8 }   // data/offers.js REWARD_VALUE before FEAT-104
+const before = { coffee: 3, energyDrink: 4, chiliDog: 3.5, ductTape: 8, emergencyGas: 8 }   // data/offers.js REWARD_VALUE before FEAT-104; the chili dog re-priced by DEC-377 ($5 → $3.50)
 check('a reward card reads the same price as before FEAT-104', Object.entries(before).every(([id, v]) => rewardValue(id) === v),
   JSON.stringify(Object.keys(before).map(id => [id, rewardValue(id)])))
 

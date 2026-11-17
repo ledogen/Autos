@@ -13,14 +13,14 @@
 //      6c. The bigger packs (FEAT-182): each has slots and a reach; the Frame pack takes a whole camp and refuses
 //      one more; camp's tether follows the equipped pack, capped at 120 m (src/camp.js reachM).
 //  11. FEAT-230 slice 2 (DEC-338): the fresh clock per unit (one old unit never spoils the stack, the oldest eaten first),
-//      every food chilled ×1/6 / ×1/8 up to 4 units a cooler (a stack of 5: the oldest stays out), ice melting in 24 h
+//      every food chilled ×1/4 / ×1/8 in 4 SLOTS a cooler, a whole stack to a slot (DEC-376), ice melting in 24 h
 //      and lasting 72 h / 120 h in a cooler, the bar's fraction, save → load, an old save fresh, the ground; the sources.
 //   7. Catalog: every REWARDS id but a dineIn meal is an ITEMS id (the grant path can't miss), and no desc carries a
 //      digit (SM-INV-10 — described, never scored).
 //
 // Pure node: no THREE, no DOM.
 import { InventorySystem, runInventory } from '../src/inventory.js'
-import { ITEMS, foodHoldH, COOKING_KIT_FOOD_MULT } from '../data/items.js'
+import { ITEMS, foodSatietyH, COOKING_KIT_FOOD_MULT } from '../data/items.js'
 import { REWARD_CATS } from '../data/offers.js'
 import { STOREFRONT, ITEM_PRICE } from '../data/shop-stock.js'
 import { REWARD_LIST, rewardsIn } from '../src/offer-board.js'
@@ -183,7 +183,7 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
 // ── 8. FEAT-230 slice 1: the potato ───────────────────────────────────────────────────────────
 {
   let held = null
-  const f = new InventorySystem({ slotCap: () => 8, effects: { eat: (e) => { held = ITEMS[e.id].hold } } })
+  const f = new InventorySystem({ slotCap: () => 8, effects: { eat: (e) => { held = ITEMS[e.id].satiety } } })
   f.start()
   const slots0 = f.slotsUsed()
   f.grant('potato', 7)
@@ -200,8 +200,8 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
   check('convert refuses, changing nothing, when the cooked has no room',
     !full.convert('potato', 'potatoCooked') && full.list().find(r => r.id === 'potato').n === 2 && full.slotsUsed() === 3)
   check('DEC-310: the kit at camp holds food 1.2x as long, the same food away from camp does not',
-    COOKING_KIT_FOOD_MULT === 1.2 && Math.abs(foodHoldH('potatoCooked', true) - 4.8) < 1e-9 && foodHoldH('potatoCooked', false) === 4
-    && Math.abs(foodHoldH('chiliDog', true) - 12) < 1e-9 && foodHoldH('chiliDog', false) === 10)
+    COOKING_KIT_FOOD_MULT === 1.2 && Math.abs(foodSatietyH('potatoCooked', true) - 4.8) < 1e-9 && foodSatietyH('potatoCooked', false) === 4
+    && Math.abs(foodSatietyH('chiliDog', true) - 12) < 1e-9 && foodSatietyH('chiliDog', false) === 10)
   const pool = (cats, gate) => rewardsIn(cats, 0).filter(r => r.gates.includes(gate)).map(r => r.id)
   check('the potato is a farm reward at C and B, not A', pool(REWARD_CATS.farm.cats, 'C').includes('potato')
     && pool(REWARD_CATS.farm.cats, 'B').includes('potato') && !pool(REWARD_CATS.farm.cats, 'A').includes('potato'))
@@ -216,9 +216,9 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
 // ── 11. FEAT-230 slice 2: the fresh clock, the coolers and ice (items.md §1 / §1b / §2) ───────────────
 {
   const near = (a, b) => Math.abs(a - b) < 1e-9
-  check('the ruled fresh clocks: chili dog and burger 16 h, packed lunch, cooked potato, groceries and ice 24 h; raw potato and cooked groceries none',
+  check('the ruled fresh clocks: chili dog and burger 16 h; packed lunch, cooked potato, groceries raw and cooked (DEC-376) and ice 24 h; raw potato none',
     ITEMS.chiliDog.freshH === 16 && ITEMS.burger.freshH === 16 && ITEMS.packedLunch.freshH === 24 && ITEMS.potatoCooked.freshH === 24
-    && ITEMS.groceries.freshH === 24 && ITEMS.ice.freshH === 24 && ITEMS.potato.freshH === undefined && ITEMS.groceriesCooked.freshH === undefined)
+    && ITEMS.groceries.freshH === 24 && ITEMS.ice.freshH === 24 && ITEMS.potato.freshH === undefined && ITEMS.groceriesCooked.freshH === 24)
   check('the coolers: ×1/4 (DEC-367) with 72 h ice holding 4; the Ice King ×1/8 with 5 days of ice holding 4 (DEC-338)',
     ITEMS.cooler.coolRate === 1 / 4 && ITEMS.cooler.iceLastsH === 72 && ITEMS.cooler.holds === 4
     && ITEMS.iceKing.coolRate === 1 / 8 && ITEMS.iceKing.iceLastsH === 120 && ITEMS.iceKing.holds === 4)
@@ -276,12 +276,17 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
   f.tick(1066 + 72 + 5.9)
   check('the ice ran out: warm again, ×1, the packed lunch goes at 24', n('packedLunch') === 1 && (f.tick(1066 + 78), n('packedLunch') === 0) && n('groceries') === 0)
 
-  // A stack of 5 in a 4-unit cooler: 4 chill, the oldest stays out and goes alone; then the 4 go on their own clock.
+  // DEC-376 (owner 11-17): a stack is ONE cooler slot, and a cooler has four. A stack of 5 chills whole; a fifth KIND stays out.
   f = mk(); f.tick(0); f.grant('cooler'); f.grant('ice'); f.use('ice'); f.grant('chiliDog', 5)
-  f.tick(15.9); f.tick(16)
-  check('5 chili dogs in the cooler: the one with no room goes at 16 h, alone', n('chiliDog') === 4 && near(ent('chiliDog').ages[3], 16 * ITEMS.cooler.coolRate))
+  f.grant('burger'); f.grant('salad'); f.grant('deliSandwich'); f.grant('groceriesCooked')
+  f.tick(12)
+  check('5 chili dogs are one slot: all five chill, and so do the next three kinds (four slots)', ent('chiliDog').ages.every(a => near(a, 3))
+    && near(ent('burger').ages[0], 3) && near(ent('salad').ages[0], 3) && near(ent('deliSandwich').ages[0], 3))
+  check('…the fifth slot (cooked groceries) has no room and ages warm', near(ent('groceriesCooked').ages[0], 12))
+  f.tick(24)
+  check('DEC-376: cooked groceries spoil in 24 h outside a cooler', n('groceriesCooked') === 0 && n('chiliDog') === 5)
   f.tick(63.9)
-  check('the four chilled ×1/4: still good at 63.9 h', n('chiliDog') === 4)
+  check('the five chilled ×1/4: still good at 63.9 h', n('chiliDog') === 5)
   f.tick(64)
   check('… gone at 16 h of fresh life, 64 h in, with ice still in the cooler', n('chiliDog') === 0 && ent('cooler').iceH > 0)
   f.tick(76)
@@ -334,8 +339,8 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
     candyBar: [3, 4, 'CB', 'gasStation', 'gasStation'], bagOfPeanuts: [3, 3, 'CB', 'gasStation,generalStore', 'gasStation'],
     burger: [8, undefined, 'CB', 'foodVendor', 'foodVendor'] }
   for (const [id, [hold, stack, g, who, shop]] of Object.entries(rows)) {
-    check(`${id}: edible, holds ${hold} h, stack ${stack ?? 'uncapped'}`, ITEMS[id].use === 'eat' && ITEMS[id].hold === hold && ITEMS[id].stack === stack)
-    check(`${id}: sold at the ${shop} under $5 (burger $5)`, STOREFRONT[shop].always.includes(id) && ITEM_PRICE[id] > 0 && (id === 'burger' ? ITEM_PRICE[id] === 5 : ITEM_PRICE[id] < 5))
+    check(`${id}: edible, ${hold} h of satiety, stack ${stack ?? 'uncapped'}`, ITEMS[id].use === 'eat' && ITEMS[id].satiety === hold && ITEMS[id].stack === stack)
+    check(`${id}: sold at the ${shop} under $5`, STOREFRONT[shop].always.includes(id) && ITEM_PRICE[id] > 0 && ITEM_PRICE[id] < 5)
     check(`${id}: a ${g} reward from ${who} only`, gates(id) === g && givers(id, g[0]) === who)
     check(`${id}: not found (no find channel, no other shelf)`, Object.entries(STOREFRONT).every(([k, s]) => k === shop || !s.always.includes(id)))
   }
@@ -343,19 +348,19 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
   check('a capped snack spans slots (candy 4+1, gummy 5+1)', f.slotsUsed() === s0 + 4)
   check('the packed lunch is a B-A reward from residences, farms and the food vendor, never sold',
     gates('packedLunch') === 'BA' && givers('packedLunch', 'B') === 'farm,foodVendor,residence' && !Object.values(STOREFRONT).some(s => s.always.includes('packedLunch')))
-  check('the dinner meal: eat-in only, 8 h, 30 min, $5-10, on the food vendor\'s shelf, never stowed',
-    ITEMS.dinnerMeal.eatIn && !ITEMS.dinnerMeal.use && ITEMS.dinnerMeal.hold === 8 && ITEMS.dinnerMeal.eatH === 0.5
-    && STOREFRONT.foodVendor.always.includes('dinnerMeal') && ITEM_PRICE.dinnerMeal >= 5 && ITEM_PRICE.dinnerMeal <= 10)
+  check('the dinner meal: eat-in only, 8 h, 30 min, on the food vendor\'s shelf, never stowed',
+    ITEMS.dinnerMeal.eatIn && !ITEMS.dinnerMeal.use && ITEMS.dinnerMeal.satiety === 8 && ITEMS.dinnerMeal.eatH === 0.5
+    && STOREFRONT.foodVendor.always.includes('dinnerMeal'))
 }
 
 // ── 10. FEAT-230 slice 3: groceries ───────────────────────────────────────────────────────────
 {
   const pool = (cats, gate) => rewardsIn(cats, 0).filter(r => r.gates.includes(gate)).map(r => r.id)
   const givers = (gate) => Object.entries(REWARD_CATS).filter(([k, v]) => k !== 'larrysHouse' && pool(v.cats, gate).includes('groceries')).map(([k]) => k).sort().join()
-  check('groceries: raw is no meal, cooked holds 10 h', !ITEMS.groceries.use && ITEMS.groceriesCooked.use === 'eat' && ITEMS.groceriesCooked.hold === 10)
+  check('groceries: raw is no meal, cooked gives 10 h', !ITEMS.groceries.use && ITEMS.groceriesCooked.use === 'eat' && ITEMS.groceriesCooked.satiety === 10)
   check('groceries: the kit\'s +20 % does NOT apply on top (10 h with or without), the potato still gets it',
-    foodHoldH('groceriesCooked', true) === 10 && foodHoldH('groceriesCooked', false) === 10 && Math.abs(foodHoldH('potatoCooked', true) - 4.8) < 1e-9)
-  check('groceries: $5 at the general store and the farm', ITEM_PRICE.groceries === 5 && STOREFRONT.generalStore.always.includes('groceries') && STOREFRONT.farm.always.includes('groceries'))
+    foodSatietyH('groceriesCooked', true) === 10 && foodSatietyH('groceriesCooked', false) === 10 && Math.abs(foodSatietyH('potatoCooked', true) - 4.8) < 1e-9)
+  check('groceries: on the price line at the general store and the farm', ITEM_PRICE.groceries === 3.5 && STOREFRONT.generalStore.always.includes('groceries') && STOREFRONT.farm.always.includes('groceries'))
   check('groceries: a B-A reward from the farm and the general store only', REWARD_LIST.find(r => r.id === 'groceries')?.gates.join('') === 'BA'
     && givers('B') === 'farm,generalStore' && givers('A') === 'farm,generalStore')
   check('groceries: never a find, no other shelf', Object.entries(STOREFRONT).every(([k, s]) => ['generalStore', 'farm'].includes(k) || !s.always.includes('groceries'))
@@ -363,6 +368,21 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
   const f = new InventorySystem({ slotCap: () => 8 }); f.start(); f.grant('groceries', 2)
   check('groceries: a bag a slot', f.list().filter(r => r.id === 'groceries').length === 2)
   check('groceries: cooking turns one raw bag into one cooked meal', f.convert('groceries', 'groceriesCooked') && f.list().filter(r => r.id === 'groceries').length === 1 && f.list().some(r => r.id === 'groceriesCooked'))
+}
+
+// ── 12. FEAT-250 / FEAT-260 (owner 2026-11-17): the $0.35 an hour line, the general store's four new foods ─────────────
+{
+  const cooksInto = { groceries: 'groceriesCooked', potato: 'potatoCooked' }
+  const sold = [...new Set(Object.values(STOREFRONT).flatMap(s => s.always))].filter(id => ITEMS[id].kind === 'food')
+  const off = sold.filter(id => id !== 'bagOfPeanuts' && Math.abs(ITEM_PRICE[id] - 0.35 * ITEMS[cooksInto[id] ?? id].satiety) > 0.05 * ITEMS[cooksInto[id] ?? id].satiety + 1e-9)
+  check('DEC-377: every sold food is within $0.30–0.40 an hour of satiety (the peanuts held at $3 by DEC-293)', off.length === 0, off.join())
+  check('DEC-293 stands: the bag of peanuts is $3', ITEM_PRICE.bagOfPeanuts === 3)
+  const four = ['salad', 'deliSandwich', 'cookies', 'bread']
+  check('FEAT-260: the salad, deli sandwich, cookies and bread are edible, spoil, and sell at the general store only',
+    four.every(id => ITEMS[id].use === 'eat' && ITEMS[id].satiety > 0 && ITEMS[id].freshH > 0 && STOREFRONT.generalStore.always.includes(id)
+      && Object.entries(STOREFRONT).every(([k, s]) => k === 'generalStore' || !s.always.includes(id))))
+  check('…cheap and short to dear and long: the salad spoils first, the cookies last', ITEMS.salad.freshH < ITEMS.deliSandwich.freshH
+    && ITEMS.deliSandwich.freshH < ITEMS.bread.freshH && ITEMS.bread.freshH < ITEMS.cookies.freshH)
 }
 
 console.log(fails === 0 ? '\ninventory gate: ALL OK' : `\ninventory gate: ${fails} FAILURE(S)`)

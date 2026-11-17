@@ -89,7 +89,7 @@ import { DaySystem, DAY_PARAMS, STAGE_COLOR, HUNGER_COLOR, clockHeld } from './d
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines, expeditionGrade, gradePoints } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem, runInventory, entryKg, startingPack } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
-import { ITEMS, foodHoldH } from '../data/items.js'
+import { ITEMS, foodSatietyH } from '../data/items.js'
 import { PartsSystem, runParts, modModels } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
@@ -3788,7 +3788,7 @@ const inventorySystem = new InventorySystem({
   onDrop: (e) => _dropToGround(e),   // FEAT-143: down behind the tailgate, not out of the game
   // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
-  effects: { coffee: () => daySystem.drinkCoffee(), eat: (e) => daySystem.eat(foodHoldH(e.id, _kitAtCamp())), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
+  effects: { coffee: () => daySystem.drinkCoffee(), eat: (e) => daySystem.eat(foodSatietyH(e.id, _kitAtCamp())), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
     ice: (e) => inventorySystem.iceCooler(e),   // FEAT-230 slice 2 (DEC-338): a bag into the cooler, what it had left; none aboard keeps it
     spare: (e) => { queueMicrotask(() => _pickSpare(e)); return false },
     fieldRepair: (e) => { queueMicrotask(() => _pickFieldRepair(e.id)); return false },
@@ -5261,6 +5261,10 @@ function _checkOpeningEnd () {
   economySystem.payPaycheck()
   if (_returnSeed) { _returnToRunWorld(); return }
   if (skipped && !dialogueSystem.has(DLG.bossCheck)) { _tut(DLG.bossCheck, BOSS_CHECK, null, true); return }
+  // BUG-198 (owner, 2026-11-17: "make sure we get the three free meals when starting a new game"): the run proper starts
+  // on mom's three packed lunches (FEAT-173, items.md §1d) however many the tutorial's breakfast and night ate.
+  const lunches = inventorySystem.list().filter(r => r.id === 'packedLunch').reduce((k, r) => k + r.n, 0)
+  if (lunches < 3) inventorySystem.grant('packedLunch', 3 - lunches)
   _tut(DLG.runIntro, skipped ? _runIntro() : LARRY_CALL, null, true)   // Larry's call: DEC-326's two cards, or DEC-236's four on a skip
   _markPlayed()   // FEAT-184: the tutorial is over
 }
@@ -8015,7 +8019,7 @@ function _updateEnergyMeter () {
         el.style.width = `${hours[k] * EM_PX_PER_H}px`
         el.style.background = STAGE_COLOR[k]
       }
-      // FEAT-198: the hunger strip, laid out the same way — the hungerWords bands from the longest meal hold
+      // FEAT-198: the hunger strip, laid out the same way — the hungerWords bands from the satiety cap
       // down to 0 h left, then 'hungry' for the hunger ramp (past the ramp the drain is flat, so the bar stops).
       let top = _emEls.hTop = _hmTopH()
       for (const [h, w] of DAY_PARAMS.hungerWords) { _hmSeg(w, top - h); top = h }
@@ -8053,8 +8057,8 @@ function _updateEnergyMeter () {
   }
 }
 let _hmWord, _emX, _hmX   // the strips' last written translateX (PERF-48)
-/** The hunger strip's full end: the longest hold any meal gives (meals never stack past it — DaySystem.eat). */
-const _hmTopH = () => Math.max(DAY_PARAMS.mealHoldH, ...Object.values(ITEMS).map(i => i.hold ?? 0))
+/** The hunger strip's full end: the satiety cap (FEAT-250: foods stack up to it — DaySystem.eat). */
+const _hmTopH = () => DAY_PARAMS.satietyCapH
 function _hmSeg (word, hours) {
   const el = document.getElementById(`hm-seg-${word}`)
   el.style.width = `${hours * EM_PX_PER_H}px`

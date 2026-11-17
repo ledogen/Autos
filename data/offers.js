@@ -746,10 +746,10 @@ export const REWARD_WINDOW_HI = 1.3
  * coffee, meals and field repairs too, FEAT-104); these are the rest. A price, never a stat (SM-INV-10).
  */
 export const REWARD_VALUE = {
-    dinnerMeal: 5, packedLunch: 6,   // packedLunch: items.md §1d, "worth $6" (never sold)
+    packedLunch: 2.8,   // never sold. DEC-377: 8 h × $0.35 (was items.md §1d's "worth $6"). The dinner meal reads its shelf price
     zipTies: 8, stopLeak: 8,
     // FEAT-168 [DEFAULT]: the school lunch and the camp gear the shelf doesn't price
-    schoolLunch: 5, blanket: 4, airMattress: 5, sleepingPad: 8, quilt: 8, sleepingBag: 10, deluxeSleepingPad: 15,
+    schoolLunch: 2.8, blanket: 4, airMattress: 5, sleepingPad: 8, quilt: 8, sleepingBag: 10, deluxeSleepingPad: 15,
 }
 
 /**

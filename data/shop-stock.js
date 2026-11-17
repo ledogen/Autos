@@ -41,15 +41,16 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     // FEAT-104: the storefronts' lines (items.md). Moved here from data/offers.js REWARD_VALUE, so a reward
     // card still reads the same price. Duct tape and emergency gas are "$5–10": $8 is the reading the
     // reward card already used [DEFAULT].
-    coffee: 3, energyDrink: 4, chiliDog: 5, ductTape: 8, emergencyGas: 8,
+    coffee: 3, energyDrink: 4, ductTape: 8, emergencyGas: 8,
     // FEAT-231 [DEFAULT]: inside the owner's ranges, the mat $5–10 (the $8 its reward card read), the bedliner $10–30
     rubberBedMat: 8, bedliner: 20,
-    groceries: 5,               // owner, 2026-10-21: $5 at the general store and farms
-    potato: 2,                  // FEAT-230 [DEFAULT]: items.md rules the potato "under $5"; the owner sets the number
-    gummyWorms: 2, spicyChips: 3, candyBar: 2,   // FEAT-232 [DEFAULT]: "under $5" each; the owner sets the numbers
-    burger: 5,                  // items.md §1d: the food vendor's burger, $5
-    dinnerMeal: 5,              // FEAT-232 [DEFAULT]: items.md rules "$5–10"; the low end, which is what the dinner-invitation reward already read
-    bagOfPeanuts: 3,            // FEAT-184 (DEC-276) [DEFAULT]: items.md rules the gas-station snacks "under $5"; the owner sets the number
+    // FEAT-250 / DEC-377 (owner, 2026-11-17, FEAT-69 dive: "cut costs: food to about $0.35 per hour of hold"): a food
+    // costs $0.35 × its satiety (data/items.js; test/inventory.mjs holds the line) — raw groceries and the raw potato by the meal they cook into.
+    // Was: chili dog, burger, dinner meal, groceries $5; potato, gummy worms, candy bar $2; spicy chips $3.
+    // FEAT-260's four [DEFAULT]: ±$0.05 an hour by shelf life (salad $0.30, sandwich $0.35, cookies and bread $0.40).
+    chiliDog: 3.5, burger: 2.8, dinnerMeal: 2.8, groceries: 3.5, potato: 1.4, gummyWorms: 0.7, spicyChips: 1.05, candyBar: 1.05,
+    salad: 1.2, deliSandwich: 2.45, cookies: 0.8, bread: 2.4,
+    bagOfPeanuts: 3,            // DEC-293 (owner, 2026-11-15: "keep $3") stands over the $0.35 line ($1.05): owed on the food card
     ice: 5,                     // owner, 2026-10-22
     cooler: 20, iceKing: 65,    // FEAT-230 [DEFAULT]: the middles of the owner's $10–30 and $30–100; the owner sets them
     // FEAT-121 camp gear on the general-store shelf [DEFAULT]: the reward worths (data/offers.js REWARD_VALUE) as the
@@ -71,7 +72,9 @@ export const STOREFRONT = {
     // FEAT-121 [DEFAULT]: the four bed rungs below the top are always there; the deluxe pad and the Rucksack roll
     // (Hardly ever / Sometimes, the reward weights of data/stock-weights.js). FEAT-230: ice and the cooler always (items.md §1/§2);
     // the Ice King "very rarely", a quarter of the jerry can's rarely [DEFAULT]
-    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato', 'groceries', 'blanket', 'airMattress', 'sleepingPad', 'sleepingBag',
+    // FEAT-260 (owner, 2026-11-17: "This store needs to carry more than just groceries"): the salad, the deli sandwich,
+    // the cookies and the bread.
+    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato', 'groceries', 'salad', 'deliSandwich', 'cookies', 'bread', 'blanket', 'airMattress', 'sleepingPad', 'sleepingBag',
                              'ice', 'cooler'],
                     weights: { deluxeSleepingPad: 0.25, rucksack: 1, iceKing: 0.25 } },
     farm:         { always: ['groceries'] },   // FEAT-230 slice 3: a farm sells for the first time (items.md, Groceries)
