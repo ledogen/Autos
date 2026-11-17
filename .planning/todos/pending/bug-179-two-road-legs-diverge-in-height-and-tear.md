@@ -70,11 +70,13 @@ Not BUG-171's root (that is the limb/tie terms inside one leg's carve; here two 
 ## Tracker
 - [x] Reproduced headlessly with the two legs named and the height gap measured along the interface
 - [x] Root cause found; same root as BUG-171 or a separate one, stated (separate: the merge plan's role rule)
-- [ ] Owner picks a fix (Open questions)
+- [x] Owner picks a fix (DEC-366: option 1, the chained fork)
 - [ ] Fixed at the root, with a gate or census that fails before and passes after
 - [ ] Owner looks at the spot on seed 1684703087
 
 ## Decisions
+DEC-366 (owner, 2026-11-17): build option 1, a chain of forks at one junction; show him 10 generated chained forks and
+he signs off before it lands on main ("im worried this expansion could create a whole class of bugs").
 DEC-260 (fix by construction, never averaged away) governs this ticket. DEC-065, DEC-068, DEC-064 bind any fix; none
 of the options below conflicts with them. Owner 2026-11-13 (memory, no record): ask before changing junction promotion.
 
