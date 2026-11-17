@@ -12,7 +12,7 @@ lane: unplaced
 # BUG-199: A run log part is lost when Chrome blocks the second automatic download
 
 ## Next steps
-A free lane (Sonnet): keep the parts in the browser until the run ends, then save ONE file; add a "Save log now" button.
+Landing: `land/rumble-runlog`. Owner: the next long run logs into IndexedDB; press Save log now (debug panel) or let the run end download it.
 
 ## Summary
 The run logger downloads one file per game day with no prompt. Chrome treats the second automatic download from a page as
@@ -26,7 +26,10 @@ logging folder (a click-started download is never blocked). On boot, if parts fr
 Workaround today: Chrome → the site's settings → Automatic downloads → Allow, for the play build's address.
 
 ## Tracker
-- [ ] No download before run end
-- [ ] Parts survive a reload or a crash
-- [ ] "Save log now" button
-- [ ] The summary tool reads the single file
+- [x] No download before run end
+- [x] Parts survive a reload or a crash
+- [x] "Save log now" button
+- [x] The summary tool reads the single file
+
+## Log
+- 2026-11-17 lane a: fixed on land/rumble-runlog; DEC-392; gate run-log updated; the smoke's runlog step updated but not run on a branch.
