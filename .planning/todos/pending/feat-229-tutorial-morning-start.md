@@ -12,6 +12,7 @@ lane: A (tutorial)
 # FEAT-229: The tutorial starts the run in the morning
 
 ## Next steps
+Tutorial seed: owner picks on card `tutorial-seed-pick-r3` (round 3 ranks the whole tutorial's hard driving; 3590618618 stays pinned until then).
 On main: seed 3590618618 pinned (DEC-351) and round 2 (DEC-353..357) landed; owner drives it (card `tutorial-test-drives`).
 On `land/tut-round2`: the owner's round 2 (DEC-353) built — phone calls ring and click (DEC-354), Katie's lines
 (DEC-355), the peanuts-only snack shelf and the ranch arrival / waypoint (DEC-356, supersedes DEC-346), sleepy after the
@@ -122,3 +123,8 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - 2026-11-16: DEC-353 round 2 on `land/tut-round2` (DEC-354..357; BUG-189). Smoke boot,story,opening,newRun PASS first
   run; card shots `wip/tut-round2/cards/`. Energy at the fix measured −0.42 h (exhausted; no blink could fire in the
   tutorial before). Unverified: the camp-short-of-the-pin path in a browser (logic only), a real pad.
+- 2026-11-17: tutorial seed round 3 (lane a, `land/tut-seed-search-r3`, owner: "Which seed minimizes hard driving in the tutorial"). Whole-day
+  index on the 7 driven legs (grade > 12 % per 10 %, ×1.5 down, + bends < 20 / 12 m, ×2 steep-and-tight; `wip/tut-seed-search-r3/hard.mjs`,
+  score3.mjs) on 86 seeds: pinned 2528 hard m (57th of 71); top 1464815701 665, 1872706826 838, 3615534968 927, 3881445155 995,
+  3270310529 1055; no round-2 seed survives. All five pass gate-at.mjs. Card `tutorial-seed-pick-r3` (r2 card moved to answered/).
+  Unverified: the index for the ~250 near seeds outside the grade-proxy top 60 (proxy r = 0.83); stream-crossing counts.
