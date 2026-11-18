@@ -57,3 +57,6 @@ src/road-mesh.js (buildTunnelTube), test/portal-clear.mjs, test/gates.mjs
 
 ## Log
 - 2026-11-18 minted by the orchestrator.
+- 2026-11-18 lane agent: fix 6fb376e4, gate 3a76a844. Shelf still there after BUG-216. Repro drives through
+  (8.4–8.5 m/s, lat 0.14 m). fingerprint-world vs main: only `tiles` differ (5 of 6 windows; network/profiles/carve/
+  surface identical); tutorial-seed green; affected gates 8/8 (serial). Census + picture: `wip/bug-221/` (sheet.jpg).
