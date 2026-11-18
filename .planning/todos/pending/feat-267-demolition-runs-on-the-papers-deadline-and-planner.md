@@ -65,5 +65,6 @@ To build, mirroring the paper round as FEAT-266 leaves it:
 - 2026-11-17 (lane s): DEC-403 built on land/feat-267-pay-per-target. economy.js `sharesPaid` / `payTarget` (a share banked per fall,
   `mission.sitePaid` saved with the job), settle pays only the rest (the tip); expire/cancel results carry the kept shares.
   Gates: economy.mjs + offer-board.mjs extended; 41/41 affected green (wip/feat-267/gates-r2.log). Full smoke 38/38 zero console
-  errors (smoke-r2.log; the demolition step takes a board job: $0.50 a share, expiry keeps $1.00), pad-e2e ALL OK. Sheet
+  errors (smoke-r2.log, no board demolition offer live at that hour; the step subset smoke-demo-r2.log took one: $0.50 a
+  share, expiry keeps $1.00), pad-e2e ALL OK. Sheet
   wip/feat-267/sheet-r2.jpg (full clear: $10 → $18.99 = base $5.25 + tip $3.74 exactly).
