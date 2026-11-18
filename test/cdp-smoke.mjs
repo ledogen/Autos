@@ -2303,7 +2303,9 @@ const STEPS = [
     // waits for its action, the wrong one is refused; the fake pad and the keyboard each take a turn.
     const waits = () => js('window.__tutorial().until')
     const wpt = () => js('(w => w && { x: w.x, z: w.z })(window.__map2d()._getWaypoint())')
-    const hi = (q) => js(`!!document.querySelector(${JSON.stringify(q)})?.classList.contains('tut-hi')`)
+    // ringed: the gate marks on a 100 ms paint (tut-gate.js), so a card just turned, or a screen just re-rendered, is read
+    // within a second, not on the instant
+    const hi = (q) => until(() => js(`!!document.querySelector(${JSON.stringify(q)})?.classList.contains('tut-hi')`), 1000)
     check(await waits() === 'map' && !await js('window.__map2d().isOpen()'), `her call did not stop on "open your map": ${JSON.stringify(await tut())}`)
     await gateShot('10-map-card')
     await padOn(); await js('__fp.b[8] = 1'); await frames(2, 60); await js('__fp.b[8] = 0'); await frames(2, 60)   // View, a tap (a hold is the skip)
