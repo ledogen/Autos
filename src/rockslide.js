@@ -374,11 +374,18 @@ export class RockslideDirector {
     return 5 + p.face.toeD - ((t.x - p.c.x) * nx + (t.z - p.c.z) * nz)
   }
 
+  /**
+   * A slide's own material: the rocks' flat vertex colour with alphaHash on (a per-pixel dithered discard against
+   * `opacity`, so a half-faded rock is half its pixels — no transparency sorting, depth stays right). Opacity 0 → 1
+   * over fadeS. Slide rocks cast no shadow (debris never does), so there is no shadow to pop.
+   */
+  fadeMaterial () { return new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, alphaHash: true, opacity: 0 }) }
+
   _release (p) {
     this.pick = null; this.armed = false; this._forced = false
     this._armAt = this._odo + nextArmM(this._rng, this.P.perKm)
     if (!this._hasGround(p.face.rel.x, p.face.rel.z)) return
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, alphaHash: true, opacity: 0 })
+    const mat = this.fadeMaterial()
     const bodies = []
     for (const b of batchBodies(this._heightAt, p.face, this._radii, this._rng)) {
       const h = this._debris.spawn(this._kinds[b.variant], b.position, b.velocity, { spin: b.spin, quaternion: b.quaternion, pinned: true, material: mat })

@@ -2827,6 +2827,8 @@ const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown
 const rockslides = new RockslideDirector({ debris: debrisSystem, road: () => roadSystem,
   heightAt: (x, z) => terrainSystem ? terrainSystem.analyticHeight(x, z) : 0, hasGround: (x, z) => terrainPhysics.hasChunkAt(x, z),
   clockH: () => daySystem.clockH(), freeze: (bodies, on) => debrisSystem.setEnabled(bodies, !on) })
+// The fade shader compiles at boot, not on the first slide: compiled lazily it was one 267 ms frame at the spawn.
+renderer.compile(new THREE.Mesh(rockslides._geos[0], rockslides.fadeMaterial()), camera, scene)
 window.__rockslide = rockslides   // dev handle — the debug panel's "Rock slide now" and test/cdp-smoke.mjs
 
 // ── FEAT-96: the strapped load — a freight job's, or the debug "Load Cargo" pick ─────────────
