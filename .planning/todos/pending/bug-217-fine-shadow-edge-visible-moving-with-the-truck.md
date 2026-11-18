@@ -83,3 +83,7 @@ src/shadow-fade.js, src/main.js
   capture 2 ground that changed brightness for a 20 m truck move 673 → 155 m² (the rest is the truck's shadow and grass). Noon unchanged.
   Gates 10/10 affected, cdp-smoke PASS (38 steps), pad-e2e ALL OK, gpu-reset PASS. Shots, sheet and tools: wip/bug-217/ (shots.mjs, measure.mjs, edge.mjs, sheet.mjs).
   Unverified: other quality tiers (only Ultra was shot), a moving sun, and the owner's own eyes. Card: owed/bug217-shadow-seam-look.json.
+- 2026-11-18 round 2 (c4e1fafe, src/main.js + a terrain.js comment): terrain casts into the far map only. Capture 2 edge-band
+  swing 9.6 → 2.2 luma (still-truck noise 2.8). Merged main first (b5ffbd56). Gates 48/48 affected green; cdp-smoke PASS on the
+  re-run (first run: the known DEC-357 sleepy-blink flake); pad-e2e ALL OK; gpu-reset PASS on the re-run (first: 8 impostor
+  tiles unbaked at measure time under load 9–11). Sheet regenerated. Unverified: other tiers, the owner's eyes.
