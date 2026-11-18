@@ -1477,16 +1477,22 @@ installShadowEdgeFade({ fadeStart: 0.82 })
 // far map (see the wrapped shadow pass by sunFar) without its shadow dropping to the near light's 40 % share.
 installNearShadowCoupling()
 // BUG-228: dither at the output. The canvas holds 8 bits per channel, so a smooth, dark ramp (the menu floor, a
-// dusk sky, distance fog) shows as visible steps, and the exposure meter slides them across the scene. This is
-// three's dithering (±0.5 of an 8-bit level of static screen-space noise, three's own `rand` and shift), added just
-// before the 8-bit write (after tone mapping, the sRGB encode and fog), so each step dissolves into a grain the eye
-// averages. Installed here, unconditionally, instead of `material.dithering = true` at ~40 creation sites plus every
-// GLB and clone: every built-in lit/basic material includes the chunk; the custom output shaders (sky, moon, dust,
-// impostors, lab floor) include it by hand, last. Self-contained, so a ShaderMaterial without <common> can use it.
-// The bake shaders return before it (terrain-bake.js); depth/shadow materials never include it.
+// dusk sky, distance fog) shows as visible steps, and the exposure meter slides them across the scene. A static
+// screen-space noise of about one 8-bit level, added just before the 8-bit write (after tone mapping, the sRGB
+// encode and fog), dissolves each step into a grain the eye averages. Triangular noise in ±1 level (the sum of two
+// of three's `rand` hashes), not three's own uniform ±0.5: measured on the dusk sky, the uniform one leaves values
+// near a level's centre unrounded, so flat patches up to 25 px long survive and slide with the exposure just as the
+// bands did; the triangular one keeps the grain even at every level. Channels shifted R+, G−, B+ as three does, so
+// the grain is mostly colour, not brightness. Installed here, unconditionally, instead of `material.dithering =
+// true` at ~40 creation sites plus every GLB and clone: every built-in lit/basic material includes this chunk; the
+// custom output shaders (sky, moon, dust, impostors, lab floor) include it by hand, last. Self-contained, so a
+// ShaderMaterial without <common> can use it. The bake shaders return before it (terrain-bake.js); depth/shadow
+// materials never include it.
 THREE.ShaderChunk.dithering_fragment = /* glsl */`{
-  highp float ditherR = fract(sin(mod(dot(gl_FragCoord.xy, vec2(12.9898, 78.233)), 3.141592653589793)) * 43758.5453);
-  gl_FragColor.rgb += mix(vec3(0.5, -0.5, 0.5), vec3(-0.5, 0.5, -0.5), ditherR) / 255.0;
+  highp vec2 ditherP = gl_FragCoord.xy;
+  highp float ditherA = fract(sin(mod(dot(ditherP, vec2(12.9898, 78.233)), 3.141592653589793)) * 43758.5453);
+  highp float ditherB = fract(sin(mod(dot(ditherP + vec2(0.5, 17.25), vec2(12.9898, 78.233)), 3.141592653589793)) * 43758.5453);
+  gl_FragColor.rgb += (ditherA + ditherB - 1.0) * vec3(1.0, -1.0, 1.0) / 255.0;
 }`
 // PERF-16: stop re-rendering the sun's whole shadow pass every frame. Three defaults autoUpdate=true,
 // so the 1536²/2048² shadow map is re-rendered each frame even parked under a static sun (measured

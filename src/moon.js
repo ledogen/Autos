@@ -134,7 +134,11 @@ const FRAG = /* glsl */`
 
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
-    #include <dithering_fragment>
+    // BUG-228: ADDITIVE, so dither only where the moon adds light. The ±1-level grain on a zero contribution would
+    // re-grain the already-dithered sky inside the quad: a faint grainy square round the moon.
+    if (max(gl_FragColor.r, max(gl_FragColor.g, gl_FragColor.b)) > 0.0) {
+      #include <dithering_fragment>
+    }
   }
 `
 
