@@ -223,6 +223,13 @@ export class InventorySystem {
         return true
     }
 
+    /** BUG-209: would `convert` succeed? Read-only, so the camp can refuse BEFORE the fade and the 30 minutes. */
+    canConvert (from, to) {
+        const e = runInventory.entries.find(x => x.id === from)
+        if (!e) return false
+        const lone = e.n <= 1 && (ITEMS[from].uses ?? 1) <= 1   // the last unit frees its slot
+        return this.slotsUsed() - (lone ? 1 : 0) + this._need(to, 1) <= this.slotCap()
+    }
     /** FEAT-230: turn one unit of `from` into one of `to` (a raw potato cooked). False, nothing changed, if
      *  none is owned or the result has no room (a lone raw frees its slot, so cooking the last one always fits). */
     convert (from, to) {

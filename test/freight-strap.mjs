@@ -48,8 +48,8 @@ ok(freight.every(t => t.pools.length > 0 && t.pools.every(k => SOURCES[k]?.famil
 ok(freight.every(t => t.massKg[0] > 0 && t.massKg[1] >= t.massKg[0]), 'every freight thing has a real mass range')
 const badges = ['delivery', 'freight', 'fragile', 'haul'].map(f => jobBadge({ family: f, shape: 'courier' }))
   .concat(jobBadge({ family: 'delivery', shape: 'fetch' }))
-ok(new Set(badges).size === badges.length && jobBadge({ family: 'papers' }) === null,
-  `card badges are distinct (${badges.join(' ')}); Larry has none`)
+ok(new Set(badges).size === badges.length && jobBadge({ family: 'papers' }) === 'P',
+  `card badges are distinct (${badges.join(' ')}); Larry is P`)
 
 // ── 1b. freight's pay curve: tips less, base untouched (owner, 2026-10-11); ranks on kg (FEAT-138) ─
 console.log('pay:')
