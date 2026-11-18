@@ -82,7 +82,7 @@ import { MissionSystem, REGION_MARGIN, secPerGameH, routeLeftM } from './mission
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, knockMass, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS, LINE_SUPPLY } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
@@ -3325,7 +3325,7 @@ function _rebuildPoiMarkers () {
     }
     // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
     // in poi.js (deterministic in the seed); this only dresses them. FEAT-149/251: a knockable one
-    // (every lawn item but the fire pit) becomes a body near the truck (_updateOrnaments); the rest
+    // (every lawn item but the fire pit; the farm's drums and crates, FEAT-268) becomes a body near the truck (_updateOrnaments); the rest
     // are solid in place (poi.js satSolid, synced with the markers).
     for (const sat of q.satellites ?? []) {
       const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
@@ -3335,8 +3335,10 @@ function _rebuildPoiMarkers () {
       const knock = PROP_MODELS[sat.key]?.knockable
       if (knock) {
         const kind = `ornament:${sat.key}`
-        void debrisSystem.load(kind, { model: sat.key, massKg: knock.massKg, friction: 0.6, restitution: knock.restitution ?? 0.3 })
-        _ornaments.push({ kind, mesh: m, lift: sat.lift ?? 0, body: null })
+        // FEAT-268: a drum or crate loads at its empty mass; each one's own load is set at spawn (poi.js knockMass).
+        void debrisSystem.load(kind, { model: sat.key, massKg: knock.massKg ?? knock.emptyKg, friction: 0.6,
+          restitution: knock.restitution ?? 0.3, crushN: knock.crushN })
+        _ornaments.push({ kind, mesh: m, lift: sat.lift ?? 0, body: null, sat })
       }
     }
 
@@ -6760,6 +6762,8 @@ function _updateOrnaments () {
       const q = o.mesh.quaternion
       o.body = debrisSystem.spawn(o.kind, _ornP.copy(o.mesh.position).add(_ornUp), still,
         { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true })
+      const md = o.body != null && knockMass(o.sat, half)   // FEAT-268: this drum's / crate's own load
+      if (md) physicsEngine.setMassData(o.body, md.massKg, md.inertia, md.center)
       if (o.body != null) { physicsEngine.sleep(o.body); o.mesh.visible = false }
     } else if (o.body != null && d > ORNAMENT_OFF_M) {
       physicsEngine.getTransform(o.body, _ornP, _ornQ)
