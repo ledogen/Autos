@@ -2833,12 +2833,11 @@ const rockslides = new RockslideDirector({ debris: debrisSystem, road: () => roa
 // The fade shader compiles at boot, not on the first slide: compiled lazily it was one 267 ms frame at the spawn.
 renderer.compile(new THREE.Mesh(rockslides._geos[0], rockslides.fadeMaterial()), camera, scene)
 window.__rockslide = rockslides   // dev handle — the debug panel's "Rock slide now" and test/cdp-smoke.mjs
-let _slideLines = new Map()   // DEC-425: this run's flagged requisition lines → arm fraction (from the seed, never saved)
 /** DEC-425: the director's story gate — null in free roam (DEC-400's rate); in story, armed only on a flagged line. */
 function _slideStory () {
   if (!storySystem.isActive()) return null
   const ms = missionSystem, m = ms?.state === 'running' ? ms.mission : null
-  return storySlideGate(_slideLines, rockslides.fired, m?.line ?? null, m?.distance, () => ms.routeRemaining())
+  return storySlideGate(rockslides.lines, rockslides.fired, m?.line ?? null, m?.distance, () => ms.routeRemaining())
 }
 
 // ── FEAT-96: the strapped load — a freight job's, or the debug "Load Cargo" pick ─────────────
@@ -9727,7 +9726,7 @@ const storySystem = new StorySystem({
       region: economySystem.terms().region,   // FEAT-114: which rank row a bonus gate must be reachable on
     })
     _boardLog = logBoard(offerBoard, daySystem.clockH())   // FEAT-42: the board's history, for the run save
-    _slideLines = storySlideLines(worldSeed, offerBoard.lines().map(l => l.id))   // DEC-425: which lines get a slide
+    rockslides.lines = storySlideLines(worldSeed, offerBoard.lines().map(l => l.id))   // DEC-425: which lines get a slide (from the seed)
     rockslides.fired = new Set()
     // ORDER MATTERS: the roster decides where mom lives, and camping is handed that answer.
     // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping

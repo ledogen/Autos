@@ -310,6 +310,7 @@ export class RockslideDirector {
       return kind
     })
     this.events = 0
+    this.lines = new Map()    // DEC-425: this story run's flagged requisition lines → arm fraction (main.js, from the seed)
     this.fired = new Set()    // DEC-425: requisition lines that have had their slide (the run save carries it)
   }
 
