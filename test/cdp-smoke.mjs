@@ -2275,6 +2275,7 @@ const STEPS = [
       return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
     await js(`window.__seated = false; window.__teleport(${mom.x}, ${mom.z}, ${mom.h}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), "the teleport to mom's never seated")
+    await gateShot('p4-1-mom-ring')   // FEAT-288 P4: her parking ring (the look sheet)
     // The parking lesson lands near hers; read up to her hand-over, parking when no card is up.
     const handover = () => js('/Take this pack over to your uncle/.test(document.getElementById("dlg-text")?.textContent ?? "")')
     let heard = false
@@ -2472,6 +2473,7 @@ const STEPS = [
     { const w = await js(`(() => { const w = window.__map2d()._getWaypoint(), q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
         return w && { d: Math.hypot(w.x - q.x, w.z - q.z), n: w.poly?.length ?? 0 } })()`)
       check(w && w.d < 60 && w.n > 1, `FEAT-288: the drive home shows no pin by mom's or no line on the map: ${JSON.stringify(w)}`) }
+    if (process.env.GATE_SHOTS) { await tap('m'); await sleep(2500); await gateShot('p4-2-map-home'); await tap('m'); await sleep(500) }
     const half = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse'), v = window.__vs.position
       const x = q.x + (v.x - q.x) * 0.4, z = q.z + (v.z - q.z) * 0.4, nr = window.__roadSys().queryNearest(x, z, 400)
       return nr?.point ? { x: nr.point.x, z: nr.point.z, h: Math.atan2(-nr.tangent.x, -nr.tangent.z) } : null })()`)
