@@ -234,6 +234,10 @@ branch (`wip/tutb2/`); `python3 -I wip/feat-265/tutcmp.py` prints the table; she
 `src/road-graph.js` · `src/road.js` · `src/poi.js`
 
 ## Log
+- 2026-11-18: option 3 (DEC-427): berth re-route deleted, a grazing restored side stays dropped (e7dbf6c9). tutorial-seed
+  passes unchanged, output line-for-line equal to main's; fingerprint-world six windows identical; census 18/27 kept as
+  predicted. Affected gates 84/84 green (o3-gates*.log in wip/feat-265/). 1872706826's network gains one 826 m run the
+  tutorial never drives (POI roster hash equal to main's).
 - 2026-11-17: clearance fix (`_v2RestoreLegs`/`_v2RestoreGrazes`): road-clearance PASS, urquhart-restore 6/6,
   fingerprint-world identical to main; census 7 re-routed + 2 dropped of 27. Tutorial under B2 measured (838 -> 738
   hard m, 19.1 -> 38 % climb); option 3 checked in a copy. Affected gates 77/78 (tutorial-seed red). Card feat265-b2-look rewritten.
