@@ -68,21 +68,21 @@ const HOOD_HALF_W       = 0.55 // m — steam leaks along the whole hood seam, n
 
 // ASSET-90 / DEC-397 — the dead campfire's smoke: thin grey wisps off the ash heap, rising almost straight
 // up, each one swelling as it climbs and fading out. Fed by setFireSmoke (main.js, from CampfireFx).
-// ~FIRE_RATE × mean life ≈ 13 puffs alive: well under the live fire's 32-ember pool, in a draw this
+// ~FIRE_RATE × mean life ≈ 22 puffs alive: well under the live fire's 32-ember pool, in a draw this
 // mesh already makes. Unlit like every puff here: setLight dims it at night, so it is never self-lit.
 export const FIRE_SMOKE = {
   rate:     2.5,      // puffs/s
-  lifeMin:  4.0,      // s
-  lifeMax:  6.0,
+  lifeMin:  7.0,      // s — r3 (owner): 1.75× the first 4–6 s; growth is t = age/life, so the longer life stretches the swell, it does not enlarge it
+  lifeMax:  10.5,
   sizeMin:  0.15,     // m — billboard size at birth (the ash heap is ~0.25 m across)
   sizeMax:  0.25,
-  grow:     7.0,      // final size = birth × (1 + grow): ~1.2–2 m at the top of the rise, faded by then
+  grow:     7.0,      // final size = birth × (1 + grow): ~1.2–2 m at the top of the rise, faded by then. That 2.0 m (sizeMax × (1+grow)) is the owner's cap (r3): never raise sizeMax/grow without lowering the other
   riseMin:  0.22,     // m/s — constant: no settle, the wisp keeps climbing until it fades
   riseMax:  0.34,
   spread:   0.10,     // m — birth scatter across the heap
   drift:    0.06,     // m/s — lateral wander, killed by DRAG, so the column stays mostly vertical
   opacity:  0.42,     // peak alpha before the puff texture's own soft edge — subtle
-  color:    0xa8a6a0, // ash grey
+  color:    0xdcdad4, // pale ash grey (r3: was 0xa8a6a0, too dark against ground and night)
 }
 
 export class TireSmokeSystem {
