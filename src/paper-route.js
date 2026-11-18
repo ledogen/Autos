@@ -303,6 +303,38 @@ export const RR_PARAMS = {
 const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
 /**
+ * FEAT-266/267: THE GUIDE — the shortest tour from the truck through `stops`, as a resumable planTourJob, or null when the
+ * truck is off the network or nothing is left. Every stop is wanted: the job's own N, never a subset. The paper round's
+ * re-plan (PaperRouteSystem._startReplan) and a demolition site's (main.js _updateSite, DEC-399) both plan through here.
+ * `stops` need {id, aId, bId, s, x, z} (splitRoadGraph's point shape).
+ */
+export function planGuideJob (road, car, stops, region = null, margin = 100) {
+    const origin = stops?.length ? roadOrigin(road, car) : null
+    return origin ? planTourJob(road, origin, stops, stops.length, region, margin) : null
+}
+
+/**
+ * Drain a planner job for up to `budgetMs` — at least one step, so a loaded frame slows it and never starves it (FEAT-63).
+ * Returns the generator's last result: `.done` with `.value` the route once it has finished.
+ */
+export function stepJob (it, budgetMs) {
+    const t0 = _now()
+    let r
+    do { r = it.next() } while (!r.done && _now() - t0 < budgetMs)
+    return r
+}
+
+/**
+ * FEAT-266: a tour's LEG to its first stop — what the in-world GPS draws, so each stop in turn carries the FEAT-218 turn
+ * arrow (gps.js reads `customers.at(-1)`). `legM` is its length along the road. The tour itself when it has no first stop.
+ */
+export function tourLeg (line) {
+    if (!line?.first) return line
+    const segments = line.segments.slice(0, line.first.n)
+    return { ...line, segments, customers: [line.first.c], legM: segments.reduce((a, g) => a + Math.abs(g.s1 - g.s0), 0) }
+}
+
+/**
  * A car's position as a planner stop: the same `{aId, bId, s}` shape Larry has. This is the one genuinely
  * new piece of machinery the sliced re-plan needs — everything else is the existing planner, driven
  * differently. main.js's tutorial GPS (BUG-118) plans from it too.
@@ -924,7 +956,7 @@ export class PaperRouteSystem {
     gpsLine () {
         const l = this.line()
         if (!l?.first) return l
-        if (this._leg?.src !== l) this._leg = { src: l, leg: { ...l, segments: l.segments.slice(0, l.first.n), customers: [l.first.c] } }
+        if (this._leg?.src !== l) this._leg = { src: l, leg: tourLeg(l) }
         return this._leg.leg
     }
 
@@ -1258,9 +1290,7 @@ export class PaperRouteSystem {
      */
     pumpReroute (budgetMs = 2) {
         if (!this._rr) return false
-        const t0 = _now()
-        let r
-        do { r = this._rr.it.next() } while (!r.done && _now() - t0 < budgetMs)
+        const r = stepJob(this._rr.it, budgetMs)
         if (!r.done) return true
 
         const job = this._rr
@@ -1338,9 +1368,6 @@ export class PaperRouteSystem {
         return Math.sqrt(best)
     }
 
-    /** The truck's own position as a planner stop — see roadOrigin below. */
-    _originPoint () { return roadOrigin(this._getRoad(), this._getCar()) }
-
     /**
      * Start (or restart) a sliced re-plan of everything still undelivered.
      * `quiet` suppresses the indicator — see hasReplan().
@@ -1352,18 +1379,16 @@ export class PaperRouteSystem {
         // never reach for a house off the route. The priced tour, par and the deadline are untouched: this is
         // `guide`, never `route`.
         const left = this.route.customers.filter(c => !this.run.hits.has(c.id))
-        const want = left.length
-        if (!want) return
         const car = this._getCar()
-        const origin = this._originPoint()
-        if (!origin) return          // off the network entirely; try again on the next poll
+        const it = planGuideJob(this._getRoad(), car, left, this._getRegion(), 100)
+        if (!it) return              // nothing owed, or off the network entirely; try again on the next poll
 
         this._cancelReplan()
         this._rr = {
-            it: planTourJob(this._getRoad(), origin, left, want, this._getRegion(), 100),
+            it,
             // cx/cz is where the TRUCK was, which is what the staleness guard measures against;
-            // origin is the road point it planned from, and the two are not the same place.
-            cx: car?.x ?? origin.x, cz: car?.z ?? origin.z, reason, quiet, retry,
+            // the planner's origin is the road point nearest it, and the two are not the same place.
+            cx: car.x, cz: car.z, reason, quiet, retry,
         }
         if (!quiet) this._rrHideAt = this._clock + RR_PARAMS.minShowS
         this._onChange()

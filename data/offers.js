@@ -317,7 +317,7 @@ export const THINGS = [
       pools: HOUSEWARES, to: ['residence'], load: 'uprightPiano', ...STURDY, sound: 'piano', furniture: true },
 
     // ── Demolition (FEAT-65, owner 2026-11-01): smash what stands on the shoulder along the job's last km
-    // of road; the letter is the share smashed. Always a roadside job. The deed is the removal — each
+    // of road; a hurried job on the clock, settled when the last one falls (DEC-399). Always a roadside job. The deed is the removal — each
     // giver has an ordinary reason. PLACEHOLDER words and counts.
     // The farmer's old empty drums, set out along his frontage: crushed, they go to the scrapyard in one trip.
     { id: 'scrapDrums',  phrase: '{n} old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
@@ -672,9 +672,11 @@ export const FREIGHT_TIP_MULT = 0.5
 // 'none' (no good-deed point) or 'extraHalf' (+½ at C or better).
 // Rejected: After hours (doesn't fit the deadline system). OPEN: Wholesale on freight — built haul-only.
 const NOT_PAPERS = ['delivery', 'freight', 'fragile', 'haul']
+// FEAT-267 (DEC-399): demolition is a hurried job, so it takes courier's clock traits (and their tighter / looser rank times).
+const CLOCKED = [...NOT_PAPERS, 'demolition']
 export const TRAITS = [
-    { id: 'impatient',  name: 'impatient',  families: NOT_PAPERS, not: ['patient'],    pay: 1.20, deadline: 0.6, thresholds: 0.9 },
-    { id: 'patient',    name: 'patient',    families: NOT_PAPERS, not: ['impatient'],  pay: 0.80, deadline: 1.5, thresholds: 1.1 },
+    { id: 'impatient',  name: 'impatient',  families: CLOCKED, not: ['patient'],    pay: 1.20, deadline: 0.6, thresholds: 0.9 },
+    { id: 'patient',    name: 'patient',    families: CLOCKED, not: ['impatient'],  pay: 0.80, deadline: 1.5, thresholds: 1.1 },
     { id: 'collector',  name: 'collector',  families: ['fragile'], not: ['easygoing'], pay: 1.25, floors: 0.8 },
     { id: 'easygoing',  name: 'easygoing',  families: ['fragile'], not: ['collector'], pay: 0.85, floors: 1.25 },
     { id: 'generous',   name: 'generous',   families: NOT_PAPERS, not: ['stingy'],     pay: 1.20 },
@@ -695,7 +697,9 @@ export const DEADLINE_SLACK = {
     freight:    3.0,
     haul:       2.0,
     papers:     0.5,   // FEAT-141 (owner, 2026-10-21): the deadline is the plotted route's par × 1.5
-    demolition: 1.0,   // FEAT-65: courier's, a placeholder
+    // FEAT-267 (DEC-399, owner: "slightly easier than Courier because you have to slow down and drive off the road to hit
+    // barrels"): courier's deadline is par × 2.0; this is par × 2.25, a quarter of par more for the clusters' slow-downs [DEFAULT].
+    demolition: 1.25,
 }
 
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */
