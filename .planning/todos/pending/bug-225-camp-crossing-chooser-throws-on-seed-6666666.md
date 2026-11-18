@@ -1,0 +1,60 @@
+---
+id: BUG-225
+type: bug
+status: open
+severity: critical
+opened: 2026-11-18
+source: FEAT-275/280 agent, 2026-11-18
+relates: FEAT-292, DEC-424, FEAT-103, BUG-128, BUG-85, src/mission.js, src/poi.js
+---
+lane: engine & world
+
+# BUG-225: The camp's crossing chooser throws on seed 6666666
+
+## Next steps
+Fixed on `land/bug-225-camp-crossing-throw` (worktree CarGame-land-gps). Orchestrator: land it.
+
+## Summary
+FEAT-292's `_evenRequisition` threw inside `PoiSystem.build` on seed 6666666 built at (0,0) with no main-piece filter
+(`TypeError` reading `.x` of undefined in `MissionSystem._roll`'s destination stretch). A throw in world build would
+stop a story run starting. Fixed in the planner: an unreachable destination is no longer a candidate.
+
+## Description
+### Cause
+A requisition line plans with the leg band [0, ∞] (`anyLeg`, SM-INV-7). In `_roll` a destination POI whose two nodes
+are both unreachable from the source gets distance `Infinity`, and `Infinity <= Infinity` passed the band. `entry`
+then became the camp's off-graph far node, and `posOf.get(entry)` was undefined. The unreachable candidate came from
+the camp chooser's graph (poi.js `buildGraphAdj`, no bowing-edge drop) disagreeing with the planner's (BUG-128 drops
+edges that bow past the wall): on 6666666 at (0,0), with no piece filter, crossing `-2004763,-1850525,-1|-3,-3,1` is
+reached only over such an edge. With the game's main piece (validateArea's strict cut, which is the planners' piece)
+the candidate is never sited, so the game's normal entry did not throw on this seed; story.js `_checkSeed` passes
+nodes = null only when the validator throws (the degraded entry).
+
+### Fix
+`src/mission.js` `_roll`: `if (!(d >= lo && d <= hi && d < Infinity)) continue`. The line then returns null, and every
+`planOffer` caller already treats null as "does not plan": `requisitionTotal` returns null, `_evenRequisition` scores
+that crossing Infinity and skips it. If NO crossing evaluates, `_evenRequisition` keeps today's (the first, the
+farthest qualifying crossing) — that needs every crossing unreachable from a source, which the main-piece filter rules
+out on the game's path. Before the fix, an unreachable destination with both nodes on the graph planned a bogus route
+(a node path that never reached the source) instead of throwing; that is gone too.
+
+### Sweep
+SWEEP_TBD
+
+## Tracker
+- [x] Reproduced headless (the FEAT-275/280 census build: C=(0,0), warm 2500 m, no piece filter)
+- [x] Root cause: Infinity passed the requisition band in `_roll`
+- [x] Fix in the planner (every `planOffer` caller safe)
+- [ ] 400-seed sweep: zero throws; FEAT-292's 61 census seeds unchanged
+- [x] Gate: `test/expedition-camp.mjs` MUST_BUILD (6666666 at its spawn with the main piece, and at (0,0) with none)
+- [ ] Affected gates, tutorial-seed, fingerprint-world identical to main, smoke
+
+## Links
+FEAT-292 ticket; sweep logs `wip/bug-225/` in the CarGame-land-gps worktree (`sweep.mjs`, `sweep-{a,b}.log`,
+`census61.log`).
+
+## Files
+`src/mission.js` · `test/expedition-camp.mjs`
+
+## Log
+- 2026-11-18: fix 677b5613, gate LOG_TBD

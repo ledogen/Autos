@@ -10,8 +10,8 @@
 // each stop picked as main.js picks it (_joint, _mom, _larry, _snackShop, _campDoor, the flat in _eveningLessons, the
 // tow in _nearestPoi) and each leg planned as _homeGuide plans it (the same planner, the same OfferBoard route stream):
 //   joint → mom's (the hand-over; the pack lands by her steps) → Larry's → the gas station nearest Larry's (a storefront
-//   bay that sells the peanuts, and pumps) → the camping area nearest the station → home, the flat at half the crow
-//   distance, the tow to the auto shop nearest the flat → mom's (the night) → the joint (the morning).
+//   bay that sells the peanuts, and pumps) → the camping area nearest the station → home, the flat FLAT.alongM along
+//   its line, ~200 m before its tunnel, the tow to the auto shop nearest the flat → mom's (the night) → the joint (the morning).
 // Every stop exists, every leg plans to its stop, each leg's length is held to the census's within 10 % (so a re-routed
 // leg shows before a player finds it), and each leg's wheel time at 50 km/h fits inside the stamped hours it spans
 // (TUT_STAMPS, read from main.js itself; the clock is held while the tutorial drives, so the stamps carry the time).
@@ -34,7 +34,7 @@ import { OfferBoard } from '../src/offer-board.js'
 import { towHours } from '../src/fuel-stop.js'
 import { ECONOMY_PARAMS } from '../src/economy.js'
 import { startShelves, shelf } from '../src/shop-stock.js'
-import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'
+import { TUTORIAL, PACK_TOSS, flatRadius } from '../data/tutorial.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
@@ -42,8 +42,10 @@ import { wirePondNoGo } from './lib/pond-no-go.mjs'
 // The census line for 1872706826 (wip/tut-seed-search-r3/census.jsonl, its gate-at.mjs walk PASS 2026-11-17): places (m),
 // road legs (km), crow distances (km).
 const AT = { joint: [-170, 401], mom: [-38, -200], larry: [-946, 29], station: [-377, -446], shop: [620, 456] }
-const KM = { jointMom: 0.82, momLarry: 2.15, larryStation: 2.63, stationCamp: 1.26, campMom: 0.78, campFlat: 0.43, shopMom: 2.22, momJoint: 0.82 }
-const CROW = { stationCamp: 0.87, tow: 0.75 }   // from the camp's road door
+const KM = { jointMom: 0.82, momLarry: 2.15, larryStation: 2.63, stationCamp: 1.26, campMom: 0.78, campFlat: 0.26, shopMom: 2.22, momJoint: 0.82 }
+const CROW = { stationCamp: 0.87, tow: 0.66 }   // from the camp's road door
+// FEAT-288 P4 (2026-11-18): campFlat 0.43 → 0.26 and tow 0.75 → 0.66, measured here once the flat moved to FLAT.alongM
+// along the drive home's line (the first vertex past 250 m is at 264 m; the same auto shop).
 const KMH = 50   // the wheel-time speed (§ 7)
 // main.js's own stamps and firing hour, read from its source so the gate can never hold a stale copy.
 const MAIN = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
@@ -119,16 +121,22 @@ for (const [k, [, b]] of Object.entries(legs)) {
     check(`${k} plans to its stop (${m ? km(m).toFixed(2) + ' km' : '—'})`, !!m && m.endPoiId === b?.id)
     near(k, km(m), KM[k])
 }
-// The flat (_eveningLessons): on the drive home from the camping area, the first point under half the start's crow
-// distance to mom's; the tow (_nearestPoi) to the auto shop nearest it by crow; then the shop → mom's.
-const poly = plan.campMom?.poly ?? [], from0 = crow(campDoor, mom)
-let flatAt = null, campFlatM = 0
-for (let i = 1; i < poly.length && !flatAt; i++) {
-    campFlatM += Math.hypot(poly[i].x - poly[i - 1].x, poly[i].z - poly[i - 1].z)
-    if (crow(poly[i], mom) < 0.5 * from0) flatAt = poly[i]
+// The flat (_eveningLessons, FEAT-288 P4): on the drive home from the camping area, the first point of its line inside
+// flatRadius (data/tutorial.js: mom's to the point FLAT.alongM along that line); the tow (_nearestPoi) to the auto shop
+// nearest it by crow; then the shop → mom's.
+const poly = plan.campMom?.poly ?? [], flatR = flatRadius(poly, mom) ?? -1
+let flatAt = null, campFlatM = 0, tunnelM = null, sM = 0
+for (let i = 1; i < poly.length; i++) {
+    sM += Math.hypot(poly[i].x - poly[i - 1].x, poly[i].z - poly[i - 1].z)
+    if (!flatAt && crow(poly[i], mom) * 1000 < flatR) { flatAt = poly[i]; campFlatM = sM }
+    const nr = tunnelM == null && road.queryNearest(poly[i].x, poly[i].z, 15)
+    if (nr && road.tunnelSpanAt(nr.runKey ?? '', nr.arcS ?? 0)) tunnelM = sM
 }
-check('the drive home reaches half the crow distance to mom\'s (the flat)', !!flatAt)
+check(`the drive home reaches the flat's radius (${flatR.toFixed(0)} m round mom's)`, !!flatAt)
 near('the camping area → the flat, along the route', campFlatM / 1000, KM.campFlat)
+// DEC-422: "before you go into the tunnel" — ~200 m short of the drive home's first bore (DEC-426 Q5), held to ≥ 150 m.
+check(`the flat goes off ${campFlatM.toFixed(0)} m along, ${tunnelM == null ? 'no tunnel' : (tunnelM - campFlatM).toFixed(0) + ' m before the tunnel at ' + tunnelM.toFixed(0) + ' m'} (≥ 150 m short)`,
+    tunnelM == null || tunnelM - campFlatM >= 150)
 const shop = flatAt && of('autoShop').filter(q => !q.hidden).sort((a, b) => crow(a, flatAt) - crow(b, flatAt))[0]
 at('shop', shop)
 near('the tow, the flat → the nearest auto shop by crow', crow(flatAt, shop), CROW.tow)

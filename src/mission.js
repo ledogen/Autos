@@ -1186,7 +1186,12 @@ export class MissionSystem {
                         const da = c.dist.get(qa) ?? Infinity, db = c.dist.get(qb) ?? Infinity
                         const entry = da <= db ? qa : qb
                         const d = Math.min(da, db)
-                        if (!(d >= lo && d <= hi)) continue
+                        // BUG-225: an UNREACHABLE destination is not a candidate. A requisition line's band is
+                        // [0, ∞] (anyLeg), so an Infinity distance passed it, `entry` became the off-graph node,
+                        // and the destination stretch below read posOf of nothing (seed 6666666 with no main-
+                        // piece filter: the camp chooser's graph keeps a bowing edge the planner drops). Now
+                        // the line does not plan, and its callers already handle a null.
+                        if (!(d >= lo && d <= hi && d < Infinity)) continue
                         if (!dest.anyLeg && _pathLength(c.prev, entry, ex) > MAX_EDGES) continue
                         // Same doubling-back rule as the roadside leg: never leave along the anchor edge.
                         if (_firstHop(c.prev, entry, ex) === other) continue
