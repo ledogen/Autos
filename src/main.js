@@ -127,7 +127,8 @@ import { ensureKnockAudio, setKnockAudio, updateKnockAudio, playSeizeBang, KNOCK
 import { padHit, stepPadRumble, flushPadRumble, RUMBLE_PARAMS } from './pad-rumble.js'   // FEAT-247
 import { stepContactAudio, setContactAudio } from './contact-audio.js'   // FEAT-120: bump stop, landing
 import { ensureAmbientAudio, updateAmbientAudio, setAmbientAudio } from './ambient-audio.js'   // FEAT-120: crickets, grass
-import { playCoin, playStinger, playTickTrain, playClack, playThud, playBlip, playPaperThrow, playPaperSlap, setResultAudio } from './result-audio.js'   // FEAT-120 / FEAT-131 P1: the result card's sound
+import { playCoin, playStinger, playTickTrain, playClack, playThud, playBlip, playPaperThrow, playPaperSlap, setResultAudio } from './result-audio.js'
+import { playRing, stopRing, playPhoneShut, setPhoneAudio } from './phone-audio.js'   // FEAT-288 P7: the phone's ring and flip-shut   // FEAT-120 / FEAT-131 P1: the result card's sound
 import { playGlassBreak, playCargoHit } from './glass-audio.js'   // FEAT-87: the rank tile shattering; FEAT-97 cargo hits
 import { makeFragile, feltG, onePctG, tenPctG, meterPos } from './fragile.js'   // FEAT-97: a fragile load's condition
 import { snapshotRoadParams } from './road-network-worker.js'   // spawn memo key: the params the router actually reads
@@ -4040,12 +4041,14 @@ function _renderDialogue () {
   const card = dialogueSystem.current()
   panel.style.display = card ? 'block' : 'none'
   panel.classList.toggle('dlg-waits', !!card?.until)   // DEC-359: menu-nav.js lets the pad work the card under a waiting one
+  if (card?.call !== 'ring') stopRing()   // FEAT-288 P7: any other card, or none (skip, pause, run end), ends the ringer
   if (!card) { _cardHold = false; clearInterval(_dlg.timer); Object.assign(_dlg, { card: null, words: null, timer: 0 }); return }
   const sp = document.getElementById('dlg-speaker')
   const tx = document.getElementById('dlg-text')
   const mo = document.getElementById('dlg-more')
   if (sp) sp.textContent = card.speaker
   if (tx && card !== _dlg.card) {   // a new card streams in; a repaint of the same one leaves it be
+    if (card.call === 'ring') playRing(); else if (card.call === 'click') playPhoneShut()   // FEAT-288 P7
     tx.innerHTML = card.text
     // FEAT-125: a key a card names reads the pad's button while the pad drives — the prompts' keycap(). Only keys the
     // pad has ONE button for: A / D (the stick steers) and F (the stick aims, RB throws) need the card's own pad words,
@@ -11398,6 +11401,7 @@ function loop (t) {
   setTunnelReverb(RANGER_PARAMS.tunnelReverbEnabled !== false, RANGER_PARAMS.tunnelReverbLevel ?? 0.9)
   setInTunnel(_listenerInBore())           // FEAT-163: the camera is the listener — it leaves a portal after the truck
   setContactAudio(heard && RANGER_PARAMS.contactAudioEnabled !== false, RANGER_PARAMS.contactVolume ?? 0.6)
+  setPhoneAudio(RANGER_PARAMS.resultAudioEnabled !== false, RANGER_PARAMS.resultAudioVolume ?? 0.6)
   setResultAudio(RANGER_PARAMS.resultAudioEnabled !== false, RANGER_PARAMS.resultAudioVolume ?? 0.6)   // the card plays over a held sim
   // FEAT-120 ambience: crickets on the sky's own night; grass from the green share of the ground the
   // truck is on, off the road only (the shoulder feather counts as road).
