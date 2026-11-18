@@ -3,22 +3,23 @@ id: FEAT-26
 type: feature
 status: open
 opened: 2026-07-15
-updated: 2026-11-17
+updated: 2026-11-18
 severity: minor
 source: user-idea; alpha ruling owner 2026-11-17 (DEC-400)
-relates: FEAT-36, FEAT-48, FEAT-93, FEAT-27, DEC-400, DEC-395, src/rockslide.js, src/debris.js
+relates: FEAT-36, FEAT-48, FEAT-93, FEAT-27, FEAT-103, DEC-400, DEC-425, DEC-395, src/rockslide.js, src/debris.js
 ---
 lane: hazards (u)
 
 # FEAT-26: Rock slides — timed tumbling rocks that try to hit the truck
 
 ## Next steps
-Owner: drive it (owed card `feat26-rockslides-drive`, dev server :3886 on `land/feat-26-rockslides`) and set the numbers. Then the orchestrator lands it.
+Orchestrator: land `land/feat-26-rockslides` (main merged in, DEC-425 built). Owner: the story drive (owed card `feat26-rockslides-story-drive`).
 
 ## Summary
 A rock slide off a road cut: 5–15 rocks in a 3 m patch on the cut face, released so they cross the truck's lane as it gets there.
-About one per 20 km driven (a memoryless draw), only on cuts steep enough to deliver rocks and visible from the approach. The rocks fade in over 0.5 s.
-Built on the debris bodies (FEAT-36) and the wear model; no spirit ties (DEC-400). Nothing is saved.
+Free roam: about one per 20 km driven (a memoryless draw). Story mode (DEC-425): only on three of the five requisition lines, flagged per run by the seed, one slide each.
+Only on cuts steep enough to deliver rocks and visible from the approach. The rocks fade in over 0.5 s.
+Built on the debris bodies (FEAT-36) and the wear model; no spirit ties (DEC-400). The run save keeps only which lines have had their slide.
 
 ## Description
 
@@ -31,6 +32,13 @@ Built on the debris bodies (FEAT-36) and the wear model; no spirit ties (DEC-400
 - **Fade:** each slide gets its own material with `alphaHash` (a per-pixel dithered discard against the opacity, so no transparency sorting) ramped 0 → 1 over 0.5 s. Debris casts no shadow, so nothing pops. The shader is compiled at boot (lazily it cost one 267 ms frame at the first spawn; after the fix the worst frame in the second after a spawn is 16.7 ms).
 - **Budget and cleanup:** the rocks are pinned debris (outside the 12-body throw cap). The owner's 2026-10-15 rule: they stay where they land and go once their ground chunk is unloaded AND 1.5 game hours have passed; unloaded sooner, they are frozen (taken out of the engine) and woken when the ground streams back. At most 4 slides; past that the oldest unloaded one goes. Never removed in view.
 - **Debug:** backtick panel → *Physics Props (FEAT-36)* → **Rock Slide Now (FEAT-26)**: arms a slide at the next candidate ahead; parked, it releases at once at the nearest candidate within 80 m.
+
+### Story mode (DEC-425, 2026-11-18)
+- **Rule:** no slide in story outside a running requisition mission. `storySlideLines(seed, lineIds)` (src/rockslide.js) shuffles the board's lines with a seeded draw and flags the first three; each gets an arm point drawn in 0.15–0.6 of its route. `storySlideGate` arms the director while that line's mission is `running`, the truck is past the arm point, and more than 100 m of route is left. The director then uses the free-roam candidacy and timing unchanged. A release marks the line in `fired`.
+- **Saved:** `fired` (the lines that have had their slide) rides the run save as `slidesFired`: run progress, so a reload or an abandon and retake neither fires a line twice nor dodges it (the save is a rolling autosave, so without it a reload just after a slide would arm it again). Which lines are flagged is never saved: it is derived from the seed on every load.
+- **Route preference not built:** on 30 random seeds every one of the 150 lines reached a qualifying cut after its arm point (census below), so "prefer lines whose route passes a site" changes nothing. If a flagged line's route has no site left, it simply gets no slide.
+- **Census** (wip/feat-26/story-census.mjs: the region as story builds it, the five lines planned, a kinematic driver at 20 m/s in the right lane along the route feeding the real director and gate; 30 random seeds): slides per run min 3 / median 3 / max 3 (30 of 30 runs got 3). Line routes 4.4–6.4 km (median per line). Trigger point, median metres into the mission: firewood 2170, crew 1490, signs 1290, fuel 2120, gear 1530; all lines p10/p50/p90 780 / 1630 / 3280 m (about 0.3–0.4 of the route). Other story driving: 463 ordinary offers, 1846 km, zero slides. Free roam on the same roads: 90 slides, one per 20.5 km.
+- Debug: `__rockslide.lines` (flagged lines and arm fraction), `__rockslide.fired`. The debug button still forces a slide anywhere and marks no line.
 
 ### Slope study (test/rockslide-study.mjs; `--real` + test/rockslide-study-sum.mjs)
 Real cuts, 30 random seeds, 452 km of road, 180 slides × 8 configs (per rock: lane = crossed the face-side lane centre; short = rests off the deck on the face side; over = rests past the far deck edge):
@@ -219,16 +227,19 @@ up first, that's a signal to build FEAT-09 Phase 3 as its foundation rather than
 - [x] A hit through the contact → damage path; no fatal at 40–80 km/h
 - [x] Debug trigger (Physics Props folder) + smoke step
 - [x] Gates: rockslide-director (pure), rockslide-physics (real cuts, 7/8 on time)
-- [ ] Owner drive: numbers, look, rate
+- [x] Owner drive (2026-11-18): "it works amazing. def merge" (DEC-425)
+- [x] DEC-425: story slides only on three seeded requisition lines, one each; `fired` in the run save; gate §7
+- [x] Story census on 30 seeds: 3 slides every run; zero in 1846 km of other story driving; free roam one per 20.5 km
+- [ ] Owner: the story drive (card `feat26-rockslides-story-drive`)
 - [ ] Rock art (ASSET ticket owed if the blob is not enough) · a slide sound (FEAT-120)
 
 ## Decisions
 - 2026-10-15, owner: "Resting rocks stay where they land and despawn once their chunk is unloaded and an hour or two of game time has passed. Same rule as dead deer (FEAT-111)." Built with 1.5 h.
 - 2026-11-17, owner (DEC-400): rock slides in the alpha, no spirit ties; visible approach, steep side slope, timed to hit, 5–15 rocks in a 3 m patch, optional slope-aligned velocity, 0.5 s fade, about once per 20 km.
+- 2026-11-18, owner (DEC-425): "it works amazing. def merge. in story mode we only want rockslides during the expedition camp missions. ~3 slides in the whole run. maybe just quietly flag 3 of the exped missions to trigger them or something." Free roam keeps DEC-400's rate (the old card's question: not answered, stays as built). Round rocks and 1.5 h cleanup stay as built (not answered).
 
 ## Open questions
-- Free roam has slides too (only the tutorial and the lab are off). Keep?
-- 1.5 h for "an hour or two"; v0 6 m/s; rounder rocks than the scatter's — the owner's numbers to set on the drive.
+- The rocks are hard to see from 40 m out on the chase camera (the sheet). Left as is; open.
 
 ## Links
 DEC-400 · owed card `feat26-rockslides-drive` · sheet `wip/feat-26/sheet.jpg` (git-invisible, lane worktree)

@@ -52,16 +52,16 @@ export function findCandidates (w, heightAt, vMax, { maxR = 1300, spacing = 150 
 
 /**
  * Drive one slide. `cand` from findCandidates; `lane` 'face' or 'far'; v [m/s]. `onStep(vs, rec, t)` after each physics
- * step, optional. Returns the drive's record.
+ * step and `leadM` (the start's distance before the cut) are optional. Returns the drive's record.
  */
-export async function driveSlide (w, debris, cand, v, lane, seed, { maxS = 40, onStep = null } = {}) {
+export async function driveSlide (w, debris, cand, v, lane, seed, { maxS = 40, onStep = null, leadM = null } = {}) {
   const P = w.P, vs = w.vs
   const eq = computeStaticEquilibrium(P)
   const heightAt = (x, z) => w.terr.analyticHeight(x, z)
   const e = cand.e, dir = cand.dir, L = e.polyCum.at(-1)
   const laneSign = (lane === 'face' ? 1 : -1) * cand.side
   const laneAt = (s) => { const q = runAt(e.points, e.polyCum, s); return { x: q.x - q.tz * laneSign * LANE, z: q.z + q.tx * laneSign * LANE, y: q.y, tx: q.tx * dir, tz: q.tz * dir } }
-  let s = cand.s - dir * (cand.D + 150)
+  let s = cand.s - dir * (leadM ?? cand.D + 150)   // the approach: D + 150 m, or a caller's shorter lead on a short run
   const p0 = laneAt(s)
   w.stream(p0.x, p0.z)
   const top = w.road.sampleRoadTopY(p0.x, p0.z) ?? heightAt(p0.x, p0.z)
