@@ -1925,7 +1925,14 @@ const FAR_SHADOW_HIDE = []
 {
   const shadowPass = renderer.shadowMap.render
   renderer.shadowMap.render = function (lights, sceneArg, camera) {
+    // BUG-217: TERRAIN casts into the far map only. The near map's camera sits 200 m up-sun of the truck
+    // and frames ±40 m, so it sees a hill only partly, and which part moves with the truck; its crisp,
+    // truck-dependent copy of a hill's shadow showed as a second edge sliding along the far map's soft one.
+    // Hill shadow now comes from the far map alone; the near map keeps the truck, props, POIs and grass.
+    const chunks = this.needsUpdate && terrainSystem ? terrainSystem._chunkMap : null
+    if (chunks) for (const c of chunks.values()) c.mesh.castShadow = false
     shadowPass.call(this, lights.filter(l => l !== sunFar), sceneArg, camera)
+    if (chunks) for (const c of chunks.values()) c.mesh.castShadow = true
     // LOAD-BEARING: only the WORLD scene feeds the far map. The prop-impostor re-bake (several
     // small renders of its own scene, on every sky look change) runs BEFORE the world render in the
     // same frame; without this guard a far pass due on such a frame drew the cascade from the bake
