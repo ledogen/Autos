@@ -1431,6 +1431,8 @@ export class DamageModel {
     // that slider stays usable on its own as a test tool with damage off.
     const ro = params._wheelRunout || (params._wheelRunout = [0, 0, 0, 0])
     for (let i = 0; i < 4; i++) ro[i] = this.wheelRunout(i, params)
+    const wc = params._wheelCondition || (params._wheelCondition = [1, 1, 1, 1])   // FEAT-287: 0..1, what the controller's bent-wheel vibration keys on (src/pad-rumble.js)
+    for (let i = 0; i < 4; i++) wc[i] = this.get(WHEEL_IDS[i])
     // Headlight flicker, left then right: 0 = steady, 1 = worst. Visual only; physics never reads it.
     const hf = params._headlightFlicker || (params._headlightFlicker = [0, 0])
     hf[0] = this.headlightFlicker('headlightL')
