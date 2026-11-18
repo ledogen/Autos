@@ -76,7 +76,7 @@ import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearb
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
-import { initTutGate, stepFor } from './tut-gate.js'       // FEAT-288 P2: the tutorial's lock and highlight
+import { initTutGate, stepFor, BETWEEN } from './tut-gate.js'       // FEAT-288 P2: the tutorial's lock and highlight
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -6915,6 +6915,36 @@ function _updateWorldItems () {
   })
 }
 
+// ── FEAT-288 P5 (§ 5; DEC-422: "it needs to do that thing where it flashes white or maybe it can get a bright aura"):
+// the quest-item mark. The tutorial's step names its target (`quest`, an item id: data/dialogue.js tut-pickup, _TUT_PACK);
+// the world item of that id wears a thin white beam (the rings' curtain and its upward fade, unlit and not tone-mapped so
+// it reads in her shade and at night; it starts above the item, so it never hides it) and a 1 Hz white pulse on its own
+// materials (FEAT-97's blink) while its body is live. Read off the step every frame and nothing kept: no step (a skip,
+// the tutorial's end, a run end, a reload past the pack) or the item picked up → no mark.
+const QUEST_BEAM_R = 0.25, QUEST_BEAM_H = 6, QUEST_BEAM_GAP = 0.4   // m: radius, height, clear air above the item
+const _questBeam = new THREE.Mesh(_ringGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7,
+  side: THREE.DoubleSide, depthWrite: false, alphaMap: _ringAlpha, toneMapped: false }))
+_questBeam.scale.set(QUEST_BEAM_R, QUEST_BEAM_H, QUEST_BEAM_R)
+_questBeam.visible = false
+scene.add(_questBeam)
+const _qmP = new THREE.Vector3(), _qmQ = new THREE.Quaternion()
+let _questLit = null   // the body the pulse lit last, put out when the mark leaves it
+function _questMark () {
+  const id = _tutStep()?.quest
+  const it = id ? runWorldItems.items.find(w => w.entry.id === id) : null
+  const h = it ? _groundItems.get(it) : null, half = h && debrisSystem.halfExtents(h.kind), body = h?.body ?? null
+  if (_questLit != null && _questLit !== body) { debrisSystem.blink(_questLit, 0); _questLit = null }
+  _questBeam.visible = !!half
+  if (!half) return
+  if (body != null) physicsEngine.getTransform(body, _qmP, _qmQ)
+  else _qmP.set(it.x, it.y, it.z)
+  _questBeam.position.set(_qmP.x, _qmP.y + Math.max(half.x, half.y, half.z) + QUEST_BEAM_GAP + QUEST_BEAM_H / 2, _qmP.z)
+  if (body != null) { debrisSystem.blink(body, 0.5 - 0.5 * Math.cos(2 * Math.PI * performance.now() / 1000), [1, 1, 1]); _questLit = body }
+}
+// dev handle — test/cdp-smoke.mjs: null without a mark, else whether the beam's foot is in view and the pulse is on the body
+window.__questMark = () => _questBeam.visible ? { lit: _questLit != null, onScreen: (({ x, y, z }) => Math.abs(x) < 1 && Math.abs(y) < 1 && z < 1)(
+  _qmP.copy(_questBeam.position).setY(_questBeam.position.y - QUEST_BEAM_H / 2).project(camera)) } : null
+
 /** What the inventory lists under "Nearby on the ground": in reach of the parked truck's outline, nearest first. */
 function _groundNearby () {
   const p = vehicleState.position
@@ -10183,8 +10213,12 @@ let _runEnded = false         // the run is over: never write it again (_discard
  *  or the tire service's would skip the shop's lesson). Installed here, below every name it reads (storySystem,
  *  _runEnded), so its poll can never touch one before it exists. */
 const _TUT_TOW = { allow: ['recovery', '#recovery-card [data-act="towShop"]'], hi: ['#recovery-card [data-act="towShop"]'] }
-initTutGate(() => !_tutDrive() || _runEnded || !storySystem.isActive() ? null
-  : stepFor(dialogueSystem.current(), _eveFlat && !_eveTowed && dialogueSystem.has('tut-spareflat') ? _TUT_TOW : undefined))
+/** P5: while the pack is the stop (tossed, or fallen off on the way to Larry's) it wears the quest mark between cards too. */
+const _TUT_PACK = { ...BETWEEN, quest: 'pack' }
+const _tutStep = () => !_tutDrive() || _runEnded || !storySystem.isActive() ? null
+  : stepFor(dialogueSystem.current(), _dayStop() === 'pack' ? _TUT_PACK
+    : _eveFlat && !_eveTowed && dialogueSystem.has('tut-spareflat') ? _TUT_TOW : undefined)
+initTutGate(_tutStep)
 
 /**
  * Why the run cannot be saved right now, or null. A board job and Larry's round ride the save
@@ -10903,6 +10937,7 @@ function loop (t) {
   if (serviceScreen.isOpen && !vehicleState.parked && serviceCenter.cart.length) { vehicleState.parked = true; serviceScreen.leave(() => { vehicleState.parked = false }) }
   serviceScreen.update()           // SM-3: closes when the truck drives off
   _fragileBlink(frameTime)   // FEAT-97: the load's red hit blink fading out
+  _questMark()   // FEAT-288 P5: the tutorial's quest item, beam and pulse
   _updateFragileG(frameTime)   // FEAT-139: the fragile load's felt-g bar
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes

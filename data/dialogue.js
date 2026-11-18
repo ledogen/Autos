@@ -228,7 +228,7 @@ export const TUT = {
     // couple bucks" is the peanuts' price plus the gas money she does not mention (DEC-306). The pick-up lesson is a
     // PLACEHOLDER; its keys are the game's (D-pad ↓ / G).
     'tut-handover': [{ speaker: 'Mom', text: `Take this pack over to your uncle. He left it behind. Also, here's a couple bucks for food.` }],
-    'tut-pickup': [{ speaker: 'Mom', until: 'pickup', allow: [], hi: ['#poi-prompt'], text: `Park next to it and `
+    'tut-pickup': [{ speaker: 'Mom', until: 'pickup', allow: [], hi: ['#poi-prompt'], quest: 'pack', text: `Park next to it and `
         + `<span class="kc-kb">press <span class="dlg-key">G</span></span><span class="kc-pad">press <span class="dlg-key">D-pad ↓</span></span> `
         + `to load anything loose nearby. Then run it over to Larry's.` }],
     // FEAT-229 (DEC-346): the tank filled, mom sends you on your way (PLACEHOLDER words); the line already runs to the
