@@ -15,7 +15,8 @@
 // wear per km, the cost of one autopilot step (µs, median / worst).
 //
 // --gate, or run as test/drive-ai.mjs (the gate registered in test/gates.mjs): ONE fixed short drive on a gentle stretch (seed and start below),
-// 600 m: it must finish with no trouble and the lateral error from its lane under 1.5 m p99; then the autopilot's own
+// 600 m: it must finish with no trouble, never off the deck, the lateral error from its lane under 3.5 m p99 (the
+// near-hairpin junction runs ~3 m wide of its lane at full lock, on the deck); then the autopilot's own
 // kinematic self-check must pass.
 
 import * as THREE from 'three'
@@ -37,9 +38,10 @@ const arg = (k, d) => { const a = process.argv.find(s => s.startsWith(`--${k}=`)
 const GATE = process.argv.includes('--gate') || process.argv[1]?.endsWith('drive-ai.mjs')
 const BOX = arg('box', null)   // --box=m5odr1: the manual (data/transmissions.js), driven through the clutch assistant as vehicle.js does
 const DT = 1 / 60, SLEW = 4.8   // rad/s — PAD_PARAMS.steerSlewRate
-// The gate's stretch: seed 7301 [DEFAULT], a 600 m drive from the network edge nearest the origin (gentle: < 6 % there).
+// The gate's stretch: seed 909892992 [DEFAULT], 600 m from the network edge nearest the origin in an 800 m region: 480 m
+// of it under 8 %, two junctions (one a near-hairpin turn taken at full lock), a short 15 % descent.
 const KM = GATE ? 0.6 : +arg('km', 5), RADIUS = GATE ? 800 : +arg('radius', 1500), OUT = arg('out', GATE ? null : 'wip/feat-293/soak.jsonl')
-const seeds = GATE ? [7301] : arg('seed') ? arg('seed').split(',').map(Number) : Array.from({ length: +arg('seeds', 4) }, () => (Math.random() * 2 ** 31) >>> 0)
+const seeds = GATE ? [+arg('seed', 909892992)] : arg('seed') ? arg('seed').split(',').map(Number) : Array.from({ length: +arg('seeds', 4) }, () => (Math.random() * 2 ** 31) >>> 0)
 const BANDS = [0.08, 0.15, 0.24, Infinity], BAND_NAMES = ['<8%', '8-15%', '15-24%', '>24%']
 const band = g => BANDS.findIndex(b => Math.abs(g) < b)
 
@@ -53,7 +55,7 @@ function freshState (P, x, y, z, heading) {
     wheelDebug: [0, 1, 2, 3].map(() => ({ fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: 0 })),
     strutComp: [...eq.strutComp], strutCompVel: [0, 0, 0, 0],
     drivetrain: { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },
-    rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0],
+    rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0], slipVel: [0, 0, 0, 0], tireFlat: [0, 0, 0, 0], bumpForce: [0, 0, 0, 0], brakeTorque: [0, 0, 0, 0],   // the damage model reads these (wear)
   }
 }
 const pct = (a, q) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(q * s.length))] }
@@ -90,9 +92,11 @@ async function soakSeed (seed) {
   const halfW = P.roadHalfWidth ?? 5
   const tire0 = TIRE_IDS.reduce((a, id) => a + damage.condition[id], 0)
   while (ap.dist < KM * 1000 && t < simCap) {
-    const t1 = performance.now()
+    const t1 = performance.now(), j0 = route.junctions
     const c = ap.step(vs, DT)
-    rec.stepUs.push((performance.now() - t1) * 1000)
+    const us = (performance.now() - t1) * 1000
+    rec.stepUs.push(us)
+    if (us > (rec.worstStep?.us ?? 0)) rec.worstStep = { us: Math.round(us), t: +t.toFixed(1), junction: route.junctions !== j0, state: c.state }
     const v = Math.hypot(vs.velocity.x, vs.velocity.z), i = ap.idx, path = route.path
     const a = path[Math.max(0, i - 3)], b = path[Math.min(path.length - 1, i + 3)]
     const grade = (b.y - a.y) / Math.max(1, b.s - a.s)
@@ -151,15 +155,15 @@ for (const seed of seeds) {
   const line = { seed, km: r.km, simS: r.simS, buildS: r.buildS, junctions: r.junctions, bandKm: r.bandKm.map(x => +x.toFixed(2)), bandInt: r.bandInt,
     interventions: r.interventions, manoeuvres: r.manoeuvres, missShift: r.missShift, stalls: r.stalls, topV: +r.topV.toFixed(1), meanV: +(r.vSum / Math.max(1, r.n)).toFixed(1), meanPlan: +(r.vTSum / Math.max(1, r.n)).toFixed(1),
     lat: { med: +pct(lat, 0.5).toFixed(2), p99: +pct(lat, 0.99).toFixed(2), worst: +Math.max(0, ...lat).toFixed(2) }, offDeckS: +r.offDeckS.toFixed(1), latWorst: r.latWorst,
-    tireWearPctPerKm: r.tireWear, stepUs: { med: +pct(us, 0.5).toFixed(1), p99: +pct(us, 0.99).toFixed(1), worst: +Math.max(...us).toFixed(0) },
+    tireWearPctPerKm: r.tireWear, stepUs: { med: +pct(us, 0.5).toFixed(1), p99: +pct(us, 0.99).toFixed(1), worst: r.worstStep },
     pathYErr: +pct(r.yErr, 0.5).toFixed(2) }
   all.push(line)
   console.log(JSON.stringify(line))
   if (OUT) { mkdirSync(dirname(OUT), { recursive: true }); appendFileSync(OUT, JSON.stringify(line) + '\n') }
 }
 if (GATE) {
-  const r = all[0], ok = r.interventions.length === 0 && r.lat.p99 < 1.5 && r.km >= KM - 0.01
-  console.log(`drive-ai gate: ${r.km} km, ${r.interventions.length} interventions, lateral p99 ${r.lat.p99} m (worst ${r.lat.worst}), step ${r.stepUs.med} µs median — ${ok ? 'PASS' : 'FAIL'}`)
+  const r = all[0], ok = r.interventions.length === 0 && r.lat.p99 < 3.5 && r.offDeckS === 0 && r.km >= KM - 0.01
+  console.log(`drive-ai gate: ${r.km} km, ${r.interventions.length} interventions, lateral p99 ${r.lat.p99} m (worst ${r.lat.worst}), ${r.offDeckS} s off the deck, step ${r.stepUs.med} µs median — ${ok ? 'PASS' : 'FAIL'}`)
   let self = ''
   try { self = execFileSync('node', [fileURLToPath(new URL('../src/autopilot.js', import.meta.url))], { encoding: 'utf8' }) } catch (e) { self = (e.stdout ?? '') + 'FAIL' }
   console.log(self.trim())
