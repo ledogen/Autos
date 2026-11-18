@@ -974,17 +974,19 @@ export class PoiSystem {
      * never on the deck, a pad or in a tunnel. Returns { x, y, z, yaw } (yaw: model -Z faces the road).
      */
     _mailboxAt (road, ed, s, side, P, groundAt, water, jit) {
-        const cl = ed.centerline, cp = cl.pointAt(s), ct = cl.tangentAt(s)
+        const cl = ed.centerline, s0 = s
+        s += jit   // the jitter is ALONG the road: stand and face off the centreline at the shifted arc, so a bend does not skew the door
+        const cp = cl.pointAt(s), ct = cl.tangentAt(s)
         const tl = Math.hypot(ct.x, ct.z) || 1
         const tx = ct.x / tl, tz = ct.z / tl, nx = tz * side, nz = -tx * side
         const edgeLat = P.roadHalfWidth + P.roadShoulderWidth
         const d = edgeLat + P.poiMailboxVerge
-        const mx = cp.x + nx * d + tx * jit, mz = cp.z + nz * d + tz * jit
-        if (road.tunnelSpanAt?.(ed.key, s) || road.tunnelSpanAt?.(ed.key, s + jit)) return null
+        const mx = cp.x + nx * d, mz = cp.z + nz * d
+        if (road.tunnelSpanAt?.(ed.key, s0) || road.tunnelSpanAt?.(ed.key, s)) return null
         if (road.padReachNodes().some(nd => Math.hypot(nd.x - mx, nd.z - mz) <= nd.reach)) return null
         if (this._otherRoadNear(road, ed.key, mx, mz, d - 0.5)) return null
         if (water && (water.isRoadNoGo(mx, mz) || water.streamChannelAt?.(mx, mz)?.inChannel)) return null
-        const top = road.sampleRoadTopY(cp.x + nx * edgeLat + tx * jit, cp.z + nz * edgeLat + tz * jit)
+        const top = road.sampleRoadTopY(cp.x + nx * edgeLat, cp.z + nz * edgeLat)
         const y = groundAt ? groundAt(mx, mz) : top
         if (top == null || !isFinite(y) || Math.abs(y - top) > 0.7) return null
         return { x: mx, y, z: mz, yaw: Math.atan2(nx, nz) }

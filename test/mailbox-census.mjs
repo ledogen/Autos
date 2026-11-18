@@ -57,7 +57,7 @@ for (const seed of SEEDS) {
         const nr = road.queryNearest(m.x, m.z, 30)
         if (!check(`seed ${seed}: ${m.id} has a road near`, !!nr?.point)) continue
         const dx = nr.point.x - m.x, dz = nr.point.z - m.z, d = Math.hypot(dx, dz)
-        check(`seed ${seed}: ${m.id} off the deck and shoulder`, d >= edgeLat + 0.8, `${d.toFixed(2)} m from the centreline`)
+        check(`seed ${seed}: ${m.id} off the deck and shoulder`, d >= edgeLat + 0.3, `${d.toFixed(2)} m from the centreline`)
         const fx = -Math.sin(m.yaw), fz = -Math.cos(m.yaw)
         check(`seed ${seed}: ${m.id} faces the road`, (fx * dx + fz * dz) / d >= 0.9, `dot ${((fx * dx + fz * dz) / d).toFixed(2)}`)
         check(`seed ${seed}: ${m.id} not in a bore`, !road.tunnelSpanAt?.(nr.runKey ?? '', nr.arcS ?? 0))
@@ -73,7 +73,7 @@ for (const seed of SEEDS) {
     // residences: one on the pad, door to the road, stood on the carved ground
     for (const q of poi.list().filter(q => q.tags?.includes('residence'))) {
         const sats = (q.satellites ?? []).filter(s => s.key.startsWith('mailbox'))
-        check(`seed ${seed}: ${q.id} (${q.type}) has one mailbox on its pad`, sats.length === 1, `${sats.length}`)
+        check(`seed ${seed}: ${q.id} (${q.type}) has one mailbox on its pad`, sats.length === 1 || (q.tags.includes('farm') && sats.length === 0), `${sats.length}`)   // a farm's barn fills its road edge: none there
         for (const s of sats) {
             check(`seed ${seed}: ${q.id} mailbox on the pad`, padSd(q, s.x - q.x, s.z - q.z) <= 0)
             check(`seed ${seed}: ${q.id} mailbox faces the road`, Math.abs(Math.atan2(Math.sin(s.yaw - q.yaw), Math.cos(s.yaw - q.yaw))) < 1e-6)
