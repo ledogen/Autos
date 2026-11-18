@@ -159,6 +159,25 @@ whose route is empty on every rung. Degree drops and crossing deletes are not fa
    +7.5 points; worst 20 -> 27.5 % on 3590618618's warm band), 2 still graze and stay dropped (3590618618 warm band,
    2176144795 in region). On 1872706826 (not in the 46) its 1061 m in-region side grazed: re-routed to 1006 m, 32.2 %.
 
+Results (46-seed census on the real build, `wip/feat-265/census-b2built.jsonl`, places re-sited by the real POI build):
+(Re-stated after the clearance fix, 2026-11-17: the numbers below hold except km added, mean 0.61 -> 0.55 km, max
+4.14 -> 3.02 km, and restored grades, steepest 10 m 12-27.5 %; seeds with a restore still 13, 5 in the region; max
+place stretch 3.09, median 2.21; the owner's seed unchanged.)
+- Owner's seed 3200351065: food vendor to Larry's 6.68 -> 2.99 km (2.09 km on the map); place stretch 3.67 -> 2.07.
+  Two roads come back: -1,1,1 to -1,0,0 (1119 m, the one the diagnosis named) and -1,0,0 to 0,0,0 (768 m).
+- Place stretch median 2.21 -> 2.21, max 3.67 -> 3.09. Seeds >= 3.0: 2 -> 1 (3832686841: no failed route, its cause is
+  a degree drop plus the region wall; not chased).
+- Seeds given roads: 13 of 46 (5 inside the region), km added mean 0.61, max 4.14 (most outside the region, in the
+  warm band). The 33 seeds with no restore measure identically; `fingerprint-world` (six windows) identical to main.
+- Build cost (cold story-region build, 10 seeds x 3 repeats, main vs branch run side by side, main-thread retired
+  instructions): median -0.3 %, worst +1.0 % (3283391082, 2 restored roads, wall +380 ms); run-to-run noise is about
+  +-1.7 %, so the whole-build bench cannot see it. The restore pass timed alone (`wip/feat-265/b2diag.mjs`, 3 assembly
+  passes per build): 64 ms with nothing to restore (1264166411), 228 ms on the owner's seed, 785 ms on 1872706826.
+- A restored road is ordinary road downstream: on 2176144795 one was joined into a T by the overlap join (BUG-105).
+- Not done: the in-game freecam screenshot of a restored road.
+- Sheet: `wip/feat-265/b2-built.jpg` (six seeds before | after: the owner's, the four other seeds with an in-region
+  restore, and the new tutorial seed), `wip/feat-265/b2-owner.jpg` (his seed alone).
+
 ### Tutorial seed under B2 (world-gen lane, 2026-11-17; round 3's own tools, `hard.mjs` / `census.mjs` / `gate-at.mjs`
 from CarGame-land-211d `wip/tut-seed-search-r3/`, run on main (`wip/feat-265/mainroot/`, an export of main) and on this
 branch (`wip/tutb2/`); `python3 -I wip/feat-265/tutcmp.py` prints the table; sheet `wip/feat-265/b2-tutorial.jpg`)
@@ -180,25 +199,6 @@ branch (`wip/tutb2/`); `python3 -I wip/feat-265/tutcmp.py` prints the table; she
   1872706826's tutorial and census line identical to main and `test/tutorial-seed.mjs` passes unchanged; the owner's
   seed unchanged (2.99 km); census 18 of 27 restored sides kept (vs 25), median / max place stretch 2.21 / 3.09
   unchanged, seeds with an in-region restore 5 -> 4; 2176144795 place stretch 2.05 -> 2.22, 1247456971 2.30 -> 2.54.
-
-Results (46-seed census on the real build, `wip/feat-265/census-b2built.jsonl`, places re-sited by the real POI build):
-(Re-stated after the clearance fix, 2026-11-17: the numbers below hold except km added, mean 0.61 -> 0.55 km, max
-4.14 -> 3.02 km, and restored grades, steepest 10 m 12-27.5 %; seeds with a restore still 13, 5 in the region; max
-place stretch 3.09, median 2.21; the owner's seed unchanged.)
-- Owner's seed 3200351065: food vendor to Larry's 6.68 -> 2.99 km (2.09 km on the map); place stretch 3.67 -> 2.07.
-  Two roads come back: -1,1,1 to -1,0,0 (1119 m, the one the diagnosis named) and -1,0,0 to 0,0,0 (768 m).
-- Place stretch median 2.21 -> 2.21, max 3.67 -> 3.09. Seeds >= 3.0: 2 -> 1 (3832686841: no failed route, its cause is
-  a degree drop plus the region wall; not chased).
-- Seeds given roads: 13 of 46 (5 inside the region), km added mean 0.61, max 4.14 (most outside the region, in the
-  warm band). The 33 seeds with no restore measure identically; `fingerprint-world` (six windows) identical to main.
-- Build cost (cold story-region build, 10 seeds x 3 repeats, main vs branch run side by side, main-thread retired
-  instructions): median -0.3 %, worst +1.0 % (3283391082, 2 restored roads, wall +380 ms); run-to-run noise is about
-  +-1.7 %, so the whole-build bench cannot see it. The restore pass timed alone (`wip/feat-265/b2diag.mjs`, 3 assembly
-  passes per build): 64 ms with nothing to restore (1264166411), 228 ms on the owner's seed, 785 ms on 1872706826.
-- A restored road is ordinary road downstream: on 2176144795 one was joined into a T by the overlap join (BUG-105).
-- Not done: the in-game freecam screenshot of a restored road.
-- Sheet: `wip/feat-265/b2-built.jpg` (six seeds before | after: the owner's, the four other seeds with an in-region
-  restore, and the new tutorial seed), `wip/feat-265/b2-owner.jpg` (his seed alone).
 
 ## Tracker
 - [x] The capture diagnosed: the stretch food vendor → Larry's, and the stage that removed the missing edge
