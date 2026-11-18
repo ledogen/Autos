@@ -84,9 +84,9 @@ export class DialogueSystem {
         if (!this._phone || !cards.some(c => c.phone)) return cards
         const out = []
         cards.forEach((c, i) => {
-            if (c.phone && !cards[i - 1]?.phone && !c.answered) out.push(this._phone.ring)
+            if (c.phone && !cards[i - 1]?.phone && !c.answered) out.push({ ...this._phone.ring, call: 'ring' })
             out.push(c)
-            if (c.phone && !cards[i + 1]?.phone && !c.holds) out.push({ speaker: c.speaker, text: this._phone.click })
+            if (c.phone && !cards[i + 1]?.phone && !c.holds) out.push({ speaker: c.speaker, text: this._phone.click, call: 'click' })
         })
         return out
     }

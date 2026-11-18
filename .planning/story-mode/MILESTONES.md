@@ -117,6 +117,7 @@ example a bug that won't block the alpha.
 | FEAT-206 | brake heating: fade and runaway on a long descent with an overweight load (owner, 2026-11-13: "post alpha") |
 | FEAT-208 | phone calls: pay time or battery to learn what a place has (owner, 2026-11-13: "post alpha idea") |
 | PERF-51 | clustered or deferred lighting, so a light costs only where it reaches (owner, 2026-11-16: "post alpha") |
+| FEAT-269 | rigid bodies on the small props of POI models: the expedition camp, the fishing-store canoe (owner, 2026-11-17: "Post Alpha Ticket", DEC-410) |
 
 Tickets get minted into `.planning/todos/pending/` **at milestone entry, not all up front** — the
 design has open questions (DESIGN.md §Open questions) and minting everything now would freeze answers
@@ -672,6 +673,10 @@ player damage screen (FEAT-90). Open:
 | FEAT-262 | maintenance names the tire fitted on each corner |
 | FEAT-263 | open the vehicle diagnostics from the maintenance menu |
 | FEAT-264 | the campfire is dead after a long sleep |
+| FEAT-283 | food items say Eat; hovering it previews the hunger recovered (owner, 2026-11-17, DEC-417) |
+| FEAT-284 | all tires last 20 % longer (owner, 2026-11-17, DEC-418) |
+| FEAT-285 | the initial spring and damper repair costs $4 (owner, 2026-11-17, DEC-419) |
+| FEAT-286 | a Light campfire button in the camp menu |
 
 ### Places and Missions — POI classes, the job budget, delivery [OWNER, 2026-10-07]
 
@@ -725,6 +730,10 @@ owner's name for it.
 | Demolition offers name the count in the sentence | FEAT-256 | open |
 | Paper-route recipients get the GPS turn arrow | FEAT-257 | open |
 | Post-alpha: the player positions loads in the bed; bed accessories block cargo | FEAT-253 | open |
+| Stock timers off the POI icons; firewood says "new stock in" (DEC-412) | FEAT-271, FEAT-272 | open |
+| Larry yellow, firewood purple, letters on the diamonds; the diamond on the in-person offer (DEC-413) | FEAT-273, FEAT-274 | open |
+| Paper-route juice: three small houses, mailboxes in Larry's pool, the green bullseye halo (DEC-414), thrown-paper physics | ASSET-91, FEAT-275, FEAT-276, FEAT-277 | open |
+| Paper accuracy as bad / ok / great / bullseye with colours (DEC-416) | FEAT-282 | open |
 
 ### Next up — build order [2026-10-24, the alpha]
 
@@ -888,6 +897,11 @@ tickets land in this lane automatically and need no row; only features are liste
 | FEAT-249 | mountain shade does not stop at the edge of the shadow map |
 | FEAT-254 | pad menus: something is always selected, and the B menu takes the left stick |
 | FEAT-255 | pad mode: a resting mouse is ignored until it moves |
+| FEAT-270 | the pause menu drops Main menu and keeps Save and quit (DEC-411) |
+| FEAT-278 | world clutter, added after the loading screen and streamed in slowly |
+| FEAT-279 | a proposal for making the road-sign system functional (owner's call on it first) |
+| FEAT-280 | random mailboxes around the world, through the clutter system |
+| FEAT-281 | main menu: camera up a little, the AUTOS title 60 % bigger (DEC-415) |
 
 ---
 

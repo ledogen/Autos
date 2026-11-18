@@ -570,3 +570,4 @@ argued for (a)). Answers the clock half of `feat65-clock-pay`; pay was already p
 
 **Owed by the owner:** the GPS behaviour and the sequencing on a drive (`hitWindowS` is a constant — say the number); the words.
 2026-11-16 (bookkeeping sweep): August Acceptance boxes ticked (ruled, deterministic, road-clear, at rest, drivable-through, pinned, economy, no stop:true, no authored damage) or struck (dressing entry); open: par-vs-elapsed gap on a real drive.
+- 2026-11-17 (FEAT-267, DEC-399): the 40 s hit window is gone. Demolition is hurried: one deadline (par × 2.25), letter on time, rank bar, GPS on the shortest remaining tour through the clusters; expires unpaid at the deadline with targets standing.

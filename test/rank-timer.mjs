@@ -176,8 +176,10 @@ const PAR = 180   // the measured day-1 average (economy.js)
   check('the rank timer driver exists in main.js', start > 0 && end > start)
   const block = main.slice(start, end)
   // FEAT-139 (§2b): freight's letter is the kg, so it gets no bar — like fragile and haul (FEAT-97).
-  // QUAL-36 (DEC-178/181): calm jobs have no bar unless the giver is Impatient (then tip-only); demolition never.
-  check('no bar on a calm job unless Impatient; none on demolition', /m\.mission\.targets\s*\|\|\s*!m\.mission\.traits\?\.includes\('impatient'\)\)\) return null/.test(block) && /gate: calm \? null/.test(block))
+  // QUAL-36 (DEC-399 superseding DEC-178; DEC-181): calm jobs have no bar unless the giver is Impatient (then tip-only);
+  // demolition (targets) is hurried — never in the calm set.
+  check('no bar on a calm job unless Impatient; demolition is hurried', /if \(calm && !m\.mission\.traits\?\.includes\('impatient'\)\) return null/.test(block)
+    && /gate: calm \? null/.test(block) && !/targets/.test(block.slice(0, block.indexOf('if (calm'))))
   check('the driver never calls formatTime (no m:ss on the bar)', !/formatTime\s*\(/.test(block))
   check('the driver never renders seconds as text (no toFixed/Math.round/`remaining` into textContent/innerHTML)',
     !/(textContent|innerHTML)\s*=\s*[^\n]*(toFixed|Math\.round|Math\.floor|remaining|elapsed|\bpar\b)/.test(block))

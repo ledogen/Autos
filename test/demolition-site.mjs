@@ -14,10 +14,11 @@
 //      its own route within 0.5 m, within the route's last siteM, at least nodeClearM from any
 //      junction node, out of water, its footprint no steeper than maxSlope, standing on the lowest
 //      ground under it.
-//   5. THE GUIDE (slice 2, owner 2026-11-03) — every target's recorded `u` is its own point on the route;
-//      guideTo runs from the route's start (or, back, from its end) to that point; nearestTarget, from
-//      each target's road point, picks the nearest other one along the road and says whether it is
-//      behind; past the route's end every target is behind, and short of the site the first one wins.
+//   5. THE GUIDE (FEAT-267, DEC-399 = the paper round's DEC-398) — every target's recorded `u` is its own point on the
+//      route; siteStops gives one stop a cluster, on its route's road at the members' mean u; the tour the game plans
+//      (paper-route.js planGuideJob, from the truck through the clusters standing) reaches every cluster from the route's
+//      start; 15 m past the first cluster with the rest standing it turns BACK (the shorter tour), and 15 m short of the
+//      last cluster with only it and the far first one standing it goes ON.
 //
 // Heavy: routes a full 2800 m region per seed (~15 s each).
 import * as THREE from 'three'
@@ -32,7 +33,8 @@ import { PROP_MODELS } from '../data/prop-models.js'
 import { validateArea, discArea } from '../src/world-validate.js'
 import { MissionSystem, buildGraphAdj, REGION_MARGIN } from '../src/mission.js'
 import { REGION_RADIUS_M, REGION_WARM_RADIUS_M } from '../src/story.js'
-import { siteTargets, rolledCount, nearestTarget, guideTo, DEMOLITION_PARAMS as D, TARGET_TYPES } from '../src/demolition.js'
+import { siteTargets, rolledCount, siteStops, DEMOLITION_PARAMS as D, TARGET_TYPES } from '../src/demolition.js'
+import { planGuideJob, tourLeg } from '../src/paper-route.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
@@ -40,7 +42,7 @@ import { wirePondNoGo } from './lib/pond-no-go.mjs'
 // BUG-111: '8' replaced '1' when the region network took the game's pond no-go — seed 1's real 06:00 board posts no
 // farm or work-site demolition offer (it did only on the pond-blind roads); 8's posts 2 (4 and 5 also post).
 const SEEDS = ['8', '6']
-const CHASE_MPS = 15   // ~54 km/h down the shoulder, the pace a site is driven at [DEFAULT]
+const drain = (it) => { if (!it) return null; let r; do r = it.next(); while (!r.done); return r.value }
 let fails = 0, posted = 0
 const check = (label, ok, detail = '') => {
     console.log(`  ${ok ? '[ ok ]' : '[FAIL]'} ${label}${ok ? '' : '  ' + detail}`)
@@ -93,8 +95,8 @@ for (const s of SEEDS) {
 
     const dressings = [...THINGS, ...REQUISITION].filter((t) => t.family === 'demolition').map((t) => [t.id, t.targets])
     let ms0 = 0, nCalls = 0
-    const bad = { plan: [], same: [], full: [], count: [], over: [], deck: [], off: [], site: [], junction: [], water: [], slope: [], ground: [], u: [], guide: [], nearest: [], gap: [] }
-    let gapMax = 0
+    const bad = { plan: [], same: [], full: [], count: [], over: [], deck: [], off: [], site: [], junction: [], water: [], slope: [], ground: [], u: [], stops: [], reach: [], back: [], on: [] }
+    let msTour = 0, nTour = 0, nBack = 0
     for (const o of offers) {
         const spc = board.spec(o)
         const m = board.planDistinct(o, planOne)
@@ -134,32 +136,32 @@ for (const s of SEEDS) {
             if ((Math.max(...hs) - Math.min(...hs)) / (2 * fr) > D.maxSlope + 0.25) bad.slope.push(tag)   // axis-aligned probes, not the route's: slack
             if (t.y > world.height(t.x, t.z) + 1e-9) bad.ground.push(`${tag} floats ${(t.y - world.height(t.x, t.z)).toFixed(3)} m`)
             if (Math.abs(near.u - t.u) > 1.5) bad.u.push(`${tag} u ${t.u.toFixed(0)} vs ${near.u.toFixed(0)} m`)
-            for (const back of [false, true]) {
-                const G = guideTo(m, t.u, back).segments, a = G[0], z = G.at(-1)
-                const p0 = a.centerline.pointAt(a.s0), p1 = z.centerline.pointAt(z.s1)
-                const from = back ? pts[0] : pts.at(-1), to = roadAt(t.u)
-                if (Math.hypot(p0.x - from.x, p0.z - from.z) > 1 || Math.hypot(p1.x - to.x, p1.z - to.z) > 1.5) bad.guide.push(`${tag}${back ? ' back' : ''}`)
-            }
         }
-        // From each target's road point the nearest OTHER target along the road; past the end, every one
-        // behind; short of the site, the first along the road ahead.
-        T.forEach((t, k) => {
-            const others = T.flatMap((_, j) => j === k ? [] : [j])
-            if (!others.length) return
-            const p = roadAt(t.u), n = nearestTarget({ ...m, targets: T }, p.x, p.z, others, t.u)
-            const best = Math.min(...others.map(j => Math.abs(T[j].u - t.u)))
-            if (Math.abs(n.dist - best) > 2 || (best > 2 && n.back !== T[n.i].u > t.u)) bad.nearest.push(`${tag} #${k}`)
-        })
-        const all = T.map((_, j) => j), e0 = pts[0], e1 = pts[5]   // the end, and 5 m before it
-        const past = nearestTarget({ ...m, targets: T }, e0.x + (e0.x - e1.x) * 6, e0.z + (e0.z - e1.z) * 6, all, 30)
-        const short = nearestTarget({ ...m, targets: T }, 0, 0, all, m.distance)
-        if (T.length && (!past.back || T[past.i].u !== Math.min(...T.map(t => t.u)))) bad.nearest.push(`${tag} past the end`)
-        if (T.length && (short.back || T[short.i].u !== Math.max(...T.map(t => t.u)))) bad.nearest.push(`${tag} short of the site`)
-        // 6. THE SITE WINDOW (owner 2026-11-05) — the longest stretch between two targets along the road is drivable
-        //    inside hitWindowS at CHASE_MPS, so driving straight down the site never runs the window out.
+        // 5. THE GUIDE — one stop a cluster on the route's own road, and the tour the game plans through them.
+        const mm = { ...m, targets: T }, all = T.map((_, j) => j)
+        const stops = siteStops(mm, all), nG = new Set(T.map(t => t.g)).size
+        const meanU = (st) => st.members.reduce((a, i) => a + T[i].u, 0) / st.members.length
+        if (stops.length !== nG || stops.some(st => {
+            const c = road.edgeParData(st.aId, st.bId)?.centerline?.pointAt(st.s), r = roadAt(meanU(st))
+            return !c || Math.hypot(c.x - r.x, c.z - r.z) > 1.5
+        })) bad.stops.push(tag)
+        const tour = (car, idx) => { const t1 = performance.now(), r = drain(planGuideJob(road, car, siteStops(mm, idx), region)); msTour += performance.now() - t1; nTour++; return r }
+        // From the route's first node, 5 m on: the camp's own road is cut at the wall (one node on the graph), so off it
+        // there is no tour and the GPS keeps the job's route (main.js) until the truck is on the network.
+        const g1 = m.segments[Math.min(1, m.segments.length - 1)], d1 = Math.sign(g1.s1 - g1.s0)
+        const t0 = tour(g1.centerline.pointAt(g1.s0 + d1 * Math.min(5, Math.abs(g1.s1 - g1.s0) / 2)), all)
+        if (!t0 || t0.customers.length !== stops.length || tourLeg(t0).customers[0] !== t0.first.c) bad.reach.push(`${tag} (${t0 ? `${t0.customers.length}/${stops.length}${t0.first ? '' : ' no first'}` : 'no tour'})`)
+        const byU = [...stops].sort((a, b) => meanU(b) - meanU(a)), first = byU[0], last = byU.at(-1)
+        if (stops.length >= 2 && meanU(first) - meanU(last) > 60) {
+            nBack++
+            // Missed the first: 15 m past it, everything standing — back for it is the shorter tour.
+            const tb = tour(roadAt(meanU(first) - 15), all)
+            if (tb?.first?.c.id !== first.id) bad.back.push(`${tag} → ${tb?.first?.c.id}`)
+            // Only the far first one and the last (15 m ahead) standing — on to the last, then back.
+            const tf = tour(roadAt(meanU(last) + 15), [...first.members, ...last.members])
+            if (tf?.first?.c.id !== last.id) bad.on.push(`${tag} → ${tf?.first?.c.id}`)
+        }
         const us = T.map(t => t.u).sort((a, b) => a - b), gap = Math.max(0, ...us.slice(1).map((u, j) => u - us[j]))
-        gapMax = Math.max(gapMax, gap)
-        if (gap / CHASE_MPS > D.hitWindowS) bad.gap.push(`${tag} ${gap.toFixed(0)} m`)
         console.log(`       ${tag.padEnd(40)} ${(m.distance / 1000).toFixed(1)} km  ${T.length}/${want}+ targets: ${[...new Set(T.map((t) => t.kind))].join(' ')}  · widest gap ${gap.toFixed(0)} m`)
         }
     }
@@ -177,9 +179,11 @@ for (const s of SEEDS) {
     check('no target on a footprint steeper than the limit', !bad.slope.length, `${bad.slope.length}`)
     check('every target stands on the lowest ground under it, never above the ground at its centre', !bad.ground.length, bad.ground.slice(0, 3).join(', '))
     check('every target\'s u is its own point on the route (± 1.5 m)', !bad.u.length, bad.u.slice(0, 5).join(', '))
-    check('guideTo runs from the route\'s start, or back from its end, to the target', !bad.guide.length, bad.guide.slice(0, 5).join(', '))
-    check('nearestTarget: the nearest along the road, behind or ahead; past the end all behind; short of the site the first', !bad.nearest.length, bad.nearest.slice(0, 5).join(', '))
-    check(`no gap between targets longer than the window at ${CHASE_MPS} m/s (${D.hitWindowS} s → ${D.hitWindowS * CHASE_MPS} m; widest ${gapMax.toFixed(0)} m)`, !bad.gap.length, bad.gap.slice(0, 5).join(', '))
+    check('siteStops: one stop a cluster, on its route\'s road at the members\' mean u (± 1.5 m)', !bad.stops.length, bad.stops.slice(0, 5).join(', '))
+    check('the tour from the route\'s first node reaches every cluster; the GPS leg ends at its first', !bad.reach.length, bad.reach.slice(0, 5).join(', '))
+    check(`15 m past the first cluster, the rest standing: the guide turns back for it (${nBack} sites)`, nBack > 0 && !bad.back.length, bad.back.slice(0, 5).join(', '))
+    check('15 m short of the last cluster, only it and the far first standing: the guide goes on first', !bad.on.length, bad.on.slice(0, 5).join(', '))
+    console.log(`       tour from the truck: ${(msTour / Math.max(1, nTour)).toFixed(1)} ms per plan (${nTour} plans)`)
     console.log(`       siteTargets: ${(ms0 / Math.max(1, nCalls)).toFixed(1)} ms per site (${nCalls} sites)`)
 }
 

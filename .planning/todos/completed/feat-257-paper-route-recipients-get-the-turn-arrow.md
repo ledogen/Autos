@@ -1,7 +1,7 @@
 ---
 id: FEAT-257
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 — "We should add the GPS turn arrow to Larry's paper route recipients, just like we did for the tutorial mission destinations."
@@ -26,3 +26,6 @@ The off-road objective arrow (FEAT-218, `gps.js _placeRing`) already reads `cust
 
 ## Log
 - 2026-11-17: arrives with BUG-194. Not drive-tested headless.
+- 2026-11-17: FEAT-266 keeps the arrow: the GPS now draws the tour's first leg (`gpsLine`), so its end is the next owed house.
+
+- 2026-11-17 CLOSED by the orchestrator on the owner's card answer ("Good: close them", card missions-1117-look). On main, in the play build.

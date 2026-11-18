@@ -1,7 +1,7 @@
 ---
 id: BUG-194
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 — "If I miss a newspaper throw in Larry's Mission and then turn around to go back and make that delivery, it says \"Wrong Way.\" I think maybe we can fix this if we just always have the GPS navigate to the nearest undelivered paper target so if you miss and pass it it'll still flip the GPS around and say hey you're going the wrong way you should turn around and go back and get that one"
@@ -36,3 +36,6 @@ Root: the guide was the shortest tour through all owed houses and only re-planne
 
 ## Log
 - 2026-11-17: paper-reroute green.
+- 2026-11-17: superseded by FEAT-266 (DEC-398): the guide is the shortest tour through the planned houses still owed, re-planned every 1 s; the nearest-house rule is gone.
+
+- 2026-11-17 CLOSED by the orchestrator on the owner's card answer ("Good: close them", card missions-1117-look). On main, in the play build.

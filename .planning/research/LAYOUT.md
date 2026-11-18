@@ -104,7 +104,7 @@ FEAT-85 grass/brush clumps) · `prop-scatter.js` (+ the FEAT-85 cover pass) · `
 `model-service.js` (FEAT-59 .glb import service) · `campfire.js` (FEAT-66 lit campfire: ASSET-24 + flames/embers/point light; FEAT-264 swaps in ASSET-90 `campfire-dead.glb` when it burns out) · `smoke.js` · `dust.js` (also owns the shared billboard sheet `makeBillboardMesh` + `rotateByQuat`, used by smoke/dirt-spray) · `dirt-spray.js` ·
 `map2d.js` (M-key dev map).
 
-**Audio** — `engine-audio.js` · `gearbox-audio.js` (FEAT-126 missed-shift grind) · `knock-audio.js` (FEAT-162 rod knock + seize bang) · `tire-audio.js` (tonal stick-slip) · `wind-audio.js` · `heartbeat-audio.js` (FEAT-87 rank-bar lub-dub) · `glass-audio.js` (FEAT-87 rank tile shatter; FEAT-97 fragile cargo hits) · `pump-audio.js` (FEAT-50 gas pump: nozzle, flow, gallon bell, shutoff, register).
+**Audio** — `engine-audio.js` · `gearbox-audio.js` (FEAT-126 missed-shift grind) · `knock-audio.js` (FEAT-162 rod knock + seize bang) · `tire-audio.js` (tonal stick-slip) · `wind-audio.js` · `heartbeat-audio.js` (FEAT-87 rank-bar lub-dub) · `glass-audio.js` (FEAT-87 rank tile shatter; FEAT-97 fragile cargo hits) · `pump-audio.js` (FEAT-50 gas pump: nozzle, flow, gallon bell, shutoff, register) · `phone-audio.js` (FEAT-288 P7 phone ring and flip-shut, played from the dialogue frame cards).
 
 **Story mode & gameplay** — `story.js` (FEAT-43 gamemode sandbox) · `day.js` (day clock, FEAT-47) ·
 `economy.js` (payout/wallet/points spine, FEAT-53) · `inventory.js` (FEAT-122 per-run inventory —

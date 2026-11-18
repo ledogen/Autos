@@ -243,6 +243,14 @@ One short square/triangle blip per few characters, pitch per speaker.
   the first press fills it, the next turns it. Not owner-heard yet.
 - **Offline check 2026-11-16 (Lane B, no human has listened):** `playBlip('Mom')`: 0.04 s audible, peak −21.5 dBFS, rms −45.4, top band ~680–800 Hz (the 740 Hz tone). No clip, not silent.
 
+### Phone ring
+status: wip · group: story · play: phone-audio.js playRing
+FEAT-288 P7 (owner, 2026-11-18). `src/phone-audio.js playRing()`: an early-2000s handset, two 0.4 s bursts per ring (0.2 s apart) then 1.8 s quiet, square wave warbling 1.3 / 1.6 kHz at 16 Hz, lowpass 3.2 kHz; 6 cycles (~18 s) then it stops itself, so ▶ cannot leave it running. In game: the "Ring ring ring" card of every phone call; stops when the card advances. Not owner-heard yet (synthesized, nobody has listened).
+
+### Phone flip-shut
+status: wip · group: story · play: phone-audio.js playPhoneShut
+FEAT-288 P7. `playPhoneShut()`: hinge tick (highpassed noise, 12 ms) and a duller latch tick 35 ms later, over a 200 → 90 Hz knock; ~90 ms. In game: the "&lt;click&gt;" card that ends a call. Not owner-heard yet.
+
 ### Payout coin and grade stingers
 status: shipped · group: story · play: result-audio.js playCoin
 Coin: two quick high sine pings (~2.6 / 3.9 kHz) on payout and wallet changes. Stingers: short

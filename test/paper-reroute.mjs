@@ -24,7 +24,9 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS } from '../src/poi.js'
 import { planTour, planTourJob, customersForTier,
-         PaperRouteSystem, resetPaperRun, roadDistFromLarry, roadOrigin } from '../src/paper-route.js'
+         PaperRouteSystem, resetPaperRun, roadOrigin, PAPER_PARAMS, RR_PARAMS } from '../src/paper-route.js'
+import { buildStoryRegion } from './lib/story-region.mjs'
+import { REGION_RADIUS_M } from '../src/story.js'
 import { START_ZONE_R } from '../src/mission.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
@@ -338,20 +340,28 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
         check('…and the new line does NOT contain the porch that was just served',
             !onLine.has(first.id),
             `${first.id} is still on the guide — this is the seed-90 defect`)
-        // BUG-194: the guide is ONE stop, the owed house nearest the truck by road.
+        // FEAT-266 (DEC-398): the guide is the shortest tour from the truck through exactly the round's planned
+        // houses still owed — the same planner, handed that set and asked for all of it.
         const owed = sys.route.customers.filter(c => c.id !== first.id)
-        const rd = roadDistFromLarry(road, roadOrigin(road, car), owed)
-        const nearest = [...rd.entries()].sort((a, b) => a[1] - b[1])[0]?.[0]
-        check('…and the guide goes to the NEAREST house still owed, by road (BUG-194)',
-            sys.line().customers.length === 1 && sys.line().customers[0].id === nearest, `${[...onLine]} vs ${nearest}`)
-        // …and a house driven past without a throw becomes the nearest again: park beside the second-nearest
-        // owed house's far side — here, on the nearest one's own door, then take the guide's word.
+        const ids = r => r?.customers.map(c => c.id).join('>')
+        const best = plan(roadOrigin(road, car), owed, owed.length)
+        check('…and the guide is the shortest tour through the planned houses still owed (DEC-398)',
+            ids(sys.line()) === ids(best), `${ids(sys.line())} vs ${ids(best)}`)
+        // …and the in-world GPS draws only its first leg, ending at that tour's first house (the turn arrow's house).
+        const leg = sys.gpsLine()
+        check('…and the GPS draws the leg to the tour\'s first house (FEAT-266)',
+            leg.customers.length === 1 && leg.customers[0].id === best.customers[0].id
+            && leg.segments.length <= sys.line().segments.length && leg.segments.at(-1).stop === true && sys.gpsLine() === leg,
+            `${leg.customers.map(c => c.id)} · ${leg.segments.length}/${sys.line().segments.length} segs`)
+        // …and the timer re-plans it from wherever the truck is: park on the next owed house's door.
         const par0 = sys.route.par
-        car.x = sys.eligible.find(c => c.id === nearest).x; car.z = sys.eligible.find(c => c.id === nearest).z
-        for (let i = 0; i < 12; i++) sys.update(0.25)
+        const next = best.customers[0]
+        car.x = next.x; car.z = next.z
+        for (let i = 0; i < 5; i++) sys.update(0.25)
         guard = 0; while (sys.pumpReroute(50) && guard++ < 500) { /* drain */ }
-        check('…it re-plans on its own timer, and par is untouched (BUG-194)',
-            sys.line().customers.length === 1 && sys.route.par === par0)
+        const again = plan(roadOrigin(road, car), owed, owed.length)
+        check('…it re-plans on its own timer within tourS, and par is untouched (FEAT-266)',
+            ids(sys.line()) === ids(again) && sys.route.par === par0, `${ids(sys.line())} vs ${ids(again)}`)
         // The contract keeps everybody, because the contract is who you owe, not where you are.
         check('…and the CONTRACT still lists every customer, delivered or not',
             sys.route.customers.length === base.customers.length
@@ -362,13 +372,119 @@ console.log(`       base: ${base.customers.length} stops · ${(base.distance / 1
         const snap = JSON.parse(JSON.stringify(sys.snapshot()))
         const back = new PaperRouteSystem(deps)
         const ok = back.resume(larry, { id: 'larry#0' }, snap)
-        const ids = r => r?.customers.map(c => c.id).join()
         check('FEAT-42: a saved round resumes as the same tour, par, stock and served porch',
             ok && back.state === 'running' && ids(back.route) === ids(sys.route) && back.route.par === sys.route.par
             && back.run.stock === sys.run.stock && back.run.hits.has(first.id) && back.run.t0H === sys.run.t0H,
             `ok ${ok}, state ${back.state}, tour ${ids(back.route) === ids(sys.route)}, stock ${back.run?.stock}/${sys.run.stock}`)
         check('…and its line re-plans to whoever is still owed', back.hasReplan())
     }
+}
+
+// ── FEAT-266 (DEC-398): a round is its planned houses, and the guide is the tour through them ──────────────
+//
+// The owner's report (seed 3200351065, Larry's first route): the line left Larry's toward the cluster, flipped to a
+// lone house off the route once outside the start circle, then flipped back. Driven here on that seed's story region
+// (built as entry builds it) and on seed 6, at every rung: the truck follows the priced line, a sample every ~25 m
+// (one polyline vertex) run through the system's own timer and pump.
+//   · every rung's houses come from the pool (customers of the top rung);
+//   · the guide just outside the circle IS the priced tour (same houses, same order);
+//   · driven with a paper on every porch as it passes, the guide never names a house off the route, and its next
+//     house changes only on a delivery (no flip-flop);
+//   · driven WITHOUT throwing, each owed house passed is re-planned within tourS: the line turns back to it exactly
+//     when the shortest remaining tour does — and over the runs both cases happen (non-vacuity).
+async function guideDrive (W, label) {
+    const { road, poi, larry, region } = W
+    const pool = poi.customers(PAPER_PARAMS.tiers.length - 1)
+    const ids = r => r?.customers.map(c => c.id).join('>')
+    const stats = { back: 0, on: 0, lagMax: 0 }
+    for (let tier = 0; tier < PAPER_PARAMS.tiers.length; tier++) {
+        const car = { x: larry.x, y: larry.y ?? 0, z: larry.z }
+        const sys = new PaperRouteSystem({ getRoad: () => road, getPois: () => poi, getRegion: () => region, getCar: () => car,
+            getTargetR: () => POI_PARAMS.poiHouseTargetR, onSettle: () => ({ payout: 0, points: 0 }),
+            onBriefing: (d) => d(), setMapOpen: () => {} })
+        resetPaperRun()
+        sys.open(larry, { id: 'larry#0' }, tier)
+        await new Promise(r => setTimeout(r, 0))
+        if (sys.state !== 'offer') { check(`${label} rung ${tier}: Larry offers a round`, false, sys.state); continue }
+        const tour = sys.route, onRoute = new Set(tour.customers.map(c => c.id))
+        check(`${label} rung ${tier}: its ${tour.customers.length} houses all come from the ${pool.length}-house pool`,
+            tour.customers.every(c => pool.some(p => p.id === c.id)))
+        sys.accept()
+        const step = () => { for (let k = 0; k < 5; k++) { sys.update(0.25); let g = 0; while (sys.pumpReroute(50) && g++ < 999); } }
+        const poly = tour.poly
+        // Just outside the circle, on the line.
+        let i0 = poly.findIndex(p => Math.hypot(p.x - larry.x, p.z - larry.z) > START_ZONE_R + 10)
+        car.x = poly[i0].x; car.z = poly[i0].z
+        step()
+        check(`${label} rung ${tier}: just outside the circle the guide IS the priced tour`,
+            sys.state === 'running' && ids(sys.line()) === ids(tour), `${ids(sys.line())} vs ${ids(tour)}`)
+
+        // Driven with every porch served as it is passed: never a house off the route, no flip-flop.
+        let offSeen = null, flips = 0, last = sys.gpsLine().customers[0]?.id, lastHits = 0
+        for (let i = i0; i < poly.length && sys.state === 'running'; i++) {
+            car.x = poly[i].x; car.z = poly[i].z
+            for (const c of tour.customers) if (!sys.isDelivered(c.id) && Math.hypot(c.x - car.x, c.z - car.z) < 30) {
+                sys.takePaper(); sys.recordLanding(c.x, c.z)
+            }
+            step()
+            if (sys.state !== 'running') break
+            const L = sys.line()
+            if (L.customers.some(c => !onRoute.has(c.id) || sys.isDelivered(c.id))) offSeen ??= `v${i}: ${ids(L)}`
+            const nx = sys.gpsLine().customers[0]?.id
+            if (nx !== last && sys.delivered() === lastHits) flips++
+            last = nx; lastHits = sys.delivered()
+        }
+        check(`${label} rung ${tier}: served as driven, the guide never names a house off the route or already served`, !offSeen, offSeen)
+        check(`${label} rung ${tier}: …and its next house changes only on a delivery (${flips} changes without one)`, flips === 0)
+
+        // Driven WITHOUT throwing: past each owed house, the re-plan lands within tourS and is the shortest tour.
+        if (tier > 1) continue   // two rungs a world keeps the runtime sane; the property is per-pass, not per-rung
+        const sys2 = new PaperRouteSystem({ getRoad: () => road, getPois: () => poi, getRegion: () => region, getCar: () => car,
+            getTargetR: () => POI_PARAMS.poiHouseTargetR, onSettle: () => ({ payout: 0, points: 0 }),
+            onBriefing: (d) => d(), setMapOpen: () => {} })
+        resetPaperRun()
+        car.x = larry.x; car.z = larry.z
+        sys2.open(larry, { id: 'larry#1' }, tier)
+        await new Promise(r => setTimeout(r, 0))
+        sys2.accept()
+        const step2 = (n) => { for (let k = 0; k < n; k++) { sys2.update(0.25); let g = 0; while (sys2.pumpReroute(50) && g++ < 999); } }
+        car.x = poly[i0].x; car.z = poly[i0].z
+        step2(5)
+        const passed = new Set()
+        for (let i = i0; i < poly.length; i++) {
+            const h = tour.customers.find(c => !passed.has(c.id) && Math.hypot(c.x - poly[i].x, c.z - poly[i].z) < 25
+                && Math.hypot(c.x - poly[Math.min(i + 3, poly.length - 1)].x, c.z - poly[Math.min(i + 3, poly.length - 1)].z) > 40)
+            if (!h) continue
+            passed.add(h.id)
+            // ~60 m past the porch, carrying on along the line: how long until the guide is the shortest tour?
+            const j = Math.min(i + 3, poly.length - 1)
+            car.x = poly[j].x; car.z = poly[j].z
+            const best = planTour(road, roadOrigin(road, car), tour.customers, tour.customers.length, region, 100)
+            let lag = 0
+            while (ids(sys2.line()) !== ids(best) && lag < 12) { step2(1); lag++ }
+            stats.lagMax = Math.max(stats.lagMax, lag * 0.25)
+            check(`${label} rung ${tier}: past ${h.id.split(':').pop()} without a throw, the guide is the shortest tour within ${RR_PARAMS.tourS} s`,
+                ids(sys2.line()) === ids(best) && lag * 0.25 <= RR_PARAMS.tourS + 0.25, `${lag * 0.25} s: ${ids(sys2.line())} vs ${ids(best)}`)
+            if (best.customers[0].id === h.id) stats.back++; else stats.on++
+            i = j
+        }
+        sys2.cancel()
+    }
+    return stats
+}
+
+{
+    const W6 = { road, poi, larry, region }
+    const s6 = await guideDrive(W6, 'seed 6')
+    const O = buildStoryRegion('3200351065')
+    O.poi.buildHouses(O.C, REGION_RADIUS_M, O.rep.mainNodes)
+    const WO = { road: O.poi._d.getRoad(), poi: O.poi, larry: O.poi.list().find(q => q.type === 'larrysHouse'),
+                 region: { x: O.C.x, z: O.C.z, r: REGION_RADIUS_M, nodes: O.rep.mainNodes } }
+    const sO = await guideDrive(WO, 'seed 3200351065')
+    const back = s6.back + sO.back, on = s6.on + sO.on
+    console.log(`       passes without a throw: ${back} turned back, ${on} carried on · worst re-plan lag ${Math.max(s6.lagMax, sO.lagMax)} s`)
+    check('…and both happen: a missed house turns the line back AND a missed house is left for later (non-vacuity)', back > 0 && on > 0,
+        `${back} back, ${on} on`)
 }
 
 // ── the single-stop tail ────────────────────────────────────────────────────────────────────────

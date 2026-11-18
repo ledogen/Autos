@@ -149,10 +149,31 @@ Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale, play b
 tonight. I have a reset in the pocket." So the two-agent cap is OFF for tonight: one agent per free worktree, grouped by
 code area. A one-shot timer fires at 07:13 with the word "orchestrator" (session-only cron).
 
-**Main:** 53cabcb7, NOT pushed, GREEN: confirming smoke PASS 38 steps on exactly this tree
-(wip/orch/smoke-1117-campfire.log). Holds everything below plus BUG-179 (closed), FEAT-243 (closed), DEC-395, and
-campfire/camera round 2: ASSET-90 model, dead-fire smoke, cooking relights (DEC-397), camera vs tunnel walls. Card
-campfire-camera-r2-look: on his "Good" move FEAT-246 and FEAT-264 to completed/. Play build :8002 = 53cabcb7.
+**Main:** 0568f087 + docs, NOT pushed, GREEN (last full smoke on a code tree: FEAT-267 pay-per-target branch, 38 steps).
+Landed 11-17 evening: FEAT-266 (DEC-398), tutorial seed 1872706826 (DEC-402), FEAT-267 demolition deadline + pay per target
+(DEC-399, DEC-403), campfire smoke r3 (DEC-404). Play build :8002 = that tree.
+**LESSONS 11-17 (do these EVERY time an agent reports):** (1) full intake: owed/*.answer.json, inbox items with no
+.reply.json, dives with no .taken: 11 answers and 22 inbox items sat for hours; (2) signs of life: an interrupt in this
+session FREEZES running agents (listed "running", transcript mtime stale): check
+~/.claude/projects/-Users-ledogen-CodeShit-CarGame/<session>/subagents/agent-<id>.jsonl mtimes; TaskStop + SendMessage resumes;
+(3) sweep stale wait loops by pid (older than the oldest running agent); (4) LOOK at every sheet before relaying.
+**RUNNING 23:20 (eight agents):**
+- CarGame-land-212b land/int-1117d: integrate BUG-201 + BUG-202 + FEAT-235 r3 (owner: land) → I merge when green.
+- b, CarGame-machine land/bug-200-hairpin-grade: BUG-200 option E build-out (owner picked E; DEC-409) → look card.
+- CarGame-land-feat180 land/feat-268-farm-knockables: FEAT-268 farm barrels/crates + the flamingo launch (DEC-405).
+- CarGame-land-feat180-dusk land/feat-69-freight-r2: freight lists (DEC-406).
+- c, CarGame-content land/food-1117: food rebalance (DEC-407) + shop shelf / tire rewards (DEC-408).
+- CarGame-land-gps land/ui-1117b: ten UI tickets (FEAT-270..274, 281..283, BUG-208, BUG-209).
+- CarGame-land-feat34 land/bugs-1117-pad-cam-light: BUG-206 rumble, BUG-207 tunnel camera, BUG-210 high beams.
+- CarGame-land-211d land/bugs-1117-gps-food-camp: BUG-205, BUG-211, BUG-212, FEAT-286.
+**QUEUED (no owner answer needed):** FEAT-284 tires +20 % (DEC-418) + FEAT-285 springs/dampers $4 (DEC-419) + BUG-213 labour
+unscaled: after the food/shop agent (same files) · BUG-214 spiky pad walls (Opus, world-gen; ask the owner for a capture) ·
+paper juice FEAT-275 mailboxes in Larry's pool, FEAT-276 halo, FEAT-277 thrown-paper physics, ASSET-91 three small houses ·
+FEAT-279 sign-system PROPOSAL (a dive for the owner) · FEAT-278/280 clutter streaming, random mailboxes · BUG-203, BUG-204.
+**HELD FOR THE OWNER:** FEAT-265 B2 @ 361f08d8 (card feat265-b2-look: tutorial-seed choice; I recommended option 3) ·
+FEAT-26 rock slides @ b1bb410a, dev :3886 (drive) · drive cards: feat267-demolition-drive, tutorial-seed-1872706826-drive,
+campfire-smoke-r3-look. After B2's pick: re-run the requisition census (CarGame-land-211d/wip/req-length/) on it.
+Next free: BUG-215, FEAT-287, DEC-420, ASSET-92.
 **HOW LANDINGS WORK TONIGHT:** never merge finished branches into main one by one. An Opus integration agent in
 CarGame-land-gps merges them onto `land/integrate-1117<x>` (cut from main), fixes clashes, runs gates + pad-e2e + ONE full
 smoke there; main is then fast-forwarded (`git merge --ff-only`) and the play build refreshed

@@ -445,7 +445,7 @@ export class DebrisSystem {
       quaternion: opts.quaternion,
       linearVelocity: velocity,
       angularVelocity: spin,
-      userData: { kind: 'debris', debrisType: kind, noDamage: !!opts.noDamage, hazard: !!spec.hazard },
+      userData: { kind: 'debris', debrisType: kind, noDamage: !!opts.noDamage, hazard: !!spec.hazard, crushN: spec.crushN ?? Infinity },
     })
     this._eng.addHull(body, proto.hull, {
       density: opts.massKg ? opts.massKg / proto.volume : proto.density,

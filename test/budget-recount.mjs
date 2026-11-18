@@ -98,9 +98,8 @@ export const ASSUME = {
     insultTravel: 0.2,     // [A] between jobs
     foodPerH: 0.5,         // $ per hour of hunger hold, the cheapest lines (chili dog 5/10 h, groceries 5/10 h, potato 2/4 h)
     incidentPerDay: 0,     // [A] $ day-1 of crashes: plugs, bent wheels, tows. Swept below.
-    // non-time letters — no recorded drive grades these; [A] shares of B+ / C / D:
+    // non-time letters — no recorded drive grades these; [A] shares of B+ / C / D (demolition is time since FEAT-267):
     fragile:    [0.7, 0.25, 0.05],
-    demolition: [0.7, 0.25, 0.05],
     haulLoad: 25,          // [A] bundles loaded (≤ the yard's stock), all delivered
     paceX: 1,              // the corpus ratio × this (1 = the recorded driver, the owner)
     payX: 1, oilPrice: OIL_CHANGE.price,   // lever hooks: pay × this (k), the oil change price
@@ -139,7 +138,6 @@ function job (A) {
         pay = base + (line - base) * tipMult
         if (sp.load && !sp.fragile) { const t = E.RANK_TABLE.freight[0]; letter = sp.massKg >= t.S ? 'S' : sp.massKg >= t.A ? 'A' : sp.massKg >= t.B ? 'B' : 'C' }
         else if (sp.fragile) letter = letterFrom(A.fragile)
-        else if (sp.family === 'demolition') letter = letterFrom(A.demolition)
         else letter = timeLetter
     }
     const deeds = sp.deeds === 'none' ? 0 : pointsFor(letter) + (sp.deeds === 'extraHalf' && pointsFor(letter) > 0 ? 0.5 : 0)

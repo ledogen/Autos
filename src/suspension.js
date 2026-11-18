@@ -661,7 +661,9 @@ export function stepSuspensionSubsteps (vehicleState, params, dt, queryContacts)
       let xzx = 0, xzy = 0, xzz = 0   // this substep's X/Z residual on the body (D-06), contacts + rock grip
       for (let ci = 0; ci < nC; ci++) {
         const c = hubContacts[ci], bUp = _cBUp[ci], rate = _cRate[ci]
-        const tireFnAtContact = Math.max(0, _cSpring[ci] + _cDamp[ci] * (_cCvE[ci] - newStrutCompVel * _cCvV[ci]))
+        // FEAT-268: a debris body that yields under load (a flamingo's shell, crushN) carries no more than its
+        // strength; past it the tire sinks through it instead of loading it, both sides of the pair alike.
+        const tireFnAtContact = Math.min(c.crushN ?? Infinity, Math.max(0, _cSpring[ci] + _cDamp[ci] * (_cCvE[ci] - newStrutCompVel * _cCvV[ci])))
         tireFz += tireFnAtContact * bUp
         // BUG-99: a debris contact carries an injected callback (physics.js) that hands this exact
         // force, for this substep, back to the body as its equal and opposite. A callback, so this
