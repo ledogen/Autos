@@ -319,7 +319,7 @@ export class DebrisSystem {
   load (kind, spec = DEBRIS_TYPES[kind]) {
     if (this._loads.has(kind)) return this._loads.get(kind)
     this._types[kind] = spec
-    const p = getModel(spec.model).then(rec => {
+    const p = this._template(spec).then(rec => {
       const proto = this._extractHull(rec.template)
       if (proto && !spec.box && !(this._hullVolume(proto.hull) > 0)) {
         // The engine could not build this hull (Box3D caps a hull at 255 half-edges, and a
@@ -343,6 +343,9 @@ export class DebrisSystem {
     this._loads.set(kind, p)
     return p
   }
+
+  /** The type's model record: its GLB (model-service), or `spec.template` — an Object3D built in code (FEAT-26 slide rocks). */
+  _template (spec) { return spec.template ? Promise.resolve({ template: spec.template }) : getModel(spec.model) }
 
   /** Half extents of a loaded type's collider [m] (the hull is bbox-centred), or null while loading. */
   halfExtents (kind) {
@@ -423,7 +426,8 @@ export class DebrisSystem {
     // opts: spin, quaternion (deterministic callers), pinned (outside the cap — see DEBRIS_CAP),
     // noDamage (the chassis wear model ignores this body's contacts — cargo in the bed, FEAT-88),
     // massKg (overrides the type's own mass — the freight debug slider), ownMaterials (FEAT-97: the
-    // load can blink() without tinting other copies).
+    // load can blink() without tinting other copies), material (FEAT-26: every mesh drawn with this one —
+    // a slide's shared fade-in material; the caller owns and disposes it).
     const spec = this._types[kind]
     const proto = this._proto.get(kind)
     if (!spec || !proto) return null   // model still loading (first seconds of a cold boot)
@@ -453,8 +457,9 @@ export class DebrisSystem {
     // Visual: the shared template cloned, child-offset so the mesh's bbox centre (= the hull's
     // origin = the body origin) coincides with the body transform.
     const spawned = new THREE.Group()
-    getModel(spec.model).then(rec => {
+    this._template(spec).then(rec => {
       const m = rec.template.clone(true)
+      if (opts.material) m.traverse(o => { if (o.isMesh) o.material = opts.material })
       // FEAT-97: a load that blinks gets its OWN materials — the clone shares the template's, and
       // tinting those would tint every copy. Disposed in _reclaim.
       if (opts.ownMaterials) m.traverse(o => { if (o.isMesh) o.material = o.material.clone() })

@@ -230,3 +230,151 @@ export function candidateAt (road, heightAt, e, s, dir, v, { halfW = 5, laneOff 
   }
   return null
 }
+
+// ── The director ────────────────────────────────────────────────────────────────────────────────────
+
+const SCAN_AHEAD_M = 400      // how far ahead of the truck an armed director looks for a candidate
+const SCAN_PER_FRAME = 4      // stations evaluated per frame while scanning (a station is ~50–300 height samples)
+
+/** Distance to the next arming, memoryless: Exp(mean 1/perKm km) in metres. */
+export const nextArmM = (rng, perKm = SLIDE.perKm) => -Math.log(1 - rng()) * 1000 / perKm
+
+/**
+ * Release now? The truck (`aheadM` from the impact point along the road, at `v`) reaches it as the rocks do.
+ * @returns {boolean}
+ */
+export const releaseDue = (aheadM, v, T) => aheadM > 0 && aheadM <= v * T
+
+/**
+ * Owns the slides of one world. main.js (a world owner) builds it with the systems it reads:
+ *   debris — the DebrisSystem the rocks are spawned through (pinned: outside the throw cap; this removes them);
+ *   road() — the live RoadSystem; heightAt(x, z) — the ground the rocks roll on; hasGround(x, z) — is the
+ *   terrain collider there (TerrainPhysics.hasChunkAt), so a batch never spawns over a missing chunk.
+ * update() runs once per frame with the truck's pose; nothing here touches the engine or the save.
+ */
+export class RockslideDirector {
+  constructor ({ debris, road, heightAt, hasGround = () => true, rng = Math.random, params = SLIDE }) {
+    this._debris = debris; this._road = road; this._heightAt = heightAt; this._hasGround = hasGround
+    this._rng = rng; this.P = params
+    this._odo = 0; this._armAt = nextArmM(rng, params.perKm)
+    this.armed = false; this.pick = null; this._scan = null
+    this.slides = []          // [{ bodies, mat, age, x, z }]
+    this._geos = slideRockGeos()
+    this._radii = this._geos.map(g => { g.computeBoundingSphere(); return g.boundingSphere.radius })
+    this._kinds = this._geos.map((g, i) => {
+      const kind = `slideRock${i}`
+      const template = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }))
+      debris.load(kind, { template, density: params.density, friction: params.friction, restitution: params.restitution, hazard: true })
+      return kind
+    })
+    this.events = 0
+  }
+
+  /** Debug / smoke: arm now (the rate is skipped). A parked truck gets its slide at the nearest candidate at once. */
+  trigger () { this.armed = true; this._forced = true; this.pick = null; this._scan = null }
+
+  /** Where the truck is on its run: { e, key, s, dir, lat(n) } or null off the network. */
+  _onRoad (t) {
+    const road = this._road(), nr = road?.queryNearest(t.x, t.z, 12)
+    const e = nr?.runKey && road._network.get(nr.runKey)
+    if (!e?.points || !e.polyCum) return null
+    // Project onto the run near the resolver's arc (its arcS is the run's own arc).
+    let best = Infinity, s = 0
+    const pts = e.points, cum = e.polyCum
+    for (let i = 1; i < pts.length; i++) {
+      if (cum[i] < nr.arcS - 30 || cum[i - 1] > nr.arcS + 30) continue
+      const a = pts[i - 1], b = pts[i], dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1
+      const u = Math.max(0, Math.min(1, ((t.x - a.x) * dx + (t.z - a.z) * dz) / l2))
+      const d = Math.hypot(a.x + dx * u - t.x, a.z + dz * u - t.z)
+      if (d < best) { best = d; s = cum[i - 1] + u * (cum[i] - cum[i - 1]) }
+    }
+    if (!(best < 12)) return null
+    const c = runAt(pts, cum, s)
+    const along = t.vx * c.tx + t.vz * c.tz
+    return { e, key: nr.runKey, s, c, dir: along >= 0 ? 1 : -1, v: Math.abs(along) }
+  }
+
+  /**
+   * One frame. `truck` = { x, y, z, vx, vz } (world, m and m/s); `enabled` false (menu, tutorial, lab) holds the
+   * odometer and the pick but keeps cleaning up.
+   */
+  update (dt, truck, enabled = true) {
+    for (const sl of this.slides) {
+      sl.age += dt
+      if (sl.mat.opacity < 1) sl.mat.opacity = Math.min(1, sl.age / this.P.fadeS)
+    }
+    this._cleanup(truck)
+    if (!enabled) return
+    this._odo += Math.hypot(truck.vx, truck.vz) * dt
+    if (!this.armed && this._odo >= this._armAt) { this.armed = true; this._scan = null }
+    if (!this.armed) return
+    const on = this._onRoad(truck)
+    if (!on) return
+    const parked = on.v < 1
+    if (this.pick) {
+      const p = this.pick
+      if (p.key !== on.key || p.dir !== on.dir && !parked) { this.pick = null; return }   // turned off or round: silently drop it
+      const ahead = (p.s - on.s) * p.dir
+      if (ahead < -5) { this.pick = null; return }                        // drove past it without a release (held too slow)
+      const lat = this._latToTruck(p, truck)
+      const T = arrivalS(p.face, lat)
+      if ((on.v >= this.P.minSpeed && releaseDue(ahead, on.v, T)) || (this._forced && parked)) this._release(p)
+      return
+    }
+    // Scan ahead a few stations per frame for the first candidate the truck is still far enough from.
+    if (!this._scan || this._scan.key !== on.key || this._scan.dir !== on.dir) this._scan = { key: on.key, dir: on.dir, k: 0 }
+    const L = on.e.polyCum[on.e.polyCum.length - 1]
+    for (let i = 0; i < SCAN_PER_FRAME; i++) {
+      const lead = parked ? (this._scan.k % 2 ? 1 : -1) * Math.ceil(this._scan.k / 2) * this.P.stepM : this._scan.k * this.P.stepM
+      this._scan.k++
+      if (Math.abs(lead) > (parked ? 80 : SCAN_AHEAD_M)) { this._scan = null; return }   // nothing in reach: try again from here
+      const s = on.s + on.dir * lead
+      if (s < 0 || s > L) continue
+      const c = candidateAt(this._road(), this._heightAt, on.e, s, on.dir, Math.max(on.v, this.P.minSpeed))
+      if (!c) continue
+      const ahead = (s - on.s) * on.dir
+      if (!parked && ahead < on.v * c.T + 5) continue     // too close already: the rocks could not get there in time
+      this.pick = { ...c, key: on.key }
+      return
+    }
+  }
+
+  /** Lateral distance [m] from the face's toe to the truck, toward the road (the arrival model's `latM`). */
+  _latToTruck (p, t) {
+    const nx = -p.c.tz * p.side, nz = p.c.tx * p.side
+    return 5 + p.face.toeD - ((t.x - p.c.x) * nx + (t.z - p.c.z) * nz)
+  }
+
+  _release (p) {
+    this.pick = null; this.armed = false; this._forced = false
+    this._armAt = this._odo + nextArmM(this._rng, this.P.perKm)
+    if (!this._hasGround(p.face.rel.x, p.face.rel.z)) return
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, alphaHash: true, opacity: 0 })
+    const bodies = []
+    for (const b of batchBodies(this._heightAt, p.face, this._radii, this._rng)) {
+      const h = this._debris.spawn(this._kinds[b.variant], b.position, b.velocity, { spin: b.spin, quaternion: b.quaternion, pinned: true, material: mat })
+      if (h) bodies.push(h)
+    }
+    if (!bodies.length) { mat.dispose(); return }
+    this.slides.push({ bodies, mat, age: 0, x: p.face.rel.x, z: p.face.rel.z })
+    this.events++
+    this.last = { at: { x: p.face.rel.x, z: p.face.rel.z }, imp: p.imp, rocks: bodies.length, dropM: p.face.dropM, T: p.T }
+  }
+
+  /** A slide goes once it is old AND far from the truck (never in view), or at once if its ground has streamed out. */
+  _cleanup (t) {
+    for (let i = this.slides.length - 1; i >= 0; i--) {
+      const sl = this.slides[i], d = Math.hypot(sl.x - t.x, sl.z - t.z)
+      if ((sl.age > this.P.lifeS && d > this.P.farM) || !this._hasGround(sl.x, sl.z)) this._drop(i)
+    }
+  }
+
+  _drop (i) {
+    const sl = this.slides.splice(i, 1)[0]
+    this._debris.remove(sl.bodies)
+    sl.mat.dispose()
+  }
+
+  /** Every slide gone, the pick and the arming dropped (world rebuild, run end). The odometer keeps its draw. */
+  clear () { while (this.slides.length) this._drop(0); this.pick = null; this.armed = false; this._forced = false }
+}

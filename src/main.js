@@ -24,6 +24,7 @@ import { HiLift, basin, rollDeg } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine, GROUP_STATIC, GROUP_ROAD } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-physics.js'
+import { RockslideDirector } from './rockslide.js'   // FEAT-26: rock slides (DEC-400)
 import { DebrisSystem, bedDropPoints, inBedWell, strapPose, cubeLayout, STACK_RADIUS, BARREL_CUBE_SIDE, BARREL_CUBE_LAYERS } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
@@ -2725,6 +2726,7 @@ const _gui = initDebug(RANGER_PARAMS, {
     debrisSystem.spawn('rock', { x: p.x, y: p.y, z: p.z }, { x: v.x, y: v.y, z: v.z })
   },
   loadFreight:         (key, massKg) => _loadFreight(key, massKg),   // FEAT-96 scaffolding: '' empties the bed
+  rockslideNow:        () => rockslides.trigger(),   // FEAT-26: arm a slide at the next candidate ahead (parked: the nearest)
   applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
@@ -2820,6 +2822,11 @@ const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
 // group's bore lining (ONE ray per frame; camera-boom.js says why the deck under the truck does not shorten it).
 setCameraBoomProbe(makeBoomProbe(physicsEngine, (x, z) => terrainSystem.analyticHeight(x, z), GROUP_STATIC | GROUP_ROAD))
 const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
+// FEAT-26 (DEC-400): rock slides off the cut slopes. Its rocks are debris bodies outside the throw cap; it reads the
+// road and the ground, never the save (a slide in flight is not saved: a reload drops it).
+const rockslides = new RockslideDirector({ debris: debrisSystem, road: () => roadSystem,
+  heightAt: (x, z) => terrainSystem ? terrainSystem.analyticHeight(x, z) : 0, hasGround: (x, z) => terrainPhysics.hasChunkAt(x, z) })
+window.__rockslide = rockslides   // dev handle — the debug panel's "Rock slide now" and test/cdp-smoke.mjs
 
 // ── FEAT-96: the strapped load — a freight job's, or the debug "Load Cargo" pick ─────────────
 // One load at a time; loading another replaces it. The load is placed AT REST where strapPose
@@ -11496,6 +11503,12 @@ function loop (t) {
   _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
   flushPadRumble(pad.active && getCameraMode() !== 'freecam')   // FEAT-247: one mixed vibration effect per frame
   debrisSystem.update(_renderAlpha)   // FEAT-36: engine → debris meshes, at the truck's render alpha
+  // FEAT-26: the slide director — the odometer's draw, the pick ahead, the release, the fade. Held with the sim;
+  // never in the lab or the tutorial (its protected legs) — there it only cleans up.
+  if (!(_simHeld || _genHold || _heldPause())) {
+    rockslides.update(frameTime, { x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
+      vx: vehicleState.velocity.x, vz: vehicleState.velocity.z }, !_labActive && !_inTutorial())
+  }
 
   // Restore physics position/quaternion — the interpolated copies were render-only.
   vehicleState.position  = _physPos
