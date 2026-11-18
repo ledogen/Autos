@@ -1508,10 +1508,23 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   readWheelCores(engine, chassis, vehicleState, params)   // what rocks did to the rims (BUG-99)
 
   // ── Step 3e: Pull the engine result back into the authoritative JS mirror ──
-  engine.getTransform(chassis, vehicleState.position, vehicleState.quaternion)
-  engine.getVelocity(chassis, vehicleState.velocity, vehicleState.angularVelocity)
+  // BUG-224: read into scratch first. A non-finite result (an integrator blown up upstream) would otherwise land in
+  // vehicleState, and from there in the save: keep the last finite pose (this step's start, pushed at Step 1.5),
+  // stop the motion, and say so once. A finite result is copied bit for bit (the physics fingerprint holds).
+  engine.getTransform(chassis, _readP, _readQ)
+  engine.getVelocity(chassis, _readV, _readW)
+  if (Number.isFinite(_readP.x + _readP.y + _readP.z + _readQ.x + _readQ.y + _readQ.z + _readQ.w +
+                      _readV.x + _readV.y + _readV.z + _readW.x + _readW.y + _readW.z)) {
+    vehicleState.position.copy(_readP); vehicleState.quaternion.copy(_readQ)
+    vehicleState.velocity.copy(_readV); vehicleState.angularVelocity.copy(_readW)
+  } else {
+    if (!_nanReported) { _nanReported = true; console.error('[physics] BUG-224: the engine returned a non-finite chassis state; kept the last finite pose and stopped the truck') }
+    vehicleState.velocity.set(0, 0, 0); vehicleState.angularVelocity.set(0, 0, 0)
+  }
   vehicleState.quaternion.normalize()
 }
+const _readP = new THREE.Vector3(), _readQ = new THREE.Quaternion(), _readV = new THREE.Vector3(), _readW = new THREE.Vector3()
+let _nanReported = false
 
 /**
  * ω and slip for a wheel with no road reaction this step: off the ground at the start of the step

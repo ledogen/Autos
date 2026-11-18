@@ -1030,14 +1030,22 @@ function debouncedRoadRebuild () {
 // SERIALIZED: concurrent calls (e.g. R pressed while a seed-regen's spawn warm is still pumping)
 // queue behind the in-flight seat instead of interleaving two async spawn probes' setRadius/warm
 // state — the R lands right after the current one finishes, on the fully-loaded road.
+// BUG-224: a seat may await a network build (a teleport, a lab exit) for a second or more, and the world can already
+// have changed under the truck's OLD pose (leaving the lab swaps the lab slab for real ground ~200 m above it). Stepping
+// that pose buried the truck and threw it out at 400 m/s. So the sim holds (_heldPause) while ANY seat is pending —
+// counted here, the one door every caller goes through. buildNow never rejects (a failed or stale build resolves
+// false and the seat lands on the analytic terrain), and the count drops in a finally, so a seat that throws still
+// hands the sim back.
+let _seatsPending = 0
 let _reseatChain = Promise.resolve()
 function _reseatTruckAtSpawn () {
+  _seatsPending++
   _closeMenus()   // BUG-183: a seat leaves the place every open menu belongs to (the pump, the shop, the tow's owed answer)
   // BUG-71: a seat is ALWAYS a world arriving at once — cold load, R-reset, or a Path-B reseed —
   // and the band the props scattered against is still filling in behind it. Owe a whole-ring pass
   // here rather than at each of those three call sites, so no future spawn path can forget.
   owePropSweep()
-  const run = () => _reseatTruckAtSpawnInner()
+  const run = () => _reseatTruckAtSpawnInner().finally(() => { _seatsPending-- })
   _reseatChain = _reseatChain.then(run, run)
   return _reseatChain
 }
@@ -1250,7 +1258,7 @@ let _cardHold = false
 // FEAT-62: the paper-route scenario's definition while one runs. It is story mode under a guard: the run is built
 // fresh, never written to the player's save slot, never discards it, and leaves for the main menu (_startPaperScenario).
 let _paperScenario = null
-function _heldPause () { return _resumeHold || _runEndOpen || _tutCardOpen || (_pauseOpen && scenarioSystem.isActive()) || (_cardHold && dialogueSystem.holding) }
+function _heldPause () { return _seatsPending > 0 || _resumeHold || _runEndOpen || _tutCardOpen || (_pauseOpen && scenarioSystem.isActive()) || (_cardHold && dialogueSystem.holding) }
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
