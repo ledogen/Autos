@@ -11,7 +11,10 @@
 //   cause   at the worst edge (see classify): cap / selfref / overlap / ok
 //   mesh    worst |chunk-mesh Y − analyticHeight| over the pad's chunks (the seam / LOD check)
 //
-//   node test/pad-wall-census.mjs --seeds=281831,768902 [--camps=12] [--out=file.jsonl] [--keep=dir]
+//   over    worst overshoot (m): ground pushed past both the bench's design and the no-pad ground (a spike)
+//
+//   node test/pad-wall-census.mjs --seeds=281831,768902 [--camps=12] [--out=file.jsonl] [--keep=dir] [--padToe=m]
+// --padToe: EXPERIMENT — the bench's toe cap (m) in place of roadMaxEmbankmentToe, pads only (mesh check skipped).
 import * as THREE from 'three'
 import { appendFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { RoadSystem } from '../src/road.js'
@@ -34,7 +37,8 @@ const SEEDS = (arg('seeds') || '281831').split(',')
 const NCAMP = Number(arg('camps') ?? 12)
 const OUT = arg('out'), KEEP = arg('keep')
 const shoulder = P.roadShoulderWidth ?? 2.5, fillS = P.roadFillSlope ?? 3, cutS = P.roadCutSlope ?? 1
-const maxToe = P.roadMaxEmbankmentToe ?? 10, clr = P.roadClearanceMargin ?? 0.25
+const PAD_TOE = arg('padToe') ? Number(arg('padToe')) : null
+const maxToe = PAD_TOE ?? P.roadMaxEmbankmentToe ?? 10, clr = P.roadClearanceMargin ?? 0.25
 const REACH = PAD_RIM_HOLD + shoulder + maxToe
 
 function rng (s) { let a = s >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 } }
@@ -100,6 +104,10 @@ for (const s of SEEDS) {
         campPads.push({ q: ev.pad, kind: 'camp', type: 'camp' })
     }
     road.setCampPads(campPads.map(c => c.q))
+    if (PAD_TOE != null) {   // the experiment: the same carve with the bench's own toe cap
+        const orig = road._poiPadCarve, alt = Object.create(road, { _params: { value: { ...road._params, roadMaxEmbankmentToe: PAD_TOE } } })
+        road._poiPadCarve = (...a) => orig.apply(alt, a)
+    }
     const all = [...poiPads, ...campPads]
 
     // Height grids for every pad, pads on, then pads off (the base), on the chunk vertex lattice.
@@ -132,7 +140,10 @@ for (const s of SEEDS) {
     const rows = []
     for (const [pi, { q, kind, type }] of all.entries()) {
         const G = grids[pi], n = G.n, at = (i, j) => j * n + i
-        let worst = { grade: 0 }, worstBase = 0, step = 0
+        let worst = { grade: 0 }, worstBase = 0, step = 0, over = 0
+        const dY = q.y - clr
+        for (let i = 0; i < n * n; i++) if (G.sd[i] > 0 && G.sd[i] <= REACH)
+            over = Math.max(over, G.h[i] - Math.max(dY, G.hb[i]), Math.min(dY, G.hb[i]) - G.h[i])
         const consider = (a, b, len, ia, ja, ib, jb) => {
             const sa = G.sd[a], sb = G.sd[b]
             if (Math.min(sa, sb) > REACH || Math.max(sa, sb) <= 0) return          // outside the ring
@@ -148,7 +159,7 @@ for (const s of SEEDS) {
             consider(at(i, j + 1), at(i + 1, j), Math.SQRT2, i, j + 1, i + 1, j)   // PlaneGeometry's diagonal
         }
         const row = { seed: s, kind, type, x: +q.x.toFixed(1), z: +q.z.toFixed(1), y: +q.y.toFixed(2),
-                      grade: +worst.grade.toFixed(2), baseGrade: +(worst.base ?? 0).toFixed(2), step: +step.toFixed(2) }
+                      grade: +worst.grade.toFixed(2), over: +over.toFixed(2), baseGrade: +(worst.base ?? 0).toFixed(2), step: +step.toFixed(2) }
         if (worst.a != null) {
             // Which way is "out" at the worst edge, and what the ring is asked to do there.
             const [ain, aout] = G.sd[worst.a] <= G.sd[worst.b] ? [worst.a, worst.b] : [worst.b, worst.a]
@@ -176,7 +187,8 @@ for (const s of SEEDS) {
             const cause = otherPad ? 'overlap-pad' : baseMoved > 0.1 ? 'overlap-road/stream'
                 : wOut > wIn + 0.02 ? 'selfref' : ring.capped ? 'cap' : 'ok'
             // Mesh vs analytic over the pad's chunks.
-            let mesh = 0
+            let mesh = PAD_TOE != null ? null : 0
+            if (mesh != null) {
             const cx0 = Math.floor(G.x0 / S), cx1 = Math.floor((G.x0 + n - 1) / S), cz0 = Math.floor(G.z0 / S), cz1 = Math.floor((G.z0 + n - 1) / S)
             for (let cz = cz0; cz <= cz1; cz++) for (let cx = cx0; cx <= cx1; cx++) {
                 const y = meshY(cx, cz)
@@ -187,9 +199,10 @@ for (const s of SEEDS) {
                     mesh = Math.max(mesh, Math.abs(y[zi * N + xi] - G.h[at(i, j)]))
                 }
             }
+            }
             Object.assign(row, { at: [xo, zo], dh: +ring.dh.toFixed(2), toe: +ring.toe.toFixed(1), capped: ring.capped,
                                  wIn: +wIn.toFixed(2), wOut: +wOut.toFixed(2), otherPad, baseMoved: +baseMoved.toFixed(2),
-                                 wallH: +wallH.toFixed(2), profGrade: +gMax.toFixed(2), reversals, cause, mesh: +mesh.toFixed(3) })
+                                 wallH: +wallH.toFixed(2), profGrade: +gMax.toFixed(2), reversals, cause, mesh: mesh == null ? null : +mesh.toFixed(3) })
         }
         rows.push(row)
         if (KEEP) { mkdirSync(KEEP, { recursive: true }); writeFileSync(`${KEEP}/${s}-${pi}.json`, JSON.stringify({ ...row, q, x0: G.x0, z0: G.z0, n, h: [...G.h].map(v => +v.toFixed(3)), hb: [...G.hb].map(v => +v.toFixed(3)) })) }
