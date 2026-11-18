@@ -100,6 +100,8 @@ function freshState (P, x, y, z, heading) {
     strutComp: [...eq.strutComp], strutCompVel: [0, 0, 0, 0],
     drivetrain: { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },
     rimForce: [0, 0, 0, 0], rimHazard: [0, 0, 0, 0],
+    // BUG-216: the damage model's per-step inputs (src/vehicle-state.js) — without bumpForce it never banked a bump stop
+    bumpForce: [0, 0, 0, 0], rimForceRoad: [0, 0, 0, 0], slipVel: [0, 0, 0, 0], tireFlat: [0, 0, 0, 0], brakeTorque: [0, 0, 0, 0],
   }
 }
 const snapshot = (vs) => JSON.parse(JSON.stringify(vs))
