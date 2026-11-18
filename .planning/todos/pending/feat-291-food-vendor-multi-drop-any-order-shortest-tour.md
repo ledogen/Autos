@@ -23,7 +23,7 @@ Owner: "For a food vendor job where you have to deliver to multiple locations. I
 
 **Census, 20 random seeds, 600 multi-drop offers** (min / median / max): tour 1.95 / 5.25 / 10.77 km; par 2.4 / 6.7 / 13.9 min; base pay $2.73 / 8.57 / 21.34. Every tour is no longer than the old greedy nearest-next order, and 0 of 600 were shorter: on these seeds the old order was already optimal, so the gain is the any-order freedom and the re-planned GPS, not saved distance. After reordering, a single leg can be shorter than the 1.05 km courier floor; the whole tour cannot.
 
-**Close-out proof (2026-11-18).** 40 affected gates green after merging main (paper-tour, paper-reroute, paper-guide-keep, paper-route, demolition-site and story-poi among them); the only red was test/gps-readout.mjs, whose fixture still faked a multi-drop hand-over with the old leg counter, fixed in the fixture (the code was right).
+**Close-out proof (2026-11-18).** 40 affected gates green after merging main (paper-tour, paper-reroute, paper-guide-keep, paper-route, demolition-site and story-poi among them); two reds, both stale fixtures, no code change: test/gps-readout.mjs faked a multi-drop hand-over with the old leg counter; test/cdp-smoke.mjs's demolition step read `__site().tour` / `.guide.customers`, which the TourGuide lift moved to `.guide.tour` / `.guide.leg`. Smoke (all steps) and pad-e2e then pass.
 
 ## Tracker
 - [x] Built: the stops in the shortest order from the giver (the paper round's planTourJob), any order at the wheel, the GPS re-planned from the truck (paper-route.js TourGuide, now shared with the demolition site)
@@ -43,5 +43,5 @@ Owner: "For a food vendor job where you have to deliver to multiple locations. I
 src/mission.js, src/paper-route.js, src/main.js, test/multi-drop-tour.mjs, test/story-poi.mjs, test/gates.mjs
 
 ## Log
-- 2026-11-18 close-out: merged main clean (4bbf7424); 40 affected gates green after the gps-readout fixture fix; census 600 offers, 0 shorter than greedy; smoke + pad-e2e results in wip/feat-291/{smoke,pad}.log (see the lane handoff). Owed card feat291-multi-drop-drive.
+- 2026-11-18 close-out: merged main clean (4bbf7424); 40 affected gates green after the gps-readout fixture fix; census 600 offers, 0 shorter than greedy; smoke (rerun after the accessor fix) green, pad-e2e ALL OK, at load 7.9 / 12.4. Owed card feat291-multi-drop-drive.
 - 2026-11-18 minted by the orchestrator from the owner's inbox.
