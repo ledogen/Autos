@@ -1,8 +1,8 @@
 // test/pad-rumble.mjs — FEAT-247 gate: the controller-vibration mixer (src/pad-rumble.js).
 //   silent at rest; bounded 0..1 even with every source at once; monotone in impact force (and in every source);
-//   the master scales it (off = silent); the continuous signals read off a vehicle state are 0 at rest and rise with
-//   slip, road texture and speed; the motor mapping (texture and slip on the light motor, impacts on the heavy one).
-import { rumbleMix, continuousSignals, RUMBLE_GAINS } from '../src/pad-rumble.js'
+//   the master scales it (off = silent); the continuous signals read off a vehicle state are 0 at rest AND in a smooth
+//   cruise (BUG-206), and rise with slip, a jolt, loose ground and speed; the motor mapping (texture and slip on the light motor, impacts on the heavy one).
+import { rumbleMix, continuousSignals, strutHighPass, RUMBLE_GAINS } from '../src/pad-rumble.js'
 
 let fail = 0
 const ok = (c, m) => { console.log(`  ${c ? '✓' : '✗'} ${m}`); if (!c) fail = 1 }
@@ -35,14 +35,21 @@ ok(every, 'every source is monotone')
 ok(rumbleMix({ impact: 1 }, RUMBLE_GAINS, 0).strong === 0, 'master off = silent')
 ok(rumbleMix({ impact: 0.4 }, RUMBLE_GAINS, 0.5).strong < rumbleMix({ impact: 0.4 }, RUMBLE_GAINS, 1).strong, 'low is quieter than normal')
 
-const rolling = (o) => ({ velocity: { x: 0, y: 0, z: -20 }, slipVel: [0, 0, 0, 0], strutCompVel: [0, 0, 0, 0], ...o })
-const rough = continuousSignals(rolling({ strutCompVel: [0.5, -0.5, 0.5, -0.5] }), {}, [])
-const smooth = continuousSignals(rolling({}), {}, [])
-ok(smooth.rough === 0 && rough.rough > 0.5, `road texture: smooth ${smooth.rough}, washboard ${rough.rough.toFixed(2)}`)
-const slow = continuousSignals({ ...rolling({ strutCompVel: [0.5, -0.5, 0.5, -0.5] }), velocity: { x: 0, y: 0, z: -2 } }, {}, [])
-ok(slow.rough < rough.rough, 'the same texture is felt less at a crawl')
+// BUG-206: cruising on smooth asphalt commands exactly zero; texture is loose ground, a jolt is a change of ground slope.
+const rolling = (o) => ({ velocity: { x: 0, y: 0, z: -20 }, slipVel: [0.3, 0.2, 0.4, 0.3], strutCompVel: [0.1, -0.1, 0.1, -0.1], ...o })
+const PAVED = 0.1   // main.js _looseSurfaceFactorAt on asphalt (params.dustPavedFactor)
+const cruise = continuousSignals(rolling({}), { dustPavedFactor: PAVED, _wheelRunout: [0, 0, 0, 0] }, [], PAVED, 0.28)   // 0.28 m/s = the asphalt high band's max at 80 km/h
+ok(Object.values(cruise).every(v => v === 0) && JSON.stringify(rumbleMix(cruise)) === '{"strong":0,"weak":0}', `smooth cruise at 72 km/h: every level exactly 0 ${JSON.stringify(cruise)}`)
+const kerb = continuousSignals(rolling({ velocity: { x: 0, y: 0, z: -8 } }), {}, [], PAVED, 2.5)
+ok(kerb.jolt > 0.5 && rumbleMix(kerb).strong > 0 && rumbleMix(kerb).weak > 0, `a kerb strike (2.5 m/s high band at 8 m/s) jolts both motors: ${kerb.jolt.toFixed(2)}`)
+const gravel = continuousSignals(rolling({}), {}, [], 1, 0), crawl = continuousSignals({ ...rolling({}), velocity: { x: 0, y: 0, z: -3 } }, {}, [], 1, 0)
+ok(gravel.rough > 0.9 && crawl.rough < gravel.rough && rumbleMix(gravel).weak > 0, `loose ground buzzes, more with speed: ${crawl.rough.toFixed(2)} at 3 m/s, ${gravel.rough.toFixed(2)} at 20`)
 ok(continuousSignals(rolling({ slipVel: [8, 0, 0, 0] }), {}, []).slip > 0.5 && continuousSignals(rolling({}), {}, [true, false, false, false]).flat > 0.9
-  && continuousSignals(rolling({}), { _wheelRunout: [0.04, 0, 0, 0] }, []).bent > 0.9, 'slip, a flat and a bent wheel each read when rolling')
+  && continuousSignals(rolling({}), { _wheelRunout: [0.04, 0, 0, 0] }, []).bent > 0.9, 'a slide, a flat and a bent wheel each read when rolling')
+// The high-pass: a 1.2 Hz body heave of 0.3 m/s is mostly rejected, a kerb's 0.1 s strut spike passes.
+const run = (f) => { const st = { x: [0, 0, 0, 0], y: [0, 0, 0, 0] }; let m = 0; for (let k = 0; k < 300; k++) { const v = f(k / 60); const o = strutHighPass([v, v, v, v], 1 / 60, st); if (k > 60) m = Math.max(m, o) } return m }
+const heave = run(t => 0.3 * Math.sin(2 * Math.PI * 1.2 * t)), spike = run(t => (t > 2 && t < 2.1 ? 2 : 0))
+ok(heave < 0.1 && spike > 1, `strut high-pass: 1.2 Hz heave 0.30 → ${heave.toFixed(3)} m/s, kerb spike 2 → ${spike.toFixed(2)}`)
 const tex = rumbleMix({ rough: 1, slip: 1 }), hit = rumbleMix({ impact: 1 })
 ok(tex.strong === 0 && tex.weak > 0 && hit.strong > hit.weak, 'mapping: texture and slip on the light motor only, an impact mostly on the heavy one')
 

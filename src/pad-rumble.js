@@ -9,12 +9,22 @@
  * Sources read signals the sim already computes; nothing here adds physics. Two kinds:
  *   KICKS       events (`padHit(name, s)` from the code that already detects them): a level 0..1 that decays on real
  *               time, so a kick still dies out while the game is paused.
- *   CONTINUOUS  levels read off the vehicle state each fixed step (`stepPadRumble`): slip, road texture, a flat, a
- *               bent wheel. They go stale (silent) when the steps stop.
+ *   CONTINUOUS  levels read off the vehicle state each fixed step (`stepPadRumble`): slip, a jolt, loose-surface
+ *               texture, a flat, a bent wheel. They go stale (silent) when the steps stop.
+ *
+ * BUG-206 (owner, Windows: "pretty much always a Rumble all the time when I'm driving down the road"): cruising on a
+ * smooth road with no slip and no hit commands EXACTLY zero; rumble is an event. The old texture source read the mean
+ * |strut velocity|, which on asphalt is the body riding the road's long undulations and the deck's facet kinks
+ * (p50 0.10 m/s at 60 km/h over its 0.08 floor: 58 % of the drive buzzing). Two sources replace it, each on its real cause:
+ *   jolt   the strut velocity's high band (first-order high-pass at JOLT_HP_HZ, above the ~1–2 Hz body modes) divided by
+ *          the speed: that is the change of ground slope under the wheel, a geometric quantity, so its floor holds at any
+ *          speed. Asphalt reads ≤ 0.014 (deck facets), off-road ground up to ~0.07, a kerb lip or a pothole edge far more.
+ *   rough  loose ground under the truck (main.js _looseSurfaceFactorAt, the same surface the tyre audio's rolling gravel
+ *          and the dust read), scaled by speed: gravel and dirt buzz, asphalt is silent.
  *
  * MAPPING (a real truck sends a shock through the frame and a texture through the wheel): impacts, bump stops,
- * landings, a blowout, a missed shift, engine start/seize and a flat's thump go mostly to the STRONG motor; road
- * texture, tyre slip, a bent wheel's wobble and ABS go to the WEAK motor.
+ * landings, a blowout, a missed shift, engine start/seize and a flat's thump go mostly to the STRONG motor; surface
+ * texture, tyre slip, a bent wheel's wobble and ABS go to the WEAK motor; a jolt goes to both.
  *
  * RUMBLE_GAINS is the one table of per-source strength, [strong, weak] at a source level of 1; RUMBLE_PARAMS.vibration
  * is the player's master (settings page: off / low / normal / high). Pure apart from `performance.now()` in the driver.
@@ -33,7 +43,8 @@ export const RUMBLE_GAINS = {
   engineSeize: [0.70, 0.10],   // the running engine seizes
   abs:         [0.40, 0.70],   // ABS dumped a cylinder (the pedal kick-back); also the left trigger where the pad has one
   slip:        [0.00, 0.35],   // tyre slip / wheelspin
-  rough:       [0.00, 0.40],   // road texture (washboard, rumble strips, gravel), scaled by speed
+  jolt:        [0.40, 0.40],   // a sharp change of ground slope under a wheel: a kerb lip, a pothole edge, a rock (BUG-206)
+  rough:       [0.00, 0.40],   // loose-surface texture (gravel, dirt), scaled by speed; asphalt is silent (BUG-206)
   flat:        [0.45, 0.15],   // running on a flat tyre
   bent:        [0.25, 0.10],   // a bent (out-of-round) wheel
 }
@@ -56,28 +67,50 @@ export function rumbleMix (sig, gains = RUMBLE_GAINS, master = RUMBLE_PARAMS.vib
   return { strong: clamp01(strong * master), weak: clamp01(weak * master) }
 }
 
-/** The continuous levels from the vehicle state. `flat` = the damage model's per-wheel flat flags. */
-export function continuousSignals (vs, params, flat) {
+/** The continuous levels from the vehicle state. `flat` = the damage model's per-wheel flat flags; `loose` = the
+ *  surface under the truck, main.js _looseSurfaceFactorAt (params.dustPavedFactor on asphalt … 1 off-road); `strutHp`
+ *  = the largest |high-passed strut velocity| this step, m/s (strutHighPass). */
+export function continuousSignals (vs, params, flat, loose = 0, strutHp = 0) {
   const v = vs.velocity, speed = v ? Math.hypot(v.x, v.z) : 0
-  const grip = vs.slipVel, sv = vs.strutCompVel, ro = params?._wheelRunout
-  let slip = 0, tex = 0, bent = 0, anyFlat = false
+  const grip = vs.slipVel, ro = params?._wheelRunout
+  let slip = 0, bent = 0, anyFlat = false
   for (let i = 0; i < 4; i++) {
     slip = Math.max(slip, grip?.[i] || 0)
-    tex += Math.abs(sv?.[i] || 0) / 4
     bent = Math.max(bent, ro?.[i] || 0)
     if (flat?.[i]) anyFlat = true
   }
-  const roll = ramp(speed, 1, 12)   // texture and wobble are felt rolling; at a standstill there is none
+  const roll = ramp(speed, 1, 12)   // a flat and a wobble are felt rolling; at a standstill there is none
   return {
     slip: ramp(slip, 2, 10),
-    rough: ramp(tex, 0.08, 0.6) * roll,
+    jolt: ramp(strutHp / Math.max(speed, 2), JOLT_SLOPE_FLOOR, JOLT_SLOPE_FULL),
+    rough: ramp(loose, params?.dustPavedFactor ?? 0.1, 1) * ramp(speed, 2, 20),
     flat: anyFlat ? roll : 0,
     bent: ramp(bent, 0.002, 0.04) * roll,
   }
 }
 
+// BUG-206: the jolt's band and floor. Measured on the world rig (wip/bugs-pcl/rumble-trace.mjs, 2 random seeds, 30 and
+// 90 km/h): high-passed strut velocity ÷ speed on asphalt p99 0.011, max 0.014 (deck facets); off-road max 0.068.
+const JOLT_HP_HZ = 6             // Hz — above the body's heave/pitch modes, below the wheel hop
+const JOLT_SLOPE_FLOOR = 0.03    // ground-slope change: silent below (2× the asphalt maximum) …
+const JOLT_SLOPE_FULL = 0.3      // … full at a kerb lip's
+
+/** First-order high-pass of each corner's strut velocity at JOLT_HP_HZ; returns the largest |output|. `st` holds the
+ *  filter's memory ({ x: [4], y: [4] }), so a gate can run its own. */
+export function strutHighPass (sv, dt, st) {
+  const a = 1 / (1 + 2 * Math.PI * JOLT_HP_HZ * dt)
+  let m = 0
+  for (let i = 0; i < 4; i++) {
+    const x = sv?.[i] || 0
+    st.y[i] = a * (st.y[i] + x - st.x[i]); st.x[i] = x
+    m = Math.max(m, Math.abs(st.y[i]))
+  }
+  return m
+}
+
 const kicks = {}        // name → { s, t0 } (level at the time it was struck, performance.now() ms)
-let cont = { slip: 0, rough: 0, flat: 0, bent: 0 }, contAt = 0
+let cont = {}, contAt = 0
+const hp = { x: [0, 0, 0, 0], y: [0, 0, 0, 0] }
 let sentAt = 0, quiet = true
 const SEND_MS = 50, EFFECT_MS = 100, STALE_MS = 100
 
@@ -95,9 +128,9 @@ export function kickLevels (now = performance.now()) {
   return out
 }
 
-/** One fixed physics step: refresh the continuous levels. */
-export function stepPadRumble (vs, params, flat) {
-  cont = continuousSignals(vs, params, flat)
+/** One fixed physics step: refresh the continuous levels. `loose` as continuousSignals. */
+export function stepPadRumble (vs, params, flat, loose, dt) {
+  cont = continuousSignals(vs, params, flat, loose, strutHighPass(vs.strutCompVel, dt, hp))
   contAt = performance.now()
 }
 

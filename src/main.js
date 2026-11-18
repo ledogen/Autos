@@ -2819,7 +2819,7 @@ const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_
 const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
 // FEAT-246: the chase boom stops short of terrain (analytic height, no engine query) and of static solids and the road
 // group's bore lining (ONE ray per frame; camera-boom.js says why the deck under the truck does not shorten it).
-setCameraBoomProbe(makeBoomProbe(physicsEngine, (x, z) => terrainSystem.analyticHeight(x, z), GROUP_STATIC | GROUP_ROAD))
+setCameraBoomProbe(makeBoomProbe(physicsEngine, (x, z, y) => terrainSystem.analyticHeight(x, z, undefined, y), GROUP_STATIC | GROUP_ROAD))
 const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
 
 // ── FEAT-96: the strapped load — a freight job's, or the debug "Load Cargo" pick ─────────────
@@ -10928,7 +10928,7 @@ function loop (t) {
     if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout(); padHit('blowout') }
     // FEAT-120: the contact one-shots read the same per-step peaks the damage step just priced.
     stepContactAudio(vehicleState, RANGER_PARAMS._tireFz, PHYSICS_DT)
-    stepPadRumble(vehicleState, RANGER_PARAMS, damageModel.flat)   // FEAT-247: slip, road texture, a flat, a bent wheel
+    stepPadRumble(vehicleState, RANGER_PARAMS, damageModel.flat, _looseSurfaceFactorAt(vehicleState.position.x, vehicleState.position.z), PHYSICS_DT)   // FEAT-247 / BUG-206: slip, a jolt, loose-surface texture, a flat, a bent wheel
     // FEAT-126: a shift forced with the clutch in grinds, and is a damage event in its own right. Its
     // 2 % wear is under the damage screen's per-sample drop threshold, so it raises the alert here,
     // like a landed impact does below.
