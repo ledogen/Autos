@@ -73,6 +73,8 @@ export class InventorySystem {
      *   onChange()         — anything changed; the screen re-renders
      *   onDrop(entry)      — FEAT-143: an entry was dropped; main.js lays it on the ground
      *   effects            — { [hook]: () => void } for items whose effect is built (ITEMS[id].use)
+     *   notes              — BUG-211: { [hook]: (entry) => { text, keep } | null } what using it now would waste (a meal
+     *                        on a full stomach): the screen shows `text`, and with `keep` (wholly wasted) use() keeps the unit
      */
     constructor (deps = {}) {
         this._slotCap = deps.slotCap ?? (() => 8)
@@ -80,6 +82,7 @@ export class InventorySystem {
         this._onChange = deps.onChange ?? (() => {})
         this._onDrop = deps.onDrop ?? (() => {})
         this._effects = deps.effects ?? {}
+        this._notes = deps.notes ?? {}
     }
 
     /** Begin a story run with the starting kit. Called from onRegionLive beside economySystem.start(). */
@@ -131,6 +134,9 @@ export class InventorySystem {
     pending () { return runInventory.pending }
     nameOf (id) { return ITEMS[id]?.name ?? id }
     usable (id) { const h = ITEMS[id]?.use; return !!(h && this._effects[h]) }
+
+    /** BUG-211: what using entry `e` now would waste ({ text, keep }, the screen's hint), or null. */
+    useNote (e) { return this._notes[ITEMS[e.id]?.use]?.(e) ?? null }
 
     /** Slots a grant of `n` × `id` would need right now. */
     _need (id, n) {
@@ -334,7 +340,7 @@ export class InventorySystem {
      */
     use (id, i = runInventory.entries.findIndex(e => e.id === id)) {
         const e = runInventory.entries[i]
-        if (e?.id !== id || !this.usable(id)) return false
+        if (e?.id !== id || !this.usable(id) || this.useNote(e)?.keep) return false
         if (ITEMS[id].freshH) _ages(e)   // the unit spent is the oldest: its age is still the last one (iceCooler reads it)
         if (--e.n <= 0) runInventory.entries.splice(i, 1)
         if (this._effects[ITEMS[id].use](e) === false) {
@@ -426,7 +432,7 @@ export class InventorySystem {
 
     /** One entry as the screen reads it — a truck slot, or an item lying on the ground (FEAT-143). */
     rowOf (e) {
-        return { id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id),
+        return { id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id), note: this.useNote(e),
                  equipped: !!e.equipped, cond: e.cond ?? null, flat: !!e.flat,
                  tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, left: e.left ?? ITEMS[e.id].uses ?? null, gal: e.gal ?? null, fresh: this.freshLeft(e), contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
     }

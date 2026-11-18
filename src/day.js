@@ -152,6 +152,9 @@ export const runState = {
     day: 1,   // 1-based day index of the current run; increments at each midnight crossed
 }
 
+/** BUG-211: a meal adding under this many hours is wholly wasted; one losing over MEAL_WASTE_H is partly. [DEFAULT] */
+export const MEAL_KEEP_H = 0.05, MEAL_WASTE_H = 0.25
+
 export class DaySystem {
     /**
      * @param {object} deps - adapter into main.js (keeps this module free of engine imports):
@@ -332,7 +335,26 @@ export class DaySystem {
      */
     eat (holdH) {
         runLog.on && runLog.event('eat', { holdH, fedLeftH0: this.fedLeftH(), hungry: this.hungry() })
-        this._fedUntilH = Math.max(this._fedUntilH, this.clockH() + holdH)
+        this._fedUntilH = this.clockH() + Math.max(0, this.fedLeftH()) + this.mealGainH(holdH)
+    }
+
+    /**
+     * BUG-211: the hours a meal of `holdH` would add to fedLeftH() — eat()'s rule, so the eat refusal (main.js, a meal
+     * wholly wasted stays in the bag) and the eat preview can never disagree with it. Under the hold rule above the
+     * longer hold wins, so a second cooked potato (4 h) on a fresh first one adds 0. FEAT-250 (DEC-376) makes foods add
+     * up to a cap: change THIS line to its rule and eat() follows.
+     */
+    mealGainH (holdH) {
+        const left = Math.max(0, this.fedLeftH())
+        return Math.max(left, holdH) - left
+    }
+
+    /** BUG-211: what a meal of `holdH` would waste now: 'all' (adds under MEAL_KEEP_H: it stays in the bag), 'some'
+     *  (loses over MEAL_WASTE_H: eaten, warned first) or null. Null with hunger off. */
+    mealWaste (holdH) {
+        if (!DAY_PARAMS.hungerOn) return null
+        const gain = this.mealGainH(holdH)
+        return gain < MEAL_KEEP_H ? 'all' : holdH - gain > MEAL_WASTE_H ? 'some' : null
     }
 
     /** Past the last meal's hold. The energy box says so in its hunger word and bar (FEAT-198), never a number. */
