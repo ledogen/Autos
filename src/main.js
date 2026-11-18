@@ -19,7 +19,7 @@
 import * as THREE from 'three'
 import { LiveExposure } from './exposure.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, setBedGrip, syncChassisMass, rollBalance } from './physics.js'
+import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, setBedGrip, syncChassisMass, rollBalance, resetStepCarry } from './physics.js'
 import { HiLift, basin, rollDeg } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine, GROUP_STATIC, GROUP_ROAD } from './physics-engine.js'
@@ -40,7 +40,7 @@ import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90
 import { updateVehicle, setLaunchHold, setParkLock, setThrottleCut, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { PARK_SPEED } from './park-brake.js'
 import { makeIgnitionState, keyPosition, seized, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
-import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setCameraViews, setCameraBoomProbe, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setCameraViews, setCameraBoomProbe, setAimMode, isAiming, isPadLooking, snapCamera, getOrbitAngles } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
@@ -109,7 +109,7 @@ import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + fl
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_CALL, PAYCHECK, LARRY_PACK, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT, PHONE } from '../data/dialogue.js'
-import { TUTORIAL, PACK_TOSS, flatRadius } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149)
+import { TUTORIAL, PACK_TOSS, flatRadius, FIRING_CAM } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149); FEAT-288 P6: the firing's orbit
 import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
@@ -1030,14 +1030,22 @@ function debouncedRoadRebuild () {
 // SERIALIZED: concurrent calls (e.g. R pressed while a seed-regen's spawn warm is still pumping)
 // queue behind the in-flight seat instead of interleaving two async spawn probes' setRadius/warm
 // state — the R lands right after the current one finishes, on the fully-loaded road.
+// BUG-224: a seat may await a network build (a teleport, a lab exit) for a second or more, and the world can already
+// have changed under the truck's OLD pose (leaving the lab swaps the lab slab for real ground ~200 m above it). Stepping
+// that pose buried the truck and threw it out at 400 m/s. So the sim holds (_heldPause) while ANY seat is pending —
+// counted here, the one door every caller goes through. buildNow never rejects (a failed or stale build resolves
+// false and the seat lands on the analytic terrain), and the count drops in a finally, so a seat that throws still
+// hands the sim back.
+let _seatsPending = 0
 let _reseatChain = Promise.resolve()
 function _reseatTruckAtSpawn () {
+  _seatsPending++
   _closeMenus()   // BUG-183: a seat leaves the place every open menu belongs to (the pump, the shop, the tow's owed answer)
   // BUG-71: a seat is ALWAYS a world arriving at once — cold load, R-reset, or a Path-B reseed —
   // and the band the props scattered against is still filling in behind it. Owe a whole-ring pass
   // here rather than at each of those three call sites, so no future spawn path can forget.
   owePropSweep()
-  const run = () => _reseatTruckAtSpawnInner()
+  const run = () => _reseatTruckAtSpawnInner().finally(() => { _seatsPending-- })
   _reseatChain = _reseatChain.then(run, run)
   return _reseatChain
 }
@@ -1185,6 +1193,7 @@ async function _reseatTruckAtSpawnInner () {
   const { position, quaternion, velocity, angularVelocity, engineHealth, fuel, ...fresh } =
     makeVehicleState(RANGER_PARAMS, _gameMode === 'story' && !_spawnOverride?.running ? IGN_OFF : IGN_RUNNING)   // DEC-362: the tutorial's reset leaves it running
   Object.assign(vehicleState, fresh)
+  resetStepCarry(RANGER_PARAMS)   // BUG-224: and the step-to-step carry physics keeps on params
   // FEAT-50: a story tank survives every seat — a teleport, a tow — the way damage does; anywhere
   // else a seat is a fresh truck with a full tank.
   if (_gameMode !== 'story') vehicleState.fuel = fuel
@@ -1218,6 +1227,7 @@ function _reseatOnRegionGround () {
   vehicleState.quaternion.copy(seat.quat)
   vehicleState.velocity.set(0, 0, 0)
   vehicleState.angularVelocity.set(0, 0, 0)
+  resetStepCarry(RANGER_PARAMS)   // BUG-224
   snapCamera()
   _restrapFreight()
   damageModel.resetTransients()
@@ -1250,7 +1260,7 @@ let _cardHold = false
 // FEAT-62: the paper-route scenario's definition while one runs. It is story mode under a guard: the run is built
 // fresh, never written to the player's save slot, never discards it, and leaves for the main menu (_startPaperScenario).
 let _paperScenario = null
-function _heldPause () { return _resumeHold || _runEndOpen || _tutCardOpen || (_pauseOpen && scenarioSystem.isActive()) || (_cardHold && dialogueSystem.holding) }
+function _heldPause () { return _seatsPending > 0 || _resumeHold || _runEndOpen || _tutCardOpen || (_pauseOpen && scenarioSystem.isActive()) || (_cardHold && dialogueSystem.holding) }
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
@@ -4432,6 +4442,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('mousedown', e => {
   if (!dialogueSystem.holding) return
   if (e.target.closest?.('.lil-gui')) return    // the debug panel keeps working during a briefing
+  if (e.button === 2 && _firingCam) return      // FEAT-288 P6: a right drag turns the firing's orbit (camera.js), not the card
   e.preventDefault()
   e.stopPropagation()
   if (_dlgFill()) return
@@ -4672,10 +4683,6 @@ const OPENING_START = { day: 0, hour: 7 }   // FEAT-170: the firing's clock. DEC
 // FEAT-184 (DEC-159, the exact-24h default): free will opens 24 h after the firing — the paycheck's clock and a skip's floor.
 const FREE_WILL = { day: OPENING_START.day + 1, hour: OPENING_START.hour }
 const FREE_WILL_H = (FREE_WILL.day - 1) * 24 + FREE_WILL.hour   // as daySystem.clockH() reads it
-// The slow orbit of the joint's ROAD face: radius (m), the start's angle short of square-on (rad), the
-// turn rate (rad/s ≈ 3°/s — square-on at ~7 s, the far side of it by the end of a slow read), and the
-// aim point's height over the pad (m).
-const FIRING_CAM = { radius: 16, swing: 0.35, rate: 0.05, lift: 2 }
 let _openingRun = false   // onRegionLive → go-live: this new run plays the opening
 // FEAT-184 (DEC-157/158): while a run plays its tutorial on the tutorial seed, the run's own world to load back at the
 // tutorial's end (the run save carries it); null otherwise.
@@ -4683,7 +4690,7 @@ let _returnSeed = null
 // DEC-158 is read as later runs only: the first playthrough ever (on the tutorial seed, DEC-149) stays on it. The switch:
 // true gives a run that plays the tutorial on the tutorial seed a random world back at its end too.
 const TUT_SEED_RETURNS = false
-let _firingCam = null     // { p, theta0, t } while the firing's cards are up
+let _firingCam = null     // { p, theta, phi, idle } while the firing's cards are up (FIRING_CAM, data/tutorial.js)
 let _eveningGuide         // undefined = not planned yet: the line to the tutorial's current stop, planned once per stop (not saved)
 const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // FEAT-184 stage 3 (the worst day): a played opening starts on a nearly empty tank, filled at the snack's station (DEC-306).
@@ -5237,7 +5244,11 @@ function _playOpening () {
   // DEC-157: the card's second load — the intro played on the run's own world, so straight to mom's call.
   if (_returnSeed) { dialogueSystem.restoreSeen([DLG.firing]); _playTutorial(); return true }
   const q = _joint()
-  if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
+  if (q) {
+    _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, idle: Infinity }
+    setCameraFocus(_firingCam.p, { theta: _firingCam.theta, radius: FIRING_CAM.radius, rightDrag: true })
+    _firingCam.phi = getOrbitAngles().phi
+  }
   _cardHold = true
   dialogueSystem.play(DLG.firing, FIRING, () => {
     _firingCam = null
@@ -5303,11 +5314,17 @@ function _returnToRunWorld () {
   void _startStory(seed, s.world, s.gearbox, s)
 }
 
-/** Per frame, before updateCamera: turn the firing's orbit (camera.js focus seam, as camp and the service screen use). */
+/** Per frame, before updateCamera: turn the firing's orbit (camera.js focus seam, as camp and the service screen use).
+ *  FEAT-288 P6: the orbit's angles moved since the last frame = the player turned it (right stick or right drag, camera.js
+ *  applies both under the focus): the slow turn holds from there, and eases back in FIRING_CAM.resumeS s after the last touch. */
 function _updateFiringCam (dt) {
-  if (!_firingCam) return
-  _firingCam.t += dt
-  setCameraFocus(_firingCam.p, { theta: _firingCam.theta0 + FIRING_CAM.rate * _firingCam.t, radius: FIRING_CAM.radius })
+  const c = _firingCam
+  if (!c) return
+  const { theta, phi } = getOrbitAngles()
+  if (theta !== c.theta || phi !== c.phi) { c.theta = theta; c.phi = phi; c.idle = 0 }
+  else c.idle += dt
+  c.theta += FIRING_CAM.rate * dt * Math.min(1, Math.max(0, (c.idle - FIRING_CAM.resumeS) / FIRING_CAM.easeS))
+  setCameraFocus(c.p, { theta: c.theta, radius: FIRING_CAM.radius, rightDrag: true })
 }
 
 // First-use cards (data/dialogue.js TUT), and Larry's welcome through the same door: queued, then
@@ -5458,7 +5475,9 @@ gpsSystem = new GpsSystem(scene, {
     // starts THERE; the map's start pin and the source's lit park spot are the waypoint.
     if (missionSystem?.mission?.approach) return null
     // FEAT-170: the opening's evening has no job, only the way home to mom's (FEAT-184: the morning's, back to the joint).
-    if (_tutDrive()) return _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
+    // BUG-203: no line (so no "Wrong way", gps.js _updateWrongWay) while the opening owns the screen — the firing, the
+    // intro's card, mom's call — until her pedals card ('tut-drive') says to follow it.
+    if (_tutDrive()) return _firingDay() && !dialogueSystem.has('tut-drive') ? null : _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
     // FEAT-267: a demolition job's GPS is the leg to the next cluster on the remaining tour (_updateSite).
     if (_site?.guide.leg && _site.mission === missionSystem.mission && missionSystem.isOnJob()) return _site.guide.leg
     if (s === 'countdown' || s === 'staging' || s === 'running') return _tutLine(missionSystem.guideRoute())
