@@ -26,6 +26,7 @@ const { DamageModel, TRACK_IDS } = await import('../../src/damage.js')
 const { RockslideDirector, candidateAt, runAt, SLIDE } = await import('../../src/rockslide.js')
 const { mulberry32 } = await import('../../src/seed.js')
 const { buildWorld } = await import('./world-rig.mjs')
+const { ackermann } = await import('./physics-replay.mjs')
 
 const DT = 1 / 60, LANE = 2.5
 
@@ -72,7 +73,7 @@ export async function driveSlide (w, debris, cand, v, lane, seed, { maxS = 40 } 
   const dmg = new DamageModel({ params: P }); dmg.setAll(1); dmg.publish(P)
   const dir0 = new RockslideDirector({ debris, road: () => w.road, heightAt, rng: mulberry32(seed) })
   await Promise.all(dir0._kinds.map(k => debris.load(k)))
-  dir0.trigger()
+  dir0.armed = true   // armed as the rate arms it (not the forced debug trigger)
   const rec = { v, lane, released: false, touched: false, rocks: 0, impacts: [], punct: 0, fatal: null, tRel: null, tTouch: null, minGap: Infinity }
   const fwd = new THREE.Vector3(), J = { x: 0, y: 0, z: 0 }, rp = new THREE.Vector3(), rq = new THREE.Quaternion(), qi = new THREE.Quaternion()
   let lastStream = 0, t = 0
@@ -85,9 +86,11 @@ export async function driveSlide (w, debris, cand, v, lane, seed, { maxS = 40 } 
     s = sNear
     if (s < 0 || s > L) break
     const tg = laneAt(s + dir * look)
-    const loc = new THREE.Vector3(tg.x - vs.position.x, 0, tg.z - vs.position.z).applyQuaternion(qi.copy(vs.quaternion).invert())
-    const alpha = Math.atan2(-loc.x, -loc.z)
-    vs.steerAngle = Math.max(-P.maxSteerAngle, Math.min(P.maxSteerAngle, Math.atan(2 * P.wheelbase * Math.sin(alpha) / look)))
+    // drive-soak's pursuit: heading from the body's forward, steer rate-limited, Ackermann onto the wheels.
+    const fw = fwd.set(0, 0, -1).applyQuaternion(vs.quaternion)
+    const al = Math.atan2(Math.sin(Math.atan2(tg.x - vs.position.x, tg.z - vs.position.z) - Math.atan2(fw.x, fw.z)), Math.cos(Math.atan2(tg.x - vs.position.x, tg.z - vs.position.z) - Math.atan2(fw.x, fw.z)))
+    const want = Math.max(-P.maxSteerAngle, Math.min(P.maxSteerAngle, Math.atan2(2 * P.wheelbase * Math.sin(al), look)))
+    vs.steerAngle += Math.max(-4.8 * DT, Math.min(4.8 * DT, want - vs.steerAngle)); vs.wheelSteerAngles = ackermann(vs.steerAngle, P)
     const vf = vs.velocity.dot(fwd.set(0, 0, -1).applyQuaternion(vs.quaternion))
     vs.throttle = Math.max(0, Math.min(1, (v - vf) * 0.5)); vs.brake = Math.max(0, Math.min(1, (vf - v) * 0.5))
     if (Math.abs(s - lastStream) > 20) { w.stream(vs.position.x, vs.position.z); lastStream = s }
@@ -114,6 +117,7 @@ export async function driveSlide (w, debris, cand, v, lane, seed, { maxS = 40 } 
       if (t - rec.tRel > 12) break
     }
     if (!Number.isFinite(vs.position.x)) { rec.nan = true; break }
+    if (process.env.HIT_TRACE && k % 30 === 0) { const q = laneAt(s); console.log(`t ${t.toFixed(1)} s ${s.toFixed(0)} off ${Math.hypot(q.x - vs.position.x, q.z - vs.position.z).toFixed(2)} v ${vf.toFixed(1)} dy ${(vs.position.y - (w.road.sampleRoadTopY(vs.position.x, vs.position.z) ?? NaN)).toFixed(2)} steer ${vs.steerAngle.toFixed(2)} pick ${dir0.pick ? ((dir0.pick.s - s) * dir).toFixed(0) : '-'} armed ${dir0.armed}`) }
   }
   rec.punct = dmg.flat.filter(Boolean).length
   rec.lost = +TRACK_IDS.reduce((a, id) => a + (1 - dmg.get(id)), 0).toFixed(3)

@@ -343,7 +343,7 @@ export class RockslideDirector {
       if (ahead < -5) { this.pick = null; return }                        // drove past it without a release (held too slow)
       const lat = this._latToTruck(p, truck)
       const T = arrivalS(p.face, lat)
-      if ((on.v >= this.P.minSpeed && releaseDue(ahead, on.v, T)) || (this._forced && parked)) this._release(p)
+      if ((on.v >= this.P.minSpeed && releaseDue(ahead, on.v, T)) || (this._forced && parked && Math.abs(ahead) <= 80)) this._release(p)
       return
     }
     // Scan ahead a few stations per frame for the first candidate the truck is still far enough from.
