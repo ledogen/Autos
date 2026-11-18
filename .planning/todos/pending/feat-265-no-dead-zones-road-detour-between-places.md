@@ -151,7 +151,14 @@ Results (46-seed census on the real build, `wip/feat-265/census-b2built.jsonl`, 
   a degree drop plus the region wall; not chased).
 - Seeds given roads: 13 of 46 (5 inside the region), km added mean 0.61, max 4.14 (most outside the region, in the
   warm band). The 33 seeds with no restore measure identically; `fingerprint-world` (six windows) identical to main.
-- Build cost: COST
+- Build cost (cold story-region build, 10 seeds x 3 repeats, main vs branch run side by side, main-thread retired
+  instructions): median -0.3 %, worst +1.0 % (3283391082, 2 restored roads, wall +380 ms); run-to-run noise is about
+  +-1.7 %, so the whole-build bench cannot see it. The restore pass timed alone (`wip/feat-265/b2diag.mjs`, 3 assembly
+  passes per build): 64 ms with nothing to restore (1264166411), 228 ms on the owner's seed, 785 ms on 1872706826.
+- A restored road is ordinary road downstream: on 2176144795 one was joined into a T by the overlap join (BUG-105).
+- Not done: the in-game freecam screenshot of a restored road.
+- Sheet: `wip/feat-265/b2-built.jpg` (six seeds before | after: the owner's, the four other seeds with an in-region
+  restore, and the new tutorial seed), `wip/feat-265/b2-owner.jpg` (his seed alone).
 
 ## Tracker
 - [x] The capture diagnosed: the stretch food vendor → Larry's, and the stage that removed the missing edge
@@ -183,6 +190,8 @@ Results (46-seed census on the real build, `wip/feat-265/census-b2built.jsonl`, 
 `src/road-graph.js` · `src/road.js` · `src/poi.js`
 
 ## Log
+- 2026-11-17: B2 built (`_v2RestoreDropped`, `urquhartEdges` dropped-side records); gate urquhart-restore 6/6;
+  fingerprint-world identical; census 46 seeds; tutorial-seed FAILS on 1872706826 (shop moves): owner call. Card feat265-b2-look.
 - 2026-11-17: minted by the orchestrator from the owner's capture and note.
 - 2026-11-17: diagnosed + 46-seed census + 5 options as routed overlays (wip/feat-265/, git-invisible); sheets
   overview.jpg + 6 seed sheets. Nothing in src/ changed. Owed card feat265-dead-zones-pick.
