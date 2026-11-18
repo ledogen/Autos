@@ -62,7 +62,9 @@ const JN_KMAX = 0.11     // 1/m — hard line in junction zones
 // crest pair on g:2,1,2:3,1,1 track −2.5 (s 810.7 −0.035 /m and s 820.2 −0.041 /m) is the same surface within 2 mm on
 // main; one sample between them moved 0.0297 → 0.0305 /m, across KFLAG, and the 15 m merge now counts the pair as two
 // (2039.1, 710.6). Sharpest unchanged (0.092 /m).
-const CEIL = { open: 19, junction: 202 }
+// junction 202 → 169 (2026-11-17, BUG-200 / DEC-409): a junction's recovery is held to the design maximum grade, so it
+// climbs back over a longer, gentler curve than the 38 % pass did and 31 junction kinks over KFLAG went away.
+const CEIL = { open: 19, junction: 169 }
 const JN_ZONE = 40       // m from a run end
 const WB = 2.85          // m — Ranger wheelbase: the span the chassis bridges
 const DS = 0.5

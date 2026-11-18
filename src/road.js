@@ -11905,7 +11905,10 @@ export class RoadSystem {
             // The plane is handed on so the hold can evaluate it AT each sample's XZ: two legs held on
             // one plane then agree wherever their ribbons overlap, which a per-leg grade LINE (arc
             // distance × slope along the leg's own departure) only approximates on a curving leg.
-            return { is, flatCamber, y, slopeAway, plane: plane || null, vNode2, inside, hold: is ? this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_PLANE) : 0 }
+            // part (BUG-200): where this leg's pavement really parts from every sibling's, past the plane's hold cap — the
+            // design-maximum recovery may not climb out of pavement a sibling still shares. Lazy: only that recovery reads it.
+            return { is, flatCamber, y, slopeAway, plane: plane || null, vNode2, inside, hold: is ? this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_PLANE) : 0,
+                     part: is ? () => this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_SURFACE) : null }
         }
         return { jStart: nodeInfo(e.cellA, this._strandAtEnd(e.points, true), true), jEnd: nodeInfo(e.cellB, this._strandAtEnd(e.points, false), false) }
     }
@@ -12376,15 +12379,16 @@ export class RoadSystem {
                 // the deck's own slope leaving the node along this run (rise per metre into the run) — the recovery's
                 // tangent where no held sample lies past the node (BUG-200)
                 const deck = (j, i0, i1) => { const d1 = Math.abs(arcPos[i1] - arcPos[i0]) || 1; return (target(j, i1, d1) - target(j, i0, 0)) / d1 }
-                if (ej.jStart.is) this._recoverFromHold(arcPos, gradeY, pts, true, hS, RgS, reachCap, crestHold, ej.jStart.vNode2, own, deck(ej.jStart, 0, 1))
-                if (ej.jEnd.is) this._recoverFromHold(arcPos, gradeY, pts, false, hE, RgE, reachCap, crestHold, ej.jEnd.vNode2, own, deck(ej.jEnd, N - 1, N - 2))
+                const part = (j, h, keep) => j.part && h > 0 ? Math.max(h, Math.min(j.part(), span * 0.45, span - keep)) : h
+                if (ej.jStart.is) this._recoverFromHold(arcPos, gradeY, pts, true, hS, RgS, reachCap, crestHold, ej.jStart.vNode2, own, deck(ej.jStart, 0, 1), part(ej.jStart, hS, keepE))
+                if (ej.jEnd.is) this._recoverFromHold(arcPos, gradeY, pts, false, hE, RgE, reachCap, crestHold, ej.jEnd.vNode2, own, deck(ej.jEnd, N - 1, N - 2), part(ej.jEnd, hE, keepS))
             }
         }
     }
 
     // FEAT-82: bend the handoff past a deck hold into a vertical curve that satisfies the crest/sag
     // rule at the junction-approach design speed. See _applyJunctionBlend.
-    _recoverFromHold(arcPos, gradeY, pts, fromStart, hold, reach0, reachCap, crestHold, vNode2, own, deckSlope) {
+    _recoverFromHold(arcPos, gradeY, pts, fromStart, hold, reach0, reachCap, crestHold, vNode2, own, deckSlope, part = hold) {
         const N = arcPos.length
         if (N < 4) return
         const g = PAR_REF.g
@@ -12414,7 +12418,6 @@ export class RoadSystem {
         }
         const C = this._v2Costs()
         const capG = (C.gMaxRoad ?? 0.24) + (C.gradeTol ?? 0.14)   // the ceiling — a leg may be steep, never illegal
-        const maxReach = Math.max(0, reachCap - hold)
         // One solve: the smoothstep start projected onto the crest/sag rule (and the grade cap) over a free window
         // past the hold, widened ×1.5 up to the 45 % run cap until the residual fits. Residual = curvature violation
         // (m of second difference over the limit) across the window AND its pinned neighbours — the handoff into the
@@ -12422,8 +12425,8 @@ export class RoadSystem {
         // step size (the sweeps creep for a long time at ~1e-3 while the curve is already within 2 mm). A capped solve
         // (`over`) also counts metres of rise over its cap. `ext` = the sample arrays it works on (see ghost below).
         const solve = (ext, capAt, over) => {
-            const { s, y0, cC, cS, dAt, interior, edge = 0 } = ext
-            const M = s.length
+            const { s, y0, cC, cS, dAt, interior, edge = 0, hold } = ext
+            const M = s.length, maxReach = Math.max(0, reachCap - hold)
             let reach = Math.min(maxReach, Math.max(reach0, 1)), best = null, resid = Infinity, free = null
             for (let attempt = 0; attempt < 6; attempt++) {
                 const y = y0.slice(), r = reach
@@ -12443,7 +12446,7 @@ export class RoadSystem {
             return { best, resid, free, ok: resid < 0.02 }
         }
         const ship = (ext, r) => { if (r.best) for (let i = 0; i < ext.s.length; i++) if (r.free(i)) gradeY[i - ext.off] = r.best[i] }
-        const base = { s: arcPos, y0: gradeY.slice(), cC: cCrest, cS: cSag, dAt: dOf, interior: (i) => i > 0 && i < N - 1, off: 0 }
+        const base = { s: arcPos, y0: gradeY.slice(), cC: cCrest, cS: cSag, dAt: dOf, interior: (i) => i > 0 && i < N - 1, off: 0, hold }
         const ceilingPass = () => { const r = solve(base, () => capG, false); ship(base, r); return 'ceiling' }
         if (!own) return ceilingPass()
         // BUG-200 (DEC-409): the recovery is held to the DESIGN maximum — the solver's vocabulary cap gMaxRoad, or the
@@ -12461,8 +12464,11 @@ export class RoadSystem {
         // (6.483192797380411 > 6.483192797380407 on seed 11) free it, harmless only while nothing pushed on it.
         const EDGE = 1e-6
         const iN = fromStart ? 0 : N - 1, iA = fromStart ? 1 : N - 2
-        const ghost = dOf(iA) > hold + EDGE && Number.isFinite(deckSlope)
-        let ext = { ...base, edge: EDGE }
+        const ghost = dOf(iA) > Math.max(hold, part) + EDGE && Number.isFinite(deckSlope)
+        // A leg whose pavement still overlaps a sibling's past the plane's 30 m hold cap (a merge shape) keeps its start
+        // values out to where they part: climbing out at the design maximum there tore 0.48 m across shared pavement
+        // (BUG-179 site #13, seed 209215080), where the old pass's late ceiling climb happened to stay on the deck.
+        let ext = { ...base, edge: EDGE, hold: Math.max(hold, part) }
         if (ghost) {
             const h = Math.abs(arcPos[iA] - arcPos[iN]), yG = gradeY[iN] - deckSlope * h
             const vN2 = Math.max(1, vAt(iN)) ** 2
@@ -12473,7 +12479,7 @@ export class RoadSystem {
             const iG = pre ? 0 : N, iNx = iN + off
             s[iG] = pre ? arcPos[0] - h : arcPos[N - 1] + h; y0[iG] = yG
             cC[iNx] = cG; cS[iNx] = sG
-            ext = { s, y0, cC, cS, off, edge: EDGE, dAt: (i) => i === iG ? -h : dOf(i - off), interior: (i) => i - off > 0 && i - off < N - 1 }
+            ext = { s, y0, cC, cS, off, edge: EDGE, hold: ext.hold, dAt: (i) => i === iG ? -h : dOf(i - off), interior: (i) => i - off > 0 && i - off < N - 1 }
         }
         const segG = (i) => { const k = i - ext.off; return k < 0 || k >= N - 1 ? 0 : Math.abs(own[k + 1] - own[k]) / ((arcPos[k + 1] - arcPos[k]) || 1) }
         const rung = (gc) => solve(ext, (i) => (i - ext.off < 0 || i - ext.off >= N - 1) ? Infinity : Math.min(capG, Math.max(gc, segG(i))), true)
