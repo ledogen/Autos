@@ -52,7 +52,7 @@ check(tunneled.length >= 1, `seed ${SEED} region has tunneled edges: ${tunneled.
 // FEAT-68: the ceiling is the SOLVER's contract, not a round number — gMaxBore (0.18) plus its
 // documented cap tolerance: the DP allows a half-quantum overshoot (yStep 0.5 over a station of
 // L/round(L/10) ≈ 9.5-10.5 m → up to ~2.6 pp; see the M0 record), and the vSmooth corner
-// rounding may add a hair within its ±0.25 m bound. +0.03 covers both (measured worst 20.53%);
+// rounding never steepens a grade (BUG-216: a convex mix of its neighbours). +0.03 covers both (measured worst 20.53%);
 // anything above it is a real solver violation, not quantisation.
 // THE PORTAL IS A TRANSITION, NOT A LINE (owner ruling 2026-09-07). A span boundary does NOT sit on
 // the profile's own station grid: _v2GradePts solves at nSt = round(L/10) stations, but a spliced run
@@ -71,7 +71,7 @@ check(tunneled.length >= 1, `seed ${SEED} region has tunneled edges: ${tunneled.
 //
 // The +0.03 on each cap is the SOLVER's own tolerance, not a round number: the DP allows a half-quantum
 // overshoot (yStep 0.5 over a station of L/round(L/10) ≈ 9.5-10.5 m → up to ~2.6 pp; see the M0 record)
-// and vSmooth corner rounding adds a hair within its ±0.25 m bound. Anything above is a real violation.
+// and vSmooth corner rounding never steepens a grade (BUG-216). Anything above is a real violation.
 const maxGrade = 0.18 + 0.03           // interior of a bore
 const maxGradeMouth = 0.24 + 0.03      // within the grace band — the road cap still binds here
 const GRACE_M = 15

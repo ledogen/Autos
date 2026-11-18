@@ -5674,37 +5674,34 @@ export class RoadSystem {
         // small the grade step). A short low-pass over the shipped samples turns each corner into a
         // vertical curve. Endpoints stay pinned (node heights are a boundary condition) and the
         // window is deliberately ~2 stations: long enough to round a corner, far too short to touch
-        // a real crest, which spans many stations. Near a BORE it is bounded ±0.5·yStep, so it can
-        // never move the deck across a class boundary and invent or destroy a span.
+        // a real crest, which spans many stations.
         //
-        // BUG-90 (owner dip 2, seed 2840746967 −169,−625): ONLY near a bore. Everywhere the bound bit,
-        // it bit as a TRANSLATION, not a rounding: at a big station corner (−22 % → +1.4 %, which
-        // roundCrests approved as R 43 m) every sample in the window wanted > 0.25 m, all saturated,
-        // and the corner shipped lifted +0.25 m but still sharp — R 17 m, ~3× the sag load the rule
-        // priced, enough to bottom the suspension. Unbounded it ships R 74 m. Only bore stations
-        // become spans (tunnelSpans below), so the bound is kept within ±2 stations of one.
+        // UNBOUNDED, everywhere. A ±0.25 m bound on the displacement bit as a TRANSLATION, not a rounding:
+        // at a big station corner every sample in the window wanted more than the bound, all saturated,
+        // and the corner shipped lifted but still sharp. BUG-90 (dip 2, seed 2840746967 −169,−625:
+        // −22 % → +1.4 %, R 17 m, bottomed) removed it on open road; BUG-216 (seed 660454599 (461, 976):
+        // a bore floor's 0 % → 10 % corner shipped at 7.3 %/m, R 14 m, bottomed a new truck at 60 km/h)
+        // removed the near-bore remnant. What the bound was kept for there holds by construction:
+        //   • spans and portals: the bore/cut/fill CLASS lives on the solved stations (prof.cls, prof.segs,
+        //     extendBorePortals below); this pass writes only the 4 m samples, so it cannot move a span.
+        //   • the grade caps (gMaxBore in the tube): a [¼ ½ ¼] pass makes every new segment grade a convex
+        //     mix of its neighbours' (pinned ends included), so no grade ever exceeds the steepest
+        //     station grade it smooths. The bound broke this: clipping put back corners and overshoot.
+        //   • tube, lining, collider, containment, the portal cut: all read this deck (runProfile), so
+        //     they move with it — MESH == PHYSICS in the bore by construction.
+        // Its one real effect is the deck's departure from the priced stations: ≤ ~0.4 m at a big corner
+        // (BUG-90 census p99 0.15 m), inside the slack every cover check already carries.
         const wSm = this._params?.roadV2?.vSmoothM ?? 0
         if (wSm > 0 && n > 4) {
             const last = n - 1
             const dsPoly = L / last
             const passes = Math.max(1, Math.min(24, Math.round(2 * Math.pow(Math.min(wSm, 2.5 * (L / nSt)) / (2 * dsPoly), 2))))
-            const y0 = new Float64Array(n)
-            for (let i = 0; i < n; i++) y0[i] = pts[i].y
-            const cur = Float64Array.from(y0), nxt = Float64Array.from(y0)
+            const cur = Float64Array.from(pts, (q) => q.y), nxt = Float64Array.from(cur)
             for (let p2 = 0; p2 < passes; p2++) {
                 for (let i = 1; i < last; i++) nxt[i] = 0.25 * cur[i - 1] + 0.5 * cur[i] + 0.25 * cur[i + 1]
                 for (let i = 1; i < last; i++) cur[i] = nxt[i]
             }
-            const BOUND = 0.25   // m — half the DP's coarse y quantum
-            const nearBore = (t) => {
-                const ks = Math.round(t * nSt / L)
-                for (let k = Math.max(0, ks - 2); k <= Math.min(nSt, ks + 2); k++) if (prof.cls[k] === CLS.BORE) return true
-                return false
-            }
-            for (let i = 1; i < last; i++) {
-                const d = cur[i] - y0[i]
-                pts[i].y = y0[i] + (nearBore(clArc[i]) ? Math.max(-BOUND, Math.min(BOUND, d)) : d)
-            }
+            for (let i = 1; i < last; i++) pts[i].y = cur[i]
         }
         // Portal placement: slide each bore's portals out to the cheapest buildable spot (the deck
         // is untouched — only which stations are bored changes). Last, because it breaks the
