@@ -2580,7 +2580,7 @@ const STEPS = [
     check(!await lightsUp(), "FEAT-288 P4: the headlights card came up with the tire still in the cart (it waits for the check-out)")
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')   // FEAT-212: the cart
     check(await until(async () => await lightsUp() && await js('document.getElementById("svc-screen").checkVisibility()'), 3000),
-      "FEAT-288 P4 (DEC-422): the tire's check-out put no headlights card up in the shop (it waited for the shift)")
+      `FEAT-288 P4 (DEC-422): the tire's check-out put no headlights card up in the shop (it waited for the shift): ${await js('JSON.stringify({ tut: window.__tutorial(), dlg: document.getElementById("dlg-text")?.textContent.slice(0, 60), shop: document.getElementById("svc-screen").checkVisibility(), flat: window.__damage.flat, wd: window.__worstDay() })')}`)
     check(await js('window.__econ.money') === m0, `the tire was not on mom (FEAT-184): $${m0} → $${await js('window.__econ.money')}`)
     console.log(`  the fix: energy ${(await js('window.__day().energyH()')).toFixed(2)} h before (${await js('window.__day().stage()')})`)
     await tap('Escape'); await tap(' ')   // out of the shop, off the brake: the night drive, under the lights' card
