@@ -141,25 +141,23 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-18 10:30; rewrite, don't append)
+## Current state (2026-11-18 11:45; rewrite, don't append)
 
-**Main** (nothing pushed): landed on 11-18, in order: FEAT-268, int-1117d, UI batch, FEAT-288 P7 + P1, int-1118a, numbers, FEAT-26 rock slides (DEC-425), FEAT-288 P2, FEAT-290, BUG-218, FEAT-265 option 3 (DEC-427), alerts (BUG-215, BUG-204 partly), FEAT-292 camp crossing (DEC-424), FEAT-279 sign dive (docs), FEAT-288 P3a, FEAT-291 multi-drop, FEAT-293 driving AI (DEC-428), BUG-214 option 1 (pad spike fix), BUG-216 tunnel profile corner, FEAT-288 P5 quest marker, BUG-225 crash fix. Play build :8002 = main. Combined smoke on main run c PASSED (39 steps + pad-e2e) through FEAT-291; FEAT-293 and BUG-214 landed after it, each green on its branch. The hourly check-in cron runs to 11:07 (session-only).
+**Main** (nothing pushed): landed on 11-18, in order: FEAT-268, int-1117d, UI batch, FEAT-288 P7 + P1, int-1118a, numbers, FEAT-26 rock slides (DEC-425), FEAT-288 P2, FEAT-290, BUG-218, FEAT-265 option 3 (DEC-427), alerts (BUG-215, BUG-204 partly), FEAT-292 camp crossing (DEC-424), FEAT-279 sign dive (docs), FEAT-288 P3a, FEAT-291 multi-drop, FEAT-293 driving AI (DEC-428), BUG-214 option 1 (pad spike fix), BUG-216 tunnel profile corner, FEAT-288 P5 quest marker, BUG-225 crash fix, FEAT-288 P4 world fixes, BUG-221 portal shelf. Play build :8002 = main. Combined smoke on main run c PASSED (39 steps + pad-e2e) through FEAT-291; FEAT-293 and BUG-214 landed after it, each green on its branch. The hourly check-in cron runs to 11:07 (session-only).
 
-**10:30 note:** BUG-225 (FEAT-292's throw on seed 6666666) is LANDED: a one-line guard in src/mission.js `_roll` + a gate in expedition-camp; 343 of its 400-seed sweep were clean at landing (logs CarGame-land-gps/wip/bug-225/sweep-{a,b}.log: read the rest) and its agent's browser run had not finished. The Chrome slots are the bottleneck all morning.
-- land/bug-221-portal-shelf @ 5c5d4fca (CarGame-land-feat180-dusk): fix + gate green, pad-e2e ALL OK, smoke failed once on the DEC-357 blink flake; my re-run writes `wip/bug-221/smoke2.log` (ends `SMOKE2-EXIT n`). LAND when the opening step passes there. Its census also found ribbons/pads up to 0.86 m (one point 1.99 m, seed 948023748) above the analytic deck within 25 m of run ends: NOT ticketed yet (next free BUG-226).
-- land/bug-224-nan-seat (CarGame-land-211d): cause found (the sim steps the truck at the lab pose for ~1.1 s while the seat awaits the network build; launched to 142 km; a later seat goes NaN). Second agent building: pending-seat hold, full seat reset, finite guard at physics.js Step 3e.
-- P5's sheet shows a large cyan GPS start arrow filling a third of the screen at mom's door: asked the owner whether it is real; ticket it if so.
+**11:45 note:** the hourly cron has run out (its last firing was the 11:07 slot). BUG-225's sweep reached 367 seeds, 0 throws. BUG-221 landed after its smoke re-run passed (40 steps); its census found ribbons/pads up to 0.86 m (one point 1.99 m, seed 948023748) above the analytic deck within 25 m of run ends: NOT ticketed yet (next free BUG-226; same family as BUG-223). P4 landed (ring at mom's, tutorial legs on the map, flat at 264 m, lights card at check-out); P3b must settle which line the map shows once the player drops their own waypoint on the station. Both P4 and P5 sheets show a large cyan GPS start arrow at mom's door: asked the owner whether it is real.
+- land/bug-224-nan-seat (CarGame-land-211d): second agent building the fix (pending-seat hold, full seat reset, finite guard at physics.js Step 3e), in browser runs.
+- Started 11:40: CarGame-land-feat34 · land/feat-278-clutter-stream (Opus; card `feat278-clutter-look`) and CarGame-land-feat180 · land/bug-222-return-spot (Opus; 400-seed no-throw sweep required).
 
 **Running agents (worktree · branch · what):**
 - CarGame-content · land/feat-288-p3b-map-shop · P3b close-out (Opus): browser proof, sheet, DEC-356 coverage.
 - CarGame-spare-base · land/feat-288-p6-opening · P6 + BUG-203 (Opus). Card `feat288-opening-look`.
-- CarGame-land-feat180 · land/feat-288-p4-world · P4 (Opus).
 - CarGame-spare · land/feat-276-277-paper-throw · thrown-paper physics + halo (Opus). Card `paper-throw-try`.
 The four FEAT-288 branches all touch src/main.js: land them one at a time, re-merging main into the next and re-running tut-gate + the smoke's tutorial steps.
 
 **Held for the owner:** land/feat-275-280-mailboxes @ 88cde5c9 (CarGame-land-211d): lone roadside mailboxes conflict with the FEAT-71 anchor rule and DEC-398 (his call, card `mailboxes-look`); the roadside ones need a ~6-line draw hook in src/main.js (`wip/mailboxes/main-hook.txt`). BUG-200 option E (@ 86776580, :3282) with card `bug216-bottoming-spots` (sag-limit the ramp foot first? recommended). BUG-217 round 2 (:3890 @ a5640ad2). `feat279-signs-dive`. `bug214-pad-walls-pick` (siting rejects pads too steep to bank: moves 74/324 POIs). FEAT-288: 12 lines awaiting his wording. BUG-219 map tabs. FEAT-285 "initial cost". BUG-218 rev-matched shift. Drive cards: `feat265-b2-look`, `feat292-camp-crossing-play`, `feat291-multi-drop-drive`, `feat293-driving-ai-watch`, `feat26-rockslides-story-drive`; `reward-pool-dilution`, `feat290-yard-props-pick`.
 
-**Queue:** FEAT-288 P8 (speaker slide; after the four above land); FEAT-278 clutter streaming; BUG-222; BUG-220; PERF-53 (quiet machine); BUG-202's Ultra GPU A/B. The playtest bench refuses to start: "host's audio clock is stalled: restart coreaudiod" (a system service: ask the owner).
+**Queue:** FEAT-288 P8 (speaker slide; after the four above land); BUG-220; PERF-53 (quiet machine); BUG-202's Ultra GPU A/B. The playtest bench refuses to start: "host's audio clock is stalled: restart coreaudiod" (a system service: ask the owner).
 
 **Next free ids:** DEC-429 · BUG-226 · FEAT-294 · PERF-54 · ASSET-92.
 
