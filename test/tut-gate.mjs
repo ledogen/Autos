@@ -7,7 +7,7 @@
 // 3b. P3a's lessons (FEAT-288 P3a): the flat → diagnostics → inventory → spare → tow path, break camp under Katie's talk,
 //     eating only the lesson's item, the sleep card's slider, and between cards (BETWEEN) the inventory / damage screen
 //     locked while the shop, the camp card, the job card and the tow stay free.
-// 4. Release (BUG-183): no step → everything allowed, and main.js hands the gate null outside the tutorial and after a
+// 4. Release (BUG-183) and the quest mark (P5): no step → everything allowed, and main.js hands the gate null outside the tutorial and after a
 //    run's end (the browser half — nothing marked after a skip — is test/cdp-smoke.mjs's opening step).
 
 import { readFileSync, readdirSync } from 'node:fs'
@@ -38,6 +38,7 @@ for (const [name, c] of cards) {
     for (const [, id] of q.matchAll(/data-id="(\w+)"/g)) ok(!!ITEMS[id], `${name}: data-id ${id} is an item`)
   }
   for (const q of c.hi ?? []) ok(isSelector(q), `${name}: hi '${q}' is a selector`)
+  if (c.quest) ok(!!ITEMS[c.quest], `${name}: quest '${c.quest}' is an item`)
 }
 ok(steps >= 10, `the existing lesson cards are steps (${steps} found, ≥ 10)`)
 for (const a of LOCKED) ok(actions.has(a), `LOCKED '${a}' is a BINDINGS action`)
@@ -108,8 +109,12 @@ ok(!BETWEEN.allow.some(q => !isSelector(q)), 'BETWEEN unlocks no locked action')
 for (const a of actions) ok(allows(a, null), `no step: '${a}' allowed`)
 ok(allowsEl(el('cp-break', ['#camp-panel']), null) && allowsEl(el('dmg-icon', ['#hud-icons']), null), 'no step: every element allowed')
 const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
-ok(/initTutGate\(\(\) => !_tutDrive\(\) \|\| _runEnded \|\| !storySystem\.isActive\(\) \? null\s*: stepFor\(/.test(main),
+ok(/const _tutStep = \(\) => !_tutDrive\(\) \|\| _runEnded \|\| !storySystem\.isActive\(\) \? null\s*: stepFor\(/.test(main)
+  && /initTutGate\(_tutStep\)/.test(main),
   'main.js: the step is null outside the tutorial (skip, end), after the run\'s end and outside a story run; else stepFor')
+// P5: the quest mark is read off that same step every frame (no state of its own), so it goes when the step does.
+ok(/function _questMark \(\) \{\n  const id = _tutStep\(\)\?\.quest\n/.test(main) && /_dayStop\(\) === 'pack' \? _TUT_PACK/.test(main),
+  'main.js: the quest mark reads _tutStep().quest; the pack is marked while it is the stop')
 // The sleep card's value lock is the button's own disabled state, recomputed from the tutorial's state on every sync — so a
 // skip, the night's end or a reload (fresh DOM, _firingDay() read off the save) leaves Sleep live.
 ok(/go\.disabled = _firingDay\(\) && /.test(main) && !/cp-sleep-go[^\n]*disabled = true/.test(main), 'main.js: Sleep is greyed only while _firingDay() (DEC-426 Q1)')
