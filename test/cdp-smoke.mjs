@@ -2468,6 +2468,7 @@ const STEPS = [
     // (her breakfast card clears itself the moment a lunch is gone; this run ate two at night, so it may already be down: DEC-359)
     check(await js('window.__inv.use("packedLunch")'), 'no packed lunch for breakfast')
     morn += await readCards()   // mom's reminder (DEC-422)
+    if (!saidAny(/^Mom: Now go get that paycheck, honey/)) morn += await readCards()   // her card, in person, may come up under the breakfast card's stale wait (recorded, not turned)
     check(morn >= 1 && saidAny(/^Mom: Now go get that paycheck, honey/), `no reminder in the morning: ${JSON.stringify(said.slice(-3))}`)
     check(await until(async () => !/hungry/.test(await stage()), 1000), `breakfast did not feed the driver ("${await stage()}")`)
     if (await panel()) await tap('Escape')   // her sleep card, if it is still up over the morning
