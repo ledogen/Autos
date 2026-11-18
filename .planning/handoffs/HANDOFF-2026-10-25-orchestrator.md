@@ -141,13 +141,13 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-18 08:30; rewrite, don't append)
+## Current state (2026-11-18 09:30; rewrite, don't append)
 
-**Main** (nothing pushed): landed on 11-18, in order: FEAT-268, int-1117d, UI batch, FEAT-288 P7 + P1, int-1118a, numbers, FEAT-26 rock slides (DEC-425), FEAT-288 P2, FEAT-290, BUG-218, FEAT-265 option 3 (DEC-427), alerts (BUG-215, BUG-204 partly), FEAT-292 camp crossing (DEC-424), FEAT-279 sign dive (docs), FEAT-288 P3a, FEAT-291 multi-drop, FEAT-293 driving AI (DEC-428), BUG-214 option 1 (pad spike fix). Play build :8002 = main. Combined smoke on main run c PASSED (39 steps + pad-e2e) through FEAT-291; FEAT-293 and BUG-214 landed after it, each green on its branch. The hourly check-in cron runs to 11:07 (session-only).
+**Main** (nothing pushed): landed on 11-18, in order: FEAT-268, int-1117d, UI batch, FEAT-288 P7 + P1, int-1118a, numbers, FEAT-26 rock slides (DEC-425), FEAT-288 P2, FEAT-290, BUG-218, FEAT-265 option 3 (DEC-427), alerts (BUG-215, BUG-204 partly), FEAT-292 camp crossing (DEC-424), FEAT-279 sign dive (docs), FEAT-288 P3a, FEAT-291 multi-drop, FEAT-293 driving AI (DEC-428), BUG-214 option 1 (pad spike fix), BUG-216 tunnel profile corner. Play build :8002 = main. Combined smoke on main run c PASSED (39 steps + pad-e2e) through FEAT-291; FEAT-293 and BUG-214 landed after it, each green on its branch. The hourly check-in cron runs to 11:07 (session-only).
 
 **KNOWN CRASH ON MAIN:** FEAT-292's `_evenRequisition` throws in `PoiSystem.build` on seed 6666666 (`src/mission.js:1290`, `pEnd` undefined). Fix in progress: CarGame-land-gps · land/bug-225-camp-crossing-throw (Opus): root cause, 400-seed sweep, gate, ticket BUG-225. LAND AT ONCE when green. If the owner asks, the alternative is reverting the FEAT-292 merge (56111a8a).
 
-**Ready when its proof finishes:** land/bug-216-bottoming-spots @ 33cc22b6 (CarGame-land-feat180-dusk): tunnel profile corner. 84/84 affected gates green; its smoke was running at 08:25 (`wip/bug-216/fix/smoke.log`), pad after. It touches src/road.js like BUG-214 (landed) : merge main into it or check the merge is clean, and re-run road-tunnel + vertical-curvature + poi-pad-spike + tutorial-seed on main after.
+**09:30 note:** the BUG-225 fix has three commits on its branch (677b5613 fix, gate, ticket) and its 400-seed sweep + smoke were still running; the Chrome slots are the bottleneck (four lanes queued). Also started at 09:25: CarGame-land-feat180-dusk · land/bug-221-portal-shelf (Opus) and CarGame-land-211d · land/bug-224-nan-seat (Opus; it removes the smoke's re-seat workaround).
 
 **Running agents (worktree · branch · what):**
 - CarGame-content · land/feat-288-p3b-map-shop · P3b close-out (Opus): browser proof, sheet, DEC-356 coverage.
@@ -159,7 +159,7 @@ The four FEAT-288 branches all touch src/main.js: land them one at a time, re-me
 
 **Held for the owner:** land/feat-275-280-mailboxes @ 88cde5c9 (CarGame-land-211d): lone roadside mailboxes conflict with the FEAT-71 anchor rule and DEC-398 (his call, card `mailboxes-look`); the roadside ones need a ~6-line draw hook in src/main.js (`wip/mailboxes/main-hook.txt`). BUG-200 option E (@ 86776580, :3282) with card `bug216-bottoming-spots` (sag-limit the ramp foot first? recommended). BUG-217 round 2 (:3890 @ a5640ad2). `feat279-signs-dive`. `bug214-pad-walls-pick` (siting rejects pads too steep to bank: moves 74/324 POIs). FEAT-288: 12 lines awaiting his wording. BUG-219 map tabs. FEAT-285 "initial cost". BUG-218 rev-matched shift. Drive cards: `feat265-b2-look`, `feat292-camp-crossing-play`, `feat291-multi-drop-drive`, `feat293-driving-ai-watch`, `feat26-rockslides-story-drive`; `reward-pool-dilution`, `feat290-yard-props-pick`.
 
-**Queue:** FEAT-288 P8 (speaker slide; after the four above land); FEAT-278 clutter streaming; BUG-221 portal mesh shelf (MESH == PHYSICS break, repro in the ticket); BUG-224 NaN seat after drive → lab → story; BUG-222; BUG-220; PERF-53 (quiet machine); BUG-202's Ultra GPU A/B. The playtest bench refuses to start: "host's audio clock is stalled: restart coreaudiod" (a system service: ask the owner).
+**Queue:** FEAT-288 P8 (speaker slide; after the four above land); FEAT-278 clutter streaming; BUG-222; BUG-220; PERF-53 (quiet machine); BUG-202's Ultra GPU A/B. The playtest bench refuses to start: "host's audio clock is stalled: restart coreaudiod" (a system service: ask the owner).
 
 **Next free ids:** DEC-429 · BUG-226 · FEAT-294 · PERF-54 · ASSET-92.
 
