@@ -8983,12 +8983,7 @@ export class RoadSystem {
         // footprint. `latDist` gates it to zero inside the ribbon + shoulder, so this line cannot
         // change the road surface; with no pads set (free roam, every gate) it is a null check.
         const pq = this._poiPadCarve(wx, wz, rawAmp, latDist)
-        if (pq) {
-            cs = {
-                blendW: Math.max(cs ? cs.blendW : 0, pq.blendW),
-                gradeY: cs ? pq.gradeY * pq.dom + cs.gradeY * (1 - pq.dom) : pq.gradeY,
-            }
-        }
+        if (pq) cs = this._withPoiPad(cs, pq)
 
         // Junction-pad carve (first-class pad footprint, incl. the back-arc bulb) composed with the leg
         // + connector carve — never LESS coverage than any alone, and smooth where they overlap (all ride
@@ -10568,6 +10563,25 @@ export class RoadSystem {
         return { blendW, gradeY: co.gradeY * dom + cs.gradeY * (1 - dom) }
     }
 
+    /**
+     * BUG-214: the POI / camp bench `pq` (_poiPadCarve) composed over the run + connector carve `cs` as a second
+     * earthwork LAYER: the road's carve first, then the bench pulls THAT surface toward its own design by `pq.dom`
+     * (the road gate × the bench's own falloff). h = h_road + d·(benchY − h_road) is a convex mix, so the ground
+     * always lies between the bench, the road's design and the terrain: a spike is impossible by construction.
+     * It replaces max(blendW) with a dom-weighted target, which let the road's target leak in under the BENCH's
+     * coverage — BUG-129's leak the other way round: a road 35 m up the hill whose toe only just reached (cs.blendW
+     * 0.001, gradeY 16 m above the bench) took 39 % of the target at bench weight 0.61, a 3.6 m spike beside a camp
+     * pad (seed 281831). Shared by _sampleCarveWorld and the terrain mesh (_buildCarveTable): mesh == collision.
+     */
+    _withPoiPad(cs, pq) {
+        const d = pq.dom
+        if (!cs) return d > 0 ? { blendW: d, gradeY: pq.gradeY } : null
+        if (!(d > 0)) return cs
+        const c = (1 - d) * cs.blendW
+        const blendW = d + c
+        return { blendW, gradeY: (d * pq.gradeY + c * cs.gradeY) / blendW }
+    }
+
     _mergeCarve(a, b, dRib = Infinity) {
         if (!a) return b || null
         if (!b) return a
@@ -10778,8 +10792,8 @@ export class RoadSystem {
      *     and story mode" — true BY CONSTRUCTION rather than by tuning. A pad can never move the
      *     ribbon, its shoulder, or its camber.
      *
-     * Returned `dom` is the composition weight (see the call sites): the bench DOMINATES its own
-     * footprint and feathers back to the leg cross-section at its rim. It cannot use _mergeCarve —
+     * Returned `dom` is the composition weight (_withPoiPad, the one composition both call sites use): the
+     * bench DOMINATES its own footprint and feathers back to the leg cross-section at its rim. It cannot use _mergeCarve —
      * that gives the leg priority everywhere it reaches, which on a fill embankment is the whole
      * pad, and the bench would silently do nothing.
      *
