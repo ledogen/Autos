@@ -9224,9 +9224,10 @@ function _syncPauseSave (live = storySystem.isActive() && !storySystem.isEnterin
   saveBtn.disabled = !!why
   const whyEl = document.getElementById('pm-save-why')
   if (whyEl.textContent !== (why ?? '')) whyEl.textContent = why ?? ''
-  // One way out (owner, 2026-10-30): save & exit replaces "main menu" while it can save.
+  // FEAT-270 / DEC-411 (owner, 2026-11-17): a story run has no "main menu" button at all. The way out is save & exit,
+  // which needs the truck parked; a moving truck leaves by "give up" (pm-towel, FEAT-146). Free roam keeps main menu.
   const menuBtn = document.getElementById('pm-menu')
-  if (menuBtn) menuBtn.style.display = live && !why ? 'none' : ''
+  if (menuBtn) menuBtn.style.display = live ? 'none' : ''
   // The ways out of a run to free roam / the lab are dev features (owner, 2026-10-30): in story mode they
   // show only while the debug panel is open (backtick), and follow the toggle live. Free roam keeps them.
   const dev = _gui.domElement.style.display !== 'none'
