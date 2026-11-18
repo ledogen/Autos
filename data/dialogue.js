@@ -198,7 +198,7 @@ export const TUT = {
     'tut-drive': [{ speaker: 'Mom', text: `Drive safe, honey. <span class="dlg-key">W</span> and <span class="dlg-key">S</span> `
         + `are the gas and the brake; steer with <span class="kc-kb"><span class="dlg-key">A</span> and <span class="dlg-key">D</span></span>`
         + `<span class="kc-pad">the <span class="dlg-key">left stick</span></span>. Follow the line home.` }],   // FEAT-174: kc-kb / kc-pad, one per input
-    'tut-park': [{ speaker: 'Mom', until: 'park', allow: [], hi: ['#poi-prompt'], text: `Pull over and park out front. Come to a full stop, then `
+    'tut-park': [{ speaker: 'Mom', until: 'park', allow: [], hi: ['#poi-prompt'], text: `Pull over and park out front, in the marked spot. Come to a full stop, then `
         + `<span class="kc-kb">tap <span class="dlg-key">Space</span></span><span class="kc-pad">tap <span class="dlg-key">RB</span></span> to set the handbrake.` }],
     // At hers that night, when her sleep card opens: glad you're home safe (DEC-325), then hunger and energy (DEC-315: the
     // owner's words; true of day.js — past the last meal's hold energy drains faster than an hour per hour, and low energy
