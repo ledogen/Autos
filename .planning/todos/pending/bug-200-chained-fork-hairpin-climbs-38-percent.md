@@ -12,9 +12,8 @@ lane: B
 # BUG-200: A chained fork leaves a hairpin that climbs 38 %
 
 ## Next steps
-Owner: pick on the owed card `bug200-hairpin-grade-pick` (sheet `wip/bug-200/sheet.jpg` in `CarGame-machine`). Then a
-fresh Lane B agent builds the pick on `land/bug-200-hairpin-grade` (option E is already prototyped there, c5052efd),
-with a gate that fails before and passes after.
+Built (option E, owner pick 2026-11-18) on `land/bug-200-hairpin-grade`, main merged, gates and smoke green. Owner: the
+look and the cost call on owed card `bug200-e-look` (sheet `wip/bug-200/sheet-e.jpg`). Landing waits on that answer.
 
 ## Summary
 The 38 % is not the chain and not the router. It is the junction's deck hold + recovery (FEAT-82, `_recoverFromHold`),
@@ -72,13 +71,25 @@ a mid-span crossing blend?), 74 % / 60 % where the solver itself built 85–89 %
 - [x] The site reproduced headlessly; grade profile main vs BUG-179, the stage that sets it named (junction recovery)
 - [x] Census: how many chained forks (and plain forks on main) exceed the design grade, on random seeds
 - [x] Fix options shown to the owner with before/after screenshots; "drop the road" among them
-- [ ] The owner's pick built, with a gate that fails before and passes after
+- [x] The owner's pick (E) built, with a gate that fails before and passes after (`test/junction-recovery-grade.mjs`; #9 24.2 %)
+- [x] Affected gates 79/79 + post-merge 47/47 green, deg2-leg-trim, tutorial-seed, cdp-smoke boot+story 38 steps
+- [ ] Owner's look and cost call (`bug200-e-look`), then landing
 
 ## Decisions
+- 2026-11-18, owner: option E (card `bug200-hairpin-grade-pick`).
 - 2026-11-17, owner: "id like to find a fix which might end up being to drop it all together."
 
+**Option E as built.** Leaving a junction the road first holds 24 %. If the crest/sag curvature limits forbid that, it
+takes the gentlest grade up to 38 % that fits; if none fits, the old behaviour.
+**Final census** (32 seeds, 3741 runs, `census-final2.jsonl`): runs > 30 % 1085 → 207; at the ceiling (≥ 37.5 %) 347 → 92;
+road > 30 % 20.6 → 7.8 km of 2247; median 24.0 / p95 31.3 %. #9 38.8 → 24.2 %. Known limit: 1070128399 node
+(−1870, −1390), routed at about 35 %: 38.2 → 35.1 %.
+**Cost** (per region, main thread, 4 seeds, load 7-9): road-height step base 3.78 Gi / 364 ms; E at fccc2160 12.17 Gi /
+1106 ms (3.2x); E now 6.75 Gi / 495 ms (1.79x). Per slice (one run's profile): median 4.1 Mi unchanged, p99 197 → 294 Mi,
+worst 247 → 570 Mi (about 42 ms, once per region build).
+
 ## Open questions
-- The pick: A, B, C, D or E (owed card `bug200-hairpin-grade-pick`). Recommendation: E.
+- The cost: road-height step 1.79x base (see Log). Owner: land, cap, or change (`bug200-e-look`).
 
 ## Links
 BUG-179, DEC-366, DEC-064, DEC-065, DEC-047, DEC-070, DEC-396, FEAT-82, QUAL-13
@@ -95,3 +106,6 @@ BUG-179, DEC-366, DEC-064, DEC-065, DEC-047, DEC-070, DEC-396, FEAT-82, QUAL-13
   tears still fixed (measure-E.json); site #13 (seed 209215080) shared-pavement step 0.11 → 0.48 m. Building E means
   making the tight pass respect the curvature rule (its residual tolerance lets small kinks through). World fingerprint
   not run: E moves every junction's recovery profile (profiles / surface / carve / tiles), and 8 more runs over 32 seeds.
+- 2026-11-18, Lane B: E built (rule above); perf 9e8984a7 (bit-identical on 4 seeds); main merged clean. Affected gates 79/79
+  (`gates-final.log`), post-merge 47/47, junction-recovery-grade, deg2-leg-trim, tutorial-seed, cdp-smoke boot+story 38 steps green.
+- 2026-11-18: final census and cost above; 35-site measure worst deck step 0.90 m @ (-1637, 1691), #13 0.39 m. Card `bug200-e-look` owed.
