@@ -1,0 +1,263 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>FEAT-279: road signs that tell the truth</title>
+<h1>Road signs that tell the truth about the road ahead</h1>
+<p>You asked for a proposal to make the sign system work: little signs before hairpins, steep grades and the like
+that match what you are about to drive. Nothing is built yet. This page gives what signs do today, measured; the one
+rule the system stands on; a menu of tiers to pick from; and the decisions, each under the part it depends on. The
+first option of each question is the recommendation. It is your call, not mine.</p>
+<p>Every number comes from a headless census of <b>12 random seeds</b> (2069442103, 700250272, 1571169822, 1500982618,
+453603903, 546567621, 1446648795, 631401382, 409343447, 1495008713, 2093458555, 252044885). Each seed's story region
+was built the way the game builds it: <b>552 km of road</b> in total, 46 km per region. "Per km per direction" means
+per kilometre of driving one way, since a sign faces one direction of traffic.</p>
+
+<h2>1. What signs do today</h2>
+<p><b>The world places no signs.</b> The seven sign models (ASSET-31) shipped on 2026-08-24, and the placement ticket
+(FEAT-72) was never built. So signs per km is zero for every type, on every seed.</p>
+<p>The only signs a player meets are <b>demolition targets</b>:</p>
+<ul>
+  <li><b>The work site's "old sign line"</b> stands 4 to 6 signs on the right shoulder of the last kilometre of the
+  job's route, facing the traffic. Each sign's type is drawn at random from all seven. I measured how often a randomly
+  placed sign would be true where it stands (5,351 random spots, both directions):</li>
+</ul>
+<table>
+  <tr><th>Sign</th><th>What would make it true</th><th>True at a random spot</th></tr>
+  <tr><td>Winding road</td><td>a bend needing at least 15 km/h of slowing starts 30 to 300 m ahead</td><td>27 %</td></tr>
+  <tr><td>Truck on a downgrade</td><td>at least 8 % downhill for 100 m, starting within 300 m</td><td>23 %</td></tr>
+  <tr><td>T intersection</td><td>a 3-way junction 30 to 250 m ahead</td><td>25 % (an upper bound: see section 4)</td></tr>
+  <tr><td>Crossroad</td><td>a 4-way junction 30 to 250 m ahead</td><td>1 %</td></tr>
+  <tr><td>STOP</td><td>a junction within 60 m</td><td>11 %</td></tr>
+  <tr><td>Rock slide area, Icy</td><td>nothing in the road data can vouch for them today</td><td>none</td></tr>
+</table>
+<p>Averaged over the seven types, about <b>1 old sign in 8 is true</b>. The other 7 lie. That breaks the rule FEAT-72
+was written around: <i>a sign that lies is worse than no sign</i>. It is short-lived (the job knocks them down), and
+question 9 asks what to do with it.</p>
+<ul>
+  <li><b>The expedition camp's turn-back signs</b> (ASSET-77) are hand-painted words ("KEEP OUT", "BEWARE") with no
+  claim about the road. They are fine as they are.</li>
+</ul>
+
+<h2>2. What a driver would want warning of, and has no sign for</h2>
+<p>All 552 km, both directions. "Needs slowing" uses par's own reference driver (<code>PAR_REF</code> in
+<code>src/par.js</code>): it accelerates out of each corner at par's acceleration with drag, and the bend's limit is
+√(μ·g·R) with par's μ = 0.72. "Hidden" means a driver cannot see the junction from stopping distance (1.5 s of
+reaction plus braking at 7 m/s²): either a crest is in the way, or the sight line leaves the road by more than 6 m
+on the inside of a bend, where trees and banks block it.</p>
+<table>
+  <tr><th>Hazard</th><th>Count (12 regions)</th><th>Density</th></tr>
+  <tr><td>Bends (radius under 300 m, turning at least 10°)</td><td>2,942</td><td>5.3 per km</td></tr>
+  <tr><td>Bend approaches needing ≥ 15 km/h of slowing</td><td>1,637</td><td>1.48 per km per direction</td></tr>
+  <tr><td>Bend approaches needing ≥ 30 km/h of slowing</td><td>939</td><td>0.85 per km per direction</td></tr>
+  <tr><td>Two or more such bends under 150 m apart (a "winding road")</td><td>214</td><td>0.19 per km per direction</td></tr>
+  <tr><td>Hairpins (turning 135° or more)</td><td>125, about 10 per region</td><td>0.23 per km; median radius 12 m</td></tr>
+  <tr><td>Grade ≥ 10 % held for ≥ 50 m</td><td>1,443</td><td>2.6 per km</td></tr>
+  <tr><td>Grade ≥ 15 % held for ≥ 50 m</td><td>868 (median 92 m long)</td><td>1.57 per km</td></tr>
+  <tr><td>Grade ≥ 15 % held for ≥ 150 m / ≥ 200 m</td><td>197 / 90</td><td>0.36 / 0.16 per km. Steepest: 38 %</td></tr>
+  <tr><td>Junctions (3-way / 4-way)</td><td>383 / 15</td><td>0.72 per km</td></tr>
+  <tr><td>Junction approaches hidden at stopping distance</td><td>584 of 1,147 (51 %): 459 by a bend, 216 by a crest</td><td>1.06 per km</td></tr>
+  <tr><td>Tunnels</td><td>178, mean 162 m long</td><td>0.32 per km</td></tr>
+  <tr><td>Causeways (road over a stream)</td><td>363</td><td>0.66 per km</td></tr>
+  <tr><td>Dead ends</td><td>11</td><td>0.02 per km: roads end at junctions, so almost none</td></tr>
+  <tr><td>Open-road sags that load the truck over 0.5 g at par's speed</td><td>155</td><td>0.28 per km</td></tr>
+  <tr><td>Junction sags (BUG-216's census)</td><td>3.3 per 10 km</td><td>you ruled these fair at junction speed (BUG-97)</td></tr>
+  <tr><td>Rough road (the low road-quality tier)</td><td>180 km</td><td>33 % of all road</td></tr>
+  <tr><td>Places (POIs)</td><td>27 per region</td><td>0.59 per km</td></tr>
+</table>
+<p>The takeaway: <b>these roads are dense with hazards</b>. A sign at every bend that needs slowing would be 1.5 per km
+each way, and a sign at every 15 % grade another 1.6. That is noise, and noise teaches a player to ignore signs. So
+every tier below picks a <b>threshold</b> that keeps the count low, and the thresholds are your questions.</p>
+
+<h2>3. The principle</h2>
+<p><b>A sign is a reading of the road's real geometry, made by the generator.</b> It is never decoration scattered
+for look. The road system already knows the truth at build time: each run's centreline gives the bend radius and
+direction, the graded deck gives the grade, the network graph gives the junction ahead and its legs, and the run
+carries its tunnel spans. A sign module reads those and places a sign only where its claim holds. This is your
+standing preference that the world's character should emerge from the model, applied to signs: a twisty road
+gets more signs because it is twisty.</p>
+<p>Three consequences:</p>
+<ul>
+  <li><b>A gate proves it.</b> (A gate is one of the automated headless tests <code>npm test</code> runs.) It walks
+  every placed sign and checks its claim against the centreline, and it fails on any false sign. FEAT-72 already asks
+  for this.</li>
+  <li><b>Same seed, same signs.</b> Placement is a pure function of the seed and the road (a pure function computes
+  only from its inputs, with no randomness of its own). Re-streaming a region reproduces it exactly (SM-INV-12).</li>
+  <li><b>A fixed reference, never the truck.</b> The brief suggested an advisory speed from the truck's lateral limit.
+  That cannot work: the truck is a random jalopy each run (SM-INV-7), and the world may not read the run (SM-INV-12).
+  A sign's number must come from a fixed constant, the way par does (SM-INV-2).</li>
+</ul>
+<dive-q id="principle" options="yes: derived only, and a gate fails on any false sign | allow some decorative signs as well"></dive-q>
+
+<h2>4. The menu</h2>
+<h3>Tier 1: warning signs with the models we already have</h3>
+<p>No new art. One new placement module, one truth gate, and the signs ride FEAT-278's slow clutter stream after the
+loading screen. Each shipped sign is a specific real sign, and that limits where it is honest:</p>
+<table>
+  <tr><th>Model</th><th>What it really says</th><th>Honest only where</th><th>Measured candidates</th></tr>
+  <tr><td><code>signCurves</code></td><td>Winding road (MUTCD W1-5): three or more curves</td><td>a series of bends, mirrored so the S starts the way the first bend turns (mirroring the model is free)</td><td>0.19 per km per direction</td></tr>
+  <tr><td><code>signGrade</code></td><td>Steep downgrade (W7-1), truck pointing downhill</td><td>facing DOWNHILL traffic only, at the top of a long steep descent</td><td>0.16 to 0.36 per km (one direction each)</td></tr>
+  <tr><td><code>signTee</code></td><td>T intersection (W2-4): your road ends, turn left or right</td><td>the stem of a T only, not the through road</td><td>about 1 per 3-way junction</td></tr>
+  <tr><td><code>signCross</code></td><td>Crossroad ahead (W2-1)</td><td>approaches to a 4-way</td><td>15 junctions in 552 km: rare</td></tr>
+  <tr><td><code>signStop</code></td><td>STOP (R1-1)</td><td>the minor road's mouth at a junction</td><td>about 1 per junction</td></tr>
+  <tr><td><code>signRockslide</code></td><td>Rock slide area</td><td>a cut slope that FEAT-26's slide finder already accepts (steep side slope rising off the road). Something can now vouch for it</td><td>not counted here</td></tr>
+  <tr><td><code>signIcy</code></td><td>Icy road</td><td>nowhere: the game has rain but no ice</td><td>stays unplaced</td></tr>
+</table>
+<p><b>Cost:</b> one lane task, about the size of the demolition site placement (<code>src/demolition.js</code>, 195
+lines, plus its gate). Draw cost is small: 52 triangles and 3 materials per sign. At 1 to 2 signs per km each way,
+roughly 10 are in view at once, about 30 draw calls (a draw call is one batch of drawing the CPU hands the GPU).</p>
+<p><b>What the player gains:</b> a hairpin series, a long steep descent and a T you must turn at all announce
+themselves. It cannot mark a single sharp bend, because the only curve sign we have says "winding road". That gap is
+Tier 2's first job.</p>
+
+<h3>Tier 2: new sign faces for the hazards Tier 1 cannot mark</h3>
+<p>One new asset ticket. The sign generator (<code>assets/models/src/road-signs.py</code>) was built so that a new
+type is an outline plus a drawing function, not a new mesh. Each face is one baked 512 × 512 image, about 27 kB.</p>
+<ul>
+  <li><b>Single bends:</b> Turn (W1-1, sharp, an angled arrow), Curve (W1-2, gentle), Hairpin (W1-11). Mirrored for
+  left and right. These are the hairpin signs you asked for.</li>
+  <li><b>Advisory speed plaque</b> (W13-1P, the yellow square under a curve sign, "25 MPH"). One plaque per number:
+  10 to 50 MPH in steps of 5 is 9 plaques.</li>
+  <li><b>Grade percent plaque</b> (W7-3P, "15 %"), under the downgrade sign. About 5 plaques.</li>
+  <li><b>Side road</b> (W2-2), for the through road at a T it cannot see.</li>
+  <li>Possibly: <b>Rough road</b>, <b>Dip</b>, <b>Tunnel</b>, <b>Road may flood</b> (causeways), <b>Dead end</b>. Each
+  is honest from the data, but see the questions: some are too common to be worth a sign.</li>
+</ul>
+
+<h4>The advisory speed and where the sign stands</h4>
+<p>The advisory speed is the bend's speed at a fixed lateral acceleration a: <b>v<sub>adv</sub> = √(a · R)</b>,
+rounded down to 5 MPH. The sign stands far enough ahead to react and brake comfortably from the speed you arrive
+at: <b>d = v<sub>a</sub> · t<sub>r</sub> + (v<sub>a</sub>² − v<sub>adv</sub>²) / (2 · b)</b>, with reaction time
+t<sub>r</sub> = 1.5 s and a comfortable deceleration b = 3.4 m/s². The arrival speed v<sub>a</sub> is par's reference
+accelerating out of the previous corner, so it too is pure road geometry.</p>
+<figure>
+  <svg viewBox="0 0 640 250" role="img" aria-label="A straight road into a 12 m hairpin. A curve sign with a 15 MPH plaque stands 119 m before the bend entry: 37 m of reaction and 82 m of braking from 55 MPH.">
+    <g font-family="ui-monospace,Menlo,monospace" font-size="12" fill="#8b94a3">
+      <path d="M 20 170 L 470 170 A 45 45 0 0 0 470 80 L 380 80" fill="none" stroke="#646c7a" stroke-width="22" stroke-linecap="butt"/>
+      <path d="M 20 170 L 470 170 A 45 45 0 0 0 470 80 L 380 80" fill="none" stroke="#14161a" stroke-width="1.5" stroke-dasharray="8 8"/>
+      <line x1="470" y1="150" x2="470" y2="196" stroke="#8b94a3" stroke-dasharray="3 3"/>
+      <text x="476" y="210">bend entry</text>
+      <text x="535" y="128">R = 12 m</text>
+      <g transform="translate(110,150)">
+        <line x1="0" y1="10" x2="0" y2="-30" stroke="#8b94a3" stroke-width="2"/>
+        <rect x="-11" y="-52" width="22" height="22" transform="rotate(45 0 -41)" fill="#ffc25c" stroke="#14161a"/>
+        <rect x="-10" y="-26" width="20" height="14" fill="#ffc25c" stroke="#14161a"/>
+        <text x="-8" y="-16" font-size="8" fill="#14161a">15</text>
+      </g>
+      <line x1="110" y1="200" x2="470" y2="200" stroke="#6fb3ff"/>
+      <line x1="110" y1="194" x2="110" y2="206" stroke="#6fb3ff"/><line x1="470" y1="194" x2="470" y2="206" stroke="#6fb3ff"/>
+      <line x1="222" y1="194" x2="222" y2="206" stroke="#6fb3ff"/>
+      <text x="130" y="222">37 m react</text><text x="300" y="222">82 m brake</text>
+      <text x="250" y="244" fill="#dfe3ea">d = 119 m</text>
+      <text x="140" y="152">→ 55 MPH (24.6 m/s)</text>
+      <text x="20" y="40" fill="#dfe3ea">a = 0.5 g: v_adv = √(4.9 × 12) = 7.7 m/s = 17 MPH → sign says 15</text>
+      <text x="20" y="58">d = 24.6 × 1.5 + (24.6² − 6.7²) / (2 × 3.4) = 37 + 82 = 119 m</text>
+    </g>
+  </svg>
+  <figcaption>A 12 m hairpin (the median hairpin radius) approached at 55 MPH. Not to scale.</figcaption>
+</figure>
+<p>The choice is the lateral acceleration a. Here is what each gives, in MPH, rounded down to 5:</p>
+<table>
+  <tr><th>Radius</th><th>0.25 g (a real county road's comfort)</th><th>0.5 g (half-way)</th><th>0.72 g (par's reference: the limit)</th></tr>
+  <tr><td>12 m (hairpin)</td><td>10</td><td>15</td><td>20</td></tr>
+  <tr><td>30 m</td><td>15</td><td>25</td><td>30</td></tr>
+  <tr><td>60 m</td><td>25</td><td>35</td><td>45</td></tr>
+  <tr><td>120 m</td><td>35</td><td>50</td><td>65</td></tr>
+</table>
+<p>At 0.25 g the signs read like real ones, and a player soon learns to add 10 to 15 MPH, as real drivers do. At 0.72 g
+the sign is the edge of grip, so taking a bend "at the sign" means sliding. 0.5 g is a speed a competent driver can
+always make, with a margin to beat. An advisory speed is not a countdown, so it does not break SM-INV-3, but at
+0.72 g it would print par's corner speed on the road.</p>
+<dive-q id="advisory" options="0.5 g (half-way) | 0.72 g (par's reference, the limit) | 0.25 g (a real road's comfort) | no number: the sign shape only"></dive-q>
+<p>The kit is Californian and the speedometer's main dial is MPH, so I recommend MPH in steps of 5.</p>
+<dive-q id="units" options="MPH, steps of 5 | km/h, steps of 10"></dive-q>
+
+<h3>Tier 3: guide signs (where things are)</h3>
+<p>POI type and distance ("GAS 2 MI"), place names, arrows to town at junctions. Two standing rulings push against
+this tier:</p>
+<ul>
+  <li><b>Navigation is earned.</b> The GPS is an uncommon per-run item: "until you find it you navigate via the map
+  alone" (items.md, ratified). Arrows and distances at junctions hand out for free what the GPS sells.</li>
+  <li><b>You cut these once already.</b> The 2026-08-23 ASSET-31 rebrief dropped the fingerpost, route shields and mile
+  markers. FEAT-72 also says a sign never names the active job's destination.</li>
+</ul>
+<p>The one guide sign that does not navigate is a <b>name board at the place itself</b>, a landmark you see on
+arrival. It needs one new sign per POI type and gives no direction.</p>
+<dive-q id="guide" options="none: navigation stays the map and the GPS item | a name board at each place only (no arrows, no distances) | services signs with distance at junctions (GAS 2 MI) | full fingerposts at junctions"></dive-q>
+
+<h3>Regulatory: speed limits</h3>
+<p>Nothing in the game enforces a speed. There is no traffic and no police yet. A limit sign would be a number with
+no consequence, and par already says how fast you should be. STOP signs are different: they mark which road is the
+minor one, which is true geometry, even though nothing makes you stop.</p>
+<dive-q id="speed-limit" options="no speed-limit signs | speed limits as dressing, derived from the road's design speed"></dive-q>
+
+<h3>Gameplay hooks</h3>
+<ul>
+  <li><b>Knockable.</b> The sign's collider is already only its 89 mm post. The demolition system already turns a
+  sign into a rigid body with mass when touched (13 kg, DEC-394's approach for lawn ornaments). Placed signs can
+  reuse it.</li>
+  <li><b>Navigation without the GPS.</b> Warning signs help you read the road, not find your way. They support the
+  literacy that survives death (SM-INV-8): a player learns what a 15 MPH plaque means on this truck.</li>
+  <li><b>Landmarks in a giver's lines</b> ("turn at the stop sign") would need dialogue that reads the sign
+  placement. I have not proposed it: nothing asks for it yet.</li>
+</ul>
+
+<h2>5. The decisions</h2>
+<h3>Which tiers</h3>
+<p>Recommended: Tier 1 first, then Tier 2's single-bend and hairpin signs with the advisory plaque. That is the
+part you asked for ("hairpin turns, steep grades"), and Tier 1 alone cannot mark a single sharp bend.</p>
+<dive-q id="tiers" options="Tier 1, then Tier 2's bends and plaques | Tier 1 only (no new art) | Tier 1 and all of Tier 2 | Tiers 1, 2 and the guide signs you picked above"></dive-q>
+
+<h3>Which bends get a sign</h3>
+<p>Measured densities per km per direction: every bend needing ≥ 15 km/h of slowing, 1.48. Needing ≥ 30 km/h, 0.85.
+Only hairpins and winding series, about 0.4.</p>
+<dive-q id="curve-threshold" options="bends needing ≥ 30 km/h of slowing, plus every hairpin and series (about 0.9 per km) | hairpins and winding series only (about 0.4 per km) | every bend needing ≥ 15 km/h (about 1.5 per km)"></dive-q>
+
+<h3>Which grades get a sign</h3>
+<p>A grade sign faces downhill traffic, at the top. Densities: ≥ 15 % held for ≥ 150 m, 0.36 per km. Held for
+≥ 200 m, 0.16 per km. ≥ 10 % held for ≥ 50 m, 2.6 per km (too many).</p>
+<dive-q id="grade-threshold" options="≥ 15 % held for ≥ 150 m (0.36 per km) | ≥ 15 % held for ≥ 200 m (0.16 per km) | something else (say what in the note box)"></dive-q>
+
+<h3>Which junctions get a sign</h3>
+<p>Half the junction approaches (51 %) cannot see the junction from stopping distance.</p>
+<figure>
+  <svg viewBox="0 0 520 200" role="img" aria-label="A T junction: the stem road gets a T sign and a STOP; each through-road approach gets a side-road sign only if the junction is hidden.">
+    <g font-family="ui-monospace,Menlo,monospace" font-size="12" fill="#8b94a3">
+      <rect x="20" y="40" width="480" height="24" fill="#646c7a"/>
+      <rect x="248" y="64" width="24" height="120" fill="#646c7a"/>
+      <text x="200" y="30">through road</text><text x="282" y="180">stem (minor road)</text>
+      <rect x="282" y="122" width="12" height="12" transform="rotate(45 288 128)" fill="#ffc25c"/><text x="300" y="132">T sign, 60–120 m back</text>
+      <polygon points="282,80 287,75 293,75 298,80 298,86 293,91 287,91 282,86" fill="#ff5c5c"/><text x="304" y="88">STOP at the mouth</text>
+      <rect x="60" y="74" width="12" height="12" transform="rotate(45 66 80)" fill="#ffc25c" stroke="#8b94a3" stroke-dasharray="2 2"/><text x="20" y="106">side-road sign,</text><text x="20" y="120">only if hidden</text>
+    </g>
+  </svg>
+  <figcaption>Solid: Tier 1 models. Dashed: the Tier 2 side-road sign.</figcaption>
+</figure>
+<dive-q id="junction" options="T sign and STOP on every stem; side-road sign only where hidden | T sign on every stem, no STOP | only where the junction is hidden"></dive-q>
+
+<h3>Rock slides</h3>
+<p>FEAT-72 held the rock slide sign back until something could vouch for it. FEAT-26's slide finder now does: it
+accepts a road station only where the side slope rises steeply off the road. A sign there says "this slope can
+drop rocks", which is true whether or not a slide ever fires.</p>
+<dive-q id="rockslide" options="yes, at the cuts the slide finder accepts | no, keep it unplaced"></dive-q>
+
+<h3>Knocking signs down</h3>
+<dive-q id="knock" options="knocked flying as a rigid body; it stands again when its patch re-streams | knocked, and stays down for the rest of the run | solid: the truck stops at it"></dive-q>
+
+<h3>The demolition "old sign line"</h3>
+<p>Today 7 in 8 of its signs lie (section 1). Once real signs exist, a lying sign beside a true one would undo the
+whole system's trust. The simplest fix that never lies is to stand the old signs with their backs to the traffic,
+waiting to be cleared. The alternative is to draw each old sign's type from what is true where it stands, which costs
+more and can come up short of the job's count.</p>
+<dive-q id="demo-line" options="stand them with their backs to the traffic | draw each one's type from what is true where it stands | leave it as it is (they are old, wrong signs coming down)"></dive-q>
+
+<h3>When</h3>
+<p>The ticket leaves this open. Signs depend on FEAT-278's clutter stream (built after the loading screen), so they
+land after it or with it.</p>
+<dive-q id="when" options="with FEAT-278, before the alpha | after the alpha | Tier 1 before the alpha, the rest after"></dive-q>
+
+<h2>6. Anything this misses</h2>
+<p>Hazards I measured but did not propose a sign for, because they are common or a defect: tunnels (0.32 per km),
+causeways (0.66 per km), rough road (a third of all road), dead ends (11 in 552 km) and sags. A sag that bottoms a new
+truck is a road defect to fix (BUG-216), not something to sign. Say here if you want any of them signed.</p>
+<dive-q id="misses"></dive-q>
+
+<script src="/dive.js"></script>
