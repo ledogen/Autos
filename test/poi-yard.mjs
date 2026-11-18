@@ -99,7 +99,7 @@ function checkYard (seed, q, sats) {
     hist[Math.min(sats.length, 6)]++
     // FEAT-290: a yard never holds more of an asset than its `yardMax` (one fire pit per house).
     for (const k of new Set(sats.map(o => o.key))) {
-        const max = PROP_MODELS[k].yardMax
+        const max = k === 'firePit' ? 1 : PROP_MODELS[k].yardMax   // the pit's 1 is pinned here, not read back from the cap
         if (max != null && sats.filter(o => o.key === k).length > max) bad.overMax.push(`${seed}:${q.modelKey}/${k}`)
     }
     const [cMin, cMax] = PROP_MODELS[q.modelKey]?.yardCount ?? [3, 6]
