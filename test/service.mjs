@@ -132,6 +132,10 @@ check('buy heavy-duty rear shocks, fitted for the shop\'s minimum charge', svc.b
   && params.suspensionDampingRear === PARTS.dampersHD.patch.suspensionDampingRear && damage.get('damperRear') === 1)
 check('…the slot is empty now', shelf[0] === null && !svc.buyAndFit(0, 'dampersRear'))
 check('the socket\'s labour is on the clock', hours === 0.75, hours)
+// BUG-213 / FEAT-285: the labour (the setup charge) scales with the tier exactly as the part does; a spring or damper rebuild's part rate is $4.
+check('FEAT-285: spring and damper repair rate $4; labour and part both ride the tier (BUG-213)', REPAIRS.spring.price === 4 && REPAIRS.damper.price === 4
+  && [1, 2].every(t => (tier = t, near(svc.fitLabour('springsHD', 'springsFront').price, SU.price * t)
+    && near(svc.repairQuote('springFront', 1, 0.5).price, (SU.price + 4 * 0.5) * t))) && (tier = 1))
 check('an exchange off the tires pays the minimum charge too, × tier', svc.fitLabour('springsHD', 'springsFront').price === SU.price
   && (tier = 2, svc.fitLabour('springsHD', 'springsFront').price === 2 * SU.price) && (tier = 1))
 check('the air filter fits for a third of the minimum charge, in 15 min (owner, 2026-11-06)',
