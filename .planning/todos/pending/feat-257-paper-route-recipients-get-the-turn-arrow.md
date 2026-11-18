@@ -26,3 +26,4 @@ The off-road objective arrow (FEAT-218, `gps.js _placeRing`) already reads `cust
 
 ## Log
 - 2026-11-17: arrives with BUG-194. Not drive-tested headless.
+- 2026-11-17: FEAT-266 keeps the arrow: the GPS now draws the tour's first leg (`gpsLine`), so its end is the next owed house.

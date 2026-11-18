@@ -267,7 +267,7 @@ freight pay per piece / per kg delivered, the tip scaled by the amount; **fragil
 guaranteed, half × health**, and its tip moves from condition to speed. (3) **The giver has a limited
 stock**; the player picks the load; a bonus gate prints as a count or kg and only rolls when the stock
 can meet it. (4) ~~**Freight is units:** the bed fills visibly; indivisible loads keep their mass.~~ *(Reversed 2026-10-22: every freight load is as-built.)* (5)
-**Papers: any N customers, a deadline from the shortest route through N, the route ends at N.** (6)
+**Papers: any N customers, a deadline from the shortest route through N, the route ends at N.** *(DEC-398, 2026-11-17: the N are the planner's — only those N houses count or show, and the GPS follows the shortest tour through the ones still owed.)* (6)
 **The HUD strip shows each type's rank axis and the live letter**; fragile adds a health bar and a
 combined-g bar. (7) **Giver traits**, one per offer at most, never stacked, the card printing the trait's effect in plain numbers beside its name (DEC-104, replaces the 2026-10-21 wording). (8) **Rank thresholds step by region, never by
 day** — the day ramp retires (SM-INV-2 below). Tickets FEAT-138 to FEAT-142 and a re-scoped FEAT-114.
