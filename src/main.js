@@ -3817,6 +3817,7 @@ const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isBlocked: () => damageScreen.blocked || serviceCenter.cart.length > 0,   // FEAT-212: nothing used or dropped behind a cart a discard puts back
   actions: _partActions,
   ground: { list: _groundNearby, pick: _pickUpGround },   // FEAT-143: "Nearby on the ground"
+  eatPreview: _previewEat,
 })
 _menu('inventory', () => inventoryScreen.isOpen, () => inventoryScreen.close())
 window.__inv = inventorySystem   // dev handle — test/cdp-smoke.mjs grants the spare and the plug kit
@@ -8139,6 +8140,18 @@ function _updateEnergyMeter () {
     const hx = Math.round((EM_VIEW_W / 2 - (top - left) * EM_PX_PER_H) * dpr) / dpr
     if (hx !== _hmX) { _hmX = hx; _emEls.hStrip.style.transform = `translateX(${hx}px)` }
   }
+}
+/** FEAT-283: hovering "eat" paints the hunger the meal recovers on the hunger bar — a green box from the pointer to the
+ *  post-meal level (DaySystem.eat never shortens a hold; clamped at the bar's full end). `id` null clears it. */
+function _previewEat (id) {
+  const box = document.getElementById('hm-preview'), it = id && ITEMS[id]
+  if (!box) return
+  if (!it || it.kind !== 'food' || it.hold == null) { box.style.display = 'none'; return }
+  const left = daySystem.fedLeftH(), top = _hmTopH()
+  const dh = Math.min(top, Math.max(left, foodHoldH(id, _kitAtCamp()))) - Math.min(top, left)
+  box.style.display = dh > 0 ? 'block' : 'none'
+  box.style.width = `${dh * EM_PX_PER_H}px`
+  box.style.left = `${EM_VIEW_W / 2 - dh * EM_PX_PER_H}px`
 }
 let _hmWord, _emX, _hmX   // the strips' last written translateX (PERF-48)
 /** The hunger strip's full end: the longest hold any meal gives (meals never stack past it — DaySystem.eat). */

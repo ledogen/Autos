@@ -947,6 +947,9 @@
       left: 50%; top: 0; height: 100%; width: 0;
       border-left: 1px solid rgba(255, 255, 255, 0.9);
     }
+    /* FEAT-283: the "eat" hover's post-meal level, laid left of the pointer (the fed end of the strip). */
+    #hm-preview { display: none; position: absolute; top: 0; height: 100%; background: rgba(140, 233, 154, 0.55);
+      border: 1px solid var(--money); box-sizing: border-box; }
     #energy-meter .em-pointer::before {
       content: '';
       position: absolute;
@@ -1851,6 +1854,7 @@
           <div class="em-seg" id="hm-seg-hungry"><span>Hungry</span></div>
         </div>
         <div class="em-pointer"></div>
+        <div id="hm-preview"></div>
       </div>
     </div>
 
