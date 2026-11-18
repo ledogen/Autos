@@ -70,13 +70,13 @@ export function rumbleMix (sig, gains = RUMBLE_GAINS, master = RUMBLE_PARAMS.vib
 /** The continuous levels from the vehicle state. `flat` = the damage model's per-wheel flat flags; `loose` = the
  *  surface under the truck, main.js _looseSurfaceFactorAt (params.dustPavedFactor on asphalt … 1 off-road); `strutHp`
  *  = the largest |high-passed strut velocity| this step, m/s (strutHighPass). */
-export function continuousSignals (vs, params, flat, loose = 0, strutHp = 0) {
+export function continuousSignals (vs, params, flat, loose = 0, strutHp = 0, phase = null) {
   const v = vs.velocity, speed = v ? Math.hypot(v.x, v.z) : 0
-  const grip = vs.slipVel, ro = params?._wheelRunout
+  const grip = vs.slipVel, wc = params?._wheelCondition
   let slip = 0, bent = 0, anyFlat = false
   for (let i = 0; i < 4; i++) {
     slip = Math.max(slip, grip?.[i] || 0)
-    bent = Math.max(bent, ro?.[i] || 0)
+    bent = Math.max(bent, bentLevel(wc?.[i] ?? 1, speed) * (phase ? 0.5 + 0.5 * Math.cos(phase[i]) : 1))
     if (flat?.[i]) anyFlat = true
   }
   const roll = ramp(speed, 1, 12)   // a flat and a wobble are felt rolling; at a standstill there is none
@@ -85,7 +85,41 @@ export function continuousSignals (vs, params, flat, loose = 0, strutHp = 0) {
     jolt: ramp(strutHp / Math.max(speed, 2), JOLT_SLOPE_FLOOR, JOLT_SLOPE_FULL),
     rough: ramp(loose, params?.dustPavedFactor ?? 0.1, 1) * ramp(speed, 2, 20),
     flat: anyFlat ? roll : 0,
-    bent: ramp(bent, 0.002, 0.04) * roll,
+    bent,
+  }
+}
+
+// FEAT-287 / DEC-420: a bent wheel is felt only when it is really bad. Condition >= 60 %: never. 25..60 %: only in a
+// 10..25 mph band, a half-cosine up to the 17 mph peak and a half-cosine down (zero at both ends), amplitude 0.3 at 60 %
+// rising linearly to 1 at 25 %. Below 25 %: also above the band, a high-speed level of 0.1 at 25 % rising to 0.7 at 0 %
+// (weaker than the band peak), faded in over 17..25 mph. The numbers marked * are proposals, not DEC-420's.
+const MPH = 0.44704
+const BENT_FLOOR = 0.6, BENT_BAD = 0.25
+const BENT_V0 = 10 * MPH, BENT_VP = 17 * MPH, BENT_V1 = 25 * MPH
+const BENT_AMP_AT_FLOOR = 0.3   // *
+const BENT_HI_AT_BAD = 0.1, BENT_HI_AT_ZERO = 0.7   // *
+/** One wheel's bent-wheel level 0..1 (before the pulse) from its condition 0..1 and the vehicle speed [m/s]. */
+export function bentLevel (cond, speed) {
+  if (!(cond < BENT_FLOOR)) return 0
+  const t = clamp01((BENT_FLOOR - cond) / (BENT_FLOOR - BENT_BAD))
+  const bump = speed <= BENT_V0 || speed >= BENT_V1 ? 0
+    : speed < BENT_VP ? 0.5 - 0.5 * Math.cos(Math.PI * (speed - BENT_V0) / (BENT_VP - BENT_V0))
+    : 0.5 + 0.5 * Math.cos(Math.PI * (speed - BENT_VP) / (BENT_V1 - BENT_VP))
+  let level = (BENT_AMP_AT_FLOOR + (1 - BENT_AMP_AT_FLOOR) * t) * bump
+  if (cond < BENT_BAD) {
+    const hi = BENT_HI_AT_BAD + (BENT_HI_AT_ZERO - BENT_HI_AT_BAD) * (1 - Math.max(cond, 0) / BENT_BAD)
+    level = Math.max(level, hi * ramp(speed, BENT_VP, BENT_V1))
+  }
+  return level
+}
+
+/** Advance each wheel's pulse phase [rad] by its own spin (|wheelOmega|, else speed / wheel radius) for `dt`; the angle
+ *  is integrated so the pulse never pops when the speed changes. The pulse is 0.5 + 0.5 cos(phase): one per turn. */
+export function bentPhaseStep (phase, vs, params, dt) {
+  const v = vs.velocity, speed = v ? Math.hypot(v.x, v.z) : 0
+  for (let i = 0; i < 4; i++) {
+    const om = vs.wheelOmega?.[i]
+    phase[i] = (phase[i] + (Number.isFinite(om) ? Math.abs(om) : speed / (params?.wheelRadius || 0.37)) * dt) % (2 * Math.PI)
   }
 }
 
@@ -110,6 +144,7 @@ export function strutHighPass (sv, dt, st) {
 
 const kicks = {}        // name → { s, t0 } (level at the time it was struck, performance.now() ms)
 let cont = {}, contAt = 0
+const bentPhase = [0, 0, 0, 0]
 const hp = { x: [0, 0, 0, 0], y: [0, 0, 0, 0] }
 let sentAt = 0, quiet = true
 const SEND_MS = 50, EFFECT_MS = 100, STALE_MS = 100
@@ -130,7 +165,8 @@ export function kickLevels (now = performance.now()) {
 
 /** One fixed physics step: refresh the continuous levels. `loose` as continuousSignals. */
 export function stepPadRumble (vs, params, flat, loose, dt) {
-  cont = continuousSignals(vs, params, flat, loose, strutHighPass(vs.strutCompVel, dt, hp))
+  bentPhaseStep(bentPhase, vs, params, dt)
+  cont = continuousSignals(vs, params, flat, loose, strutHighPass(vs.strutCompVel, dt, hp), bentPhase)
   contAt = performance.now()
 }
 

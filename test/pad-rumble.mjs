@@ -2,7 +2,7 @@
 //   silent at rest; bounded 0..1 even with every source at once; monotone in impact force (and in every source);
 //   the master scales it (off = silent); the continuous signals read off a vehicle state are 0 at rest AND in a smooth
 //   cruise (BUG-206), and rise with slip, a jolt, loose ground and speed; the motor mapping (texture and slip on the light motor, impacts on the heavy one).
-import { rumbleMix, continuousSignals, strutHighPass, RUMBLE_GAINS } from '../src/pad-rumble.js'
+import { rumbleMix, continuousSignals, strutHighPass, bentLevel, bentPhaseStep, RUMBLE_GAINS } from '../src/pad-rumble.js'
 
 let fail = 0
 const ok = (c, m) => { console.log(`  ${c ? '✓' : '✗'} ${m}`); if (!c) fail = 1 }
@@ -45,13 +45,38 @@ ok(kerb.jolt > 0.5 && rumbleMix(kerb).strong > 0 && rumbleMix(kerb).weak > 0, `a
 const gravel = continuousSignals(rolling({}), {}, [], 1, 0), crawl = continuousSignals({ ...rolling({}), velocity: { x: 0, y: 0, z: -3 } }, {}, [], 1, 0)
 ok(gravel.rough > 0.9 && crawl.rough < gravel.rough && rumbleMix(gravel).weak > 0, `loose ground buzzes, more with speed: ${crawl.rough.toFixed(2)} at 3 m/s, ${gravel.rough.toFixed(2)} at 20`)
 ok(continuousSignals(rolling({ slipVel: [8, 0, 0, 0] }), {}, []).slip > 0.5 && continuousSignals(rolling({}), {}, [true, false, false, false]).flat > 0.9
-  && continuousSignals(rolling({}), { _wheelRunout: [0.04, 0, 0, 0] }, []).bent > 0.9, 'a slide, a flat and a bent wheel each read when rolling')
+  && continuousSignals(rolling({ velocity: { x: 0, y: 0, z: -7.6 } }), { _wheelCondition: [0.25, 1, 1, 1] }, []).bent > 0.9, 'a slide, a flat and a bent wheel each read when rolling')
 // The high-pass: a 1.2 Hz body heave of 0.3 m/s is mostly rejected, a kerb's 0.1 s strut spike passes.
 const run = (f) => { const st = { x: [0, 0, 0, 0], y: [0, 0, 0, 0] }; let m = 0; for (let k = 0; k < 300; k++) { const v = f(k / 60); const o = strutHighPass([v, v, v, v], 1 / 60, st); if (k > 60) m = Math.max(m, o) } return m }
 const heave = run(t => 0.3 * Math.sin(2 * Math.PI * 1.2 * t)), spike = run(t => (t > 2 && t < 2.1 ? 2 : 0))
 ok(heave < 0.1 && spike > 1, `strut high-pass: 1.2 Hz heave 0.30 → ${heave.toFixed(3)} m/s, kerb spike 2 → ${spike.toFixed(2)}`)
 const tex = rumbleMix({ rough: 1, slip: 1 }), hit = rumbleMix({ impact: 1 })
 ok(tex.strong === 0 && tex.weak > 0 && hit.strong > hit.weak, 'mapping: texture and slip on the light motor only, an impact mostly on the heavy one')
+
+// FEAT-287 / DEC-420: the bent wheel. Zero at >= 60 % at every speed; 25..60 % confined to 10..25 mph, peak at 17;
+// below 25 % also felt at 40 mph (weaker than the peak); the pulse runs at the wheel's own turn rate.
+const MPH = 0.44704
+let zero60 = true
+for (let mph = 0; mph <= 120; mph += 0.5) for (const c of [0.6, 0.7, 1]) if (bentLevel(c, mph * MPH) !== 0) zero60 = false
+ok(zero60, 'a wheel at 60 % or better: exactly 0 at every speed 0..120 mph')
+const b40 = (mph) => bentLevel(0.4, mph * MPH)
+ok(b40(0) === 0 && b40(10) === 0 && b40(25) === 0 && b40(40) === 0 && b40(60) === 0, 'a 40 % wheel: 0 at 10 mph and at 25 mph and above')
+let peak = 0, at = 0
+for (let mph = 0; mph <= 40; mph += 0.1) if (b40(mph) > peak) { peak = b40(mph); at = mph }
+ok(Math.abs(at - 17) < 0.2 && b40(13) > 0 && b40(13) < peak && b40(21) < peak, `a 40 % wheel peaks at ${at.toFixed(1)} mph (level ${peak.toFixed(2)})`)
+ok(bentLevel(0.3, 17 * MPH) > bentLevel(0.55, 17 * MPH) && bentLevel(0.55, 17 * MPH) > 0, 'amplitude grows as condition falls from 60 % to 25 %')
+ok(bentLevel(0.1, 40 * MPH) > 0 && bentLevel(0.1, 40 * MPH) < bentLevel(0.1, 17 * MPH) && bentLevel(0.01, 40 * MPH) > bentLevel(0.1, 40 * MPH) && bentLevel(0.1, 5 * MPH) === 0,
+  `a 10 % wheel is felt at 40 mph (${bentLevel(0.1, 40 * MPH).toFixed(2)}), below the band peak, and dead under 10 mph`)
+for (const w of [20.5, 48]) {   // wheel rate [rad/s]; the rim spins at w/2pi Hz. Count pulse peaks over 10 s of 1/120 s steps with a changing speed.
+  const ph = [0, 0, 0, 0], vs = { velocity: { x: 0, y: 0, z: -w * 0.37 }, wheelOmega: [w, w, w, w] }
+  let n = 0, prev = 0
+  for (let k = 0; k < 1200; k++) { bentPhaseStep(ph, vs, { wheelRadius: 0.37 }, 1 / 120); if (ph[0] < prev) n++; prev = ph[0] }
+  ok(Math.abs(n / 10 - w / (2 * Math.PI)) < 0.15, `pulse rate at wheel rate ${w} rad/s: ${(n / 10).toFixed(2)} Hz vs ${(w / (2 * Math.PI)).toFixed(2)} Hz`)
+}
+const sv = (z, ph) => continuousSignals({ velocity: { x: 0, y: 0, z: -z }, slipVel: [0, 0, 0, 0] }, { _wheelCondition: [0.3, 1, 1, 1] }, [], 0, 0, [ph, 0, 0, 0]).bent
+ok(sv(7.6, 0) > 0.85 && sv(7.6, Math.PI) < 1e-9, 'the level is modulated: full at phase 0, zero at phase pi')
+console.log('curve (level at 5/10/14/17/21/25/40 mph):')
+for (const c of [0.7, 0.5, 0.3, 0.1]) console.log(`  ${c * 100}%: ` + [5, 10, 14, 17, 21, 25, 40].map(m => bentLevel(c, m * MPH).toFixed(2)).join(' '))
 
 console.log(fail ? '\nFAIL' : '\nPASS')
 process.exit(fail)
