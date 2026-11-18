@@ -19,7 +19,7 @@
 import * as THREE from 'three'
 import { LiveExposure } from './exposure.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, setBedGrip, syncChassisMass, rollBalance } from './physics.js'
+import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, setBedGrip, syncChassisMass, rollBalance, resetStepCarry } from './physics.js'
 import { HiLift, basin, rollDeg } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine, GROUP_STATIC, GROUP_ROAD } from './physics-engine.js'
@@ -1193,6 +1193,7 @@ async function _reseatTruckAtSpawnInner () {
   const { position, quaternion, velocity, angularVelocity, engineHealth, fuel, ...fresh } =
     makeVehicleState(RANGER_PARAMS, _gameMode === 'story' && !_spawnOverride?.running ? IGN_OFF : IGN_RUNNING)   // DEC-362: the tutorial's reset leaves it running
   Object.assign(vehicleState, fresh)
+  resetStepCarry(RANGER_PARAMS)   // BUG-224: and the step-to-step carry physics keeps on params
   // FEAT-50: a story tank survives every seat — a teleport, a tow — the way damage does; anywhere
   // else a seat is a fresh truck with a full tank.
   if (_gameMode !== 'story') vehicleState.fuel = fuel
@@ -1226,6 +1227,7 @@ function _reseatOnRegionGround () {
   vehicleState.quaternion.copy(seat.quat)
   vehicleState.velocity.set(0, 0, 0)
   vehicleState.angularVelocity.set(0, 0, 0)
+  resetStepCarry(RANGER_PARAMS)   // BUG-224
   snapCamera()
   _restrapFreight()
   damageModel.resetTransients()

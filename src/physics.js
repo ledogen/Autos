@@ -1523,6 +1523,18 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
   }
   vehicleState.quaternion.normalize()
 }
+/**
+ * BUG-224: a seat is a fresh truck, so the state one step hands the next must start over too. Two pieces of it live
+ * on `params`, not on vehicleState (which makeVehicleState already renews): `_bodyOther`, last step's non-strut
+ * force/torque that the suspension's in-step body copy carries (BUG-140), and `_rockGripUp`, the rock-face grip each
+ * strut carries step to step (FEAT-158). Measured: the lab-exit launch left `_bodyOther`'s torque NaN, and it fed
+ * itself every step (the copy's mounts go NaN, its torque reads NaN·0) while the parked truck looked fine, until the
+ * next seat woke it and the whole state went NaN. Every other `params._*` scratch is rewritten each step before use.
+ */
+export function resetStepCarry (params) {
+  if (params._bodyOther) Object.assign(params._bodyOther, { fx: 0, fy: 0, fz: 0, tx: 0, ty: 0, tz: 0 })
+  params._rockGripUp?.fill(0)
+}
 const _readP = new THREE.Vector3(), _readQ = new THREE.Quaternion(), _readV = new THREE.Vector3(), _readW = new THREE.Vector3()
 let _nanReported = false
 
