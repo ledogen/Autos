@@ -6979,7 +6979,7 @@ function _updateSite () {
     const now = performance.now() / 1000
     if (!_site.rr && standing.length && (standing.length !== _site.left || !(now - _site.planAt < RR_PARAMS.tourS))) {
       _site.left = standing.length; _site.planAt = now
-      const it = planGuideJob(roadSystem, p, siteStops(m, standing), storySystem.region())
+      const it = planGuideJob(roadSystem, p, siteStops(m, standing), storySystem.region(), 100, _site.order)   // BUG-212: keepM
       if (it) _site.rr = it
     }
   }
@@ -7010,7 +7010,7 @@ function _pumpSiteGuide (budgetMs) {
   _site.rr = null
   // FEAT-187: a line to the cluster, never a destination circle in the road (gps.js reads noRing). A plan that reached
   // nobody keeps the previous line (the paper round's BUG-47 rule).
-  if (r.value?.segments?.length) _site.guide = { ...tourLeg(r.value), noRing: true }
+  if (r.value?.segments?.length) { _site.guide = { ...tourLeg(r.value), noRing: true }; _site.order = r.value.customers.map(c => c.id) }
 }
 
 /**
@@ -7787,9 +7787,11 @@ function _renderMissionUI () {
             : `${left} to ${q.label ?? _tutWork(q.id) ?? offerBoard.placeLabel(q.id)} · ${what}`   // FEAT-184: PLACEHOLDER words
         }
         // DEC-321: no reset is taught; off the road, the tutorial's own countdown (#reset-countdown) puts the truck back.
-      } else if (_waypointOn()) {   // FEAT-211: the way to the waypoint, crow-flies like the evening's [DEFAULT] words
-        const vp = vehicleState.position
-        hudText.textContent = `${km(Math.hypot(_waypoint.x - vp.x, _waypoint.z - vp.z))} to the waypoint`
+      } else if (_waypointOn()) {   // FEAT-211: the way to the waypoint
+        // BUG-205 (owner 11-17): along the line the GPS shows (its re-plan when the truck strays), DEC-270's rule; it was
+        // crow-flies, so on a winding road it read short and grew while the line was driven correctly.
+        const vp = vehicleState.position, line = _tutLine(_waypoint.route)
+        hudText.textContent = `${km(line?.poly?.length ? routeLeftM(line, vp.x, vp.z) : Math.hypot(_waypoint.x - vp.x, _waypoint.z - vp.z))} to the waypoint`
       }
       break
   }

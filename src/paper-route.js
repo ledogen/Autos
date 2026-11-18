@@ -298,6 +298,9 @@ export const RR_PARAMS = {
     tourS:    1.0,    // s between FEAT-266 quiet re-plans of the remaining tour from the truck: a house passed without a
                       // throw turns the line back within this (plus the ~ms job) when going back is the shorter tour
     snapM:    200,    // queryNearest search radius for the truck's own road point
+    keepM:    25,     // BUG-212: m a re-planned tour must beat the one being followed by before the guide switches order.
+                      // Two owed stops with near the same road point (neighbours across the road) tie to the metre, and
+                      // the re-plan every tourS flipped the leg between them every second or two [DEFAULT, census-measured]
 }
 
 const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
@@ -308,9 +311,9 @@ const _now = () => (typeof performance !== 'undefined' ? performance.now() : Dat
  * re-plan (PaperRouteSystem._startReplan) and a demolition site's (main.js _updateSite, DEC-399) both plan through here.
  * `stops` need {id, aId, bId, s, x, z} (splitRoadGraph's point shape).
  */
-export function planGuideJob (road, car, stops, region = null, margin = 100) {
+export function planGuideJob (road, car, stops, region = null, margin = 100, prefer = null) {
     const origin = stops?.length ? roadOrigin(road, car) : null
-    return origin ? planTourJob(road, origin, stops, stops.length, region, margin) : null
+    return origin ? planTourJob(road, origin, stops, stops.length, region, margin, prefer) : null
 }
 
 /**
@@ -584,7 +587,7 @@ export function* planRoundJob (road, larry, allCust, want, region = null, margin
  *
  * Same arguments, same return value as planTour.
  */
-export function* planTourJob (road, larry, allCust, want, region = null, margin = 100) {
+export function* planTourJob (road, larry, allCust, want, region = null, margin = 100, prefer = null) {
     if (!road || !larry || !allCust?.length || !(want > 0)) return null
     const G = splitRoadGraph(road, larry, allCust, region, margin)
     if (!G) return null
@@ -679,6 +682,14 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
                         const pj = par[mask * n + j]
                         mask ^= (1 << j)
                         j = pj
+                    }
+                    // BUG-212 hysteresis: the order being followed (`prefer`, ids, the guide's remaining tour) is kept
+                    // unless the best tour beats it by more than RR_PARAMS.keepM — the same tables price it.
+                    const pi = prefer?.map(id => order.findIndex(c => c.id === id)).filter(i => i >= 0)   // the ones still owed
+                    if (pi?.length === want) {
+                        let cost = from[pi[0]]
+                        for (let k = 1; k < pi.length; k++) cost += D[pi[k - 1]][pi[k]]
+                        if (cost <= bestT + RR_PARAMS.keepM) seq.splice(0, seq.length, ...pi.map(i => order[i]))
                     }
                     order.splice(0, order.length, ...seq)
                 }
@@ -1380,7 +1391,8 @@ export class PaperRouteSystem {
         // `guide`, never `route`.
         const left = this.route.customers.filter(c => !this.run.hits.has(c.id))
         const car = this._getCar()
-        const it = planGuideJob(this._getRoad(), car, left, this._getRegion(), 100)
+        const keep = this.line().customers.filter(c => !this.run.hits.has(c.id)).map(c => c.id)   // BUG-212: the order followed
+        const it = planGuideJob(this._getRoad(), car, left, this._getRegion(), 100, keep)
         if (!it) return              // nothing owed, or off the network entirely; try again on the next poll
 
         this._cancelReplan()
