@@ -71,3 +71,7 @@ src/poi.js (`build`, `_edgeRows`, `_returnSpots`), test/expedition-camp.mjs
 
 ## Log
 - 2026-11-18 minted by the orchestrator.
+- 2026-11-18 lane agent, land/bug-222-return-spot: own-road `past` fix f78976b0, pin ae48f77f, main merged 9aea95e5.
+  Affected gates 30/30 green serially (wip/bug-222/run-all.log); cdp-smoke PASS 40 steps, zero console errors; pad-e2e
+  ALL OK; fingerprint-world ALL IDENTICAL to main (it hashes no rows or returns); tutorial-seed passes. 400-seed sweep 0 throws.
+  Unverified: a drive at a shallow-crossing row in the browser.
