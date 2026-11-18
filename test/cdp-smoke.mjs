@@ -268,11 +268,11 @@ const STEPS = [
     if (!under) { console.log('  boreCam: spawn not under the heightfield, skipped'); return }
     const jsa = async (expr) => (await client.cmd('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: expr })).result?.result?.value
     const setMask = (m) => jsa(`(async () => { const { makeBoomProbe } = await import('/src/camera-boom.js'); const { setCameraBoomProbe } = await import('/src/camera.js')
-      setCameraBoomProbe(makeBoomProbe(window.__physicsEngine, (x, z) => window.__terrain().analyticHeight(x, z), ${m})) })()`)
+      setCameraBoomProbe(makeBoomProbe(window.__physicsEngine, (x, z, y) => window.__terrain().analyticHeight(x, z, undefined, y), ${m})) })()`)
     const los = () => js(`(() => { const p = window.__vs.position, c = window.__cam().position, d = c.clone().sub(p), l = d.length()
       return { blocked: !!window.__physicsEngine.castRay(p, d.normalize(), l, { collidesWith: 24n }), boom: +l.toFixed(2) } })()`)
     const probeUs = (m) => jsa(`(async () => { const { makeBoomProbe } = await import('/src/camera-boom.js')
-      const pr = makeBoomProbe(window.__physicsEngine, (x, z) => window.__terrain().analyticHeight(x, z), ${m})
+      const pr = makeBoomProbe(window.__physicsEngine, (x, z, y) => window.__terrain().analyticHeight(x, z, undefined, y), ${m})
       const p = window.__vs.position.clone(), c = window.__cam().position.clone(), t = []
       for (let k = 0; k < 21; k++) { const t0 = performance.now(); for (let i = 0; i < 500; i++) pr(p, c); t.push((performance.now() - t0) / 500) }
       return t.sort((a, b) => a - b)[10] * 1000 })()`)
