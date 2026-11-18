@@ -1039,7 +1039,16 @@ export class MissionSystem {
                         if (d >= Math.max(lo, 1) && d <= hi) own.push({ q, d, direct: true })
                     }
                 }
-                // FEAT-89: `nearest` takes the closest candidate over BOTH exits (a multi-drop's next stop).
+                // FEAT-89: `nearest` takes the closest candidate over BOTH exits (a multi-drop's next stop), by road
+                // from the exit node. FEAT-292 (DEC-424): `nearerEnd` (a requisition line) takes it over both exits by
+                // the whole drive, the stretch from the POI out to that exit included: the nearer end of its road.
+                const headM = (ex) => {
+                    if (!dest.nearerEnd || !se) return 0
+                    const off = se.arcOffset ?? 0, L = se.arcLength ?? se.centerline.length, p = posOf.get(ex)
+                    const pE = se.centerline.pointAt(off + L), pS = se.centerline.pointAt(off)
+                    const s1 = Math.hypot(pE.x - p.x, pE.z - p.z) < Math.hypot(pS.x - p.x, pS.z - p.z) ? off + L : off
+                    return Math.abs(s1 - Math.max(off, Math.min(off + L, anchor.s)))
+                }
                 let near = null
                 for (const [ex, other] of pair) {
                     const c = legCandidates(ex, lo, hi)
@@ -1062,9 +1071,9 @@ export class MissionSystem {
                         opts.push({ q, entry, d })
                     }
                     if (!opts.length) continue
-                    if (dest.nearest) {
-                        const o = opts.reduce((a, b) => (b.d < a.d ? b : a))
-                        if (!near || o.d < near.o.d) near = { ex, c, o }
+                    if (dest.nearest || dest.nearerEnd) {
+                        const o = opts.reduce((a, b) => (b.d < a.d ? b : a)), d = o.d + (o.direct ? 0 : headM(ex))
+                        if (!near || d < near.d) near = { ex, c, o, d }
                         continue
                     }
                     opts.sort((a, b) => (a.q.id < b.q.id ? -1 : a.q.id > b.q.id ? 1 : 0))

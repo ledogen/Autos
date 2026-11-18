@@ -64,7 +64,7 @@ for (const s of SEEDS) {
     const build = (noCamp = false) => {
         const poi = new PoiSystem({ getRoad: () => road, getWater: () => water, getTerrain: () => terrain,
                                     getSeed: () => seed, getParams: () => P })
-        if (noCamp) poi._siteCamp = () => null
+        if (noCamp) poi._campCrossings = function * () {}
         poi.build(C, REGION_RADIUS_M, rep.mainNodes)
         poi.buildHouses(C, REGION_RADIUS_M, rep.mainNodes)
         return poi
