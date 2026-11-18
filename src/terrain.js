@@ -1648,12 +1648,7 @@ export class TerrainSystem {
                 // mesh == collision on the pullout by construction. latDist gates it out of the road's
                 // own cross-section; with no pads set this is a null check.
                 const pq = this._roadSystem._poiPadCarve(wx, wz, rawH, latDist)
-                if (pq) {
-                    cs = {
-                        blendW: Math.max(cs ? cs.blendW : 0, pq.blendW),
-                        gradeY: cs ? pq.gradeY * pq.dom + cs.gradeY * (1 - pq.dom) : pq.gradeY,
-                    }
-                }
+                if (pq) cs = this._roadSystem._withPoiPad(cs, pq)   // BUG-214: one layered composition, shared with physics
 
                 // Junction-pad carve composed with the leg + connector carve by the same _mergeCarve physics uses
                 // (mesh == collision at the rim). Covers the open-side rim no run reaches.

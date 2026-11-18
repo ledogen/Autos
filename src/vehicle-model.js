@@ -64,7 +64,7 @@ const REV_OFF   = 0x222222
 // SpotLight units are physical (candela) with distance falloff `decay`; values are authored against
 // the ACES-tone-mapped scene (sun ≈ 0.7–4.8). Editable live via addLightGui(). aimY/aimZ are the
 // target offsets in carGroup-local space (forward = -Z), which set the beam's pitch and length.
-const HEAD_TUNE = {
+export const HEAD_TUNE = {
   // Stock 2002 Ranger lamps are 9007 dual-filament halogens, ≈3300 K — the blackbody sRGB for that
   // temperature. Both filaments burn at the same temperature, so low and high share it.
   color: 0xffbe7d,
@@ -98,7 +98,13 @@ const HEAD_TUNE = {
   // weathered 2002 reflector with a hazed lens is sloppier). highCoreDeg is the radius of the high
   // beam's main disk (the old full-cone look). spill is the scatter outside the main pattern as a
   // fraction of peak, spread as a Gaussian of width haloDeg — the "sloppy" halo of a real reflector.
-  lowCutoffDeg: -0.57, lowSoftDeg: 0.6, highCoreDeg: 28, spill: 0.05, haloDeg: 22,
+  // highCoreDownDeg (BUG-210) is that disk's radius BELOW the axis: a real high beam's vertical spread
+  // is a few degrees, and the ground 1–3 m ahead sits 12–30° down, so the round disk (and its halo)
+  // poured peak candela into the near field at 1/d²: the ground by the bumper read 10–70× the road at
+  // 10 m, cut off by the 57° cone edge in 0.2 m of ground (0 → 78 between 0.5 and 0.7 m ahead of the
+  // lamp, 400 per metre; wip/bugs-pcl/beam-profile.mjs). At 11° the near field ramps like the low
+  // beam's (≤ 16 per metre) and the pattern from 5 m out is unchanged.
+  lowCutoffDeg: -0.57, lowSoftDeg: 0.6, highCoreDeg: 28, highCoreDownDeg: 11, spill: 0.05, haloDeg: 22,
   // SpotLight shadows are expensive (see addLightGui); keep the map small + frustum tight when used.
   shadowMapSize: 512, shadowFar: 50,
   decay: 1.8, shadows: false,
@@ -170,6 +176,29 @@ const ANTENNA_TUNE = {
   maxAccel: 60,                   // m/s², clamps a teleport's (reset, story entry) one-frame spike
 }
 
+// Headlight beam patterns (relative candela at azimuth/elevation in degrees off the level aim axis), read by
+// drawCookie below; exported for test/headlamp-near-field.mjs (BUG-210).
+const gauss = (x, sx, y, sy) => Math.exp(-0.5 * ((x / sx) ** 2 + (y / sy) ** 2))
+const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t) }
+// ECE R112-style asymmetric low beam for right-hand traffic (kerb side = right).
+export function lowBeam (az, el) {
+  const T = HEAD_TUNE
+  const cut = T.lowCutoffDeg + Math.min(Math.max(0, az) * 0.268, 1.8)   // tan 15° kick-up, flat shoulder
+  const lit = smooth(cut + T.lowSoftDeg, cut - T.lowSoftDeg, el)        // 1 under the cutoff
+  const hot  = gauss(az - 2, 5, el + 1.3, 1.6)                          // hot spot under the elbow (75R/50R)
+  const mid  = 0.40 * gauss(az, 14, el + 1.8, 2.2)                      // road spread
+  const wide = 0.12 * gauss(az, 35, el + 4, 8)                          // foreground + verges
+  const fringe = 2 * T.spill * Math.exp(-Math.max(0, el - cut) / 1.2) * gauss(az, 20, 0, 1)  // fuzz above cutoff
+  return lit * (hot + mid + wide) + (1 - lit) * fringe + T.spill * gauss(az, T.haloDeg, el + 2, 0.6 * T.haloDeg)
+}
+// High beam: the old full-cone disk, plus the same scatter halo outside it, both squashed below the
+// axis to highCoreDownDeg (BUG-210: no bright near-field pool with a hard edge at the bumper).
+export function highBeam (az, el) {
+  const T = HEAD_TUNE
+  const v = el + 1.2
+  const r = Math.hypot(az, v < 0 ? v * T.highCoreDeg / T.highCoreDownDeg : v)
+  return smooth(T.highCoreDeg, 0.5 * T.highCoreDeg, r) + 3 * T.spill * gauss(r, T.haloDeg * 1.5, 0, 1)
+}
 export function createAntenna (a, material) {
   const base = new THREE.Vector3(...a.base)
   const axis = new THREE.Vector3(...a.tip).sub(base)
@@ -345,25 +374,6 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
   // circle, so the pattern must fit inside the envelope angle. Texels are stored sRGB-encoded so the
   // ~3% spill keeps 8-bit precision after the GPU decodes to linear. BOTH headlights always carry a
   // cookie so numSpotLightMaps never changes → low↔high never recompiles. Skipped headless.
-  const gauss = (x, sx, y, sy) => Math.exp(-0.5 * ((x / sx) ** 2 + (y / sy) ** 2))
-  const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t) }
-  // ECE R112-style asymmetric low beam for right-hand traffic (kerb side = right).
-  function lowBeam (az, el) {
-    const T = HEAD_TUNE
-    const cut = T.lowCutoffDeg + Math.min(Math.max(0, az) * 0.268, 1.8)   // tan 15° kick-up, flat shoulder
-    const lit = smooth(cut + T.lowSoftDeg, cut - T.lowSoftDeg, el)        // 1 under the cutoff
-    const hot  = gauss(az - 2, 5, el + 1.3, 1.6)                          // hot spot under the elbow (75R/50R)
-    const mid  = 0.40 * gauss(az, 14, el + 1.8, 2.2)                      // road spread
-    const wide = 0.12 * gauss(az, 35, el + 4, 8)                          // foreground + verges
-    const fringe = 2 * T.spill * Math.exp(-Math.max(0, el - cut) / 1.2) * gauss(az, 20, 0, 1)  // fuzz above cutoff
-    return lit * (hot + mid + wide) + (1 - lit) * fringe + T.spill * gauss(az, T.haloDeg, el + 2, 0.6 * T.haloDeg)
-  }
-  // High beam: the old full-cone disk, plus the same scatter halo outside it.
-  function highBeam (az, el) {
-    const T = HEAD_TUNE
-    const r = Math.hypot(az, el + 1.2)
-    return smooth(T.highCoreDeg, 0.5 * T.highCoreDeg, r) + 3 * T.spill * gauss(r, T.haloDeg * 1.5, 0, 1)
-  }
   function drawCookie (ctx, S, kind) {
     const beam = kind === 'low' ? lowBeam : highBeam
     const tanA = Math.tan(kind === 'low' ? HEAD_TUNE.lowAngle : HEAD_TUNE.highAngle)
@@ -959,6 +969,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
     h.add(HEAD_TUNE, 'lowCutoffDeg', -3, 1, 0.01).name('low cutoff (deg)').onChange(redraw)
     h.add(HEAD_TUNE, 'lowSoftDeg', 0.1, 3, 0.05).name('low cutoff softness (deg)').onChange(redraw)
     h.add(HEAD_TUNE, 'highCoreDeg', 5, 40, 0.5).name('high core radius (deg)').onChange(redraw)
+    h.add(HEAD_TUNE, 'highCoreDownDeg', 3, 40, 0.5).name('high core radius below (deg)').onChange(redraw)
     h.add(HEAD_TUNE, 'spill', 0, 0.2, 0.005).name('spill (frac of peak)').onChange(redraw)
     h.add(HEAD_TUNE, 'haloDeg', 5, 50, 1).name('spill halo width (deg)').onChange(redraw)
     // distance = hard range cap. NOTE: 0 (three's "infinite") collapses the spot-map projection frustum

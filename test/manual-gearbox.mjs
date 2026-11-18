@@ -14,6 +14,7 @@
 //   8. engine braking: lifting in 3rd slows harder than coasting in N;
 //   9. a clutch dumped at the rev limiter spins the rears.
 //  14. FEAT-185: mashing — presses during a shift move its target; the shift time runs once, after the last.
+//  16. BUG-218: a clutch-engaged shift grinds only across a shaft-speed mismatch (engine off + parked: none).
 //
 // Run: node test/manual-gearbox.mjs   (self-checking; exits non-zero on failure)
 
@@ -326,6 +327,37 @@ console.log('\n15. bump start (FEAT-258): rolled in 2nd with the key off, the wh
   const v0 = vf(vs)
   step(P, vs, 90, () => { stepIgnition(vs, P, DT, false); vs.throttle = 0.6 })
   check(vs.ignition.state === RUNNING && vf(vs) > v0 + 0.5, `and it pulls: ${(v0 * MPH).toFixed(1)} → ${(vf(vs) * MPH).toFixed(1)} mph on 60 % throttle`)
+}
+console.log('\n16. BUG-218: no grind without a shaft-speed mismatch')
+{
+  // Engine off, parked, clutch engaged (no pedal): input shaft and output both at rest, so every gear selects cleanly.
+  const { P, vs } = fresh()
+  P.clutchAssist = false
+  vs.ignition = makeIgnitionState(OFF)
+  vs.clutch = 1
+  step(P, vs, 300)   // the flywheel spins down from idle
+  const dm = new DamageModel({ params: P })
+  const c0 = dm.get('transmission')
+  let misses = 0, maxRpm = 0
+  const gears = []
+  for (const dir of [1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1]) {
+    for (let i = 0; i < 30; i++) {
+      if (i === 0) vs.shiftRequest = dir
+      step(P, vs, 1); dm.step(vs, P, DT)
+      if (dt(vs).missShift) misses++
+      maxRpm = Math.max(maxRpm, dt(vs).engineRPM)
+    }
+    gears.push(dt(vs).mGear)
+  }
+  check(misses === 0 && dm.get('transmission') === c0, `engine off, parked: N→5→R with the clutch engaged, ${misses} grinds, ${((c0 - dm.get('transmission')) * 100).toFixed(2)} % wear`)
+  check(gears.join() === '1,2,3,4,5,4,3,2,1,0,-1', `every gear landed (${gears.join()})`)
+  check(maxRpm < 20, `parked in gear, the dead engine stays still (peak ${maxRpm.toFixed(1)} rpm, no rear-axle chatter)`)
+  // Engine off, ROLLING in N, clutch engaged: the stopped input shaft meets a turning output — grinds.
+  const r = fresh({ v0: 5 })
+  r.vs.ignition = makeIgnitionState(OFF); r.vs.clutch = 1
+  step(r.P, r.vs, 300, () => { r.vs.velocity.z = -5 })
+  r.vs.shiftRequest = 1; step(r.P, r.vs, 1)
+  check(dt(r.vs).missShift === true && dt(r.vs).mGear === 0, `engine off, rolling ${(vf(r.vs) * MPH).toFixed(1)} mph in N: N→1st with the clutch engaged grinds`)
 }
 console.log(`\nMANUAL-GEARBOX GATE: ${failures ? `${failures} FAILURE(S)` : 'all checks passed ✓'}`)
 process.exit(failures ? 1 : 0)

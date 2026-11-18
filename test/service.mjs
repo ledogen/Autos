@@ -83,7 +83,7 @@ tier = 1.5
 check('…× the day tier', near(svc.repairQuote('engine', 0.7).price, (SU.price + REPAIRS.engine.price * 0.2) * 1.5))
 tier = 1
 damage.set('springRear', 0)
-check('a spring pair is priced off the fitted pair', near(svc.repairQuote('springRear', 0.8).price, SU.price + PARTS.springsOEM.price * 0.8))
+check('a spring pair is priced at the spring rate (FEAT-285)', near(svc.repairQuote('springRear', 0.8).price, SU.price + REPAIRS.spring.price * 0.8))
 check('worn brakes: nothing to repair', (damage.set('brakeFront', 0.2), svc.targets('brakeFront').length === 0))
 check('a collapsed wheel is replaced, never straightened', repairTargets('wheel', 0).length === 0 && repairTargets('wheel', 0.01)[0] === 0.05)
 damage.set('engine', 0)
@@ -132,6 +132,10 @@ check('buy heavy-duty rear shocks, fitted for the shop\'s minimum charge', svc.b
   && params.suspensionDampingRear === PARTS.dampersHD.patch.suspensionDampingRear && damage.get('damperRear') === 1)
 check('…the slot is empty now', shelf[0] === null && !svc.buyAndFit(0, 'dampersRear'))
 check('the socket\'s labour is on the clock', hours === 0.75, hours)
+// BUG-213 / FEAT-285: the labour (the setup charge) scales with the tier exactly as the part does; a spring or damper rebuild's part rate is $4.
+check('FEAT-285: spring and damper repair rate $4; labour and part both ride the tier (BUG-213)', REPAIRS.spring.price === 4 && REPAIRS.damper.price === 4
+  && [1, 2].every(t => (tier = t, near(svc.fitLabour('springsHD', 'springsFront').price, SU.price * t)
+    && near(svc.repairQuote('springFront', 1, 0.5).price, (SU.price + 4 * 0.5) * t))) && (tier = 1))
 check('an exchange off the tires pays the minimum charge too, × tier', svc.fitLabour('springsHD', 'springsFront').price === SU.price
   && (tier = 2, svc.fitLabour('springsHD', 'springsFront').price === 2 * SU.price) && (tier = 1))
 check('the air filter fits for a third of the minimum charge, in 15 min (owner, 2026-11-06)',
@@ -206,7 +210,7 @@ owned = svc.ownedRepairRows()
 const spr = owned.find(r => r.id === 'springsHD')
 check('a worn spring pair is, up to the cap', spr?.targets.at(-1) === REPAIR_CAP)
 wallet = 100; hours = 0
-check('re-arch it to the cap: priced off the part', svc.repairOwned(spr.index, REPAIR_CAP) && near(wallet, 100 - SU.price - PARTS.springsHD.price * 0.4)
+check('re-arch it to the cap: priced at the spring rate (FEAT-285)', svc.repairOwned(spr.index, REPAIR_CAP) && near(wallet, 100 - SU.price - REPAIRS.spring.price * 0.4)
   && near(hours, REPAIRS.spring.hours * 0.4)   // off the truck: no access time
   && near(inventory.list()[spr.index].cond, REPAIR_CAP))
 inventory.take(spr.index)
@@ -446,12 +450,12 @@ check('split needs a free slot', si >= 0 && !tight.split(si) && full.list()[si].
     const meal = new ServiceCenter({ ...svc, money: () => w, spend: ($) => { if ($ > w + 1e-9) return false; w -= $; return true }, eat: (x) => { fed += x } })
     stock(['dinnerMeal'])
     const slots = inventory.slotsUsed()
-    check('dinner meal: quote is its price and 30 min', meal.buyQuote(0).price === 5 && meal.buyQuote(0).hours === 0.5)
+    check('dinner meal: quote is its price and 30 min', meal.buyQuote(0).price === 4 && meal.buyQuote(0).hours === 0.5)
     check('dinner meal: cannot be stowed', !meal.buyToInventory(0) && inventory.slotsUsed() === slots)
     check('dinner meal: queued, nothing eaten or paid until checkout', meal.queue('buyAndEat', [0], 'eat') && fed === 0 && w === 100 && inventory.slotsUsed() === slots)
     check('dinner meal: a discard eats nothing', (meal.discard(), fed === 0 && w === 100))
     meal.queue('buyAndEat', [0], 'eat')
-    check('dinner meal: checkout pays $5, runs 30 min, holds hunger 8 h, stows nothing', meal.checkout() && w === 95 && fed === 8 && hours - h0 === 0.5 && inventory.slotsUsed() === slots)
+    check('dinner meal: checkout pays $4, runs 30 min, holds hunger 8 h, stows nothing', meal.checkout() && w === 96 && fed === 8 && hours - h0 === 0.5 && inventory.slotsUsed() === slots)
 }
 
 // FEAT-244: every level of the Maintenance tree wears the worst condition under it — a flat tire (0) reaches its

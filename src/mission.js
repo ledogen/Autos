@@ -39,10 +39,13 @@
  * loop. update() is a couple of distance checks per frame.
  */
 
-import { computePar, gradeRun, PAR_REF, PAR_SLACK } from './par.js'
+import { computePar, routeDistance, gradeRun, PAR_REF, PAR_SLACK } from './par.js'
 import { roadQuality } from './road-quality.js'
 import { DAY_PARAMS } from './day.js'
 import { runLog, scalars } from './run-log.js'   // FEAT-242: the opt-in run log (every hook is behind runLog.on)
+// FEAT-291: a multi-drop is ordered and guided by the paper round's tour planner. A cycle (paper-route.js imports this
+// file) that is safe: neither module touches the other's bindings at load time, only inside functions.
+import { planTourJob, stepJob, TourGuide } from './paper-route.js'
 
 // FEAT-113: real seconds per game hour — the unit par and `elapsed` are counted in (par 180 s = 3 h).
 // Read at use: dayLengthSec is a live debug slider.
@@ -135,6 +138,9 @@ const TOPO_DS = 2.0                 // m — topology export spacing (matches pa
  * hid well: the map showed the route correctly, the truck sat on the road, and the only symptom
  * was a U-turn that also quietly inflated every calibration time it was measured against.
  */
+/** Seconds on the page clock (the guide's re-plan cadence; never game state). */
+const _nowS = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000
+
 export function headingToFace(tx, tz) { return Math.atan2(-tx, -tz) }
 
 /** Inverse of headingToFace: the unit direction a truck seated at `heading` will point. */
@@ -272,7 +278,9 @@ export class MissionSystem {
         this.elapsed = 0
         this.countdown = 0
         this.result = null       // { elapsed, par, letter, ratio, margin }
-        this.leg = 0             // FEAT-102/89: which leg is being driven (a fetch: 0 out, 1 back)
+        this.leg = 0             // FEAT-102/89: which leg is being driven (a fetch: 0 out, 1 back); a multi-drop: stops handed over
+        this._dropped = new Set() // FEAT-291: a multi-drop's stops handed over (poiIds), in any order
+        this.drops = new TourGuide()   // FEAT-291: the GPS's shortest tour from the truck through the stops still owed
         this.error = null
         this._trace = []         // driven trace rows (see update); reset on accept
         this._traceTick = 0
@@ -466,6 +474,7 @@ export class MissionSystem {
         this.state = staged ? (load ? 'loading' : 'staging') : 'countdown'
         this._polyIdx = 0            // route-remaining projection restarts at the start pin
         this.leg = 0                 // FEAT-102: a fetch starts on its outbound leg
+        this._resetDrops()
         this.countdown = staged ? 0 : COUNTDOWN
         this.elapsed = 0
         this._trace = []
@@ -483,6 +492,7 @@ export class MissionSystem {
         const m = this.mission
         if (!this.isOnJob() || !m?.offerId) return null
         return { state: this.state, elapsed: this.elapsed, t0H: this._t0H, leg: this.leg,
+                 dropped: this._anyOrder() ? [...this._dropped] : null,   // FEAT-291: which stops, in any order
                  terms: m.terms ?? null, dueH: m.dueH, expired: !!m.expired, failed: !!m.failed,
                  approach: !!m.approach, bundles: m.bundles, payMult: m.payMult, stockCost: m.stockCost ?? null,
                  sitePaid: m.sitePaid ?? 0 }   // DEC-403: the demolition shares already in the wallet
@@ -507,6 +517,8 @@ export class MissionSystem {
         this.leg = s.leg
         this.countdown = 0
         this._polyIdx = mission.legs && s.leg ? mission.legs[s.leg - 1].polyIdx : 0
+        // FEAT-291: a save from before any-order handed its stops over in tour order.
+        this._resetDrops(s.dropped ?? (this._anyOrder() ? mission.legs.slice(0, s.leg).map(l => l.poiId) : []))
         this._trace = []
         this._traceTick = 0
         this._setMapOpen(false)
@@ -517,6 +529,7 @@ export class MissionSystem {
     exit() {
         this.state = 'idle'
         this.mission = null
+        this._resetDrops()
         this.result = null
         this.offers = []
         this.offer = null
@@ -569,7 +582,8 @@ export class MissionSystem {
     markers() {
         if (!this.mission) return null
         const { legs, fetch } = this.mission
-        return { start: this.mission.start, end: this.mission.end, poly: this.mission.poly,
+        // FEAT-291: a running multi-drop's line is the guide's tour from the truck (the demolition site's _siteLine).
+        return { start: this.mission.start, end: this.mission.end, poly: (this._anyOrder() && this.isOnJob() && this.drops.tour?.poly) || this.mission.poly,
                  pickup: fetch ? legs[0].end : null,
                  // FEAT-89: a multi-drop's stops short of the last, in tour order.
                  stops: legs && !fetch ? legs.slice(0, -1).map(l => l.end) : null }
@@ -584,7 +598,43 @@ export class MissionSystem {
         const legs = this.mission?.legs
         // FEAT-144: nor while its loose load is out of the bed (main.js sets cargoOut) — go back for it.
         return this.state === 'running' && legs && this.leg < legs.length - 1 && !this.mission.failed && !this.mission.cargoOut
-            ? legs[this.leg].poiId : null
+            ? legs[this.curLeg()].poiId : null
+    }
+
+    /** FEAT-291: every POI a park hands something over at right now — a multi-drop's owed stops, in ANY order, while more
+     *  than one is owed (the last arrives by driving up); a fetch's pickup. Empty when nothing waits on a park. */
+    pickupPoiIds() {
+        const id = this.pickupPoiId()
+        if (!id || !this._anyOrder()) return id ? [id] : []
+        return this.mission.legs.filter(l => !this._dropped.has(l.poiId)).map(l => l.poiId)
+    }
+
+    /** FEAT-291: true on a multi-drop (stops in any order); a fetch's two legs stay in order. */
+    _anyOrder() { return !!this.mission?.legs && !this.mission.fetch }
+
+    /** FEAT-291: index into mission.legs of the stop the GPS leads to: a fetch's leg; a multi-drop's first owed stop on
+     *  the guide's tour (before one lands, in the planned order). */
+    curLeg() {
+        const legs = this.mission?.legs
+        if (!legs || !this._anyOrder()) return this.leg ?? 0
+        const id = this.drops.leg?.customers?.[0]?.id
+        const i = legs.findIndex(l => l.poiId === id && !this._dropped.has(id))
+        return i >= 0 ? i : Math.max(0, legs.findIndex(l => !this._dropped.has(l.poiId)))
+    }
+
+    _resetDrops(ids = []) {
+        this.drops.cancel()
+        this.drops = new TourGuide()
+        this._dropped = new Set(ids)
+        // BUG-212: the guide keeps the planned order (the shortest from the giver) unless a re-plan beats it by keepM.
+        this.drops.order = this.mission?.stopIds?.filter(id => !this._dropped.has(id)) ?? null
+    }
+
+    /** FEAT-291: re-plan the guide's tour (TourGuide.poll) through the multi-drop's stops still owed, from the truck. */
+    _pollDrops() {
+        const m = this.mission
+        const owed = m.legs.filter(l => !this._dropped.has(l.poiId)).map(l => l.pt).filter(Boolean)
+        if (owed.length) this.drops.poll(this._getRoad(), this._getCar(), owed, this._planRegion(this._getRoad()), _nowS())
     }
 
     /**
@@ -597,11 +647,14 @@ export class MissionSystem {
     guideRoute() {
         const m = this.mission
         if (!m?.legs) return m
+        // FEAT-291: a multi-drop follows the guide's tour from the truck once one has landed and leads to a stop still owed.
+        const g = this._anyOrder() && this.drops.leg
+        if (g && !this._dropped.has(g.customers?.[0]?.id)) return g
         if (!m._legRoutes) {
             const cut = [0, ...m.legs.slice(0, -1).map(l => l.segIdx), m.segments.length]
             m._legRoutes = m.legs.map((l, i) => ({ segments: m.segments.slice(cut[i], cut[i + 1]), objective: l.objective }))
         }
-        return m._legRoutes[this.leg ?? 0]
+        return m._legRoutes[this.curLeg()]
     }
 
     /**
@@ -610,10 +663,15 @@ export class MissionSystem {
      * handed over at a multi-drop stop. Advances to the next leg. False (and nothing changes) unless
      * a job is running on a leg that ends in a park.
      */
-    acquire() {
-        if (!this.pickupPoiId()) return false
-        this._polyIdx = this.mission.legs[this.leg].polyIdx   // the projection resumes at the stop
+    acquire(poiId = this.pickupPoiId()) {
+        if (!poiId || !this.pickupPoiIds().includes(poiId)) return false
+        const legs = this.mission.legs
+        this._polyIdx = legs[this._anyOrder() ? legs.findIndex(l => l.poiId === poiId) : this.leg].polyIdx   // the projection resumes at the stop
         this.leg++
+        // FEAT-291: a multi-drop's stop, in any order. The tour through the rest is planned at once (a few ms at ≤ 4 stops), so
+        // the GPS never leads for a frame to the stop just handed over.
+        // A plan still in flight went through this stop: dropped for the new one.
+        if (this._anyOrder()) { this._dropped.add(poiId); this.drops.cancel(); this._pollDrops(); this.drops.pump(Infinity) }
         this._onChange()
         return true
     }
@@ -669,12 +727,12 @@ export class MissionSystem {
         if (!this.mission) return 0
         // FEAT-102: a fetch measures to the CURRENT leg's end — the pickup, then home.
         const legs = this.mission.legs
-        const c = this._getCar(), e = legs ? legs[this.leg ?? 0].end : this.mission.end
+        const c = this._getCar(), e = legs ? legs[this.curLeg()].end : this.mission.end
         return Math.hypot(c.x - e.x, c.z - e.z)
     }
 
     /**
-     * Metres remaining ALONG THE ROUTE — the honest HUD number. Crow-flies distance INCREASES
+     * Metres remaining ALONG THE ROUTE to the current leg's end (BUG-205) — the honest HUD number. Crow-flies distance INCREASES
      * while you drive a winding route correctly, which reads as "going the wrong way" (and once
      * broke a verification run). Projects the car onto the mission polyline (windowed around the
      * last match, full re-scan when the window loses the car) and reports the arc left from there.
@@ -683,6 +741,8 @@ export class MissionSystem {
     routeRemaining() {
         const m = this.mission
         if (!m || !m.poly || m.poly.length < 2 || !m.polyCum) return this.distanceToGo()
+        const tour = this._tourLeft()
+        if (tour) return tour[0]
         const c = this._getCar()
         const poly = m.poly, cum = m.polyCum
         const last = this._polyIdx ?? 0
@@ -696,11 +756,39 @@ export class MissionSystem {
         // FEAT-102: on a fetch's return leg the route retraces the outbound points, so never match
         // back onto the outbound half — the number would read the whole job again. (FEAT-89: any
         // leg past the first floors at the stop it left.)
-        const floor = m.legs && this.leg ? m.legs[this.leg - 1].polyIdx : 0
-        scan(Math.max(floor, last - 20), Math.min(poly.length - 1, last + 40))
-        if (bd > 200 * 200) scan(floor, poly.length - 1)     // off the window (teleport, big shortcut)
+        const li = this.curLeg()
+        const floor = m.legs && li ? m.legs[li - 1].polyIdx : 0
+        // BUG-205 (owner 11-17: "the waypoint distance measure at top of screen is wrong"): a multi-stop job reads to the
+        // stop the GPS leads to (guideRoute's leg), never to the job's end; and the projection stays on that leg.
+        const ceil = m.legs?.[li]?.polyIdx ?? poly.length - 1
+        scan(Math.max(floor, last - 20), Math.min(ceil, last + 40))
+        if (bd > 200 * 200) scan(floor, ceil)     // off the window (teleport, big shortcut)
         this._polyIdx = bi
-        return Math.max(this.distanceToGo(), cum[cum.length - 1] - cum[bi])
+        return Math.max(this.distanceToGo(), cum[ceil] - cum[bi])
+    }
+
+    /**
+     * BUG-205 follow-up (owner 11-18: "add back in total distance… it helps you plan"): metres left for the WHOLE job
+     * along its line — the current leg (routeRemaining) plus every leg after it, in the order the GPS follows; a fetch's
+     * is out and back. Equals routeRemaining on a single-stop job and on the last leg.
+     */
+    routeTotalRemaining() {
+        const m = this.mission, tour = this._tourLeft(), leg = tour ? tour[0] : this.routeRemaining()
+        if (tour) return tour[1]
+        if (!m?.legs || !m.polyCum) return leg
+        const cum = m.polyCum, ceil = m.legs[this.curLeg()]?.polyIdx ?? cum.length - 1
+        return leg + cum[cum.length - 1] - cum[ceil]
+    }
+
+    /** FEAT-291: [the leg, the whole job] left along the guide's tour from the truck — a running multi-drop once its tour
+     *  has landed and leads to a stop still owed — or null. The leg is its own slice of the line (routeLeftM), so a tour
+     *  that doubles back cannot match the far arm; the total adds the tour past that first stop. */
+    _tourLeft() {
+        const t = this._anyOrder() && this.state === 'running' && this.drops.tour, f = t?.stopsAt?.[0]
+        if (!f || this._dropped.has(f.c.id)) return null
+        const c = this._getCar(), cum = t.polyCum
+        const leg = routeLeftM({ poly: t.poly.slice(0, f.p + 1), polyCum: cum.slice(0, f.p + 1) }, c.x, c.z)
+        return [leg, leg + cum[cum.length - 1] - cum[f.p]]
     }
 
     // ── per-frame ───────────────────────────────────────────────────────────────────────────
@@ -730,6 +818,7 @@ export class MissionSystem {
             return
         }
         if (this.state !== 'running') return
+        if (this._anyOrder()) this._pollDrops()   // FEAT-291: cheap until due (TourGuide.poll); main.js pumps the plan
         this.elapsed = this._getClockH ? (this._getClockH() - this._t0H) * secPerGameH() : this.elapsed + dt
 
         // Driven trace — where you actually were and what you were doing, at TRACE_HZ. This is the
@@ -858,14 +947,14 @@ export class MissionSystem {
      *        `stops` (FEAT-89): a MULTI-DROP of up to that many POIs of `pois` — see _multiDrop.
      * @returns {object|null} the mission, with fromPoi / startZone / endPoiId set
      */
-    planOffer (poi, { rng, dest = null, minM = 0 } = {}) {
+    planOffer (poi, { rng, dest = null, minM = 0, distMemo = null } = {}) {
         const anchor = { aId: poi.aId, bId: poi.bId, s: poi.s, poiId: poi.id }
         const tries = this._getRegion() ? REGION_ROLL_TRIES : 1
         let m = null
-        for (let i = 0; i < tries && !m; i++) m = this._roll(anchor, { rng, dest, minM })
+        for (let i = 0; i < tries && !m; i++) m = this._roll(anchor, { rng, dest, minM, distMemo })
         if (!m) return null
         if (dest?.fetch) m = fetchRoute(m, poi.id)
-        if (dest?.stops > 1) m = this._multiDrop(m, { rng, dest, tries })
+        if (dest?.stops > 1) m = this._multiDrop(m, { rng, dest, tries, poi })
         m.fromPoi = poi.id
         // The start threshold is centred on the MARKER (where you are parked), not on the mission's
         // road-side start pin ~11 m out across the shoulder.
@@ -880,7 +969,7 @@ export class MissionSystem {
      * roll from the stop it leaves, so it keeps the courier floor and band. A stop that plans no leg
      * ends the tour short; a tour of one stop is a plain point-to-point job.
      */
-    _multiDrop (first, { rng, dest, tries }) {
+    _multiDrop (first, { rng, dest, tries, poi }) {
         const legs = [first], used = new Set([first.endPoiId])
         while (legs.length < dest.stops) {
             const at = dest.pois.find(q => q.id === legs[legs.length - 1].endPoiId)
@@ -892,7 +981,42 @@ export class MissionSystem {
             if (!m) break
             legs.push(m); used.add(m.endPoiId)
         }
-        return legs.length > 1 ? joinLegs(legs) : first
+        return legs.length > 1 ? this._tourOf(poi, legs, dest.pois) ?? joinLegs(legs) : first
+    }
+
+    /**
+     * FEAT-291 (owner, 2026-11-18: "the router should choose the shortest path through all of them and show you that as the
+     * default route. Basically reuse the old paper customer routing"): the stops _multiDrop chose, in the SHORTEST order
+     * from the giver — the paper round's planner (planTourJob: each stop an (edge, arc) point spliced into the graph,
+     * Held-Karp exact), drained at once. Par is that tour priced once, the reference driver halting at every stop, so pay
+     * and the deadline follow its length. Each leg keeps its stop's point (`pt`) for the guide's re-plan. Null — the greedy
+     * order stands (joinLegs) — when the planner cannot reach every stop or its line leaves the wall (FEAT-43 guard 2).
+     */
+    _tourOf (poi, legs, pois) {
+        const road = this._getRoad(), region = this._planRegion(road)
+        const stops = legs.map(l => pois.find(q => q.id === l.endPoiId))
+        if (!poi || stops.some(q => !q)) return null
+        const t = stepJob(planTourJob(road, poi, stops, stops.length, region, REGION_MARGIN), Infinity).value
+        if (!t || t.stopsAt.length !== legs.length) return null
+        if (region && t.poly.some(p => Math.hypot(p.x - region.x, p.z - region.z) > region.r - REGION_MARGIN)) return null
+        const byId = new Map(legs.map(l => [l.endPoiId, l]))
+        const out = t.stopsAt.map(({ n, p, c }) => ({ end: byId.get(c.id).end, poiId: c.id, polyIdx: p, segIdx: n, objective: byId.get(c.id).objective, pt: c }))
+        // The last stop arrives by driving up, like any job's end (joinLegs' shape); par ends at rest either way.
+        const segments = t.segments.map((g, i, a) => (i === a.length - 1 && g.stop ? { ...g, stop: false } : g))
+        const pr = computePar(segments), fin = byId.get(out.at(-1).poiId), g0 = segments[0]
+        const sp = g0.centerline.pointAt(g0.s0), st = g0.centerline.tangentAt(g0.s0), dir = g0.s1 >= g0.s0 ? 1 : -1
+        return {
+            ...legs[0], start: { x: sp.x, z: sp.z, heading: headingToFace(st.x * dir, st.z * dir) },
+            end: fin.end, endPoiId: fin.endPoiId, objective: fin.objective, par: pr.time, distance: pr.distance,
+            poly: t.poly, polyCum: t.polyCum, segments, edges: segments.length, legs: out, stopIds: out.map(l => l.poiId),
+        }
+    }
+
+    /** The wall a roll plans inside: the story region, or (FEAT-77 follow-up, see _roll) the streamed network's band. */
+    _planRegion (road) {
+        return this._getRegion()
+            ?? (road._networkCenter && road._proto?.radius
+                ? { x: road._networkCenter.x, z: road._networkCenter.z, r: road._proto.radius } : null)
     }
 
     /**
@@ -932,7 +1056,7 @@ export class MissionSystem {
      *   reward needs the distance, owner 2026-10-25). Anchored POI legs only; the roadside floor
      *   (LEG_MIN) is above any value passed today.
      */
-    _roll(anchor = null, { rng = Math.random, dest = null, minM = 0 } = {}) {
+    _roll(anchor = null, { rng = Math.random, dest = null, minM = 0, distMemo = null } = {}) {
         const road = this._getRoad()
         if (!road) return null
         // The POST-CULL registered network — the roads that actually exist. Planning off the raw
@@ -951,9 +1075,7 @@ export class MissionSystem {
         // planned onto a frontier edge then "evaporates" (mission-network's drop-point check,
         // seed 6 (3825,-1225): 1.95 km from a 1400 m band centre). Ground inside the radius is
         // complete in both bands; the frontier is not, and it is not the planner's to roll on.
-        const region = this._getRegion()
-            ?? (road._networkCenter && road._proto?.radius
-                ? { x: road._networkCenter.x, z: road._networkCenter.z, r: road._proto.radius } : null)
+        const region = this._planRegion(road)
         const rMax = region ? region.r - REGION_MARGIN : Infinity
         const inRegion = (p) => !region || Math.hypot(p.x - region.x, p.z - region.z) <= rMax
 
@@ -1039,7 +1161,16 @@ export class MissionSystem {
                         if (d >= Math.max(lo, 1) && d <= hi) own.push({ q, d, direct: true })
                     }
                 }
-                // FEAT-89: `nearest` takes the closest candidate over BOTH exits (a multi-drop's next stop).
+                // FEAT-89: `nearest` takes the closest candidate over BOTH exits (a multi-drop's next stop), by road
+                // from the exit node. FEAT-292 (DEC-424): `nearerEnd` (a requisition line) takes it over both exits by
+                // the whole drive, the stretch from the POI out to that exit included: the nearer end of its road.
+                const headM = (ex) => {
+                    if (!dest.nearerEnd || !se) return 0
+                    const off = se.arcOffset ?? 0, L = se.arcLength ?? se.centerline.length, p = posOf.get(ex)
+                    const pE = se.centerline.pointAt(off + L), pS = se.centerline.pointAt(off)
+                    const s1 = Math.hypot(pE.x - p.x, pE.z - p.z) < Math.hypot(pS.x - p.x, pS.z - p.z) ? off + L : off
+                    return Math.abs(s1 - Math.max(off, Math.min(off + L, anchor.s)))
+                }
                 let near = null
                 for (const [ex, other] of pair) {
                     const c = legCandidates(ex, lo, hi)
@@ -1055,16 +1186,21 @@ export class MissionSystem {
                         const da = c.dist.get(qa) ?? Infinity, db = c.dist.get(qb) ?? Infinity
                         const entry = da <= db ? qa : qb
                         const d = Math.min(da, db)
-                        if (!(d >= lo && d <= hi)) continue
+                        // BUG-225: an UNREACHABLE destination is not a candidate. A requisition line's band is
+                        // [0, ∞] (anyLeg), so an Infinity distance passed it, `entry` became the off-graph node,
+                        // and the destination stretch below read posOf of nothing (seed 6666666 with no main-
+                        // piece filter: the camp chooser's graph keeps a bowing edge the planner drops). Now
+                        // the line does not plan, and its callers already handle a null.
+                        if (!(d >= lo && d <= hi && d < Infinity)) continue
                         if (!dest.anyLeg && _pathLength(c.prev, entry, ex) > MAX_EDGES) continue
                         // Same doubling-back rule as the roadside leg: never leave along the anchor edge.
                         if (_firstHop(c.prev, entry, ex) === other) continue
                         opts.push({ q, entry, d })
                     }
                     if (!opts.length) continue
-                    if (dest.nearest) {
-                        const o = opts.reduce((a, b) => (b.d < a.d ? b : a))
-                        if (!near || o.d < near.o.d) near = { ex, c, o }
+                    if (dest.nearest || dest.nearerEnd) {
+                        const o = opts.reduce((a, b) => (b.d < a.d ? b : a)), d = o.d + (o.direct ? 0 : headM(ex))
+                        if (!near || d < near.d) near = { ex, c, o, d }
                         continue
                     }
                     opts.sort((a, b) => (a.q.id < b.q.id ? -1 : a.q.id > b.q.id ? 1 : 0))
@@ -1109,7 +1245,9 @@ export class MissionSystem {
         }
         // Price a finished route: par, the HUD's arc table, the region's guard 2, the mission record.
         const priced = (segments, poly) => {
-            const { time, distance } = computePar(segments)
+            // FEAT-292: `distMemo` (a Map) asks for the route and its distance only, par unpriced (`par` reads 1): the
+            // camp's crossing choice (poi.js _evenRequisition) measures ~85 routes and keeps none.
+            const { time, distance } = distMemo ? { time: 1, distance: routeDistance(segments, distMemo) } : computePar(segments)
             if (!(time > 0)) return null
 
             // Cumulative XZ arc along the map polyline, for the HUD's route-remaining readout.
