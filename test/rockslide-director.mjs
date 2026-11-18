@@ -127,5 +127,27 @@ console.log('§5 the director on a straight run (fake road + debris)')
   ok(d.events >= 2 && d.events <= 12, `an hour at 25 m/s (90 km) on all-candidate road: ${d.events} slides (Poisson mean ≈ 4.5)`)
 }
 
+console.log('§6 cleanup — the owner\'s rule: ground unloaded AND keepH game hours on; frozen meanwhile; never in view')
+{
+  const H = ground(), e = RUN()
+  const road = { _network: new Map([['r', e]]), queryNearest: (x) => ({ runKey: 'r', arcS: x }), poiPadBlocked: () => false, junctionPadBlocked: () => false }
+  let groundOn = true, clock = 0, removed = 0
+  const frozen = []
+  const debris = { load () {}, spawn () { return {} }, remove (b) { removed += b.length } }
+  const d = new RockslideDirector({ debris, road: () => road, heightAt: H, rng: mulberry32(3), hasGround: () => groundOn, clockH: () => clock,
+    freeze: (b, on) => frozen.push(on) })
+  d.trigger()
+  for (let k = 0; k < 60 && !d.events; k++) d.update(1 / 60, { x: 600, y: 0, z: 2.5, vx: 0, vz: 0 })
+  const tick = () => d.update(1 / 60, { x: 600, y: 0, z: 2.5, vx: 0, vz: 0 })
+  clock = 5; tick()
+  ok(d.slides.length === 1 && !frozen.length, 'hours later, ground still loaded (the player is there): the rocks stay')
+  groundOn = false; clock = 5.5; d.slides[0].h0 = 5; tick()
+  ok(d.slides.length === 1 && frozen.at(-1) === true, 'ground unloaded half an hour after the slide: frozen, not gone')
+  groundOn = true; tick()
+  ok(d.slides.length === 1 && frozen.at(-1) === false, '…and woken when it streams back')
+  groundOn = false; clock = 5 + SLIDE.keepH; tick()
+  ok(d.slides.length === 0 && removed > 0, `ground unloaded and ${SLIDE.keepH} h on: gone`)
+}
+
 console.log(fail ? '\nFAIL — the rock slide director drifted' : '\nPASS — rate, timing, candidacy and the director hold')
 process.exit(fail)
