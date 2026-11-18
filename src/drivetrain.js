@@ -32,6 +32,13 @@ const SEIZE_SLIP_W = 1   // rad/s of clutch slip over which a seized engine's cl
 const RPM_PER_RAD = 60 / (2 * Math.PI)   // rad/s → rev/min
 const SHIFT_MATCH_W = 100 / RPM_PER_RAD   // rad/s (100 rpm) — input-vs-target shaft mismatch a clutch-in shift tolerates without grinding (BUG-218)
 
+/** BUG-218: |input shaft − target gear's speed| [rad/s] for a shift with the clutch in — the input shaft rides the
+ * flywheel (engineOmega), the target gear's teeth turn with the output (axle × that gear's ratio; N = 0). */
+function clutchInMismatch (st, axleOmega, target, gears, finalDrive, params) {
+  const tr = target > 0 ? gears[target - 1] : target < 0 ? -(params.reverseRatio || 3.4) : 0
+  return Math.abs(st.engineOmega - axleOmega * tr * finalDrive)
+}
+
 /**
  * Fit gearbox `key` (a data/transmissions.js entry) to the vehicle: its ratios spread over the params,
  * and a manual lands in N, clutch unlocked, no shift in flight (FEAT-126). The one path behind the
@@ -441,13 +448,6 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
  *
  * st.mGear: −1 R, 0 N, 1..N. activeGear mirrors it (0 while a shift is in flight).
  */
-/** BUG-218: |input shaft − target gear's speed| [rad/s] for a shift with the clutch in — the input shaft rides the
- * flywheel (engineOmega), the target gear's teeth turn with the output (axle × that gear's ratio; N = 0). */
-function clutchInMismatch (st, axleOmega, target, gears, finalDrive, params) {
-  const tr = target > 0 ? gears[target - 1] : target < 0 ? -(params.reverseRatio || 3.4) : 0
-  return Math.abs(st.engineOmega - axleOmega * tr * finalDrive)
-}
-
 function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve) {
   const gears      = params.gearRatios
   const nGears     = gears.length
