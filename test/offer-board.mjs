@@ -340,11 +340,12 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     }
     check('demolition rolls only at farms and work sites, always roadside, with a site dressing', demo > 0 && wrong === 0, `${demo} rolled, ${wrong} wrong`)
     // FEAT-267 (DEC-399): a hurried job — its deed and gate are courier's letters on time, and its deadline is par × (1 + 1.25).
-    check('a demolition card names its count in the sentence, no smash line (FEAT-256), states the deed and the gate as a time letter (FEAT-267), and its time limit is par × 2.25',
+    check('a demolition card names its count in the sentence, no smash line (FEAT-256), states the deed and the gate as a time letter (FEAT-267), its time limit is par × 2.25, and its pay line says the base is paid per target, the tip on time (DEC-403)',
         /needs \d+ /.test(card?.sentence.map(x => x.t).join('')) && !/\{n\}/.test(card?.sentence.map(x => x.t).join(''))
             && !card.terms.some(t => /smash/.test(t)) && card.deed === 'Deed: 1 if B or better · 1/2 at C'
+            && /^Pay \$[\d.]+ – \$[\d.]+: base per target, tip on time$/.test(card.pay)   // DEC-403
             && gateLine('B', 'demolition', 1) === 'if B or better' && DEADLINE_SLACK.demolition === 1.25,
-        JSON.stringify(card && { terms: card.terms, deed: card.deed }))
+        JSON.stringify(card && { terms: card.terms, deed: card.deed, pay: card.pay }))
 }
 
 // ── 11. names ───────────────────────────────────────────────────────────────────────────────────

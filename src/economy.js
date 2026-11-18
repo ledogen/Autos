@@ -366,6 +366,15 @@ export function splitFragilePayout (par, ratio, health, payTier, payMult = 1, ti
     return { base: baseC / 100, tip: tipC / 100, total: (baseC + tipC) / 100 }
 }
 
+/**
+ * DEC-403 (owner, 2026-11-17): what the first `k` of a demolition job's `n` targets have paid of its `base` —
+ * n equal shares to the cent, the rounding remainder on the last, so the n shares sum to the base exactly.
+ */
+export function sharesPaid (base, n, k) {
+    const baseC = Math.round(base * 100), shareC = Math.floor(baseC / n)
+    return (k >= n ? baseC : Math.max(0, k) * shareC) / 100
+}
+
 /** Rank letters, best first. Index order IS the "or better" order bonusEarned reads. */
 export const RANKS = ['S', 'A', 'B', 'C', 'D']
 
@@ -536,11 +545,27 @@ export class EconomySystem {
         // FEAT-142: Off the books earns no deed; The right thing to do adds ½ at C or better.
         const points = mission?.deeds === 'none' ? 0
             : pointsFor(result.letter) + (mission?.deeds === 'extraHalf' && pointsFor(result.letter) > 0 ? 0.5 : 0)
-        runEconomy.money = _cents(runEconomy.money + payout)
+        // DEC-403: a demolition job's base was banked a share per target as each fell (payTarget) — the wallet
+        // takes the rest here, so a full clear pays base + tip exactly once.
+        runEconomy.money = _cents(runEconomy.money + payout - (mission?.targets ? mission.sitePaid ?? 0 : 0))
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1
         if (result.letter in runEconomy.ranks) runEconomy.ranks[result.letter]++
         return { payout, base, tip, points, award: this._award(mission?.bonus, result.letter) }
+    }
+
+    /**
+     * DEC-403: demolition's `k`-th target is down — bank its share of the job's base (basePay on the terms frozen at
+     * accept, as settle() prices it) on the spot. Pays what the first k have earned less what is already banked
+     * (`mission.sitePaid`, saved with the job), so two falling in one poll pay both, and a resume re-seeing k pays nothing.
+     */
+    payTarget (mission, k) {
+        const mult = isFinite(mission?.payMult) ? mission.payMult : 1
+        const base = basePay(mission.par, (mission.terms ?? { payTier: regionTier(1) }).payTier ?? 1, mult)
+        const paid = sharesPaid(base, mission.targets.length, k)
+        const share = this.addSpot(paid - (mission.sitePaid ?? 0))
+        mission.sitePaid = Math.max(paid, mission.sitePaid ?? 0)
+        return share
     }
 
     /**

@@ -484,7 +484,8 @@ export class MissionSystem {
         if (!this.isOnJob() || !m?.offerId) return null
         return { state: this.state, elapsed: this.elapsed, t0H: this._t0H, leg: this.leg,
                  terms: m.terms ?? null, dueH: m.dueH, expired: !!m.expired, failed: !!m.failed,
-                 approach: !!m.approach, bundles: m.bundles, payMult: m.payMult, stockCost: m.stockCost ?? null }
+                 approach: !!m.approach, bundles: m.bundles, payMult: m.payMult, stockCost: m.stockCost ?? null,
+                 sitePaid: m.sitePaid ?? 0 }   // DEC-403: the demolition shares already in the wallet
     }
 
     /**
@@ -494,7 +495,7 @@ export class MissionSystem {
      */
     resume(offer, mission, s) {
         Object.assign(mission, { terms: s.terms, dueH: s.dueH, expired: s.expired, failed: s.failed,
-                                 approach: s.approach, bundles: s.bundles, payMult: s.payMult, stockCost: s.stockCost })
+                                 approach: s.approach, bundles: s.bundles, payMult: s.payMult, stockCost: s.stockCost, sitePaid: s.sitePaid ?? 0 })
         this.offers = []
         this.offer = offer
         this.mission = mission
@@ -537,7 +538,8 @@ export class MissionSystem {
     cancel(cargo = null) {
         if (!this.isOnJob()) return null
         const id = this.mission?.offerId ?? null
-        this.result = { abandoned: true, elapsed: this.elapsed, payout: 0, base: 0, tip: 0, points: 0, cargo }
+        // DEC-403: a demolition job's shares stay paid — `payout` says what the job put in the wallet (the run log reads it).
+        this.result = { abandoned: true, elapsed: this.elapsed, payout: this.mission?.sitePaid ?? 0, base: 0, tip: 0, points: 0, cargo }
         this.state = 'done'
         this._onChange()
         return id
@@ -802,7 +804,7 @@ export class MissionSystem {
      */
     expire() {
         if (!this.mission?.expired || !this.isOnJob()) return null
-        this.result = { expired: true, dueH: this.mission.dueH }
+        this.result = { expired: true, dueH: this.mission.dueH, payout: this.mission.sitePaid ?? 0 }   // DEC-403: the shares kept, no tip
         this.state = 'done'
         this._onChange()
         return this.mission.offerId ?? null

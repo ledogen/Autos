@@ -1390,6 +1390,7 @@ const STEPS = [
     await sleep(2000)
     const awake = await js(`${bodies}.filter(t => window.__physicsEngine.isAwake(t.body)).length`)
     check(awake === 0 && await js('window.__cargo().site.every(t => !t.smashed)'), `untouched targets did not stay asleep and standing: ${awake} awake`)
+    const w0 = await js('window.__econ.money')   // DEC-403: a requisition line's hits pay nothing (FEAT-103)
     // Kick one: the engine wakes it, it moves, the poll latches it smashed.
     await js(`(() => { const t = ${bodies}[0], p = new (window.__vs.position.constructor)(), q = new (window.__vs.quaternion.constructor)()
       window.__physicsEngine.getTransform(t.body, p, q); window.__physicsEngine.applyImpulse(t.body, { x: 200, y: 100, z: 0 }, p) })()`)
@@ -1426,9 +1427,63 @@ const STEPS = [
     check(res.letter === res.want && res.letter !== 'S', `the line is not lettered on time: ${JSON.stringify(res)}`)
     check(await js('(n => new RegExp(`Smashed\\\\s*${n} \\\\/ ${n}`).test(document.getElementById("mp-body")?.textContent ?? ""))(window.__mission().mission.targets.length)'),
       `the result card does not count every target smashed: "${await js('document.getElementById("mp-body")?.textContent')}"`)
+    check(await js('window.__econ.money') === w0, `the requisition line paid for its targets: $${w0} → $${await js('window.__econ.money')}`)
     await js('document.getElementById("mp-accept").click()')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
+    // DEC-403: a BOARD demolition job (a farm's or a work site's, wherever one is live, the way the save step takes its
+    // freight) pays its base a share per target the moment each falls, quoted like a paper's money; past the deadline
+    // with targets standing it ends on what the hits paid, no tip.
+    const dj = await js(`(() => { const b = window.__cargo().board, now = window.__day().clockH()
+      for (const q of window.__map2d()._getPois()) {
+        if (!q.jobs || q.hidden || q.drop || q.park || q.type === 'expeditionCamp') continue
+        const o = b.offers(q.id, now).find(o => b.spec(o)?.family === 'demolition' && !b.spec(o).line)
+        if (o) return { h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type, ...${PAD_SEAT}(q) }
+      }
+      return null })()`)
+    let took = false
+    if (dj) {
+      await seat(dj.x, dj.z, dj.h)
+      await park(true)
+      if (SHOP_TYPES.has(dj.type) && await until(() => vis('svc-screen'), 2000)) await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+      if (await until(() => vis('mp-accept'), 2000)) {
+        for (let i = 0; i < 8 && await js(`window.__mission().offer?.id !== ${JSON.stringify(dj.id)}`); i++) await js('document.getElementById("mp-next")?.click()')
+        if (await js(`window.__mission().offer?.id === ${JSON.stringify(dj.id)} && !document.getElementById("mp-accept").disabled`)) {
+          await js('document.getElementById("mp-accept").click()')
+          took = !!await until(() => js('window.__site()?.mission === window.__mission().mission'), 5000)
+        }
+      }
+    }
+    if (!took) console.log('  demolition: no takeable board demolition offer in this region — the per-target pay is proven on the sheet run only')
+    else {
+      const n = await js('window.__mission().mission.targets.length'), w1 = await js('window.__econ.money')
+      await js('window.__site().targets[0].smashed = true')
+      check(await until(() => js(`window.__econ.money > ${w1}`), 2000), 'DEC-403: a board demolition target fell and paid nothing')
+      const share = Math.round((await js('window.__econ.money') - w1) * 100) / 100
+      const ro = 'document.getElementById("throw-readout")'
+      check(await until(() => js(`/smashed .*\\+\\$/.test(${ro}.textContent) && ${ro}.checkVisibility()`), 1000),
+        `DEC-403: the hit's pay is not quoted: "${await js(`${ro}.textContent`)}"`)
+      await js('window.__site().targets[1].smashed = true')
+      check(await until(() => js(`window.__econ.money > ${w1 + share}`), 2000), 'DEC-403: the second target paid nothing')
+      const w2 = await js('window.__econ.money')
+      // The deadline passes with the rest standing: the job is over, the two shares stay, no tip.
+      // (Pulled to now, not slept to: the deadline is hours of game clock, and a skip that long crashes the driver.)
+      await js('window.__mission().mission.dueH = window.__day().clockH()')
+      check(await until(() => js('window.__mission().mission.expired'), 2000), 'the board demolition job did not expire at its deadline')
+      await js('window.__site() && window.__site().targets[2] && (window.__site().targets[2].smashed = true)')
+      await sleep(400)
+      check(await js('window.__econ.money') === w2, 'DEC-403: a target felled past the deadline paid')
+      await park(true)
+      await js('document.getElementById("job-cancel").click()')
+      check(await until(() => js('window.__mission().result?.expired'), 2000), 'signing off the expired demolition job did not end it')
+      const txt = await js('document.getElementById("mp-body").textContent')
+      check(/no tip/.test(txt) && new RegExp(`Smashed\\s*2 / ${n}`).test(txt) && txt.includes('$' + (w2 - w1).toFixed(2)) && await js('window.__econ.money') === w2,
+        `DEC-403: the expired card does not keep the two shares: "${txt}" (wallet $${w1} → $${await js('window.__econ.money')})`)
+      console.log(`  demolition: board job ${dj.id} (${dj.type}), ${n} targets, $${share} a share, expired on 2 down: "${txt}"`)
+      await js('document.getElementById("mp-accept").click()')
+      await tap(' ')
+      await sleep(300)
+    }
   }],
   // FEAT-154: a road out of the area. Full throttle at its barricade row: the loose barricades get
   // smashed aside, past the fade line the screen goes black, and the truck comes back on a road inside

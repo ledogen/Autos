@@ -12,8 +12,9 @@ lane: SM-3 missions
 # FEAT-267: Demolition runs on the papers' deadline and route planner
 
 ## Next steps
-Built on `land/feat-267-demolition-deadline` (see Log). The owner drives a demolition job on the play build and answers
-the owed card `feat267-demolition-drive` (the slack number, the deadline rule, the words).
+Built on `land/feat-267-demolition-deadline`, then DEC-403's pay per target on `land/feat-267-pay-per-target` (see Log).
+The owner drives a demolition job on the play build and answers the owed card `feat267-demolition-drive` (the slack
+number, the par stretch, the words).
 
 ## Summary
 A demolition job becomes a hurried job like a paper round: one deadline for the whole job, priced from the planned
@@ -43,10 +44,12 @@ To build, mirroring the paper round as FEAT-266 leaves it:
 - [x] GPS follows the remaining tour and turns back for a missed target when shorter
 - [x] Slack set slightly easier than courier's, number on the card (1.25 vs 1.0 [DEFAULT])
 - [x] Gates and the smoke's demolition step updated; saves from before still load
+- [x] DEC-403: the base paid a share per target as each falls; the tip on time at the settle; an expiry or abandon keeps the shares
 - [ ] Owner drives a demolition job
 
 ## Decisions
 - 2026-11-17, owner: DEC-399.
+- 2026-11-17, owner: DEC-403 (pay per target, tip on time only).
 
 ## Files
 `src/demolition.js` · `src/mission.js` · `src/par.js` · `data/offers.js`
@@ -59,3 +62,9 @@ To build, mirroring the paper round as FEAT-266 leaves it:
   Impatient / Patient now apply. RANK_TABLE.demolition, hitWindowS, nearestTarget/guideTo, lastHitS gone. Clean-run model:
   wip/feat-267/clean-run.log (9 sites, 0.69–0.72 par at 40 km/h). 41/41 affected gates, full smoke 38/38 (zero console
   errors), pad-e2e ALL OK. Sheet wip/feat-267/sheet.jpg. Owed: feat267-demolition-drive.
+- 2026-11-17 (lane s): DEC-403 built on land/feat-267-pay-per-target. economy.js `sharesPaid` / `payTarget` (a share banked per fall,
+  `mission.sitePaid` saved with the job), settle pays only the rest (the tip); expire/cancel results carry the kept shares.
+  Gates: economy.mjs + offer-board.mjs extended; 41/41 affected green (wip/feat-267/gates-r2.log). Full smoke 38/38 zero console
+  errors (smoke-r2.log, no board demolition offer live at that hour; the step subset smoke-demo-r2.log took one: $0.50 a
+  share, expiry keeps $1.00), pad-e2e ALL OK. Sheet
+  wip/feat-267/sheet-r2.jpg (full clear: $10 → $18.99 = base $5.25 + tip $3.74 exactly).

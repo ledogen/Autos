@@ -6903,7 +6903,8 @@ function _placeSite (m, smashed = []) {
     mesh.visible = !smashed.includes(i)
     _siteGroup.add(mesh)
     return { kind: t.kind, pos: mesh.position.clone(), q: mesh.quaternion.clone(), mesh, body: null, smashed: !mesh.visible }
-  }) }
+  }), down: smashed.length }   // DEC-403: `down` = the targets already paid for (a resume's are in the saved wallet)
+  m.siteDown = smashed.length
   // FEAT-187 (owner, 2026-11-07: "a paper delivery style halo on the center of the group of prop targets … on the shoulder
   // where the prop targets are"): one halo a cluster, at its members' centre (they stand on the shoulder), wide enough to
   // hold them — never under the paper target's radius. The paper's ring and pip, in its white. Lit by _updateSite.
@@ -6934,13 +6935,14 @@ function _clearSite () {
 }
 /** { smashed, of } of mission `m`'s site — nothing smashed when its site isn't the one standing. */
 function _siteCount (m) {
-  return { smashed: _site?.mission === m ? _site.targets.filter(t => t.smashed).length : 0, of: m.targets?.length ?? 0 }
+  return { smashed: _site?.mission === m ? _site.targets.filter(t => t.smashed).length : m.siteDown ?? 0, of: m.targets?.length ?? 0 }
 }
 /** The 10 Hz poll (see above). */
 function _updateSite () {
   if (!_site) return
   const D = DEMOLITION_PARAMS, p = vehicleState.position, still = { x: 0, y: 0, z: 0 }
-  const live = missionSystem.mission === _site.mission && missionSystem.isOnJob()
+  // DEC-403: past the deadline the job is over (it waits only to be signed off): nothing more falls or pays.
+  const live = missionSystem.mission === _site.mission && missionSystem.isOnJob() && !_site.mission.expired
   let near = false
   for (const t of _site.targets) {
     const d = Math.hypot(p.x - t.pos.x, p.z - t.pos.z)
@@ -6966,6 +6968,8 @@ function _updateSite () {
     // the GPS shows the job's own route.
     const m = _site.mission, standing = _site.targets.flatMap((t, i) => t.smashed ? [] : [i])
     m.cleared = !standing.length
+    const down = _site.targets.length - standing.length
+    if (down > _site.down) { _site.down = m.siteDown = down; _paySiteShare(m, down) }   // siteDown: the count once the site is gone
     const now = performance.now() / 1000
     if (!_site.rr && standing.length && (standing.length !== _site.left || !(now - _site.planAt < RR_PARAMS.tourS))) {
       _site.left = standing.length; _site.planAt = now
@@ -6979,6 +6983,19 @@ function _updateSite () {
     h.ring.visible = h.pip.visible = on
   }
   if (!live && !near) _clearSite()
+}
+/**
+ * DEC-403 (owner, 2026-11-17: "pay per target … dopamine on hit"): the `down`-th target fell — its share of the base
+ * goes into the wallet now (economy.js payTarget), quoted the way a paper's accuracy money is, with the result card's
+ * coin. The settle then pays only the tip. A requisition line pays nothing (FEAT-103); a Quick Job never pays.
+ */
+function _paySiteShare (m, down) {
+  if (!m.fromPoi || m.line) return
+  const share = economySystem.payTarget(m, down)
+  runLog.on && runLog.event('share', { offerId: m.offerId, down, of: m.targets.length, share, paid: m.sitePaid, wallet: economySystem.money() })   // FEAT-242
+  if (!(share > 0)) return
+  _showThrowReadout(`<span style="color:var(--money)">${down} / ${m.targets.length} smashed &nbsp;·&nbsp; +$${formatMoney(share)}</span>`)
+  playCoin()
 }
 /** FEAT-267: spend this frame's spare time on the site's tour; when it lands, the GPS gets its leg to the next cluster. */
 function _pumpSiteGuide (budgetMs) {
@@ -7422,7 +7439,8 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
     // R-20: the result says where each dollar came from — "Base pay" (docked for damage on fragile), then
     // "Speed tip", then the optional item (FEAT-199).
     + beat(`<br><span class="mp-dim">Base pay</span> <span class="mp-pay">$${formatMoney(base)}</span>`
-        + (condition != null && condition < 1 ? ` <span class="mp-dim">docked for damage</span>` : ''))
+        + (condition != null && condition < 1 ? ` <span class="mp-dim">docked for damage</span>` : '')
+        + (site ? ` <span class="mp-dim">paid per target</span>` : ''))   // DEC-403: already in the wallet, a share a hit
     + row('Speed tip', formatMoney(tip), ` data-countup="${tip}"`)
     // FEAT-199: the optional item — earned (the buttons below pick: the cash, or the cash less its cost
     // with it), or what it needed.
@@ -7491,9 +7509,16 @@ function _revealResult (body, letter = null) {
   }
 }
 
-/** FEAT-113: the result card of a job signed off past its deadline (POI job and paper route alike). */
-function _expiredCard (dueH) {
-  return `<span class="mp-big">Expired</span><br><span class="mp-dim">was due ${formatDue(dueH)} &mdash; no pay</span>`
+/**
+ * FEAT-113: the result card of a job signed off past its deadline (POI job and paper route alike). DEC-403: a demolition
+ * job (`site` = { smashed, of }) keeps the shares its hits paid (`kept`), and gets no tip.
+ */
+function _expiredCard (dueH, site = null, kept = 0) {
+  if (!site) return `<span class="mp-big">Expired</span><br><span class="mp-dim">was due ${formatDue(dueH)} &mdash; no pay</span>`
+  return `<span class="mp-big">Expired</span><br><span class="mp-dim">was due ${formatDue(dueH)} &mdash; no tip</span>`
+    + `<br><span class="mp-dim">Smashed</span> <span class="mp-pay">${site.smashed} / ${site.of}</span>`
+    + `<br><span class="mp-dim">Paid per target</span> <span class="mp-pay${kept > 0 ? '' : ' mp-bad'}">$${formatMoney(kept)}</span>`
+    + ` <span class="mp-dim">yours to keep</span>`
 }
 /**
  * The abandoned job's card (owner, 2026-10-15): the word, the time, what became of the cargo, and $0.
@@ -7515,7 +7540,9 @@ function _abandonedCard (r, extra = '') {
   return `<span class="mp-big mp-bad">Abandoned</span>`
     + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
     + extra + cargo + bought
-    + `<br><span class="mp-dim">Pay</span> <span class="mp-pay mp-bad">$${formatMoney(0)}</span>`
+    // DEC-403: a demolition job's hits already paid their shares (r.payout), and they stay paid.
+    + (r.payout > 0 ? `<br><span class="mp-dim">Paid per target</span> <span class="mp-pay">$${formatMoney(r.payout)}</span> <span class="mp-dim">yours to keep</span>`
+      : `<br><span class="mp-dim">Pay</span> <span class="mp-pay mp-bad">$${formatMoney(0)}</span>`)
 }
 
 // Story-mode DOM. Two surfaces: the offer/result panel (over the map) and the in-run HUD.
@@ -7641,7 +7668,9 @@ function _renderMissionUI () {
       panel.dataset.result = ''   // BUG-109: a result card — the pad drives through it (menu-nav.js)
       const r = m.result
       if (r.expired) {   // FEAT-113: signed off past the deadline — no letter, no pay
-        body.innerHTML = _expiredCard(r.dueH)
+        // DEC-403: a board demolition job keeps its shares (a requisition line's pay nothing: plain "no pay").
+        const site = m.mission?.targets && !m.mission.line ? _siteCount(m.mission) : null
+        body.innerHTML = _expiredCard(r.dueH, site, r.payout ?? 0)
         btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', false)
         btn('mp-regen', false); btn('mp-prev', false); btn('mp-next', false)
         unmountExportRow('mission-panel')
@@ -7650,7 +7679,8 @@ function _renderMissionUI () {
         break
       }
       if (r.abandoned) {
-        body.innerHTML = _abandonedCard(r)
+        const site = m.mission?.targets ? _siteCount(m.mission) : null   // DEC-403: the count its shares paid for
+        body.innerHTML = _abandonedCard(r, site ? `<br><span class="mp-dim">Smashed</span> <span class="mp-pay">${site.smashed} / ${site.of}</span>` : '')
         btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', !m.mission?.fromPoi)
         btn('mp-regen', false)
         btn('mp-prev', false); btn('mp-next', false)

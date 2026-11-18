@@ -1078,6 +1078,8 @@ export class OfferBoard {
         // in one breath. A haul reads as a trade: "Bundle costs $0.25 · sells for $0.50 – $1.00 by speed".
         const pay = !range ? null
             : sp.stock ? `Bundle costs ${money(stockPrice(par, payTier, sp.payMult))} · sells for ${money(range.base)} – ${money(range.max)} by speed`
+            // DEC-403: a demolition base is paid a share per target as each falls; the tip is time alone. PLACEHOLDER words.
+            : sp.targets ? `Pay ${money(range.base)} – ${money(range.max)}: base per target, tip on time`
             : `Pay ${money(range.base)} – ${money(range.max)} based on speed`
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
