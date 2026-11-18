@@ -6928,6 +6928,9 @@ function _questMark () {
   _questBeam.position.set(_qmP.x, _qmP.y + Math.max(half.x, half.y, half.z) + QUEST_BEAM_GAP + QUEST_BEAM_H / 2, _qmP.z)
   if (body != null) { debrisSystem.blink(body, 0.5 - 0.5 * Math.cos(2 * Math.PI * performance.now() / 1000), [1, 1, 1]); _questLit = body }
 }
+// dev handle — test/cdp-smoke.mjs: null without a mark, else whether the beam's foot is in view and the pulse is on the body
+window.__questMark = () => _questBeam.visible ? { lit: _questLit != null, onScreen: (({ x, y, z }) => Math.abs(x) < 1 && Math.abs(y) < 1 && z < 1)(
+  _qmP.copy(_questBeam.position).setY(_questBeam.position.y - QUEST_BEAM_H / 2).project(camera)) } : null
 
 /** What the inventory lists under "Nearby on the ground": in reach of the parked truck's outline, nearest first. */
 function _groundNearby () {
