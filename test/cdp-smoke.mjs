@@ -2383,6 +2383,19 @@ const STEPS = [
     { const g = said.findLastIndex(t => /pull up at a pump/.test(t))
       check(said[g + 1] !== 'Mom: <click>', `mom hung up before the fill-up (DEC-354: she stays on the line): ${JSON.stringify(said.slice(g - 2, g + 2))}`) }
     check(await js('window.__econ.money') === 3, `the peanuts did not leave mom's $3 of gas money: $${await js('window.__econ.money')}`)
+    // DEC-356, between cards (the store is free again, BETWEEN): the shelf itself keeps the gas money — a second bag says
+    // "one bag will do", any other row "Katie asked for the peanuts", their buttons off.
+    await simFor(1); await park(true)
+    check(await until(shopUp, 3000), 'parked at the store again on the pump stop, no shop')
+    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
+    for (const [q, why] of [[nut, 'one bag will do'], ['document.querySelector("#svc-screen .sv-line[data-item]:not([data-item=bagOfPeanuts])")', 'Katie asked for the peanuts']]) {
+      if (q !== nut && !await js(`!!${q}`)) continue   // a shelf of peanuts alone has no other row
+      await js(`${q}.click()`)
+      const lk = await js(`({ why: !!document.querySelector("#svc-screen .sv-kids")?.textContent.includes(${JSON.stringify(why)}), on: [...document.querySelectorAll("#svc-screen .sv-kids :is([data-act=stow], [data-act=buy], [data-act=eat])")].filter(b => !b.disabled).length })`)
+      check(lk.why && lk.on === 0, `the pump stop's shelf sells past mom's gas money (DEC-356, "${why}"): ${JSON.stringify(lk)}`)
+    }
+    await tap('Escape')
+    check(await until(async () => !await shopUp(), 2000), 'Escape did not close the store the second time')
     const pz = await js(`(() => { const q = window.__poi().list().find(q => q.id === window.__worstDay().pump.id); return window.__towSeat(q) })()`)
     await tp(pz.x, pz.z, pz.heading); await park(true)
     check(await until(() => js('document.getElementById("pump-display").classList.contains("on")'), 3000), "the station: parking at its pump opened no pump")
