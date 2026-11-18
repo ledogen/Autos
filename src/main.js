@@ -76,7 +76,7 @@ import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearb
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
-import { initTutGate, stepFor, allows, refuse } from './tut-gate.js'   // FEAT-288 P2: the tutorial's lock and highlight
+import { initTutGate, stepFor, allows, refuse, BETWEEN } from './tut-gate.js'   // FEAT-288 P2: the tutorial's lock and highlight
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -109,7 +109,7 @@ import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + fl
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_CALL, PAYCHECK, LARRY_PACK, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT, PHONE } from '../data/dialogue.js'
-import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149)
+import { TUTORIAL, PACK_TOSS, flatRadius } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149)
 import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
@@ -151,6 +151,7 @@ import { siteTargets, siteStops, DEMOLITION_PARAMS, TARGET_TYPES } from './demol
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
+import { autoDrive } from './auto-drive.js'                   // FEAT-293 (DEC-428): the debug panel's driving AI
 import { runLog, scalars } from './run-log.js'             // FEAT-242 (DEC-358): the opt-in run log — every call below is behind runLog.on
 
 // World seed — the URL's ?seed= when it names one, else a fresh random world. There is no default
@@ -2136,7 +2137,7 @@ const map2d = new Map2D({
   // FEAT-211: the player's waypoint — { x, z, poly } with poly the line the GPS guides along (null while a job has the
   // guide: the waypoint is then only a pin), or null; and the drop / clear (null) from the map's input, true if it acted.
   getWaypoint: () => _waypoint ? { x: _waypoint.x, z: _waypoint.z, poly: _waypointOn() ? _tutLine(_waypoint.route)?.poly ?? null : null }
-    : (({ x, z } = {}) => x == null ? null : { x, z, poly: null })(_tutRanchPin() ?? undefined),   // DEC-346: the tutorial's own (its line is the GPS's)
+    : _tutMapLeg(),   // DEC-346 / FEAT-288 P4: the tutorial leg's own pin and line
   onWaypoint: (p) => !dialogueSystem.holding && _tutWaypointOk(p) && _setWaypoint(p),   // a dialogue over the map keeps its Enter
   // Q / E with no source under the cursor: step the parked offer panel the map is open behind.
   onCycle: (d) => { if (missionSystem?.state === 'offer') missionSystem.cycle(d) },
@@ -3079,6 +3080,11 @@ window.__setBodyGrip = () => setBodyGrip(physicsEngine, vehicleChassis, RANGER_P
 window.__syncChassisMass = () => syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS)   // debug.js Mass slider + vehicle preset
 window.__vs = vehicleState                    // dev handle — read live vehicle state from the console / CDP probes
 window.__roadSys = () => roadSystem           // dev handle — the LIVE RoadSystem instance (getter: play swaps instances on seed regen); __road() below is the stats view
+autoDrive.attach({   // FEAT-293: the driving AI drives the live network from where the truck is
+  road: () => roadSystem, region: () => storySystem?.region() ?? null, params: RANGER_PARAMS, vs: vehicleState, seed: () => worldSeed,
+  flat: () => damageModel.flat.some(Boolean), teleport: (x, z, h) => teleportToGround(x, z, h, 0.5, true),
+})
+window.__autoDrive = autoDrive   // dev handle — the smoke's toggle and hand-back step
 
 // FEAT-33: is the starter motor actually turning? Not the same as state === 'cranking' — the key
 // stays at START while it is held, so an over-crank against an already-running engine still has the
@@ -3365,8 +3371,9 @@ function _rebuildPoiMarkers () {
     }
 
     // The ring means "park here and something happens", so it belongs only to markers where
-    // something does. The services are unbuilt and mom's house has her own doorstep prompt.
-    if (!q.jobs) continue
+    // something does: a job giver, and mom's house (FEAT-288, DEC-422: "Mom's house should have a marked parking spot
+    // just like everyone else" — her door, camp.js atMoms, answers 25 m round her marker, so the 10 m ring sits inside it).
+    if (!q.jobs && q.type !== 'momsHouse') continue
     // FEAT-88: a haul giver's "park here" is its drop zone, not a ring round the pad.
     if (q.drop) { _addDropMark(q); continue }
     const box = q.park ? dropZoneWorld(q, q.park) : null
@@ -4695,9 +4702,10 @@ const TUT_PARAMS = { lowTankFrac: 0.125, gasCash: 3, offRoadS: 4,
 const TUT_STAMPS = { pack: 8, larry: 8, snack: 9, pump: 10, camp: 10, home: 17, bed: 21.5, joint: 31 }   // joint: 07:00 next morning (FREE_WILL), DEC-357
 let _waypoint = null  // FEAT-211: { x, z, door, route } while one is set: the road point, its planner stop, the line to it (see _setWaypoint)
 let _evePump = null   // { q, done }: the snack station's pump while its fill-up is due, or null (not saved: a resume skips it)
-// FEAT-184 stage 4: the flat halfway home. _eveHomeFrom is the crow distance to mom's when the drive home began (after the
-// station, if there was one); the flat lands at half of it, once. Not saved: a resume carries the flat in the damage model.
-let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: stage 5 — the tow happened, it's night
+// FEAT-184 stage 4: the flat on the drive home. _eveFlatR is the crow radius round mom's inside which it goes off, once
+// (data/tutorial.js flatRadius: FLAT.alongM along the drive home's line, FEAT-288 P4). Not saved: a resume carries the flat
+// in the damage model.
+let _eveFlatR = null, _eveFlat = false, _eveTowed = false   // _eveTowed: stage 5 — the tow happened, it's night
 // FEAT-184 (DEC-151): the evening's tire is on mom — the part once and its fitting once (ServiceCenter onMom). Not saved:
 // a resume mid-evening owes it again.
 const _momOwes = { part: true, labour: true, patch: true }   // patch: FEAT-217, the first flat patched at the shop
@@ -4711,7 +4719,7 @@ window.__tutorial = () => ({ phase: _tutCardOpen ? 'card' : _firingDay() ? (dial
   camp: _firingDay() && _campDoor() ? { x: _campDoor().x, z: _campDoor().z } : null,   // DEC-304
   until: dialogueSystem.current()?.until ?? null })   // DEC-359: the card up waits for this action: the snack's camping area
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
-window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, pumpsShut: _pumpsShut(), homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed, held: damageModel.held,
+window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, pumpsShut: _pumpsShut(), flatR: _eveFlatR, flat: _eveFlat, towed: _eveTowed, held: damageModel.held,
   snackLock: (id) => _snackLock({ id }) })   // DEC-356's shelf guard (the smoke: her cards lock the rows it would refuse)
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
@@ -4845,6 +4853,14 @@ const _atRanch = (door, v) => campSystem.zoneAt(v.x, v.z) === door.zone || Math.
  *  saved, gone on arrival). The player's own pin, when one is set, is shown instead. */
 const _tutRanchPin = () => _tutDrive() && dialogueSystem.has(DLG.played) && _dayStop() === 'camp' && !dialogueSystem.has('tut-ranch')
   && _campUi?.mode !== 'camp' ? _campDoor() : null   // DEC-356: a camp made short of the pin clears it (and the line, _eveTarget)
+/** FEAT-288 P4 (DEC-422: "Tutorial missions should show their destination on the map and the route should be plotted on the
+ *  map"): the leg in play as the map's waypoint — a pin on its door and the GPS's own line (detour and all) — never saved.
+ *  The drive out to the ranch keeps DEC-346/356's rule: gone on arrival, or once camp is made short of it. */
+const _tutMapLeg = () => {
+  if (!_tutDrive() || !dialogueSystem.has(DLG.played) || (_dayStop() === 'camp' && !_tutRanchPin())) return null
+  const leg = _tutLeg()
+  return leg && { x: leg.door.x, z: leg.door.z, poly: _tutLine(leg.base)?.poly ?? null }
+}
 /** Mom's toss: the starting pack on the ground by her steps, falling. Idempotent: only when it is neither on board nor down. */
 function _tossPack () {
   const q = _mom()
@@ -5060,10 +5076,11 @@ function _showResetCountdown (n) {
 function _eveningLessons (q, v, stop) {
   // FEAT-184 stage 3: the pedals once the key has caught.
   if (vehicleState.ignition?.state === 'running') _tut('tut-drive')
-  // Stage 4: halfway home from the camping area (DEC-304), the front left goes flat — once. Then V shows it.
+  // Stage 4: on the drive home from the camping area (DEC-304), FLAT.alongM along its line (FEAT-288 P4: before the
+  // tunnel), the front left goes flat — once. Then V shows it.
   if (stop === 'home') {
-    _eveHomeFrom ??= Math.hypot(q.x - v.x, q.z - v.z)
-    if (!_eveFlat && Math.hypot(q.x - v.x, q.z - v.z) < 0.5 * _eveHomeFrom) {
+    _eveFlatR ??= flatRadius(_homeGuide()?.poly, q)
+    if (!_eveFlat && _eveFlatR != null && Math.hypot(q.x - v.x, q.z - v.z) < _eveFlatR) {
       _eveFlat = true
       if (!damageModel.flat[0]) { damageModel.flat[0] = true; damageModel.popped.push(0) }   // the bang (drained by the game layer)
       _flatSpare()   // …and the spare is flat too
@@ -5071,8 +5088,10 @@ function _eveningLessons (q, v, stop) {
     }
   }
   if (damageScreen.isOpen && damageModel.flat.some(Boolean)) _tut('tut-damage')
-  // Stage 5: towed and back on the road, it's night — the headlights.
-  if (_eveTowed && !serviceScreen.isOpen && !vehicleState.parked) _tut('tut-lights')
+  // Stage 5: towed and the tire bought, it's night — the headlights.
+  // FEAT-288 P4 (DEC-422): as the tire's check-out lands, not on the shift. The cart fits the tire at once and a highlighted
+  // shelf row is fitted for a look, so the flat alone cannot tell; mom's tire (or patch) is spent only at the check-out.
+  if (_eveTowed && _eveFlat && !_flatOwed() && !(_momOwes.part && _momOwes.patch)) _tut('tut-lights')
   // DEC-357 (owner, 2026-11-16): the tire fixed, the driver is SLEEPY — the eye blinks (and day.js's slower hands), no doze —
   // so her energy card makes sense at the door. Idempotent: lands the band once; her door's bed stamp drains on from it.
   if (stop === 'home' && _eveFlat && !_flatOwed() && !dialogueSystem.has('tut-home') && daySystem.stage() !== 'sleepy') daySystem.setEnergy(TUT_PARAMS.sleepyH)
@@ -5197,7 +5216,7 @@ function _resetRunLocals () {
   _closeMenus()   // BUG-183: every registered menu, through its own close
   fuelStop.reset(); _pumpReceiptT = 0; _showResetCountdown(0)
   _waypoint = null
-  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
+  _evePump = null; _eveFlatR = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
   _momOwes.part = _momOwes.labour = _momOwes.patch = true; _skipArmedUntil = 0
   exitFreecam()
 }
@@ -6924,6 +6943,36 @@ function _updateWorldItems () {
     }
   })
 }
+
+// ── FEAT-288 P5 (§ 5; DEC-422: "it needs to do that thing where it flashes white or maybe it can get a bright aura"):
+// the quest-item mark. The tutorial's step names its target (`quest`, an item id: data/dialogue.js tut-pickup, _TUT_PACK);
+// the world item of that id wears a thin white beam (the rings' curtain and its upward fade, unlit and not tone-mapped so
+// it reads in her shade and at night; it starts above the item, so it never hides it) and a 1 Hz white pulse on its own
+// materials (FEAT-97's blink) while its body is live. Read off the step every frame and nothing kept: no step (a skip,
+// the tutorial's end, a run end, a reload past the pack) or the item picked up → no mark.
+const QUEST_BEAM_R = 0.25, QUEST_BEAM_H = 6, QUEST_BEAM_GAP = 0.4   // m: radius, height, clear air above the item
+const _questBeam = new THREE.Mesh(_ringGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7,
+  side: THREE.DoubleSide, depthWrite: false, alphaMap: _ringAlpha, toneMapped: false }))
+_questBeam.scale.set(QUEST_BEAM_R, QUEST_BEAM_H, QUEST_BEAM_R)
+_questBeam.visible = false
+scene.add(_questBeam)
+const _qmP = new THREE.Vector3(), _qmQ = new THREE.Quaternion()
+let _questLit = null   // the body the pulse lit last, put out when the mark leaves it
+function _questMark () {
+  const id = _tutStep()?.quest
+  const it = id ? runWorldItems.items.find(w => w.entry.id === id) : null
+  const h = it ? _groundItems.get(it) : null, half = h && debrisSystem.halfExtents(h.kind), body = h?.body ?? null
+  if (_questLit != null && _questLit !== body) { debrisSystem.blink(_questLit, 0); _questLit = null }
+  _questBeam.visible = !!half
+  if (!half) return
+  if (body != null) physicsEngine.getTransform(body, _qmP, _qmQ)
+  else _qmP.set(it.x, it.y, it.z)
+  _questBeam.position.set(_qmP.x, _qmP.y + Math.max(half.x, half.y, half.z) + QUEST_BEAM_GAP + QUEST_BEAM_H / 2, _qmP.z)
+  if (body != null) { debrisSystem.blink(body, 0.5 - 0.5 * Math.cos(2 * Math.PI * performance.now() / 1000), [1, 1, 1]); _questLit = body }
+}
+// dev handle — test/cdp-smoke.mjs: null without a mark, else whether the beam's foot is in view and the pulse is on the body
+window.__questMark = () => _questBeam.visible ? { lit: _questLit != null, onScreen: (({ x, y, z }) => Math.abs(x) < 1 && Math.abs(y) < 1 && z < 1)(
+  _qmP.copy(_questBeam.position).setY(_questBeam.position.y - QUEST_BEAM_H / 2).project(camera)) } : null
 
 /** What the inventory lists under "Nearby on the ground": in reach of the parked truck's outline, nearest first. */
 function _groundNearby () {
@@ -10193,8 +10242,12 @@ let _runEnded = false         // the run is over: never write it again (_discard
  *  or the tire service's would skip the shop's lesson). Installed here, below every name it reads (storySystem,
  *  _runEnded), so its poll can never touch one before it exists. */
 const _TUT_TOW = { allow: ['recovery', '#recovery-card [data-act="towShop"]'], hi: ['#recovery-card [data-act="towShop"]'] }
-initTutGate(() => !_tutDrive() || _runEnded || !storySystem.isActive() ? null
-  : stepFor(dialogueSystem.current(), _eveFlat && !_eveTowed && dialogueSystem.has('tut-spareflat') ? _TUT_TOW : undefined))
+/** P5: while the pack is the stop (tossed, or fallen off on the way to Larry's) it wears the quest mark between cards too. */
+const _TUT_PACK = { ...BETWEEN, quest: 'pack' }
+const _tutStep = () => !_tutDrive() || _runEnded || !storySystem.isActive() ? null
+  : stepFor(dialogueSystem.current(), _dayStop() === 'pack' ? _TUT_PACK
+    : _eveFlat && !_eveTowed && dialogueSystem.has('tut-spareflat') ? _TUT_TOW : undefined)
+initTutGate(_tutStep)
 
 /**
  * Why the run cannot be saved right now, or null. A board job and Larry's round ride the save
@@ -10913,6 +10966,7 @@ function loop (t) {
   if (serviceScreen.isOpen && !vehicleState.parked && serviceCenter.cart.length) { vehicleState.parked = true; serviceScreen.leave(() => { vehicleState.parked = false }) }
   serviceScreen.update()           // SM-3: closes when the truck drives off
   _fragileBlink(frameTime)   // FEAT-97: the load's red hit blink fading out
+  _questMark()   // FEAT-288 P5: the tutorial's quest item, beam and pulse
   _updateFragileG(frameTime)   // FEAT-139: the fragile load's felt-g bar
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
@@ -10935,6 +10989,7 @@ function loop (t) {
     setParkLock(_parkLocked())   // FEAT-194 part 2: a parked menu is up
     setThrottleCut(_flatOwed())   // FEAT-217 (DEC-272): the tutorial's flat stops the truck until the tire is fixed — the tutorial only
 
+    autoDrive.step(vehicleState, PHYSICS_DT)   // FEAT-293: the AI's controls for this step (off: returns at once)
     const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     // S-61: stepIgnition clears ignition.event at the top of EVERY step, so on a 2+ step frame a
     // catch on step 1 is gone by the time the frame reads it. Latch the edge here, per step.

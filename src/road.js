@@ -5674,37 +5674,36 @@ export class RoadSystem {
         // small the grade step). A short low-pass over the shipped samples turns each corner into a
         // vertical curve. Endpoints stay pinned (node heights are a boundary condition) and the
         // window is deliberately ~2 stations: long enough to round a corner, far too short to touch
-        // a real crest, which spans many stations. Near a BORE it is bounded ±0.5·yStep, so it can
-        // never move the deck across a class boundary and invent or destroy a span.
+        // a real crest, which spans many stations.
         //
-        // BUG-90 (owner dip 2, seed 2840746967 −169,−625): ONLY near a bore. Everywhere the bound bit,
-        // it bit as a TRANSLATION, not a rounding: at a big station corner (−22 % → +1.4 %, which
-        // roundCrests approved as R 43 m) every sample in the window wanted > 0.25 m, all saturated,
-        // and the corner shipped lifted +0.25 m but still sharp — R 17 m, ~3× the sag load the rule
-        // priced, enough to bottom the suspension. Unbounded it ships R 74 m. Only bore stations
-        // become spans (tunnelSpans below), so the bound is kept within ±2 stations of one.
+        // UNBOUNDED, everywhere. A ±0.25 m bound on the displacement bit as a TRANSLATION, not a rounding:
+        // at a big station corner every sample in the window wanted more than the bound, all saturated,
+        // and the corner shipped lifted but still sharp. BUG-90 (dip 2, seed 2840746967 −169,−625:
+        // −22 % → +1.4 %, R 17 m, bottomed) removed it on open road; BUG-216 (seed 660454599 (461, 976):
+        // a bore floor's 0 % → 10 % corner shipped at 7.3 %/m, R 14 m, bottomed a new truck at 60 km/h)
+        // removed the near-bore remnant. What the bound was kept for there holds by construction:
+        //   • spans and portals: the bore/cut/fill CLASS lives on the solved stations (prof.cls, prof.segs,
+        //     extendBorePortals below); this pass writes only the 4 m samples, so it cannot move a span.
+        //   • the grade caps: a [¼ ½ ¼] pass makes every new segment grade a convex mix of its neighbours'
+        //     (pinned ends included), so no grade exceeds the steepest station grade within the window
+        //     (~2 stations). Near a portal that window reaches the open approach — the portal is a
+        //     transition, not a line (road-tunnel.mjs) — but never past the steepest grade there. The
+        //     bound broke this: clipping put corners back with overshoot (spot A: 15.5 % on a 10 % climb).
+        //   • tube, lining, collider, containment, the portal cut: all read this deck (runProfile), so
+        //     they move with it — MESH == PHYSICS in the bore by construction.
+        // Its one real effect is the deck's departure from the priced stations: ≤ ~0.4 m at a big corner
+        // (BUG-90 census p99 0.15 m), inside the slack every cover check already carries.
         const wSm = this._params?.roadV2?.vSmoothM ?? 0
         if (wSm > 0 && n > 4) {
             const last = n - 1
             const dsPoly = L / last
             const passes = Math.max(1, Math.min(24, Math.round(2 * Math.pow(Math.min(wSm, 2.5 * (L / nSt)) / (2 * dsPoly), 2))))
-            const y0 = new Float64Array(n)
-            for (let i = 0; i < n; i++) y0[i] = pts[i].y
-            const cur = Float64Array.from(y0), nxt = Float64Array.from(y0)
+            const cur = Float64Array.from(pts, (q) => q.y), nxt = Float64Array.from(cur)
             for (let p2 = 0; p2 < passes; p2++) {
                 for (let i = 1; i < last; i++) nxt[i] = 0.25 * cur[i - 1] + 0.5 * cur[i] + 0.25 * cur[i + 1]
                 for (let i = 1; i < last; i++) cur[i] = nxt[i]
             }
-            const BOUND = 0.25   // m — half the DP's coarse y quantum
-            const nearBore = (t) => {
-                const ks = Math.round(t * nSt / L)
-                for (let k = Math.max(0, ks - 2); k <= Math.min(nSt, ks + 2); k++) if (prof.cls[k] === CLS.BORE) return true
-                return false
-            }
-            for (let i = 1; i < last; i++) {
-                const d = cur[i] - y0[i]
-                pts[i].y = y0[i] + (nearBore(clArc[i]) ? Math.max(-BOUND, Math.min(BOUND, d)) : d)
-            }
+            for (let i = 1; i < last; i++) pts[i].y = cur[i]
         }
         // Portal placement: slide each bore's portals out to the cheapest buildable spot (the deck
         // is untouched — only which stations are bored changes). Last, because it breaks the
@@ -8983,12 +8982,7 @@ export class RoadSystem {
         // footprint. `latDist` gates it to zero inside the ribbon + shoulder, so this line cannot
         // change the road surface; with no pads set (free roam, every gate) it is a null check.
         const pq = this._poiPadCarve(wx, wz, rawAmp, latDist)
-        if (pq) {
-            cs = {
-                blendW: Math.max(cs ? cs.blendW : 0, pq.blendW),
-                gradeY: cs ? pq.gradeY * pq.dom + cs.gradeY * (1 - pq.dom) : pq.gradeY,
-            }
-        }
+        if (pq) cs = this._withPoiPad(cs, pq)
 
         // Junction-pad carve (first-class pad footprint, incl. the back-arc bulb) composed with the leg
         // + connector carve — never LESS coverage than any alone, and smooth where they overlap (all ride
@@ -10568,6 +10562,25 @@ export class RoadSystem {
         return { blendW, gradeY: co.gradeY * dom + cs.gradeY * (1 - dom) }
     }
 
+    /**
+     * BUG-214: the POI / camp bench `pq` (_poiPadCarve) composed over the run + connector carve `cs` as a second
+     * earthwork LAYER: the road's carve first, then the bench pulls THAT surface toward its own design by `pq.dom`
+     * (the road gate × the bench's own falloff). h = h_road + d·(benchY − h_road) is a convex mix, so the ground
+     * always lies between the bench, the road's design and the terrain: a spike is impossible by construction.
+     * It replaces max(blendW) with a dom-weighted target, which let the road's target leak in under the BENCH's
+     * coverage — BUG-129's leak the other way round: a road 35 m up the hill whose toe only just reached (cs.blendW
+     * 0.001, gradeY 16 m above the bench) took 39 % of the target at bench weight 0.61, a 3.6 m spike beside a camp
+     * pad (seed 281831). Shared by _sampleCarveWorld and the terrain mesh (_buildCarveTable): mesh == collision.
+     */
+    _withPoiPad(cs, pq) {
+        const d = pq.dom
+        if (!cs) return d > 0 ? { blendW: d, gradeY: pq.gradeY } : null
+        if (!(d > 0)) return cs
+        const c = (1 - d) * cs.blendW
+        const blendW = d + c
+        return { blendW, gradeY: (d * pq.gradeY + c * cs.gradeY) / blendW }
+    }
+
     _mergeCarve(a, b, dRib = Infinity) {
         if (!a) return b || null
         if (!b) return a
@@ -10778,8 +10791,8 @@ export class RoadSystem {
      *     and story mode" — true BY CONSTRUCTION rather than by tuning. A pad can never move the
      *     ribbon, its shoulder, or its camber.
      *
-     * Returned `dom` is the composition weight (see the call sites): the bench DOMINATES its own
-     * footprint and feathers back to the leg cross-section at its rim. It cannot use _mergeCarve —
+     * Returned `dom` is the composition weight (_withPoiPad, the one composition both call sites use): the
+     * bench DOMINATES its own footprint and feathers back to the leg cross-section at its rim. It cannot use _mergeCarve —
      * that gives the leg priority everywhere it reaches, which on a fill embankment is the whole
      * pad, and the bench would silently do nothing.
      *

@@ -12,7 +12,7 @@ lane: SM (tutorial)
 # FEAT-288: Tutorial pass from the owner's 2026-11-18 monologue
 
 ## Next steps
-P1, P7, P2, P3a on main; P3b built on land/feat-288-p3b-map-shop. Next, serially per § 8: P4 (read § 3's "As built" notes first; P3b's lists the gaps it left), then P5, P6, P8. The owner owes words for the lines listed under Open questions.
+P1, P7, P2, P3a, P4, P5 on main; P3b on land/feat-288-p3b-map-shop (browser-proven, § 3 "As built (P3b)"), P6 in flight. Then P8. The owner owes words for the lines listed under Open questions.
 
 ## Summary
 A complete, simple tutorial: full dialogue and storytelling, a brief but complete explanation of every system, every control / menu / bar the player must use highlighted and everything else locked out, plus the specific fixes below.
@@ -359,6 +359,21 @@ Cost: one extra mesh and one cloned material set per marked item, about 40 lines
 when the item is picked up. The pulse alone was considered and rejected: from 15 m and in her shade the pack is too small
 to read even when lit.
 
+**As built (P5, 2026-11-18).**
+- The target is named by the tutorial's STEP, through the gate (no second system): a card's `quest` (an item id;
+  data/dialogue.js `tut-pickup` = `'pack'`), or main.js `_TUT_PACK` (BETWEEN plus `quest: 'pack'`) while `_dayStop()` is
+  'pack' and no card is up (the pack fallen off on the way to Larry's is marked again). The step is main.js `_tutStep`,
+  the same function `initTutGate` reads, so a skip, the tutorial's end, a run end and a reload past the pack give no mark.
+  Not a world-item flag: § 5's `quest: true` would ride the save and outlive the tutorial; outside the tutorial nothing is marked.
+- `_questMark()` (main.js, every frame): one unlit beam, `_ringGeo` + the rings' upward alpha fade, 0.25 m × 6 m, white
+  (the paper target's), opacity 0.7, not tone-mapped (reads in her shade and at night), fogged like the world; its foot
+  0.4 m above the item's largest half extent, so it never covers the item. The pulse is debris.js `blink(body, k, rgb)`
+  in white at 1 Hz while the item's body is live (blink now clones a body's materials on first use, so the pack model's
+  shared materials are never tinted); put out when the mark leaves.
+- Cost (wip/feat-288-p5/sheet.mjs, beside the pack, 300 frames): +1 draw call while marked (151 vs 147 after G; the
+  other 3 are the pack itself); frame p50 16.7 ms both, p90 18.2 vs 18.1 (vsync-capped, within noise). 0 calls otherwise.
+- Sheet wip/feat-288-p5/sheet.jpg: her door / 4 m / 18 m × 08:00, 19:30, 22:30; fog 0.03; big UI.
+
 ### 6. The opening camera
 
 `_updateFiringCam` (main.js:5237) sets the camera's angle every frame from the clock, so input has no effect. Change:
@@ -404,6 +419,24 @@ does not touch.
 Order: P1 → P7 → P2 → P3a → P3b → P4 → P5 → P6 → P8. P1 and P7 can start now; P4, P5, P6 need no answer and may slot
 anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is not answered.
 
+**As built (P4, 2026-11-18) — what P3b / P5 need.**
+- Mom's ring: main.js `_rebuildPoiMarkers` draws the orange ring round `momsHouse` too (poiInteractR 10 m, inside her 25 m
+  door, camp.js `atMoms`), in every story run; it hides on a job like every ring. poi.js's `jobs` comment rewritten.
+  `tut-park` now says "park out front, in the marked spot" (§ 2 beat 7's draft; on the wording list).
+- The map: `getWaypoint` falls back to main.js `_tutMapLeg()`: while the tutorial drives (after "play"), the leg in play
+  (`_tutLeg`) as the map's Waypoint pin on its door plus the GPS's own line (`_tutLine`, detours included). The drive to
+  the ranch keeps DEC-346/356's rule (gone on arrival or a camp made short). A player's own waypoint still wins (pin only,
+  `_waypointOn` is false in the tutorial): **P3b's map beat** must decide what the line shows once Katie has the player
+  drop one on the station.
+- The flat: data/tutorial.js `FLAT.alongM` (250) and `flatRadius(poly, home)`: it goes off once the truck is closer to
+  mom's by crow than the drive home's planned line is at 250 m along. No height enters it, so BUG-216's deck moves near the
+  tunnel cannot shift it. On 1872706826: 264 m along (the first line vertex past 250), 193 m before the tunnel at 457 m;
+  the tow to the same shop 0.66 km (was 0.75). test/tutorial-seed.mjs holds ≥ 150 m before the tunnel.
+- `tut-lights` fires when the flat is fixed and mom's tire (or patch) is spent, which ServiceCenter does only at the
+  check-out (`_momOwes`; the cart fits a tire at once and a highlighted row is fitted for a look, so neither the flat nor
+  `pending()` can tell). The card is up in the shop, before the player leaves it (its `allow: []` locks the shop's rows;
+  leave is never locked).
+
 ## Tracker
 - [x] Itemised plan + conflicts + questions written here (no code): § Plan, 44 items, DEC-422
 - [ ] Owner answers card `feat288-tutorial-plan` (or the defaults stand)
@@ -412,8 +445,8 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - [x] P2 the gate: one lock + highlight for keys, mouse and pad; nothing locked after a skip
 - [x] P3a lessons 1: forced diagnostics → inventory → spare, break camp locked, eating locked, the sleep lesson, lunches at breakfast, B advances a card
 - [x] P3b lessons 2: the map beat, the shop beat, mom's gas call on leaving the shop (the end menu dropped: DEC-426 Q3)
-- [ ] P4 world fixes: mom's ring (story-wide), legs on the map, the flat before the tunnel, mom's card on the tire's check-out
-- [ ] P5 quest-item mark on the pack
+- [x] P4 world fixes: mom's ring (story-wide), legs on the map, the flat before the tunnel, mom's card on the tire's check-out
+- [x] P5 quest-item mark on the pack (the step names it; beam + white pulse; owner look owed: card feat288-marker-look)
 - [ ] P6 opening camera: free rotation, resumes; BUG-203
 - [ ] P8 speaker separation (after Q2)
 - [ ] Owner has played it
@@ -430,6 +463,7 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - `tut-damage` card 2: "Now put your spare on: Tab / hold B and pick the inventory, then the mounted tire."
 - `tut-spareflat`, the pad's half: "hold B and pick the recovery menu."
 - `tut-moms` last card (now after the paycheck line): "Sleep is how a day ends. Set your alarm clock for 06:30: pick sleep and slide it until it reads wake 06:30, then sleep. The bar shows how rested you'll wake up."
+- `tut-park` (P4): "Pull over and park out front, in the marked spot. Come to a full stop, then tap Space / RB to set the handbrake."
 - `tut-breakfast`: "Morning! I packed you some lunches for the road. Eat one before you go — you'll run out of steam early on an empty stomach. Select inventory, then a packed lunch."
 - `tut-picnic` (P3b's map beat), card 4: "Not sure which station? Open your map: M / View."
 - `tut-picnic` card 5: "That list on the side shows every shop around here. Switch it to Shopping: Q / X."
@@ -458,3 +492,7 @@ data/tutorial.js, data/dialogue.js, src/main.js, src/menu-nav.js, src/hud-menu.j
 - 2026-11-18 P7 built on land/feat-288-p7-phone: `src/phone-audio.js` (ring + flip-shut, synthesized), `call` marker on the frame cards in dialogue.js `_frame`, one hook in main.js `_renderDialogue`; Sounds-tab entries in FEAT-120. Owner's ear owed (card feat288-phone-sounds-ear); nobody has heard it.
 - 2026-11-18 P1 dialogue built on land/feat-288-p1-dialogue (words and speakers only; 6 data/dialogue.js cards re-worded, 7 draft tags out, mom's two paycheck lines in). run-all affected gates green; smoke boot,opening PASS (38 steps). Left for P3/P4: mom's "marked spot" in tut-park waits on her ring (P4); tut-gas / tut-pickup keep their current words (§ 2's versions tie to P2/P3b flow).
 - 2026-11-18 P3a built on land/feat-288-p3a-lessons (§ 3 "As built (P3a)"): flat → diagnostics (swap locked, back out) → inventory (the spare only) → picker → the shop's tow only; press-any-key cards lock what lies under them (break camp under Katie, leave/sleep under mom); no eating between cards; Sleep greyed until 06:30 (DEC-426 Q1); four lunches at breakfast, none before (Q4); pad B turns a press-any-key card. Affected gates 55/55 green; smoke PASS 39 steps (load ~9.6); pad-e2e ALL OK (load ~8.9). The pad B check rides the smoke's real tutorial (Katie's talk, fake pad), not pad-e2e. Six lines await the owner's words (Open questions). Unverified: a human play on a real pad.
+- 2026-11-18 P5 built on land/feat-288-p5-marker (§ 5 "As built (P5)"): beam + white pulse on the pack, named by the
+  gate's step (`quest`), gone with the step. tut-gate PASS; affected gates 21/21; smoke/pad-e2e: see the landing report.
+  Sheet wip/feat-288-p5/sheet.jpg (lane worktree). Unverified: a human look, a real pad.
+- 2026-11-18 P4 built on land/feat-288-p4-world (§ 8 "As built (P4)"): mom's ring story-wide, every leg's pin + line on the map, the flat at FLAT.alongM 250 m along the drive home (264 m, 193 m before the tunnel; BUG-216 merged, unchanged), `tut-lights` on the tire's check-out (mom's tire spent). tutorial-seed re-measured (campFlat 0.26, tow 0.66 km); fingerprint-world ALL IDENTICAL to main; affected gates 36/36; smoke PASS 40 steps (load 8.7); pad-e2e ALL OK, on a head with main (P5) merged. Sheet wip/feat-288-p4/sheet.jpg. Unverified: a human drive of the night leg.
