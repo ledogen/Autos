@@ -831,7 +831,9 @@ export function stepPhysics (vehicleState, params, dt, queryContacts, engineCtx)
       sv.y += p.dv.y + p.dw.z * rx - p.dw.x * rz
       sv.z += p.dv.z + p.dw.x * ry - p.dw.y * rx
       h.surfaceVel = sv
-      h.hazard = !!engine.getUserData(h.body)?.hazard
+      const ud = engine.getUserData(h.body)
+      h.hazard = !!ud?.hazard
+      h.crushN = ud?.crushN ?? Infinity   // FEAT-268: the most it can carry before it crushes (suspension.js)
       h.yield = proxyYield(p, rx, ry, rz, -h.normal.x, -h.normal.y, -h.normal.z)   // FEAT-158: the normal force is implicit in it (stepSuspensionSubsteps)
       h.onForce = (Fn, dts, hub) => {
         // The tire pushes the body along −n with Fn for one substep, at the contact point.

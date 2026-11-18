@@ -121,3 +121,4 @@ active job, no timing.
   failure that damages the game rather than just looking wrong.
 - Re-streaming the same region reproduces identical signage.
 - `signRockslide` and `signIcy` stay unplaced until a terrain/weather source exists for them.
+- 2026-11-17: owner (inbox 20261118013441-v9hd) asks for a proposal for a functional sign system (hairpins, steep grades) and random mailboxes as part of a world-clutter system; see FEAT-278, FEAT-279, FEAT-280, and FEAT-275 (mailboxes in Larry's pool).
