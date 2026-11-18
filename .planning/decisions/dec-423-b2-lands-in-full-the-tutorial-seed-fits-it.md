@@ -1,6 +1,6 @@
 ---
 id: DEC-423
-status: standing
+status: superseded
 decided: 2026-11-18
 area: roads
 governs: FEAT-265, DEC-401, DEC-402, data/tutorial.js, test/tutorial-seed.mjs, tutorial seed
