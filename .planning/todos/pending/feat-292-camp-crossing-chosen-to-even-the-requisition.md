@@ -92,4 +92,7 @@ src/poi.js, src/offer-board.js, test/expedition-camp.mjs
 ## Log
 - 2026-11-18 minted by the orchestrator from the owner's answers.
 - 2026-11-18 built on land/feat-292-camp-crossing (lane agent): census, cost, fingerprints above; sheet
-  wip/feat-292/sheet.jpg; card feat292-camp-crossing-play. Affected gates and smoke: see the next entry.
+  wip/feat-292/sheet.jpg; card feat292-camp-crossing-play.
+- 2026-11-18 main merged in (6a153fe3); affected gates 91/91 green serially (wip/feat-292/run-all.log); cdp-smoke 38
+  steps, zero console errors; pad-e2e all ok (LB/RB paging unchecked this run: no plain giver with two offers).
+  Unverified: an owner drive; browser-side cost of the check (measured headless in node).
