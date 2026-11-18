@@ -354,10 +354,11 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 
 ## Decisions
 - 2026-11-18, owner: the monologue (Description), recorded whole as DEC-422.
+- 2026-11-18, owner: the five answers and "build it" (DEC-426).
 - 2026-11-18, owner (via the orchestrator, chat): on the sleep lesson, "I think it might always make you wake up at 630 but doesn't make the player choose 630. Or maybe it doesn't … I didn't actually try it, I just saw that it let me choose any time."
 
 ## Open questions
-Each has a default a builder uses if the card is not answered.
+ANSWERED 2026-11-18 (DEC-426): Q1 = A. Q2 = a speaker's card slides out of frame when they finish and the next speaker's slides in from the opposite side; cards from the same speaker cycle in place. Q3 = the end stays as built (manager, one press, tutorial over, Larry's call in the truck): P3b's end-menu item is DROPPED. Q4 = default (four lunches, leave with three). Q5 = default, depending on the seed. The original questions, for the record:
 - Q1 The sleep lesson's control. (A) the slider is highlighted and the player slides it to 06:30 themselves; Sleep is greyed and refuses until it reads 06:30 — **default**, it still teaches the alarm. (B) preset to 06:30 and locked, one button: shorter, teaches less.
 - Q2 Separating two speakers back to back: **default** keep the ring card (now with sound) for an incoming call and the `<click>` card (with the flip sound); on any change of speaker, the name in that character's own colour and a 0.2 s slide. Alternatives: portraits that swap sides; a "call ended" system line instead of the `<click>` card.
 - Q3 The end menu (the joint's job card): **default** browse-only (accept locked), leaving it ends the tutorial. Alternative: accept live on the first playthrough (the world does not reload there), which a later run cannot match.
