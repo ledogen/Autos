@@ -23,8 +23,8 @@ Owner's words, verbatim (inbox 20261118063529-ortt):
 > The initial cost to repair springs and dampers is too prohibitive, let's lower it to 4 dollars. I'm also pretty sure that the economy scaling is not applying to The labor cost.
 
 ## Tracker
-- [ ] The initial repair cost of springs and dampers is $4
-- [ ] The labor cost on it is not changed by this ticket
+- [x] The initial repair cost of springs and dampers is $4
+- [x] The labor cost on it is not changed by this ticket
 
 ## Decisions
 
@@ -39,3 +39,4 @@ data/parts.js (repair costs)
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118063529-ortt).
+- 2026-11-18 lane land/numbers-1118: read "initial cost" as the part-priced 0→100% rate; REPAIRS.spring.price and .damper.price null → 4 (was the part's price: stock $7/$6, HD $25), data/parts.js, × day tier like all repairs. REPAIR_SETUP ($5 labour) untouched. test/service.mjs re-pointed to the $4 rate. If the owner meant the $5 setup charge instead, say so.
