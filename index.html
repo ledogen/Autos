@@ -441,6 +441,10 @@
     }
     /* The camp card is a menu you sit in, not a card you read: lighter, like pause (owner, 2026-10-20). */
     #camp-panel { background: var(--menu-bg); }
+    /* FEAT-288 P3a: a lesson card (one that waits for an action, DEC-359) is read WHILE the camp card under it is used —
+       mom's alarm slider, the camp's inventory button — so the camp card sits above it. ponytail: a fixed lift clears a
+       card of up to ~5 lines (zoom scales both alike); measure the card if a longer lesson ever covers it. */
+    body:has(#dialogue-panel.dlg-waits) #camp-panel { bottom: 216px; }
     /* FEAT-146: the run's end sits in the middle of the screen — nothing behind it is still in play. */
     #run-end { top: 50%; bottom: auto; transform: translate(-50%, -50%); }
     #re-body { line-height: 1.7; }
@@ -870,6 +874,16 @@
       opacity: 1; border-color: var(--accent-story);
       box-shadow: 0 0 0 1px var(--accent-story), 0 0 12px rgba(127, 194, 255, 0.45);
     }
+
+    /* FEAT-288 P2: the tutorial's gate (src/tut-gate.js). .tut-hi rings what the card on screen is about in the
+       "press this" yellow, pulsing once a second; .tut-locked dims what the lesson does not use and takes no pointer;
+       .tut-nudge is the quiet "not that" of a refused press: a short shake, no sound. */
+    .tut-hi { outline: 2px solid var(--key); outline-offset: 2px; animation: tut-hi 1s ease-in-out infinite; }
+    @keyframes tut-hi { 50% { outline-color: color-mix(in srgb, var(--key) 40%, transparent); } }
+    .tut-locked { opacity: 0.35 !important; pointer-events: none !important; }
+    .tut-nudge { animation: tut-nudge 0.3s ease-in-out; }
+    .tut-hi.tut-nudge { animation: tut-nudge 0.3s ease-in-out, tut-hi 1s ease-in-out infinite; }
+    @keyframes tut-nudge { 25% { translate: -4px 0; } 75% { translate: 4px 0; } }
 
     /* FEAT-53: the run wallet — top-right, story mode only. Money and good deeds are RUN state,
        not mission state: visible whenever the region is live, including mid-drive (owner,
@@ -1349,6 +1363,12 @@
     #machine-word { top: 14%; color: var(--warn); }
     #machine-word.bad { color: var(--bad); }
     #stranded-hint { top: 20%; }
+    /* BUG-204: while the rank tile is up (#rank-timer shown by main.js), the strip's words sit UNDER the job stack (rank
+       bar, tile, deed line: ~196 px tall at 1x, scaled by FEAT-248's zoom) instead of on top of the tile, "Wrong way"
+       and the GPS chevrons; the 8 % / 14 % / 20 % rows keep their spacing. */
+    body:has(#rank-timer[style*="block"]) :is(#spawn-toast, #ignition-hint, #reset-countdown) { top: 196px; }
+    body:has(#rank-timer[style*="block"]) #machine-word { top: 226px; }
+    body:has(#rank-timer[style*="block"]) #stranded-hint { top: 256px; }
     /* FEAT-47: the doze/blink overlay. Two eyelids that meet in the middle — a crossfade to black
        reads as a fade-out, closing lids read as a blink, which is the whole point. Above the HUD
        and panels, below the story loading screen (z 200). JS only ever writes the two transforms
@@ -2050,7 +2070,9 @@
       <button id="cp-break">break camp</button>
       <button id="cp-sleep">sleep</button>
       <button id="cp-fish" disabled title="not implemented yet">fish (wip)</button>
+      <button id="cp-light">light the fire</button>
       <button id="cp-cook">cook a potato &middot; 30 min</button>
+      <button id="cp-cook-beans">heat a can of beans &middot; 30 min</button>
       <button id="cp-cook-groceries">cook groceries &middot; 30 min</button>
       <button id="cp-item">inventory</button>
       <button id="cp-map">open map</button>

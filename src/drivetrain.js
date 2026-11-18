@@ -30,6 +30,14 @@ import { seized } from './ignition.js'
 const SEIZE_SLIP_W = 1   // rad/s of clutch slip over which a seized engine's clutch drag builds to its capacity
 
 const RPM_PER_RAD = 60 / (2 * Math.PI)   // rad/s → rev/min
+const SHIFT_MATCH_W = 100 / RPM_PER_RAD   // rad/s (100 rpm) — input-vs-target shaft mismatch a clutch-in shift tolerates without grinding (BUG-218)
+
+/** BUG-218: |input shaft − target gear's speed| [rad/s] for a shift with the clutch in — the input shaft rides the
+ * flywheel (engineOmega), the target gear's teeth turn with the output (axle × that gear's ratio; N = 0). */
+function clutchInMismatch (st, axleOmega, target, gears, finalDrive, params) {
+  const tr = target > 0 ? gears[target - 1] : target < 0 ? -(params.reverseRatio || 3.4) : 0
+  return Math.abs(st.engineOmega - axleOmega * tr * finalDrive)
+}
 
 /**
  * Fit gearbox `key` (a data/transmissions.js entry) to the vehicle: its ratios spread over the params,
@@ -434,7 +442,8 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
  * clutch is out (< clutchShiftMax), the box sits in N for manualShiftTime × _transShiftScale (a worn
  * box shifts slower — src/damage.js) and lands. A request during a shift steps its target on and
  * restarts that time (FEAT-185). With the clutch in it is REJECTED, flagged
- * st.missShift for the damage model (−2 % transmission). R only from N, at walking pace or below.
+ * st.missShift for the damage model (−2 % transmission), unless the input shaft (riding the flywheel) already
+ * turns at the target gear's speed (BUG-218: a dead engine on a parked truck shifts freely). R only from N, at walking pace or below.
  * STALL: engaged in gear below stallRPM kills the engine (the fuel-empty kill pattern, src/fuel.js).
  *
  * st.mGear: −1 R, 0 N, 1..N. activeGear mirrors it (0 while a shift is in flight).
@@ -464,7 +473,16 @@ function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve
     const from   = st.shiftT > 0 ? st.shiftTo : st.mGear
     const target = Math.max(-1, Math.min(nGears, from + Math.sign(req)))
     if (target === from) { /* already at the end of the gate */ }
-    else if (clutch > (params.clutchShiftMax ?? 0.15)) st.missShift = true          // clutch in: rejected
+    else if (clutch > (params.clutchShiftMax ?? 0.15) && clutchInMismatch(st, axleOmega, target, gears, finalDrive, params) > SHIFT_MATCH_W) {
+      // Clutch in (engaged): the gearbox input shaft rides the flywheel, so the synchro would have to drag the whole
+      // engine to the target gear's speed. It can't: a speed mismatch across the dog teeth GRINDS and is rejected
+      // (BUG-218). No mismatch, no grind: a dead engine on a parked truck selects any gear cleanly, and a clutchless
+      // shift rev-matched within SHIFT_MATCH_W goes through. Rolling with the engine dead it still grinds: in N the
+      // stopped input shaft meets a turning output, in gear the wheels are motoring the engine at the old ratio.
+      // ponytail: N has no teeth to mesh, but a shift TO N with the clutch in is judged by the same mismatch (it
+      // grinds unless the input shaft is stopped), as it did before; a load-locked pull-out is not modelled.
+      st.missShift = true
+    }
     // R is refused rolling FORWARDS only (BUG-196): rolling backwards, R is the direction the truck already moves, and
     // the old |v| test made 1st → R impossible on a hill start gone wrong. ponytail: the synchro takes R at any backward
     // speed; the real M5OD's reverse is unsynchronised and grinds unless near rest either way (owner's call, 2026-11-17).
@@ -503,8 +521,13 @@ function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve
     } else if (inGear && clutch > 0.5) {
       // Dead engine in gear, clutch in: the wheels turn it over, and its compression and friction drag them.
       wE = Math.abs(omegaC)
-      const drag = engineDragNm(params, wE * RPM_PER_RAD) * clutch
-      splitRearAxle(T, -Math.sign(omegaC) * drag * total, vehicleState, params)
+      // Coulomb friction that can at most STOP the rear axle this step, never reverse it (BUG-218): the drag is
+      // non-zero at 0 rpm, and applied whole it flipped sign every step on a parked truck — the rears chattered at
+      // ±1.2 rad/s with the dead engine "turning" ~150 rpm, which also read as a shaft mismatch to the clutch-in
+      // shift rule. ponytail: the stop limit counts only the rears' own inertia (not the engine's, not the tires').
+      const drag = engineDragNm(params, wE * RPM_PER_RAD) * clutch * Math.abs(total)
+      const stop = Math.abs(axleOmega) * 2 * (params.wheelInertia || 1.22) / dt
+      splitRearAxle(T, -Math.sign(omegaC) * Math.min(drag, stop) * Math.sign(total), vehicleState, params)
     } else {
       wE *= Math.exp(-dt / (params.engineOffRpmLag ?? 0.7))
     }

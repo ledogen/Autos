@@ -92,7 +92,12 @@ export function delaunay(pts) {
 // Weight = squared Euclidean length. (QUAL-22 made this pluggable so a terrain-cost chord
 // integral could drive the vote; implemented, measured, and deleted un-shipped — see the closed
 // ticket. Connectivity holds under any weight, Urquhart ⊇ MST, if it is ever wanted back.)
-export function urquhartEdges(pts, tris) {
+//
+// FEAT-265 (DEC-401): `droppedOut`, when given, is filled with the removed edges and WHY —
+// key → { i, j, apex: [k…] }, one apex per triangle that removed it (≤ 2). A removed edge was
+// dropped on the promise that each such triangle's two shorter sides (i–k, k–j) are roads;
+// road.js puts it back when every such promise is broken by a side that failed to route.
+export function urquhartEdges(pts, tris, droppedOut = null) {
     const removed = new Set()
     const all = new Set()
     const key = (a, b) => a < b ? a * 0x4000000 + b : b * 0x4000000 + a   // i<j packed
@@ -106,6 +111,11 @@ export function urquhartEdges(pts, tris) {
         else if (djk >= dij && djk >= dki) lk = key(j, k)
         else lk = key(k, i)
         removed.add(lk)
+        if (droppedOut) {
+            const i0 = Math.floor(lk / 0x4000000), j0 = lk % 0x4000000
+            const rec = droppedOut.get(lk) || droppedOut.set(lk, { i: i0, j: j0, apex: [] }).get(lk)
+            rec.apex.push(i0 !== i && j0 !== i ? i : i0 !== j && j0 !== j ? j : k)
+        }
     }
     const out = []
     for (const k of all) {

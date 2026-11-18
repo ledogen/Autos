@@ -14,7 +14,7 @@
 //                   on the crossing's last 400 m inside the wall
 //   stubs   dead ends that already exist (network degree 1) on the spawn's piece, ≥ 1800 m out.
 //   reach   the farthest any road of the piece gets from the centre, inside the wall.
-//   camp    THE PICK: where the game puts the expedition camp (poi.js _siteCamp, via a real build) —
+//   camp    THE PICK: where the game puts the expedition camp (poi.js _campCrossings, via a real build) —
 //           its bearing, radius, and roadM, the road metres from the spawn to the camp. null = none.
 //   rows    FEAT-154: the barricade rows on the roads out, from the same build. `crossings` are found
 //           HERE (every edge off the planners' graph, each change of side of the wall, 5 m samples),
@@ -144,7 +144,7 @@ for (let s = lo; s <= (hi ?? lo); s++) {
         const p = posK(k)
         if (r(p) >= 1800) stubs.push({ r: Math.round(r(p)), bear: bear(p), rd: Math.round(dist.get(k)) })
     }
-    // THE PICK (FEAT-103): the camp the game places — poi.js _siteCamp through a real build.
+    // THE PICK (FEAT-103): the camp the game places — poi.js _campCrossings through a real build.
     poi.build(C, REGION_RADIUS_M, rep.mainNodes)
     const q = poi.list().find((x) => x.type === 'expeditionCamp')
     const inner = q && (home(q.edge.split('|')[0]) ? q.edge.split('|')[0] : q.edge.split('|')[1])

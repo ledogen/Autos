@@ -319,8 +319,10 @@ export const stockPart = (socket) => Object.keys(PARTS).find(id => PARTS[id].slo
 export const REPAIRS = {
     wheel:        { price: 8,    hours: 1 },     // straightened
     armor:        { price: 10,   hours: 2 },     // panel beaten
-    spring:       { price: null, hours: 2 },     // re-arched
-    damper:       { price: null, hours: 1.5 },   // rebuilt
+    // FEAT-285 / DEC-419 (owner, 2026-11-17): the part-priced 0→100% rate is $4 for springs and dampers (was the part's own price:
+    // stock $7 / $6, HD $25). REPAIR_SETUP (the labour) is untouched; both ride the day tier.
+    spring:       { price: 4,    hours: 2 },     // re-arched
+    damper:       { price: 4,    hours: 1.5 },   // rebuilt
     // Owner, 2026-10-22: a rebuild to the cap costs MORE than a used engine ($64 vs $60 new) — "it
     // should be more expensive to repair an engine than to swap in a used one"; a weld to 80% is $22,
     // the price of a new radiator. These are 0→100% rates, so × 0.8 is the cap's price.

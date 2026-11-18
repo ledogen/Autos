@@ -23,7 +23,8 @@
 // mostly junctions; a place is no likelier at a T than halfway down a road.
 
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'   // FEAT-59/60: authored collision metadata
-import { REGION_MARGIN, buildGraphAdj, graphDijkstra, edgeLeaves } from './mission.js'   // FEAT-61: the wall a customer must sit inside; FEAT-103: the camp's road; BUG-128: a road that leaves it
+import { REGION_MARGIN, buildGraphAdj, graphDijkstra, edgeLeaves, MissionSystem } from './mission.js'   // FEAT-61: the wall a customer must sit inside; FEAT-103: the camp's road; BUG-128: a road that leaves it; FEAT-292: the planner that measures the requisition
+import { requisitionTotal } from './offer-board.js'   // FEAT-292 (DEC-424): the requisition's loaded total, as the board plans it
 import { houseRungs, roadDistFromLarry, idKey } from './paper-route.js'   // FEAT-61: the ladder placement serves, in road metres
 import { SOURCES } from '../data/offers.js'           // FEAT-67: which types post offers (→ `jobs`)
 import { hash32, mulberry32 } from './seed.js'        // per-edge / per-POI PRNG keys (byte-stable)
@@ -140,10 +141,13 @@ export const POI_PARAMS = {
     poiHouseMaxDrop:  1.5,    // m — max height spread across the target circle's rim. A circle
                               // draped over a cliff edge reads as broken, and you could not land a
                               // paper in it anyway. The light stand-in for the pad's earthwork cap.
-    // FEAT-103 alpha: the expedition camp — see _siteCamp. Measured by test/camp-edge-census.mjs.
+    // FEAT-103 alpha: the expedition camp — see _campCrossings. Measured by test/camp-edge-census.mjs.
     poiCampBandM:     400,    // m of road before the wall cut the camp pad may sit in
     poiCampMinRunM:   300,    // m of road from the last junction to the cut: room for the connector
     poiCampBarrierGap: 4,     // m from the pad's far end to the barrier across the deck
+    // FEAT-292 (DEC-424, owner 2026-11-18): the camp's crossing evens the requisition — see _evenRequisition.
+    poiCampReqTargetM: 22000, // m — the requisition's loaded total the camp's crossing aims at
+    poiCampReqBand:    0.15,  // the share of that target today's crossing may be off before the camp moves
     // FEAT-154: the barricade rows — the camp's and one at every road crossing of the planners' wall.
     poiRowBarricades:  3,     // barricades in a row, spread across the paved road (owner, 2026-10-29)
     poiRowNodeClearM:  20,    // m a crossing's row keeps from either end of its edge (a junction mouth)
@@ -179,8 +183,8 @@ export const POI_PARAMS = {
  *
  * `jobs` is WHETHER PARKING HERE OPENS AN OFFER, and it is DERIVED, not hand-set (FEAT-67): a
  * type posts offers iff it has a row in data/offers.js SOURCES (the mission board's source table).
- * Mom's house has none — she only receives — so she wears no interaction ring and answers no park
- * trigger. A marker that wears the ring but answers
+ * Mom's house has none — she only receives — so she answers no offer's park trigger; she still wears the ring
+ * (FEAT-288, DEC-422), because parking in it knocks on her door (camp.js atMoms, a wider radius). A marker that wears the ring but answers
  * nothing is the same lie as a prompt drawn wider than its trigger, which this module already
  * refuses to tell; deriving the flag from the one table that decides who posts work is what makes
  * that impossible to get out of step.
@@ -303,7 +307,8 @@ export const POI_ROSTER = [
 /**
  * FEAT-103: the expedition camp — the run's goal, on the circle's edge at the end of a road. NOT a
  * roster slot: the pool skips every edge with a node past the wall, and the camp's road is exactly
- * such an edge, cut there. _siteCamp picks its pad; _assignRoster then dresses it like a slot.
+ * such an edge, cut there. _campCrossings offers its pads, _assignRoster dresses the first like a slot, and
+ * _evenRequisition (FEAT-292) may swap in another crossing's.
  * The ASSET-71 camp model. It posts nothing (no SOURCES row) and no ordinary job ends there
  * (NOT_A_DESTINATION): the requisition is its only business.
  */
@@ -512,12 +517,15 @@ export function dressYard (q, seed, yard) {
     for (let groupTry = 0; out.length < want && groupTry < 24; groupTry++) {
         const key = pool[Math.floor(rnd() * pool.length)]
         const spec = PROP_MODELS[key]
+        // FEAT-290: `yardMax` caps how many of one asset a single yard holds, over all its groups.
+        const have = out.reduce((n, o) => n + (o.key === key), 0)
+        if (spec.yardMax != null && have >= spec.yardMax) continue
         const col = spec.collision
         const r = col.radius ?? Math.hypot(col.size[0], col.size[2]) * 0.5
         // A sphere's origin is its centre (the beach ball), so it stands on its radius.
         const lift = col.shape === 'sphere' ? col.radius : 0
         const [gMin, gMax] = spec.yardGroup ?? [1, 1]
-        const group = Math.min(want - out.length, gMin + Math.floor(rnd() * (gMax - gMin + 1)))
+        const group = Math.min(want - out.length, (spec.yardMax ?? Infinity) - have, gMin + Math.floor(rnd() * (gMax - gMin + 1)))
         let last = null
         for (let k = 0; k < group; k++) {
             let at = null
@@ -790,8 +798,10 @@ export class PoiSystem {
         // rides at the end, off its own edge (FEAT-103), so no roster POI moves for it.
         const r = (q) => Math.hypot(q.x - center.x, q.z - center.z)
         const { posOf, adj } = buildGraphAdj(g, (q) => r(q) <= wall, nodes)
-        const camp = this._siteCamp(road, canon, r, wall, posOf, adj, P)
-        const out = this._assignRoster(pool, center, seed, P, camp, offWall)
+        const crossings = this._campCrossings(road, canon, r, wall, posOf, adj, P)
+        const first = crossings.next().value ?? null
+        const out = this._assignRoster(pool, center, seed, P, first, offWall)
+        const camp = first && this._evenRequisition(out, crossings, { x: center.x, z: center.z, r: radius, nodes }, seed, P)
         out.forEach((q, i) => { q.index = i })
         // FEAT-154: the barricade rows (the camp's at its pad, then one at every road out) and the
         // edge fade's return spots. Deterministic in (seed, network, centre), like the camp.
@@ -1119,65 +1129,7 @@ export class PoiSystem {
             // NOTE `pool` is already this method's pad pool — the model pool needs its own name.
             const models = slot.modelPool ? modelsTagged(slot.modelPool) : null
             for (const q of picks) {
-                q.type = slot.type
-                // FEAT-61 — see the TAGS note above. The type leads the list, so every POI carries
-                // its own class tag (Places and Missions); a fixture adds its class (mom's is a
-                // `residence`) through `slot.tags`.
-                q.tags = [slot.type, ...(slot.tags ?? [])]
-                q.jobs = slot.jobs ?? !!SOURCES[slot.type]   // FEAT-67 — see the `jobs` note above; FEAT-103: the camp posts the requisition
-                q.modelKey = models?.length
-                    // Keyed to the pad's own id, the same discipline as _pickStable and for the
-                    // same reason: the choice must depend on WHICH pad this is, never on how many
-                    // pads happened to be streamed when the pool was gathered.
-                    ? models[hash32(`poi-model:${seed}:${q.id}`) % models.length]
-                    : (q.padKind ?? 'std') === kind ? (slot.model ?? null) : slot.fallbackModel
-                // Stamp the authored collision box NOW, off the registry, not when the GLB
-                // resolves: physics must not wait on a fetch, or a marker would be driveable-
-                // through for the first seconds of a region and solid afterwards.
-                const spec = q.modelKey ? PROP_MODELS[q.modelKey] : null
-                q.collision = spec?.collision || null
-                // ASSET-32: a vehicle the slot parks on the pad (Larry's van). Its boxes join the model's,
-                // so the wheels (queryContact), the chassis (PoiPhysics) and the yard solver all see it.
-                q.parked = spec ? slot.parked ?? null : null
-                if (q.parked) q.collision = _withParked(q.collision, q.parked)
-                // The yaw the MODEL stands at, as opposed to q.yaw's "this pad faces the road".
-                // Assets whose length runs down their own -Z (vehicles) are quarter-turned so the
-                // long axis lies along the pad's 14 m rather than across its 8 m — see yawOffset
-                // in data/prop-models.js. Both the mesh and the oriented contact box read THIS.
-                q.modelYaw = q.yaw + (spec?.yawOffset ?? 0)
-                // FEAT-71: where the MODEL stands, as opposed to q.x/q.z, the pad centre (which the
-                // carve, the ring and the park trigger keep using). `seat` slides it that many metres
-                // away from the road so its yard is the road side. Mesh, contact box, drop zone and
-                // yard all read THIS origin.
-                // FEAT-105: `seatAlong` slides it along its OWN +X as well — the barn stands at one end
-                // of its long farm pad with the yard beside it. The model's +X in world is
-                // (cos modelYaw, −sin modelYaw), the same mapping the mesh uses.
-                const seat = spec?.seat ?? 0, along = spec?.seatAlong ?? 0
-                q.modelX = q.x + q.nx * seat + Math.cos(q.modelYaw) * along
-                q.modelZ = q.z + q.nz * seat - Math.sin(q.modelYaw) * along
-                // BUG-91: the height the model, its colliders and the cube stand on — the CARVED
-                // GROUND, not q.y. q.y is the pad's design top; _poiPadCarve grades the bench to
-                // q.y − roadClearanceMargin (same default) and physics rides that dirt, so a model
-                // base-seated at q.y floated 15 cm over its own pad. The camp seat (main.js) already
-                // corrects for the same gap. q.y stays the pad's record: the carve keys off it.
-                q.baseY = q.y - (P.roadClearanceMargin ?? 0.25)
-                // BUG-43: which colour from the model's curated palette. A slot may pin it (the
-                // two story houses must never match); otherwise a raw hash off the pad id, which
-                // spawnModel takes modulo the palette length. Ignored by a model with no palette.
-                q.modelVariant = slot.variant ?? hash32(`poi-variant:${seed}:${q.id}`)
-                q.drop = slot.drop ?? null   // FEAT-88 drop zone — see the firewoodYard slot
-                q.showWhileJob = !!slot.showWhileJob   // FEAT-102 — main.js sets q.hidden from the board
-                // ASSET-74: the model's PARK box — park inside it to be offered work. Off the model,
-                // not the slot: it is the painted stalls, so a fallback cube has none.
-                q.park = spec?.park ?? null
-                q.cameraViews = spec?.cameraViews ?? null   // FEAT-220
-                q.camera = spec?.camera ?? null   // FEAT-178: a fixed view while parked in the box (the service station)
-                // FEAT-50: the model's PUMP ZONES — pull alongside and pull the handbrake to use the pump.
-                // Off the model, like the park box: a pump island has them, a cube does not.
-                q.pumpZones = spec?.pumpZones ?? null
-                // FEAT-71: the lawn furniture / yard clutter standing in this POI's yard — the
-                // model's authored yard, else the slot's (none today; FEAT-105's farm pad will want one).
-                q.satellites = dressYard(q, seed, spec?.yard ?? slot.yard)
+                this._dress(q, slot, kind, models, seed, P)
                 // Taken: out of the pool, and so is every pad of another kind it would overlap.
                 free = free.filter(o => o !== q && !padsClash(o, q, P.poiPadSpacing))
                 out.push(q)
@@ -1187,6 +1139,71 @@ export class PoiSystem {
             console.warn(`[poi] region supplied only ${pool.length} viable pads — roster filled ${out.length}/${POI_COUNT}`)
         }
         return out
+    }
+
+    /** Dress pad `q` as a POI of roster `slot` (pads of `kind`; `models` its model pool, or null): type, tags, model,
+     *  collision, seat, yard. In place; returns q. _assignRoster's per-pick step, and the camp's (_evenRequisition). */
+    _dress (q, slot, kind, models, seed, P) {
+        q.type = slot.type
+        // FEAT-61 — see the TAGS note above. The type leads the list, so every POI carries
+        // its own class tag (Places and Missions); a fixture adds its class (mom's is a
+        // `residence`) through `slot.tags`.
+        q.tags = [slot.type, ...(slot.tags ?? [])]
+        q.jobs = slot.jobs ?? !!SOURCES[slot.type]   // FEAT-67 — see the `jobs` note above; FEAT-103: the camp posts the requisition
+        q.modelKey = models?.length
+            // Keyed to the pad's own id, the same discipline as _pickStable and for the
+            // same reason: the choice must depend on WHICH pad this is, never on how many
+            // pads happened to be streamed when the pool was gathered.
+            ? models[hash32(`poi-model:${seed}:${q.id}`) % models.length]
+            : (q.padKind ?? 'std') === kind ? (slot.model ?? null) : slot.fallbackModel
+        // Stamp the authored collision box NOW, off the registry, not when the GLB
+        // resolves: physics must not wait on a fetch, or a marker would be driveable-
+        // through for the first seconds of a region and solid afterwards.
+        const spec = q.modelKey ? PROP_MODELS[q.modelKey] : null
+        q.collision = spec?.collision || null
+        // ASSET-32: a vehicle the slot parks on the pad (Larry's van). Its boxes join the model's,
+        // so the wheels (queryContact), the chassis (PoiPhysics) and the yard solver all see it.
+        q.parked = spec ? slot.parked ?? null : null
+        if (q.parked) q.collision = _withParked(q.collision, q.parked)
+        // The yaw the MODEL stands at, as opposed to q.yaw's "this pad faces the road".
+        // Assets whose length runs down their own -Z (vehicles) are quarter-turned so the
+        // long axis lies along the pad's 14 m rather than across its 8 m — see yawOffset
+        // in data/prop-models.js. Both the mesh and the oriented contact box read THIS.
+        q.modelYaw = q.yaw + (spec?.yawOffset ?? 0)
+        // FEAT-71: where the MODEL stands, as opposed to q.x/q.z, the pad centre (which the
+        // carve, the ring and the park trigger keep using). `seat` slides it that many metres
+        // away from the road so its yard is the road side. Mesh, contact box, drop zone and
+        // yard all read THIS origin.
+        // FEAT-105: `seatAlong` slides it along its OWN +X as well — the barn stands at one end
+        // of its long farm pad with the yard beside it. The model's +X in world is
+        // (cos modelYaw, −sin modelYaw), the same mapping the mesh uses.
+        const seat = spec?.seat ?? 0, along = spec?.seatAlong ?? 0
+        q.modelX = q.x + q.nx * seat + Math.cos(q.modelYaw) * along
+        q.modelZ = q.z + q.nz * seat - Math.sin(q.modelYaw) * along
+        // BUG-91: the height the model, its colliders and the cube stand on — the CARVED
+        // GROUND, not q.y. q.y is the pad's design top; _poiPadCarve grades the bench to
+        // q.y − roadClearanceMargin (same default) and physics rides that dirt, so a model
+        // base-seated at q.y floated 15 cm over its own pad. The camp seat (main.js) already
+        // corrects for the same gap. q.y stays the pad's record: the carve keys off it.
+        q.baseY = q.y - (P.roadClearanceMargin ?? 0.25)
+        // BUG-43: which colour from the model's curated palette. A slot may pin it (the
+        // two story houses must never match); otherwise a raw hash off the pad id, which
+        // spawnModel takes modulo the palette length. Ignored by a model with no palette.
+        q.modelVariant = slot.variant ?? hash32(`poi-variant:${seed}:${q.id}`)
+        q.drop = slot.drop ?? null   // FEAT-88 drop zone — see the firewoodYard slot
+        q.showWhileJob = !!slot.showWhileJob   // FEAT-102 — main.js sets q.hidden from the board
+        // ASSET-74: the model's PARK box — park inside it to be offered work. Off the model,
+        // not the slot: it is the painted stalls, so a fallback cube has none.
+        q.park = spec?.park ?? null
+        q.cameraViews = spec?.cameraViews ?? null   // FEAT-220
+        q.camera = spec?.camera ?? null   // FEAT-178: a fixed view while parked in the box (the service station)
+        // FEAT-50: the model's PUMP ZONES — pull alongside and pull the handbrake to use the pump.
+        // Off the model, like the park box: a pump island has them, a cube does not.
+        q.pumpZones = spec?.pumpZones ?? null
+        // FEAT-71: the lawn furniture / yard clutter standing in this POI's yard — the
+        // model's authored yard, else the slot's (none today; FEAT-105's farm pad will want one).
+        q.satellites = dressYard(q, seed, spec?.yard ?? slot.yard)
+        return q
     }
 
     /**
@@ -1457,14 +1474,16 @@ export class PoiSystem {
      * connector's hazards later; a 14 x 8 m pad passing the ordinary reject battery within
      * poiCampBandM of road before the cut. Then the FARTHEST from the spawn by road, to the cut;
      * ties to the edge key. On that road the pad nearest the cut wins — the end of the road.
+     * FEAT-292: a GENERATOR of every qualifying crossing in that preference order, one pad each, computed only as far
+     * as it is read: build takes the first, and _evenRequisition reads on only when that one's requisition is off.
      *
      * Deterministic in (seed, network, centre). The far node is past the wall, so the planner enters
      * the camp's edge through its inner node only (mission.js `_roll`), and nothing the game sends a
      * player to can sit past it: the pool, the customers and the planners' graph already drop the edge.
-     * Returns a pad record (the _padsOnEdge shape) plus `rowS`, the arc where its barricade row stands
-     * (build hands it to _barrierRow), or null when no road qualifies.
+     * Yields pad records (the _padsOnEdge shape) plus `rowS`, the arc where its barricade row stands
+     * (build hands it to _barrierRow); nothing when no road qualifies.
      */
-    _siteCamp (road, canon, r, wall, posOf, adj, P) {
+    * _campCrossings (road, canon, r, wall, posOf, adj, P) {
         // ROAD metres from the spawn, which is the region centre and stands on a road: find its point
         // on the planners' edges (10 m samples), then go out through either end of that edge. The
         // nearest NODE is no stand-in — on seed 4 it sits 1.9 km of road from the spawn's own edge.
@@ -1479,7 +1498,7 @@ export class PoiSystem {
                 if (!at || d < at.d) at = { d, e, ed, off, L, t }
             }
         }
-        if (!at) return null
+        if (!at) return
         const p0 = at.ed.centerline.pointAt(at.off), pa = posOf.get(at.e.ka), pb = posOf.get(at.e.kb)
         const [k0, k1] = Math.hypot(p0.x - pa.x, p0.z - pa.z) < Math.hypot(p0.x - pb.x, p0.z - pb.z)
             ? [at.e.ka, at.e.kb] : [at.e.kb, at.e.ka]    // k0 sits at the edge's arc start
@@ -1518,7 +1537,7 @@ export class PoiSystem {
         }
         roads.sort((a, b) => (b.d - a.d) || (a.ek < b.ek ? -1 : 1))
         const lat = (P.roadHalfWidth ?? 5) + (P.roadShoulderWidth ?? 2.5) + P.poiPadGap + P.poiPadHalfWid
-        for (const c of roads) {
+        roads: for (const c of roads) {
             // Back from the cut, the pad nearest it first; clear of both edge ends like any pad.
             for (let t = c.cut - P.poiPadHalfLen - 20; t >= Math.max(0, c.cut - P.poiCampBandM); t -= 15) {
                 const s = c.sHome + c.dir * t
@@ -1530,11 +1549,36 @@ export class PoiSystem {
                     if (cand && (!best || cand.cut < best.cut)) best = cand
                 }
                 if (!best) continue
-                return { id: `camp:${c.ek}`, index: -1, aId: c.e.a, bId: c.e.b, edge: c.ek, padKind: 'std', s,
-                         runKey: c.ed.key, ...best, roadM: c.d - c.cut + t, rowS: s + c.dir * (P.poiPadHalfLen + P.poiCampBarrierGap) }
+                yield { id: `camp:${c.ek}`, index: -1, aId: c.e.a, bId: c.e.b, edge: c.ek, padKind: 'std', s,
+                        runKey: c.ed.key, ...best, roadM: c.d - c.cut + t, rowS: s + c.dir * (P.poiPadHalfLen + P.poiCampBarrierGap) }
+                continue roads
             }
         }
-        return null
+    }
+
+    /**
+     * FEAT-292 (DEC-424, owner 2026-11-18): the camp's crossing evens the requisition between worlds. `out` is the
+     * roster with today's camp (the first crossing, dressed) last; `crossings` the rest of _campCrossings. The
+     * requisition's loaded total L (offer-board.js requisitionTotal: the board's own sources, route streams and
+     * planner) is measured for today's camp; within poiCampReqBand of poiCampReqTargetM it stays, and that world is
+     * exactly as before. Otherwise every other crossing is measured and the one nearest the target wins, ties to the
+     * siting's order. Sources are the roster's, which the camp never moves (it is chosen before the camp). A pure
+     * function of the seed and the world: nothing saved, the same camp on every load. Returns the camp, swapped into
+     * `out` dressed. Main thread, behind the loading screen; measured in the FEAT-292 ticket.
+     */
+    _evenRequisition (out, crossings, region, seed, P) {
+        const road = this._d.getRoad(), roster = out.slice(0, -1), today = out.at(-1)
+        const ms = new MissionSystem({ getRoad: () => road, getRegion: () => region })
+        const memo = new Map(), plan = (src, o) => ms.planOffer(src, { ...o, distMemo: memo })   // distance only (mission.js)
+        const off = (c) => Math.abs((requisitionTotal(seed, [...roster, c], c, plan) ?? Infinity) - P.poiCampReqTargetM)
+        let best = today, bestOff = off(today)
+        if (bestOff <= P.poiCampReqBand * P.poiCampReqTargetM) return today
+        for (const c of crossings) {
+            const d = off({ ...c, type: CAMP_SLOT.type })
+            if (d < bestOff) { best = c; bestOff = d }
+        }
+        if (best !== today) out[out.length - 1] = this._dress(best, CAMP_SLOT, slotPadKind(CAMP_SLOT), null, seed, P)
+        return out.at(-1)
     }
 
     /**

@@ -111,7 +111,7 @@ function slotHtml (it, attrs = '', cls = '') {
   if (!it) return `<div class="inv-slot ${cls}" ${attrs}></div>`
   // A part's rarity tints the slot behind its shared per-slot icon (data/parts.js RARITY_COLOR).
   const tint = it.rarity ? ` style="background:${RARITY_COLOR[it.rarity]}40"` : ''
-  return `<div class="inv-slot full${it.equipped ? ' worn' : ''} ${cls}" ${attrs}${tint}>`
+  return `<div class="inv-slot full${it.equipped ? ' worn' : ''} ${cls}" data-id="${it.id}" ${attrs}${tint}>`   // data-id: FEAT-288 P2's lesson selectors
     + `<img src="${THUMB(it.id)}" alt="" onerror="this.parentNode.classList.add('noimg'); this.remove()">`
     + `<span class="sl-name">${it.name}</span>`
     + (it.n > 1 ? `<span class="sl-n">&times;${it.n}</span>` : '')
@@ -265,7 +265,7 @@ export class InventoryScreen {
     if (this.isOpen && this.sel != null && t - (this._actsAt ?? 0) >= 1000) {
       this._actsAt = t
       const r = this.inventory.list()[this.sel]
-      if (r && this._actsKey !== actsKey(this.actions(r))) this.render()
+      if (r && (this._actsKey !== actsKey(this.actions(r)) || this._note !== r.note)) this.render()   // BUG-211: hunger moved
     }
   }
 
@@ -371,6 +371,7 @@ export class InventoryScreen {
       + `<div class="st-desc">${r.desc}</div>`
     const acts = this.actions(r)
     this._actsKey = actsKey(acts)   // update() redraws when these change
+    this._note = r.note
     if (r.contents) {
       const packed = r.contents[this.packSel]
       const canUnpack = packed && !(r.equipped && packed.bed === 'bedding') && inv.slotsUsed() < inv.slotCap()
@@ -386,6 +387,7 @@ export class InventoryScreen {
       + (acts.length ? `<div class="st-acts">${acts.map((a, i) => btn('action',
         (a.icon ? `<img src="${THUMB(a.icon)}" alt="">` : '') + a.label, a.enabled ?? true, `data-i="${i}"`)).join('')}</div>` : '')
       + (r.usable && !acts.length ? btn('use', r.kind === 'food' ? 'eat' : 'use') : '')
+      + (r.usable && r.note ? `<div class="st-hint">${r.note}</div>` : '')   // BUG-211: what eating now would waste
       + (r.kind === 'camp' ? btn('pack', swap ? 'swap into pack' : 'pack', canPack) : '')
       + btn('drop', 'drop')
   }

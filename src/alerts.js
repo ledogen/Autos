@@ -46,3 +46,23 @@ export function wordAction (prev, l, step, prevStep, crit) {
 export const wearLevel = (c) => c <= 0.3 ? 2 : c <= 0.5 ? 1 : 0
 /** Engine word level: knocking from `knockFrom` (inclusive, DEC-330) down, seized at 0. Both are critical (persistent). */
 export const engineLevel = (c, knockFrom) => c <= 0 ? 2 : c <= knockFrom ? 1 : 0
+
+/** One poll of the machine-word slots (main.js _machineWords). `st` is { levels, steps } from the last poll (null on the
+ *  first: it only takes the levels in); `expiry` maps alert id -> ms it closes. Every alert of the slots routes through here. */
+export function pollWords (alerts, expiry, st, now, steps, isCrit, texts, nowMs, wordS, held = false) {
+  // BUG-215: the shop fits and unfits parts for a look (service.js preview / cart replay), which swings the wheel conditions
+  // under the poll (28 "bent" alerts in one visit). Held while it is open: the levels stay as they were, so on close only the
+  // real change is read against them.
+  if (held) return
+  now.forEach((l, i) => {
+    const prev = st.levels?.[i] ?? l, crit = isCrit(i, l), id = 'w' + i
+    const act = wordAction(prev, l, steps[i], st.steps?.[i] ?? steps[i], crit)
+    if (act !== 'none') { alerts.close(id); expiry.delete(id) }
+    if (act === 'show') {
+      alerts.open(id, texts[i][l], l === 2)
+      if (!crit) expiry.set(id, nowMs + wordS * 1000)
+    }
+    if (crit) alerts.open(id, texts[i][l], l === 2)   // a no-op while open; raises it on a loaded run too
+  })
+  st.levels = now; st.steps = steps
+}

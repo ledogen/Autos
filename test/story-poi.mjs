@@ -621,7 +621,9 @@ function boardRig (ms, nowH = 6) {
     mot.hidden = false
 }
 
-// ── 7c2. MULTI-DROP (FEAT-89): stops in order, a PARK at each but the last, one par, one settle ──
+// ── 7c2. MULTI-DROP (FEAT-89): a PARK at each stop but the last, one par, one settle ──
+// Driven here in the planned order (FEAT-291: the shortest tour); any order, and the order's optimality, are
+// test/multi-drop-tour.mjs.
 {
     const car = { x: 0, z: 0, speed: 0 }
     let settles = 0
@@ -679,9 +681,11 @@ function boardRig (ms, nowH = 6) {
             const e = m.legs[i].end
             car.x = e.x; car.z = e.z
             ms.update(0.5)
+            // The job's own leg until a stop is handed over; then (FEAT-291) the guide's tour from the truck, which keeps
+            // the planned order — its rest is the shortest from the stop just left.
             const g = ms.guideRoute()
             ok &&= ms.state === 'running' && settles === 0 && ms.leg === i                // a drive-through hands nothing over
-                && g.segments.length === cut[i + 1] - cut[i] && g.segments[0] === m.segments[cut[i]]
+                && (i ? g.customers?.[0]?.id === m.stopIds[i] : g.segments.length === cut[1] && g.segments[0] === m.segments[0])
                 && ms.acquire() === true && ms.leg === i + 1 && ms.elapsed >= t0            // the rank clock never resets
             t0 = ms.elapsed
         }

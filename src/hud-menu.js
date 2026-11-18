@@ -27,6 +27,7 @@
 
 import { pad } from './gamepad.js'
 import { hintPark } from './park-badge.js'
+import { allowsEl, refuse } from './tut-gate.js'
 
 let sel = null   // the highlighted icon
 
@@ -39,10 +40,12 @@ document.body.appendChild(label)
 const abandon = () => { const b = document.getElementById('job-cancel'); return b?.offsetParent && !b.classList.contains('unparked') ? b : null }
 
 /** The column's usable icons, top to bottom as drawn (CSS `order` puts inventory first), then the abandon button. */
-const items = () => [...document.querySelectorAll('#hud-icons .hud-icon')]
+const usable = () => [...document.querySelectorAll('#hud-icons .hud-icon')]
   .filter(el => el.offsetParent !== null && !el.closest('#park-zone.locked'))
   .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
   .concat(abandon() ?? [])
+/** FEAT-288 P2: of those, the ones the tutorial's step allows (src/tut-gate.js) — all of them outside the tutorial. */
+const items = () => usable().filter(el => allowsEl(el))
 
 function mark (el) {
   sel?.classList.remove('menu-sel')
@@ -66,7 +69,7 @@ function close () {
 pad.hudMenu = {
   open () {
     const list = items()
-    if (!list.length) { hintPark(); return }
+    if (!list.length) { usable().length ? refuse(document.getElementById('hud-b-hint')) : hintPark(); return }   // FEAT-288 P2: emptied by the tutorial's lock
     label.classList.toggle('solo', list.length < 2)
     // Never the abandon button: the D-pad walks to it. BUG-120: once ARMED (its "confirm?"), it is — the confirm is
     // then one B press, inside its 3 s; walking the menu to it a second time ran the arm out on the pad.

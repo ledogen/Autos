@@ -71,6 +71,34 @@ const FIXED_NAMES = {
 }
 
 const rngFor = (key) => mulberry32(djb2(key))
+const routeRngFor = (seed, offer) => rngFor(`offer:${seed}:${offer.poiId}:${offer.slot}:${offer.k}:route`)
+
+/** FEAT-103: a requisition line's source — the nearest POI of its `from` type to the camp, ties to the id. */
+const lineSource = (pois, camp, type) => {
+    const d2 = (q) => (q.x - camp.x) ** 2 + (q.z - camp.z) ** 2
+    return (pois || []).filter(q => q.type === type).sort((a, b) => (d2(a) - d2(b)) || (a.id < b.id ? -1 : 1))[0]
+}
+/** FEAT-103: a fetch line goes to the camp and nowhere else, at any length (mission.js `anyLeg`). FEAT-292
+ *  (DEC-424): it leaves its source by the nearer end of the source's road (`nearerEnd`), not the seeded one. */
+const lineDest = (campOnly) => ({ kind: 'poi', pick: 0, pois: campOnly, strict: true, anyLeg: true, nearerEnd: true })
+
+/**
+ * FEAT-292 (DEC-424): the requisition's LOADED TOTAL in road metres with `camp` as the camp — every line planned
+ * exactly as the board plans it (the same source, route stream and destination wish; `plan` is
+ * MissionSystem.planOffer): the four fetch lines source → camp plus the signs line out from the camp. Null when a
+ * line has no source or does not plan. poi.js reads it to choose the camp's crossing.
+ */
+export function requisitionTotal (seed, pois, camp, plan) {
+    let sum = 0
+    for (const [i, line] of REQUISITION.entries()) {
+        const src = lineSource(pois, camp, line.from)
+        const m = src && plan(src, { rng: routeRngFor(seed, { poiId: src.id, slot: `r${i}`, k: 0 }),
+            dest: line.targets ? { kind: 'roadside' } : lineDest([camp]) })
+        if (!m) return null
+        sum += m.distance
+    }
+    return sum
+}
 
 /**
  * FEAT-148: the giver's line for an offer, or null (no line written yet — the panel then shows no quote).
@@ -321,10 +349,8 @@ export class OfferBoard {
         // touches it, and never anyone's older sibling, so no ordinary offer plans differently for it.
         const camp = (pois || []).find(q => q.type === 'expeditionCamp')
         this._campId = camp?.id ?? null
-        const d2 = (q) => (q.x - camp.x) ** 2 + (q.z - camp.z) ** 2
         this._lines = !camp ? [] : REQUISITION.map((line, i) => {
-            const src = (pois || []).filter(q => q.type === line.from)
-                .sort((a, b) => (d2(a) - d2(b)) || (a.id < b.id ? -1 : 1))[0]
+            const src = lineSource(pois, camp, line.from)
             return src && { poiId: src.id, type: src.type, slot: `r${i}`, k: 0, line, offer: null, state: 'closed', until: 0 }
         }).filter(Boolean)
         this._slots.push(...this._lines)
@@ -889,7 +915,7 @@ export class OfferBoard {
         const sp = this.spec(offer)
         // FEAT-103: a line goes to the camp and nowhere else, at any length (mission.js `anyLeg`).
         // FEAT-65: …except the camp's own demolition line, which goes OUT to a roadside site.
-        if (sp.line && sp.destKind === 'poi') return { kind: 'poi', pick: 0, pois: pois.filter(q => q.id === this._campId), strict: true, anyLeg: true }
+        if (sp.line && sp.destKind === 'poi') return lineDest(pois.filter(q => q.id === this._campId))
         if (sp.destKind !== 'poi') return { kind: 'roadside' }
         // A FETCH (FEAT-102) wishes for its PICKUP — a POI of `from`, strictly — and says so, so the
         // planner returns the same way and settles back here.
@@ -902,7 +928,7 @@ export class OfferBoard {
     }
 
     /** A seeded stream for the mission planner's own rolls on this offer (route determinism). */
-    routeRng (offer) { return rngFor(`offer:${this._seed}:${offer.poiId}:${offer.slot}:${offer.k}:route`) }
+    routeRng (offer) { return routeRngFor(this._seed, offer) }
 
     /** A roadside drop's name: a stand-alone landmark, or "the <last> <place noun>". */
     _placeName (r) {
