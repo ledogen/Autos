@@ -111,7 +111,7 @@ import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'   // FEAT-184: the tut
 import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, planGuideJob, stepJob, tourLeg } from './paper-route.js'
+         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, planGuideJob, stepJob, tourLeg, accuracyTier } from './paper-route.js'
 import { AlertCycle, wordAction, stepOf, wearLevel, engineLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
@@ -4276,8 +4276,9 @@ function _scoreLanding (hit) {
       // read-out quotes the money it just earned rather than a percentage the player has to convert
       // in their head. `scored.pay` is banked money — the fare is not in it, because that depends
       // on when you finish and the route can still take it back.
-      _showThrowReadout(`<span style="color:var(--money)">${scored.dist.toFixed(2)} m`
-        + ` &nbsp;·&nbsp; +$${formatMoney(scored.pay)}</span>`)
+      // FEAT-282: the word and its colour, then the dollars: "great accuracy - $0.12", "bullseye - $0.12".
+      const t = accuracyTier(scored.q, scored.dist)
+      _showThrowReadout(`<span style="color:${t.color}">${t.word}${t.word === 'bullseye' ? '' : ' accuracy'} - $${formatMoney(scored.pay)}</span>`)
     } else if (scored.already) {
       // Not a failure — a paper spent. Saying so is the difference between "that did nothing" and
       // "you already did this one", and only one of those tells you to drive on.
