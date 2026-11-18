@@ -827,18 +827,20 @@ export class PoiSystem {
         this._list = out
         this._pool = pool
         this._built = { x: center.x, z: center.z, r: radius, seed }
+        // FEAT-275 (DEC-429): each residence's mailbox, out on the shoulder. BEFORE the pads are handed over, so
+        // padReachNodes() is the junction ground _evaluate sited against, not these pads themselves; the shoulder's
+        // height is the road's and no pad reaches inside the shoulder edge (road.js POI_ROAD_FEATHER).
+        for (const q of out) {
+            const mb = this._residenceMailbox(road, q, P, seed)
+            if (mb) q.satellites.push(mb)
+        }
         road.setPoiPads(out)
         // FEAT-71: stand the yard on the CARVED ground, which only exists now the pads are handed
         // over. It is not q.y: the bench sits roadClearanceMargin under the pad's design top, and
         // the road-side strip blends with the shoulder by a few cm.
         const ground = this._d.getTerrain?.()
         if (ground?.analyticHeight) {
-            for (const q of out) for (const sat of q.satellites) sat.y = ground.analyticHeight(sat.x, sat.z) + sat.lift
-        }
-        // FEAT-275 (DEC-429): then the mailbox, out on the shoulder (its height is the road's, read after the pads).
-        for (const q of out) {
-            const mb = this._residenceMailbox(road, q, P, seed)
-            if (mb) q.satellites.push(mb)
+            for (const q of out) for (const sat of q.satellites) if (!sat.onRoad) sat.y = ground.analyticHeight(sat.x, sat.z) + sat.lift
         }
         return out
     }
@@ -850,7 +852,8 @@ export class PoiSystem {
      * poiMailboxInset inside the shoulder's outer edge (clear of the lane by the shoulder less the box's half depth),
      * door (-Z) to the road, at the pad end the seed picks; a blocked end (a junction apron, another road, a bore,
      * water) tries the other, then slides along the road. Its height is sampleRoadTopY: inside the road footprint
-     * that IS the surface the truck drives on (main.js _groundSampleY), so the base sits on it. Null for an RV (the
+     * that IS the surface the truck drives on (main.js _groundSampleY), so the base sits on it (`onRoad`: the yard's
+     * analyticHeight re-seat, the carved dirt 0.25 m under it, leaves it alone). Null for an RV (the
      * model's `rv` flag) or a place with no viable spot. A knockable satellite like the lawn furniture: knocked, it
      * lies where it fell until the markers are rebuilt (the next run or reload); nothing is saved.
      */
@@ -874,7 +877,7 @@ export class PoiSystem {
                 if (water && (water.isRoadNoGo(x, z) || water.streamChannelAt?.(x, z)?.inChannel)) continue
                 const y = road.sampleRoadTopY(x, z)
                 if (y == null || !isFinite(y)) continue
-                return { key: mailboxKey(seed, q.id), x, y, z, lift: 0, yaw: Math.atan2(nx, nz),
+                return { key: mailboxKey(seed, q.id), x, y, z, lift: 0, yaw: Math.atan2(nx, nz), onRoad: true,
                          variant: hash32(`poi-mailbox-paint:${seed}:${q.id}`) & 0x7fffffff }
             }
         }

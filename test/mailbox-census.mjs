@@ -54,6 +54,9 @@ for (const seed of SEEDS) {
         return ry ?? terrain.analyticHeight(x, z)
     }
     const all = mailboxesOf(poi)
+    // junction ground only: padReachNodes() also lists the story pads themselves (storyPadReach)
+    const story = road.storyPadReach()
+    const junctions = road.padReachNodes().filter(nd => !story.some(p => p.x === nd.x && p.z === nd.z))
     check(`seed ${seed}: no roadside mailbox list (FEAT-280 withdrawn)`, typeof poi.mailboxes !== 'function')
     check(`seed ${seed}: no paper-route house carries a mailbox`, poi.houses().every(h => !h.mb && !(h.satellites ?? []).some(s => isMailbox(s.key))))
     for (const { q } of all) check(`seed ${seed}: ${q.id} (${q.type}) is a residence, not an RV — no lone box`, q.tags?.includes('residence') && !PROP_MODELS[q.modelKey]?.rv)
@@ -77,7 +80,7 @@ for (const seed of SEEDS) {
         for (const [ox, oz] of [[0, 0], [0.15, 0], [-0.15, 0], [0, 0.15], [0, -0.15]]) dy = Math.max(dy, Math.abs(s.y - ground(s.x + ox, s.z + oz)))
         check(`seed ${seed}: ${q.id} mailbox base within 5 cm of the ground`, dy <= 0.05, `${(dy * 100).toFixed(1)} cm`)
         check(`seed ${seed}: ${q.id} mailbox not in a bore`, !road.tunnelSpanAt?.(nr.runKey ?? '', nr.arcS ?? 0))
-        check(`seed ${seed}: ${q.id} mailbox not on a junction pad`, !road.padReachNodes().some(nd => Math.hypot(nd.x - s.x, nd.z - s.z) <= nd.reach))
+        check(`seed ${seed}: ${q.id} mailbox not on a junction pad`, !junctions.some(nd => Math.hypot(nd.x - s.x, nd.z - s.z) <= nd.reach))
         check(`seed ${seed}: ${q.id} mailbox not in water`, !(water.isRoadNoGo(s.x, s.z) || water.streamChannelAt?.(s.x, s.z)?.inChannel))
         check(`seed ${seed}: ${q.id} mailbox on no pad`, !poi.list().some(p => p.halfLen && padSd(p, s.x - p.x, s.z - p.z) < 0))
         // where the pad meets the road: the pad's road-edge end, along the pad's own tangent
