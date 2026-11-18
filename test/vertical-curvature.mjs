@@ -33,7 +33,7 @@ import { parseWorldSeed } from '../src/seed.js'
 
 const KFLAG = 0.03       // 1/m — counted as a kink (R 33 m; between dip 3 and dip 2)
 const OPEN_KMAX = 0.07   // 1/m — hard line on open road
-const BORE_KMAX = 0.03   // 1/m — hard line on a bore's deck (BUG-216, set below)
+const BORE_KMAX = 0.04   // 1/m — hard line on a bore's deck (BUG-216): +1 g at 15.7 m/s; spot A read 0.054
 const JN_KMAX = 0.11     // 1/m — hard line in junction zones
 // Kink counts over KFLAG at 2026-10-26 — may only go DOWN. open 17 → 19 (2026-11-01, BUG-81 item 4,
 // portalCover 2 → 6): no deck changed — the portals moved IN, so two mild crests that were inside a
@@ -63,7 +63,12 @@ const JN_KMAX = 0.11     // 1/m — hard line in junction zones
 // crest pair on g:2,1,2:3,1,1 track −2.5 (s 810.7 −0.035 /m and s 820.2 −0.041 /m) is the same surface within 2 mm on
 // main; one sample between them moved 0.0297 → 0.0305 /m, across KFLAG, and the 15 m merge now counts the pair as two
 // (2039.1, 710.6). Sharpest unchanged (0.092 /m).
-const CEIL = { open: 19, junction: 202, bore: 0 }
+// open 19 → 18, bore added at 1 (2026-11-18, BUG-216: the near-bore corner-rounding bound is gone and bores are scanned
+// on their deck). Before the fix these windows held 10 bore kinks, the sharpest 0.097 /m (seed 20 (11, −92)); after, one:
+// 0.032 /m at seed 6 (−1036, −913), was 0.077. On 12 random seeds + 660454599 (--seeds): 11 → 0, sharpest 0.062 → none
+// (spot A 0.054). Open: seed 6's portal crest at (1618, 1673) (0.031, the BUG-81 item 4 one) rounds away; seed 11's at
+// (959, −162) 0.050 → 0.034. Junction unchanged (201).
+const CEIL = { open: 18, junction: 202, bore: 1 }
 const JN_ZONE = 40       // m from a run end
 const WB = 2.85          // m — Ranger wheelbase: the span the chassis bridges
 const DS = 0.5
