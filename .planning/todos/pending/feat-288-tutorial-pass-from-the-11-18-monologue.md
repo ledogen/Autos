@@ -359,6 +359,15 @@ rotation resumes from the current angle (its start angle re-based, so there is n
 (read the current orbit angle) and its pad-look branch already runs under a focus. BUG-203 (the wrong-way alert over the
 opening) rides along in the same package.
 
+**As built (P6, 2026-11-18).** The numbers are `FIRING_CAM` in data/tutorial.js: radius 16 m, aim 2 m over the pad, start
+0.35 rad short of square-on, 0.05 rad/s on its own (≈ 2.9°/s), `resumeS` 3 s after the last touch, then `easeS` 1.5 s of
+linear ease from 0 to that rate. By hand: the right stick at camera.js's own rate (2 rad/s at full tilt, up/down too) and a
+RIGHT-button drag (0.005 rad/px; the left click still turns the card, and the right press no longer does while the orbit
+is up). main.js `_updateFiringCam` reads camera.js `getOrbitAngles()`: moved since it last set them = a touch. The right
+drag is only on a focus that asks for it (`setCameraFocus` `rightDrag`), so camp and the chase are as they were.
+BUG-203: the tutorial's GPS line (and with it gps.js's wrong-way flag) is not handed over on the firing day until mom's
+pedals card (`tut-drive`, "Follow the line home"): the firing, the intro's card and her call show no line on the road.
+
 ### 7. Conflicts with standing records
 
 Each is partial: the record's other sentences stand. DEC-422 carries the monologue; where a sentence below disagrees, DEC-422 wins for that sentence
@@ -423,7 +432,7 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - [ ] P3b lessons 2: the map beat, the shop beat, mom's gas call on leaving the shop, the end menu
 - [x] P4 world fixes: mom's ring (story-wide), legs on the map, the flat before the tunnel, mom's card on the tire's check-out
 - [x] P5 quest-item mark on the pack (the step names it; beam + white pulse; owner look owed: card feat288-marker-look)
-- [ ] P6 opening camera: free rotation, resumes; BUG-203
+- [x] P6 opening camera: free rotation, resumes; BUG-203
 - [ ] P8 speaker separation (after Q2)
 - [ ] Owner has played it
 
@@ -466,3 +475,4 @@ data/tutorial.js, data/dialogue.js, src/main.js, src/menu-nav.js, src/hud-menu.j
   gate's step (`quest`), gone with the step. tut-gate PASS; affected gates 21/21; smoke/pad-e2e: see the landing report.
   Sheet wip/feat-288-p5/sheet.jpg (lane worktree). Unverified: a human look, a real pad.
 - 2026-11-18 P4 built on land/feat-288-p4-world (§ 8 "As built (P4)"): mom's ring story-wide, every leg's pin + line on the map, the flat at FLAT.alongM 250 m along the drive home (264 m, 193 m before the tunnel; BUG-216 merged, unchanged), `tut-lights` on the tire's check-out (mom's tire spent). tutorial-seed re-measured (campFlat 0.26, tow 0.66 km); fingerprint-world ALL IDENTICAL to main; affected gates 36/36; smoke PASS 40 steps (load 8.7); pad-e2e ALL OK, on a head with main (P5) merged. Sheet wip/feat-288-p4/sheet.jpg. Unverified: a human drive of the night leg.
+- 2026-11-18 P6 built on land/feat-288-p6-opening (§ 6 "As built (P6)"): right stick + right drag turn the firing's orbit, 3 s idle then a 1.5 s ease back to 0.05 rad/s; BUG-203 fixed at the source (no tutorial line until `tut-drive`). Smoke `opening`: stick, drag, hold, resume, no wrong-way over the opening (truck turned round too), wrong-way works after; `skipMenus`: skip mid-orbit / at the card / under the ring leaves the camera on the truck, no marks, wrong-way live. Gates, smoke, pad-e2e: see the lane report. Unverified: a real pad and the owner's taste (card feat288-opening-look).

@@ -34,3 +34,11 @@ export function flatRadius (poly, home, alongM = FLAT.alongM) {
     }
     return null
 }
+
+// FEAT-147 / FEAT-288 P6 (DEC-422: "I like the slow rotation in the opening sequence, but you should also be able to rotate
+// with the right stick freely, and if you stop then it will start slowly rotating again"): the firing's orbit of the burger
+// joint's ROAD face. radius m from the aim point; lift m, the aim point's height over the pad; swing rad, the start's angle
+// short of square-on; rate rad/s (0.05 ≈ 2.9°/s: square-on at ~7 s, a full turn in ~2 min). The right stick or a drag with
+// the RIGHT mouse button (the left one turns the card) turns it by hand; resumeS s after the last touch the slow turn picks
+// up again from where the player left it, its rate eased in linearly from 0 over easeS s, so it never jerks.
+export const FIRING_CAM = { radius: 16, lift: 2, swing: 0.35, rate: 0.05, resumeS: 3, easeS: 1.5 }
