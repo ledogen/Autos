@@ -326,6 +326,29 @@ w = await walk('damperFront', 1, 15, 5)
 check(w === 'springFront armorRight brakeFront tireFR wheelFR', `front right, D-pad →: ${w}`)
 await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)
 check(!await js('document.getElementById("dmg-screen").classList.contains("open")'), 'B closes the damage screen')
+// FEAT-288 P2: the tutorial gate (src/tut-gate.js) under the flat's card (data/dialogue.js tut-flat, V's lesson). A free-roam
+// page has no tutorial, so the gate is handed that card as its step, on the app's own module instances: B held offers the
+// damage screen ALONE (ringed, the inventory dimmed), the D-pad cannot walk off it, release opens it; the step gone, the
+// whole menu is back.
+const mod = (path) => `await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("${path}")))`
+await js(`(async () => { const g = ${mod('/src/tut-gate.js')}, d = ${mod('/data/dialogue.js')}
+  window.__tutStep = d.TUT['tut-flat'][0]; g.initTutGate(() => window.__tutStep) })()`)
+await sleep(300)
+await js('__fp.b[1] = 1'); await sleep(250)
+const flatPick = await pick(), flatSolo = await js('document.getElementById("hud-menu-label").classList.contains("solo")')
+await js('__fp.b[13] = 1'); await sleep(150); await js('__fp.b[13] = 0'); await sleep(150)
+const flatWalk = await pick(), marks = await js('({ hi: document.getElementById("dmg-icon").classList.contains("tut-hi"), locked: document.getElementById("inv-icon").classList.contains("tut-locked") })')
+await js('__fp.b[1] = 0'); await sleep(500)
+check(flatPick === 'dmg-icon' && flatSolo && flatWalk === 'dmg-icon' && marks.hi && marks.locked,
+  `FEAT-288: the flat's card — B held offers the damage screen alone (${flatPick}, solo ${flatSolo}), D-pad ↓ stays (${flatWalk}), ringed / inventory dimmed ${JSON.stringify(marks)}`)
+check(await js('document.getElementById("dmg-screen").classList.contains("open")') && !await inv(), 'FEAT-288: releasing B opens the one entry, the damage screen; the inventory stays shut')
+await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300)   // B closes it
+await js('window.__tutStep = null'); await sleep(300)
+await js('__fp.b[1] = 1'); await sleep(250)
+const freePick = await pick(), freeMarks = await js('document.querySelectorAll(".tut-hi, .tut-locked").length')
+await js('__fp.b[1] = 0'); await sleep(500)
+if (await inv()) { await js('__fp.b[1] = 1'); await sleep(150); await js('__fp.b[1] = 0'); await sleep(300) }
+check(freePick === 'inv-icon' && freeMarks === 0, `FEAT-288: the step gone, the whole menu is back on its top pick (${freePick}) and no mark is left (${freeMarks})`)
 // FEAT-126 manual gearbox through the pad: A up, X down, LB clutch. Swapped in the way the debug
 // selector does it, on the app's own module instances.
 const appMod = (path) => `await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("${path}")))`

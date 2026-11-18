@@ -65,6 +65,8 @@
 //   yardGroup  [min, max] — FEAT-71, satellites only: how many of this asset stand together. Real
 //                       yards keep drums in twos and threes against each other, not evenly spaced.
 //                       Default [1, 1].
+//   yardMax    number — FEAT-290, satellites only: the most of this asset ONE yard may hold, across
+//                       all its groups (a house has one fire pit). Default: no cap.
 //   palette   object — CURATED RECOLOUR POOL, { <material name substring>: [[r,g,b], ...] }.
 //                       Owner ruling 2026-08-21: recolouring is not a free-for-all tint. Each
 //                       model that wants variety declares a short, hand-picked list of colours it
@@ -1306,7 +1308,8 @@ export const PROP_MODELS = {
   // ASSET-08 — brick fire ring, 644 tris, 1.26 m across at 1.2x (ASSET-76, owner: "20% bigger"), footing 3.6 cm
   // below grade. One log pokes 16 cm past the ring; the box is the ring, the log is clippable.
   // FEAT-251 (owner, 2026-11-17): the ONE lawn item the truck truly collides with — never knockable.
-  firePit: { url: 'assets/models/fire-pit.glb', collision: { shape: 'box', size: [1.26, 0.40, 1.26] }, tags: ['lawnFurniture'] },
+  firePit: { url: 'assets/models/fire-pit.glb', collision: { shape: 'box', size: [1.26, 0.40, 1.26] }, tags: ['lawnFurniture'],
+    yardMax: 1 },   // FEAT-290 (owner, 2026-11-18): a house has one fire pit
   // ASSET-12 — lumber yard kit, sawmill dressing (FEAT-91; pools FEAT-74). One generator, src/lumber.py, shared
   // with ASSET-38. Boards are modelled, ends in LumberEnd. Offcut pile was settled by a rigid-body sim and baked.
   lumberStack: { url: 'assets/models/lumber-stack.glb', collision: { shape: 'box', size: [1.30, 0.68, 4.05] } },   // 792 tris, 60 boards in two stickered units, no straps (a loose yard stack); no recolour hook

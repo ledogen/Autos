@@ -97,6 +97,8 @@ export const GATES = [
   { file: 'road-worker-parity.mjs', subsystem: 'road', cost: 'heavy',
     extraDeps: ['src/road-route-worker.js', 'src/road-worker.js', 'src/corridor-router.js'],
     desc: 'FEAT-68: route Worker == sync path — the worker imports the same routeEdgeV2 (no mirror), so this pins the one drift surface left: the height-field rebuild from the init subset, plus byte-identical descriptors on real pinned edges' },
+  { file: 'urquhart-restore.mjs', subsystem: 'road', cost: 'heavy', extraDeps: ['src/road-graph.js', 'src/road-network-worker.js'],
+    desc: 'FEAT-265 (DEC-401): a planned road that fails to route puts back the side Urquhart dropped on its account. Seed 3200351065 (the owner\'s): the food vendor\'s side -1,0,0 to -1,1,1 is restored, routed and counted in its node\'s degree; the network worker builds it identically and adoptNetwork answers the same degrees; a free-roam window centred on it builds it identically; a seed-6 window with no failed route restores nothing and exports as before' },
   { file: 'network-worker-parity.mjs', subsystem: 'road', cost: 'heavy',
     extraDeps: ['src/road-network-worker.js'],
     desc: 'PERF-30: network Worker == sync build — the worker imports the same RoadSystem, so this pins the protocol seams: the params-snapshot filter, the pond-disc reconstruction, and adoptNetwork answering surface/degree/slice queries byte-identically to the instance that built the network (incl. the warm-instance reuse path), and that a pre-warmed edge re-routes with its pins (R-01, seed 7)' },
@@ -400,4 +402,6 @@ export const GATES = [
     desc: 'INFRA-07 the main.js gate: the real app in Chrome — boot, drive, R, teleport, map, freecam (R-11), lab, story entry, mom\'s camp hold + R closes it (R-12), backtick (R-13), take and start a job, and (FEAT-125) a run end to end on the pad alone — zero console errors; SMOKE_STEPS=boot,pad runs a subset while developing' },
   { file: 'pad-e2e.mjs', subsystem: 'app', cost: 'heavy', browser: true, extraDeps: ['src', 'data', 'index.html', 'vite.config.js'],
     desc: 'FEAT-125/FEAT-41 the pad contract in the real app: a scripted fake gamepad drives analog pedals, position steering + assist, last-moved-wins, unplug safety, the button layout, then the menus pad-only and the choices surviving a reload' },
+  { file: 'tut-gate.mjs', subsystem: 'story', cost: 'fast', extraDeps: ['index.html', 'src/main.js'],
+    desc: 'FEAT-288 P2: the tutorial gate (src/tut-gate.js) — every lesson card in data/dialogue.js is a step (`allow`), every allow / hi entry is a locked BINDINGS action or a selector whose #ids and item ids exist; the base lock refuses only inventory / damage / camp / recovery / abandon / waypoint (never driving, the brake, the key, lights, map, pause, back, reset); a step with `allow` locks the cards\' other elements, back and pause never; no step (skip, end, run end) allows everything (BUG-183)' },
 ]
