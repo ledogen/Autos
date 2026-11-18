@@ -146,10 +146,10 @@ function pickWeighted (u, weights) {
 
 /**
  * The job-type badge on a card (owner, 2026-10-10): a PLACEHOLDER letter in a box until the map /
- * card iconography pass. Three types start with F, so those take two letters. Larry's route has none.
+ * card iconography pass. Three types start with F, so those take two letters. Larry's route is P (FEAT-273).
  */
 export function jobBadge (sp) {
-    if (sp.family === 'papers') return null
+    if (sp.family === 'papers') return 'P'   // FEAT-273: Larry's diamond carries a P
     if (sp.family === 'haul') return 'H'
     if (sp.family === 'freight') return 'Fr'
     if (sp.family === 'fragile') return 'Fg'
@@ -1100,7 +1100,8 @@ export class OfferBoard {
         // twice. The board clock is how long the offer stays POSTED; the other is the delivery window
         // once taken — so say each in its own words.
         // Reworded again 2026-10-24 (owner): "available for: 10h" and "time limit: 4h 22m".
-        if (isFinite(expiresInH)) times.push(`available for: ${formatGameDuration(expiresInH)}`)
+        // FEAT-272 (DEC-412): the firewood yard's line is shelf stock, always there; the clock is its restock.
+        if (isFinite(expiresInH)) times.push(`${sp.stock ? 'new stock in' : 'available for'}: ${formatGameDuration(expiresInH)}`)
         if (!sp.line && par > 0) times.push(`time limit: ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept; never on a job take() gives none
         return {
             family: sp.family,

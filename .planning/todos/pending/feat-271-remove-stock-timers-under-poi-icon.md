@@ -25,7 +25,7 @@ Owner's words, verbatim (inbox 20261118010708-kmdu):
 Part of one owner message (inbox 20261118010708-kmdu) split into three asks: FEAT-271, FEAT-272, FEAT-273.
 
 ## Tracker
-- [ ] No new-stock timer under any POI icon on the map
+- [x] No new-stock timer under any POI icon on the map
 
 ## Decisions
 
@@ -39,3 +39,4 @@ src/map*.js · data/map-icons.js
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118010708-kmdu).
+- 2026-11-17 ui-1117b: the under-icon stock timer is gone from the map (status().nextText retired too). Look pending.

@@ -44,6 +44,7 @@
       --warn: #ffb020;     --warn-line: #b8801f;  --warn-text: #e8d7b0;
       --bad: #ff5a4e;      --bad-line: #8a4a44;   --bad-text: #ff8a7a;
       --poi: #ff9f43;      --poi-text: #ffb066;
+      --haul: #9b5fd1;     /* DEC-421: the haul family's diamond (map + offer panel); the one purple of the palette */
       --camp: #ffdc3c;     --camp-text: #ffe89a;
     }
     /* FEAT-248: UI size. ONE lever: CSS `zoom` (scales an element's lengths, text and children by one factor) on every
@@ -246,8 +247,8 @@
     body.stage-on.stage-dragging, body.stage-on.stage-dragging * { cursor: grabbing !important; }
     #main-menu .mm-title {
       color: var(--accent-system);
-      font-size: 30px;
-      letter-spacing: 9px;
+      font-size: 48px;   /* FEAT-281: +60 % (was 30) */
+      letter-spacing: 14px;
       text-transform: uppercase;
       margin-bottom: 26px;
     }
@@ -537,10 +538,6 @@
     #mp-body, #pp-body, #sp-body { line-height: 1.7; }
     #mp-body .mp-big, #pp-body .mp-big, #sp-body .mp-big { font-size: 22px; color: var(--text-bright); }
     #mp-body .mp-dim, #pp-body .mp-dim, #sp-body .mp-dim { color: var(--text-dim); }
-    /* Job-type badge on the offer card — PLACEHOLDER letter in a box (owner, 2026-10-10) until the
-       card iconography pass. Text from OfferBoard jobBadge: C courier · Fe fetch · Fr freight · Fg fragile · H haul. */
-    #mp-body .job-badge { display: inline-block; border: 1.5px solid currentColor; padding: 0 4px;
-      margin-right: 6px; font-size: 12px; font-weight: 700; line-height: 16px; }
     #mp-actions, #pp-actions, #sp-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
     #pp-sizes { display: none; margin-top: 10px; gap: 6px; justify-content: center; align-items: center; }   /* FEAT-141 */
     #pp-sizes .mp-dim { color: var(--text-dim); margin-right: 4px; }
@@ -947,6 +944,9 @@
       left: 50%; top: 0; height: 100%; width: 0;
       border-left: 1px solid rgba(255, 255, 255, 0.9);
     }
+    /* FEAT-283: the "eat" hover's post-meal level, laid left of the pointer (the fed end of the strip). */
+    #hm-preview { display: none; position: absolute; top: 0; height: 100%; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.7) 0 3px, rgba(140,233,154,0.45) 3px 6px);
+      border: 2px solid var(--money); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.6); box-sizing: border-box; }   /* hatched: the strip under it is green too */
     #energy-meter .em-pointer::before {
       content: '';
       position: absolute;
@@ -1505,6 +1505,7 @@
     #cp-row { margin-top: 12px; display: flex; gap: 10px; align-items: center; justify-content: center; }
     #cp-hours { width: 160px; }
     .cp-dim { color: var(--text-dim); }
+    .cp-warn { color: var(--warn-text); }   /* BUG-209: a refused cook */
     /* The confirm face's stats line. The judgement words wear the vibe bar's colours (see the
        colour-code note on .vseg-*) so the reader can tie a word to a segment; the vibe number
        itself is neutral white because it is the sum of all four. */
@@ -1515,7 +1516,11 @@
     .cp-water { color: #4aa8d8; }
       /* FEAT-67: parked-panel head — the giver's portrait (placeholder) beside their line. */
     .mp-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; text-align: left; }
-    .mp-portrait { flex: 0 0 64px; width: 64px; height: 64px; background: #d9d3c1;
+    /* FEAT-274: the portrait's wrapper carries the job-type diamond, behind the portrait and poking out its top-left. */
+    .mp-pwrap { position: relative; flex: 0 0 64px; }
+    .mp-pwrap .mp-diamond { position: absolute; left: -16px; top: -16px; width: 40px; height: 40px; }
+    .mp-diamond text { font: 700 12px var(--font); fill: rgba(0, 0, 0, 0.85); }
+    .mp-portrait { position: relative; flex: 0 0 64px; width: 64px; height: 64px; background: #d9d3c1;
                    border: 1px solid var(--line-hover); }
     .mp-portrait svg { display: block; width: 100%; height: 100%; fill: #8a8272; }
     .mp-flavor { font-style: italic; line-height: 1.45; }
@@ -1611,8 +1616,8 @@
   <div id="resume-card"><div class="pm-title">paused</div>press any key to resume</div>
   <div id="tut-card">   <!-- FEAT-184 (DEC-147): the end of the intro (main.js _syncTutCard) -->
     <div class="pm-title">tutorial</div>
+    <button id="tc-skip">skip</button>   <!-- FEAT-289 (owner 2026-11-18): skip first = the default selection -->
     <button id="tc-play">play the tutorial</button>
-    <button id="tc-skip">skip</button>
   </div>
   <div id="towel-card">
     <div class="pm-title">give up</div>
@@ -1631,8 +1636,8 @@
     <!-- FEAT-146: story runs only — ends the run on the summary card, behind the #towel-card confirm. -->
     <button id="pm-towel" style="display:none">give up</button>
     <!-- FEAT-42: story runs only, at the bottom; greyed out with its reason (pm-save-why) while the run
-         can't save. It IS the way out of a run (owner, 2026-10-30: the two buttons did the same thing), so
-         "main menu" shows only outside a run, or while a run can't save. -->
+         can't save. It IS the way out of a run (owner, 2026-10-30; FEAT-270: the main menu button is gone from
+         a story run, a moving truck leaves by "give up"), so "main menu" shows only outside a story run. -->
     <button id="pm-save" style="display:none">save &amp; exit<span class="pm-why" id="pm-save-why"></span></button>
     <button id="pm-menu">main menu</button>
   </div>
@@ -1851,6 +1856,7 @@
           <div class="em-seg" id="hm-seg-hungry"><span>Hungry</span></div>
         </div>
         <div class="em-pointer"></div>
+        <div id="hm-preview"></div>
       </div>
     </div>
 

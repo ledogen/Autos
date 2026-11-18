@@ -25,7 +25,7 @@ Owner's words, verbatim (inbox 20261118010708-kmdu):
 Part of one owner message (inbox 20261118010708-kmdu) split into three asks: FEAT-271, FEAT-272, FEAT-273.
 
 ## Tracker
-- [ ] The firewood hover text reads "new stock in <time>" instead of "available for"
+- [x] The firewood hover text reads "new stock in <time>" instead of "available for"
 
 ## Decisions
 
@@ -40,3 +40,4 @@ the POI hover card (src/main.js, src/map*.js)
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118010708-kmdu).
+- 2026-11-17 ui-1117b: a stock line (firewood yard) says "new stock in:"; test/offer-board.mjs follows. Look pending.
