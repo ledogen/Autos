@@ -12,8 +12,10 @@ lane: engine & world
 # FEAT-293: Driving AI V1: a debug option that drives the player's truck, random turn at every junction, until any input
 
 ## Next steps
-Owner: watch it drive (owed card feat293-driving-ai-watch). Then land `land/feat-293-driving-ai`. Open follow-ups: the
-tunnel-portal wedge on a 37 % climb (seed 1830183820, see Description), ML (see "What an ML driver would need").
+Owner: watch it drive (owed card feat293-driving-ai-watch). Then land `land/feat-293-driving-ai`. Follow-ups for the
+orchestrator to mint: (1) the portal shelf at seed 1830183820 (a world defect, see Description); (2) a main bug the smoke
+exposed: move the truck ~150 m from its last seat, enter and exit the lab, start a story run, and seating at mom's goes
+NaN (see Log 2026-11-18 close-out). ML stays later (see "What an ML driver would need").
 
 ## Summary
 A debug-panel option hands the truck to a driving AI. It drives the road on its own lane, takes a random turn at every
@@ -82,9 +84,14 @@ Grade band = the road grade under the truck at that moment.
   junction turn: it left the deck and drove itself back on, a `rejoin`).
 - Time off the deck: 25.8 s in 40 km (a few junction turns). Manoeuvres: 4 three-point turns, 2 reverse-outs, 2 rejoins.
 - Tire wear: 0.11 % a km (no human baseline measured to compare with).
-- Cost: the median per physics step is 16–30 µs (one seed 2.5 µs: it sat wedged); the p99 is 60–300 µs (the bore query,
-  polled at 4 Hz). The worst single steps are 3–35 ms, in plain `drive`, not at junctions; garbage collection or JIT is
-  suspected, not traced.
+- Cost (traced 2026-11-18, `wip/feat-293/spike.mjs`, 20 km on 2 random seeds 1514946663 / 1452042188, load 11–15): the
+  AI's step is median 16.8 µs, p99 86 µs, p99.9 655 µs, worst 13.0 ms. Of 88 k steps, 37 took over 2 ms. 36 of those
+  were descheduled: the process got under half the wall time in CPU, i.e. the OS ran another process on that core
+  (load above the 10 cores). One was a scavenge (V8's young-generation garbage collection, 8 ms) that happened to fire
+  inside the AI's step. The garbage is the rig's: ~8 scavenges per simulated second, while the AI allocates one small
+  object per step. The same drive replayed from the recorded controls, with the AI not running, reproduces both seeds
+  to the metre, and its rig steps (physics, damage, streaming) cost the same: median 20.3 ms vs 22.2 ms with the AI.
+  So the spikes are the machine and the rig, NOT the autopilot; nothing to fix in `src/autopilot.js`.
 - **The one intervention is a world defect (for a new ticket; measured 2026-11-18)**: seed 1830183820, run
   `g:0,-1,0:0,0,2`, bore span s 60.27–279.55. The road deck climbs at ~37 % (0.38 m/m) into the portal. From arcS
   ~58.8 to ~59.8, 0.5–1.5 m BEFORE the span starts, a road-mesh surface in road tile `1,-1` sits nearly LEVEL
@@ -144,3 +151,9 @@ step), test/drive-ai-soak.mjs, test/drive-ai.mjs (gate), test/playtest-bench.mjs
   test/lib/autopilot.mjs, src/auto-drive.js + the debug folder, the soak and the gate. Soak 40 km / 13 seeds, one
   intervention (the portal wedge). Affected gates green; fingerprint-physics identical to main; smoke `autoDrive` passes
   (W and D hand back). App look on seed 909892992: three junctions in 100 s, then W handed back.
+- 2026-11-18 close-out (merged main a64c0ee1; head 3958f433): affected gates 16/16 green; fingerprint-physics identical to
+  main c4250f19; manual box (m5odr1) soak 1.5 km after BUG-218: 0 grinds, 0 stalls. Smoke `camp` failed 3/3: NOT the AI —
+  driving the same ~150 m with W fails the same, re-seating after the AI passes. A main bug: truck moved ~150 m from its
+  last seat → lab in/out → story run → mom's seat NaN (strutComp ~3e5 m, then NaN from the engine's getVelocity in
+  stepPhysics); the step now re-seats the truck. Then camp passed 3/3 (subset, 2 full smokes; smoke 2 failed later at the
+  known DEC-357 blink flake), pad-e2e ALL OK. Bench refused to start: host audio clock stalled (coreaudiod): unverified.
