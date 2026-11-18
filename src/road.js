@@ -7143,19 +7143,27 @@ export class RoadSystem {
             const legs = this._v2RestoreLegs(g, drop, a, c)
             this._v2Infeasible = legsInf   // the legs' samples replay their own tallies; this side's verdict is its own
             const inf0 = this._v2Infeasible || 0
-            const smp = this._v2SampleEdge(a, c, { startDir: chord, goalDir: chord, occupied: legs.occupied })
+            let smp = this._v2SampleEdge(a, c, { startDir: chord, goalDir: chord })
             if (!smp || (this._v2Infeasible || 0) > inf0) { this._v2Infeasible = inf0; continue }
-            if (this._v2RestoreGrazes(smp, legs.samples, key(a), key(c))) continue
+            if (this._v2RestoreGrazes(smp, legs.samples, key(a), key(c))) {
+                // FEAT-77 for a restored side: only a side that grazes re-routes against its nodes' legs (as only a
+                // pass-2 loser does); one that still grazes stays dropped.
+                smp = legs.occupied && this._v2SampleEdge(a, c, { startDir: chord, goalDir: chord, occupied: legs.occupied })
+                if (!smp || (this._v2Infeasible || 0) > inf0) { this._v2Infeasible = inf0; continue }
+                if (this._v2RestoreGrazes(smp, legs.samples, key(a), key(c))) continue
+            }
             this._registerRun(`g:${key(a)}:${key(c)}`, smp.cl, a, c)
             this._v2Restored.add(key(a) + '|' + key(c)); this._v2Restored.add(key(c) + '|' + key(a))
         }
     }
 
     // FEAT-265 clearance (FEAT-77 for a restored side): a restored side is outside the plan layer, so the clearance
-    // walk never makes it a loser. It routes instead with EVERY other leg at its two nodes as `occupied` (their
-    // shipped pass-2 lines, _v2RunSample: pure per edge, so window-invariant), each node's throat exempt as for a
-    // pass-2 loser. The router only prices the berth; a side that still grazes a leg (centres under the graze floor
-    // past the geometric throat, the road-clearance random-seed tier) stays dropped (_v2RestoreGrazes).
+    // walk never makes it a loser. Instead a restored side that GRAZES one of the other legs at its two nodes (centres
+    // under the graze floor past the geometric throat, the road-clearance random-seed tier: _v2RestoreGrazes) re-routes
+    // with every such leg as `occupied` (their shipped pass-2 lines, _v2RunSample: pure per edge, so window-invariant),
+    // each node's throat exempt as for a pass-2 loser. The router only prices the berth; a side that still grazes stays
+    // dropped. A side that never grazed routes exactly as before (a berth bought on a clean line costs grade: seed
+    // 1872706826's 1061 m side went to 32 % when every side paid it).
     // ponytail: legs of the two nodes only — a restored side grazing a non-adjacent road or another restored side is
     // left to the gate; add _v2ClearPartners' chord partners if one shows.
     _v2RestoreLegs(g, drop, a, c) {
