@@ -15,7 +15,7 @@
 //      A minute of 60 fps updates must push ~11 times, not ~3600 (each push integrates the sky's
 //      atmosphere on the CPU, ~2 ms, and re-lights the prop impostors).
 //   4. The ratified arithmetic (2026-07-30, tank 18 → 16 h 2026-08-02 per run-shape.md): stage
-//      ladder at 12/14/16 h awake (energy 4/2/0), coffee +5 now / −3 at wake (net positive),
+//      ladder at 12/14/16 h awake (energy 4/2/0), coffee +5 now / −1 at wake (DEC-378) (net positive),
 //      r(vibe) with average = full-from-empty in 8 h and best = exactly 2× worst, the tired
 //      signal blink firing exactly once per crossing, and SLEEP DEBT (owner 2026-08-02): energy
 //      keeps falling past empty to a −8 floor, and the night that repays it must be longer —
@@ -35,7 +35,7 @@ const check = (label, ok, detail = '') => {
 check('pinned: dayLengthSec 1440', DAY_PARAMS.dayLengthSec === 1440)
 check('pinned: energy ladder 16/4/2, debt floor 8', DAY_PARAMS.fullEnergyH === 16 && DAY_PARAMS.sleepyAtH === 4
   && DAY_PARAMS.tiredAtH === 2 && DAY_PARAMS.sleepDebtMaxH === 8)
-check('pinned: coffee +5/−2', DAY_PARAMS.coffeeReliefH === 5 && DAY_PARAMS.coffeeDebtH === 2)
+check('pinned: coffee +5/−1 (DEC-378)', DAY_PARAMS.coffeeReliefH === 5 && DAY_PARAMS.coffeeDebtH === 1)
 check('pinned: sleep rates 4/3 and 8/3 (mean 2.0, best exactly 2× worst)',
   DAY_PARAMS.sleepRateWorstH === 4 / 3 && DAY_PARAMS.sleepRateBestH === 8 / 3)
 check('pinned: hunger ×1.25 → ×1.5 over 4 h, a standard meal holds 8 h', DAY_PARAMS.hungryRate === 1.25
@@ -170,10 +170,10 @@ const mkDay = () => {
   check('setup: 3 h left', Math.abs(sys.energyH() - 3) < 1e-9)
   sys.drinkCoffee()
   check('coffee: +5 now', Math.abs(sys.energyH() - 8) < 1e-9, `e=${sys.energyH()}`)
-  check('coffee: +2 debt held for wake', sys.coffeeDebt() === 2)
+  check('coffee: +1 debt held for wake (DEC-378)', sys.coffeeDebt() === 1)
   sys.drinkCoffee(); sys.drinkCoffee(); sys.drinkCoffee()
   check('coffee clamps at a full tank', sys.energyH() <= DAY_PARAMS.fullEnergyH)
-  check('debt stacks per cup', sys.coffeeDebt() === 8)
+  check('debt stacks per cup', sys.coffeeDebt() === 4)
   DAY_PARAMS.dayLengthSec = 1440
 }
 
@@ -232,19 +232,19 @@ const mkDay = () => {
   check('the debt comes off the night: −2 + 16 = 14, not full', near(sys.energyH(), 14), `e=${sys.energyH()}`)
 
   sys.update(12)                                 // 09:00 + 12 h = 21:00, 2 h left
-  sys.drinkCoffee()                              // 7 h left, debt 2
+  sys.drinkCoffee()                              // 7 h left, debt 1
   const d2 = runState.day
   sys.sleep(9, 0.5)                              // 21:00 + 9 h crosses midnight; recovery uncapped, THEN −debt
   check('a midnight inside the sleep increments the day (again)', runState.day === d2 + 1)
-  // settled = 7 + 2.0·9 − 2 = 23 → clamps to 16: sleeping in DID pay the loan off.
+  // settled = 7 + 2.0·9 − 1 = 24 → clamps to 16: sleeping in DID pay the loan off.
   check('the loan is settled before the clamp (sleep-in offsets it)', sys.energyH() === DAY_PARAMS.fullEnergyH)
   check('the loan is cleared at wake', sys.coffeeDebt() === 0)
 
   // Short sleep with a debt: charged once, exactly.
   sys.update(14)                                 // 2 h left
-  sys.drinkCoffee()                              // 7 h left, debt 2
-  sys.sleep(2, 0)                                // settled = 7 + (4/3)·2 − 2 = 7⅔
-  check('short sleep charges the debt once, uncapped', near(sys.energyH(), 23 / 3), `e=${sys.energyH()}`)
+  sys.drinkCoffee()                              // 7 h left, debt 1 (DEC-378)
+  sys.sleep(2, 0)                                // settled = 7 + (4/3)·2 − 1 = 8⅔
+  check('short sleep charges the debt once, uncapped', near(sys.energyH(), 26 / 3), `e=${sys.energyH()}`)
   check('debt does not survive the wake', sys.coffeeDebt() === 0)
 
   // Deep debt: a short night can wake you STILL exhausted — the debt is real, not cosmetic.
@@ -327,7 +327,10 @@ const mkDay = () => {
   check('eating resets the clock to the food\'s hold: 10 h at ×1, no longer', near(e0 - sys.energyH(), 10) && !sys.hungry()
     && (sys.update(tick), sys.hungry()))
   sys.eat(8); sys.eat(2)
-  check('a snack after a meal never shortens its hold', (sys.update(7.875), !sys.hungry()))
+  check('FEAT-250: foods stack — an 8 h meal and a 2 h snack make 10 h on the counter', near(sys.fedLeftH(), 10))
+  sys.eat(6)
+  check(`…capped at satietyCapH (${DAY_PARAMS.satietyCapH} h): the rest is wasted`, near(sys.fedLeftH(), DAY_PARAMS.satietyCapH))
+  check('…and the counter drains 1 an awake hour', (sys.update(DAY_PARAMS.satietyCapH - 0.125), near(sys.fedLeftH(), 0.125) && !sys.hungry()))
   sys.setEnergy(8)   // 26 h awake had floored it at the debt floor
   const e1 = sys.energyH()
   sys.advanceMinutes(60)   // 0.125 h still fed, then 0.875 h on the ramp
@@ -346,7 +349,7 @@ const mkDay = () => {
     && near(sys.snapshot().fedUntilH - sys.clockH(), 7))
   // FEAT-169 (owner 11-07): the meter's word by the hold left — stuffed ≥ 6 h, full ≥ 4, content ≥ 2, peckish ≥ 0,
   // then hungry, which is exactly hungry(). Walked down a fresh 10 h hold an hour at a time.
-  sys.eat(100); sys.update(100 - 10)   // exactly 10 h of a hold left
+  sys.eat(12); sys.update(2)   // exactly 10 h left on the counter
   const words = []
   for (let i = 0; i <= 11; i++) { words.push(`${sys.hungerWord()}${sys.hungry() ? '!' : ''}`); sys.update(1) }
   check('the hunger words down a 10 h hold, an hour at a time', words.join(' ') ===

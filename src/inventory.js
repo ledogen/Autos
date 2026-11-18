@@ -18,8 +18,8 @@
 //   • THE FRESH CLOCK (FEAT-230 slice 2, items.md §1b, DEC-338): an item with `freshH` carries `ages` on its entry,
 //     one per unit, game hours of fresh life spent; a unit at freshH is gone, the rest of the stack stays. It runs on
 //     the ONE world clock (tick, fed daySystem.clockH()), so it runs asleep and holds wherever that clock holds (the
-//     brake's latch, DEC-289; an idle camp; the opening's evening). An iced cooler runs `holds` units of food at its
-//     coolRate. Ice is on the clock too (it melts); a bag used into a cooler becomes the cooler's `iceH`. A save
+//     brake's latch, DEC-289; an idle camp; the opening's evening). An iced cooler runs `holds` slots of food at its
+//     coolRate, a stack to a slot. Ice is on the clock too (it melts); a bag used into a cooler becomes the cooler's `iceH`. A save
 //     without `ages` loads fresh.
 //   • Items die with the run (SM-INV-8/9): start() resets to the starting kit — the equipped Pack
 //     with the bedroll in it. The run save (FEAT-42, SM-4) will carry `runInventory`; until then
@@ -73,6 +73,8 @@ export class InventorySystem {
      *   onChange()         — anything changed; the screen re-renders
      *   onDrop(entry)      — FEAT-143: an entry was dropped; main.js lays it on the ground
      *   effects            — { [hook]: () => void } for items whose effect is built (ITEMS[id].use)
+     *   notes              — BUG-211: { [hook]: (entry) => string | null } what using it now would waste (a meal on a full
+     *                        stomach), shown under its button before the player uses it
      */
     constructor (deps = {}) {
         this._slotCap = deps.slotCap ?? (() => 8)
@@ -80,6 +82,7 @@ export class InventorySystem {
         this._onChange = deps.onChange ?? (() => {})
         this._onDrop = deps.onDrop ?? (() => {})
         this._effects = deps.effects ?? {}
+        this._notes = deps.notes ?? {}
     }
 
     /** Begin a story run with the starting kit. Called from onRegionLive beside economySystem.start(). */
@@ -131,6 +134,9 @@ export class InventorySystem {
     pending () { return runInventory.pending }
     nameOf (id) { return ITEMS[id]?.name ?? id }
     usable (id) { const h = ITEMS[id]?.use; return !!(h && this._effects[h]) }
+
+    /** BUG-211: what using entry `e` now would waste (the screen's hint), or null. */
+    useNote (e) { return this._notes[ITEMS[e.id]?.use]?.(e) ?? null }
 
     /** Slots a grant of `n` × `id` would need right now. */
     _need (id, n) {
@@ -365,8 +371,9 @@ export class InventorySystem {
     /**
      * FEAT-230 slice 2 (DEC-338): advance the fresh clock to world time `nowH` (daySystem.clockH(), every fixed step; a
      * sleep's jump lands on the next step). Every unit ages on its own and goes alone at freshH. The iced coolers, best
-     * rate first, each chill `holds` units of food (youngest first, so a stack bigger than the room keeps its oldest
-     * out and that one goes first); a unit's cold hours stop when its cooler's ice does, mid-jump included.
+     * rate first, each chill `holds` SLOTS of food, a whole stack to a slot (FEAT-250 / DEC-379, owner 2026-11-17: "A
+     * stack of items only counts as one slot and the coolers offer four slots"), filled in inventory order; a unit's cold
+     * hours stop when its cooler's ice does, mid-jump included.
      */
     tick (nowH, held = false) {
         const dH = nowH - (this._lastH ?? nowH)
@@ -380,12 +387,10 @@ export class InventorySystem {
             const it = ITEMS[e.id]
             if (!it.freshH) continue
             const a = _ages(e)
-            for (let u = 0; u < a.length; u++) {
-                const k = it.kind === 'food' && coolers.find(k => k.room > 0)
-                if (k) k.room--
-                const cold = k ? Math.min(dH, k.c.iceH) : 0
-                a[u] += cold * (k ? ITEMS[k.c.id].coolRate : 1) + dH - cold
-            }
+            const k = it.kind === 'food' && coolers.find(k => k.room > 0)
+            if (k) k.room--
+            const cold = k ? Math.min(dH, k.c.iceH) : 0
+            for (let u = 0; u < a.length; u++) a[u] += cold * (k ? ITEMS[k.c.id].coolRate : 1) + dH - cold
             a.sort((x, y) => x - y)
             while (e.n && a[e.n - 1] >= it.freshH) { a.pop(); e.n--; gone = true }
         }
@@ -433,7 +438,7 @@ export class InventorySystem {
 
     /** One entry as the screen reads it — a truck slot, or an item lying on the ground (FEAT-143). */
     rowOf (e) {
-        return { id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id),
+        return { id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id), note: this.useNote(e),
                  equipped: !!e.equipped, cond: e.cond ?? null, flat: !!e.flat,
                  tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, left: e.left ?? ITEMS[e.id].uses ?? null, gal: e.gal ?? null, fresh: this.freshLeft(e), contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
     }

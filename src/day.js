@@ -48,10 +48,11 @@ export const DAY_PARAMS = {
     // (consequence stays SM-INV-1 dozes; the debt deepens the ledger, not the punishment).
     sleepDebtMaxH: 8,
 
-    // Coffee: relief now, debt against the NEXT wake-up. Deliberately net positive (+5 vs −2, owner
-    // 2026-10-20): 5 h awake costs ~3 h of sleep, so the cup must beat that ratio or nobody drinks it.
+    // Coffee: relief now, debt against the NEXT wake-up. Deliberately net positive: +5 now (owner 2026-10-20), and
+    // FEAT-261 / DEC-378 (owner, 2026-11-17: "Coffee should only take an hour of sleepiness the next day") 1 h off the
+    // next wake-up per cup (was 2, ruled 2026-10-20).
     coffeeReliefH: 5,
-    coffeeDebtH:   2,
+    coffeeDebtH:   1,
     // Energy drink (owner, 2026-10-20): coffee's short, steep twin. Relief now, and a crash of half
     // that a few hours later, the SAME day — coffee borrows from tomorrow, this from this afternoon.
     // A sleep before the crash sleeps it off [DEFAULT]: the sleep preview and the night stay one sum.
@@ -70,9 +71,14 @@ export const DAY_PARAMS = {
     hungryRate:   1.25,
     starvingRate: 1.5,
     hungryRampH:  4,
-    mealHoldH:    8,      // a standard meal (the burger, the dinner invitation)
+    mealHoldH:    8,      // a standard meal (the burger, the dinner invitation): the run's start and the debug 'eat'
+    // FEAT-250 / DEC-376 (owner, 2026-11-17): hunger is ONE satiety counter, in hours of drain — fedLeftH(), clockH to
+    // _fedUntilH. It falls 1 per awake hour (not asleep, FEAT-173) and each food ADDS its `satiety` (data/items.js), so
+    // foods stack, up to satietyCapH [DEFAULT, owed]; the rest of a meal past the cap is wasted. The zones are the
+    // counter's ranges, unchanged: stuffed 6..cap · full 4–6 · content 2–4 · peckish 0–2 · hungry below 0 (the drain ramp).
+    satietyCapH:  12,
     // The energy meter's hunger word (owner, 2026-11-07: "stuffed / full / content / peckish / hungry just as a word that
-    // appears in the sleep box"), by the hours left on the meal's hold, first match [DEFAULT]. Past the hold: hungry.
+    // appears in the sleep box"), by the counter, first match [DEFAULT]. Below 0: hungry.
     hungerWords:  [[6, 'stuffed'], [4, 'full'], [2, 'content'], [0, 'peckish']],
 
     // ── Sleep recovery (FEAT-45 Phase D) — hours of energy bought per hour slept ───────────────
@@ -151,6 +157,9 @@ export const clockHeld = (camp, service, tutorial, parked) => !!(camp || service
 export const runState = {
     day: 1,   // 1-based day index of the current run; increments at each midnight crossed
 }
+
+/** BUG-211: a meal adding under this many hours is wholly wasted; one losing over MEAL_WASTE_H is partly. [DEFAULT] */
+export const MEAL_NONE_H = 0.05, MEAL_WASTE_H = 0.25
 
 export class DaySystem {
     /**
@@ -307,7 +316,7 @@ export class DaySystem {
 
     /**
      * A cup of coffee: hours back now, a smaller number of hours off the next wake-up.
-     * NET POSITIVE BY DESIGN (+5 now vs −2 tomorrow) — coffee is a real tool, not a trap; the cost
+     * NET POSITIVE BY DESIGN (+5 now vs −1 tomorrow, DEC-378) — coffee is a real tool, not a trap; the cost
      * is that tomorrow's day is shorter, which is a scheduling problem, not a punishment.
      * The debt is only HELD here in Phase B; Phase D's sleep flow is what charges and clears it.
      */
@@ -327,12 +336,30 @@ export class DaySystem {
     }
 
     /**
-     * FEAT-169: a meal — hunger held off for `holdH` from now (items.md §1d). Never shortens a hold
-     * already running: a snack after a burger does not make you hungrier [DEFAULT].
+     * FEAT-250 (DEC-376): a food adds its satiety to the counter — from 0 when hungry, never past satietyCapH (the
+     * rest is wasted). Never lowers a counter already over the cap (the debug 'eat' sets none, an old save might).
      */
-    eat (holdH) {
-        runLog.on && runLog.event('eat', { holdH, fedLeftH0: this.fedLeftH(), hungry: this.hungry() })
-        this._fedUntilH = Math.max(this._fedUntilH, this.clockH() + holdH)
+    eat (satietyH) {
+        runLog.on && runLog.event('eat', { satietyH, fedLeftH0: this.fedLeftH(), hungry: this.hungry() })
+        this._fedUntilH = Math.max(this._fedUntilH, this.clockH() + Math.max(0, this.fedLeftH()) + this.mealGainH(satietyH))
+    }
+
+    /**
+     * BUG-211: the hours a meal of `satietyH` would add to fedLeftH() — eat()'s own rule (FEAT-250, DEC-376: holds ADD,
+     * capped at satietyCapH), so the eat refusal (main.js, a meal wholly wasted stays in the bag) and the eat preview
+     * can never disagree with it: min(cap − current, the meal), 0 at or over the cap.
+     */
+    mealGainH (satietyH) {
+        const left = Math.max(0, this.fedLeftH())
+        return Math.max(0, Math.min(DAY_PARAMS.satietyCapH - left, satietyH))
+    }
+
+    /** BUG-211: what a meal of `satietyH` would waste now: 'all' (adds under MEAL_NONE_H), 'some' (loses over MEAL_WASTE_H)
+     *  or null — the inventory's warning before eating. Null with hunger off. */
+    mealWaste (satietyH) {
+        if (!DAY_PARAMS.hungerOn) return null
+        const gain = this.mealGainH(satietyH)
+        return gain < MEAL_NONE_H ? 'all' : satietyH - gain > MEAL_WASTE_H ? 'some' : null
     }
 
     /** Past the last meal's hold. The energy box says so in its hunger word and bar (FEAT-198), never a number. */
@@ -644,6 +671,7 @@ export class DaySystem {
         f.add(DAY_PARAMS, 'starvingRate', 1, 3, 0.05).name('starving drain ×')
         f.add(DAY_PARAMS, 'hungryRampH', 0, 12, 0.5).name('hunger ramp (h)')
         f.add(DAY_PARAMS, 'mealHoldH', 0, 16, 0.5).name('standard meal hold (h)')
+        f.add(DAY_PARAMS, 'satietyCapH', 4, 24, 0.5).name('satiety cap (h)')
         f.add(DAY_PARAMS, 'blinkMeanSleepyH', 0.1, 4, 0.05).name('sleepy gap (h)')
         f.add(DAY_PARAMS, 'blinkMeanTiredH', 0.1, 4, 0.05).name('tired gap (h)')
         f.add(DAY_PARAMS, 'blinkMeanExhaustedH', 0.1, 4, 0.05).name('exhausted gap (h)')
