@@ -110,7 +110,7 @@ import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'   // FEAT-184: the tut
 import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin } from './paper-route.js'
+         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, planGuideJob, stepJob, tourLeg } from './paper-route.js'
 import { AlertCycle, wordAction, stepOf, wearLevel, engineLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
@@ -143,7 +143,7 @@ import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuni
 import { lampsOn, homeLamps, shopLamps, setGlow } from './poi-night.js'   // FEAT-214: POI night lights
 import { PumpFaces } from './pump-face.js'   // FEAT-233: the pump in use shows the sale on its own face
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
-import { siteTargets, nearestTarget, guideTo, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
+import { siteTargets, siteStops, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
@@ -4564,15 +4564,9 @@ missionSystem = new MissionSystem({
       result.health = _freight?.mission === mission && _freight.health ? _freight.health.health : 0
       result.letter = amountGrade(result.health, _fragileLinesOf(mission))
     }
-    // FEAT-65: a demolition job is lettered on the share of its site smashed, and pays the line × that
-    // share (haul's rule) — base and tip alike, so leaving targets standing never pays more.
-    if (mission?.targets) {
-      const k = _siteCount(mission)
-      result.smashed = k.smashed; result.targets = k.of
-      const share = k.of ? k.smashed / k.of : 0
-      result.letter = amountGrade(share, rankTable('demolition', region))
-      mission = { ...mission, payMult: mission.payMult * share }
-    }
+    // FEAT-267 (DEC-399): a demolition job is hurried — lettered on time like courier and the paper round (mission.js
+    // gradeRun), and it settles only with every target down, so it pays the whole line. The count rides to the card.
+    if (mission?.targets) { const k = _siteCount(mission); result.smashed = k.smashed; result.targets = k.of }
     // FEAT-103: a requisition line pays nothing and earns no deed. C or better delivers it; a D (late,
     // or too much of the load lost) puts it back on the list unchanged.
     if (mission?.line) {
@@ -4588,7 +4582,7 @@ missionSystem = new MissionSystem({
       result.line = { delivered, done: lines.filter(l => l.state === 'done').length, of: lines.length, supply: sup?.text ?? null,
                       need: mission.bundles ? `${rankTable('haul', region, 'firewood').C}+ bundles`
                         : mission.fragile ? `${Math.round(_fragileLinesOf(mission).C * 100)}%+ intact`
-                        : mission.targets ? `${Math.round(rankTable('demolition', region).C * 100)}%+ smashed` : 'C or better' }
+                        : 'C or better' }
       return { payout: 0, base: 0, tip: 0, points: 0 }
     }
     const s = economySystem.settle(result, mission)
@@ -5375,8 +5369,8 @@ gpsSystem = new GpsSystem(scene, {
     if (missionSystem?.mission?.approach) return null
     // FEAT-170: the opening's evening has no job, only the way home to mom's (FEAT-184: the morning's, back to the joint).
     if (_tutDrive()) return _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
-    // FEAT-65 slice 2: a demolition job's GPS goes to its nearest target still standing (_updateSite).
-    if (_site?.guide && _site.mission === missionSystem.mission) return _site.guide.route
+    // FEAT-267: a demolition job's GPS is the leg to the next cluster on the remaining tour (_updateSite).
+    if (_site?.guide && _site.mission === missionSystem.mission) return _site.guide
     if (s === 'countdown' || s === 'staging' || s === 'running') return _tutLine(missionSystem.guideRoute())
     return _waypointOn() ? _tutLine(_waypoint.route) : null   // FEAT-211: last in line — a job's guide always wins
   },
@@ -5581,12 +5575,11 @@ function _missionDeedNeed (j) {
   if (j.fragile) return `${Math.round(_fragileLinesOf(j).B * 100)}%+ intact`
   if (j.bundles) return `${rankTable('haul', j.terms?.region ?? 1, 'firewood').B}+ bundles`
   if (j.cargoKg) return `a ${rankTable('freight', j.terms?.region ?? 1).B} kg+ load`
-  if (j.targets) return `${Math.round(rankTable('demolition', j.terms?.region ?? 1).B * 100)}%+ smashed`
   return 'B or better'
 }
 /** The job's kind for gateLine / deedLine, and the cargo id those read the tables by. */
 function _missionKind (j) {
-  return j.targets ? 'demolition' : j.fragile ? 'fragile' : j.bundles ? 'haul' : j.cargoKg ? 'freight' : null
+  return j.fragile ? 'fragile' : j.bundles ? 'haul' : j.cargoKg ? 'freight' : null   // FEAT-267: demolition is courier's (DEC-399)
 }
 function _missionGateLine (j) {
   // R-17: the same words the card used — gateLine's grammar, with fragile's lines eased by this route's km.
@@ -6896,7 +6889,7 @@ function _standRow (row) {
 // cancelled, expired) the site goes the moment nothing of it is within offM — never in view.
 const _siteGroup = new THREE.Group()
 scene.add(_siteGroup)
-let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], next, guide } — or null
+let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], halos, guide (the GPS leg), rr (a tour in flight), left, planAt } — or null
 const _siteP = new THREE.Vector3(), _siteQ = new THREE.Quaternion(), _siteY = new THREE.Vector3(0, 1, 0)
 
 /** Stand mission `m`'s targets as models; `smashed` lists the indices already down (a resume). */
@@ -6934,6 +6927,7 @@ function _placeSite (m, smashed = []) {
 const SITE_HALO_PAD_M = 1.5   // m past a member's centre: room for the thing itself [DEFAULT]
 function _clearSite () {
   if (!_site) return
+  _site.rr?.return?.()   // FEAT-267: hand an unfinished tour's Held-Karp tables back (paper-route.js _leaseHkTables)
   debrisSystem.remove(_site.targets.map(t => t.body).filter(b => b != null))
   _siteGroup.clear()
   _site = null
@@ -6965,19 +6959,19 @@ function _updateSite () {
     if (d <= D.offM && (t.body != null || t.mesh.visible)) near = true
   }
   if (live) {
-    // Slice 2 (owner, 2026-11-03): the last one down settles the job (mission.js reads `cleared`), and
-    // the GPS goes to the nearest one standing — a new guide object only when that target or its
-    // direction changes, since gps.js re-bakes on identity. 11-05: so does the site window running out —
-    // every smash refills it (D.hitWindowS), so going back for a miss is a race, not a given.
+    // Slice 2 (owner, 2026-11-03): the last one down settles the job (mission.js reads `cleared`), wherever the truck is.
+    // FEAT-267 (DEC-399, the paper round's DEC-398): the GPS follows the shortest tour from the truck through the clusters
+    // still standing, re-planned every RR_PARAMS.tourS and on every smash, so a missed one turns the line back exactly when
+    // going back is the shorter tour. The job is pumped in the frame's spare time (_pumpSiteGuide); until the first lands
+    // the GPS shows the job's own route.
     const m = _site.mission, standing = _site.targets.flatMap((t, i) => t.smashed ? [] : [i])
-    const down = _site.targets.length - standing.length
-    if (down > (_site.down ?? down)) m.lastHitS = missionSystem.elapsed
-    _site.down = down
-    m.cleared = !standing.length || (m.lastHitS != null && missionSystem.elapsed - m.lastHitS > D.hitWindowS)
-    const n = _site.next = nearestTarget(m, p.x, p.z, standing, missionSystem.routeRemaining())
-    // FEAT-187: the guide is a line to the target, never a destination circle in the road (gps.js reads noRing).
-    if (n && (_site.guide?.i !== n.i || _site.guide.back !== n.back)) _site.guide = { i: n.i, back: n.back, route: { ...guideTo(m, m.targets[n.i].u, n.back), noRing: true, objective: m.targets[n.i] } }
-    else if (!n) _site.guide = null
+    m.cleared = !standing.length
+    const now = performance.now() / 1000
+    if (!_site.rr && standing.length && (standing.length !== _site.left || !(now - _site.planAt < RR_PARAMS.tourS))) {
+      _site.left = standing.length; _site.planAt = now
+      const it = planGuideJob(roadSystem, p, siteStops(m, standing), storySystem.region())
+      if (it) _site.rr = it
+    }
   }
   // FEAT-187: a cluster's halo is lit while the job is live, any of it stands, and the truck is near (the paper's rule).
   for (const h of _site.halos ?? []) {
@@ -6985,6 +6979,15 @@ function _updateSite () {
     h.ring.visible = h.pip.visible = on
   }
   if (!live && !near) _clearSite()
+}
+/** FEAT-267: spend this frame's spare time on the site's tour; when it lands, the GPS gets its leg to the next cluster. */
+function _pumpSiteGuide (budgetMs) {
+  const r = stepJob(_site.rr, budgetMs)
+  if (!r.done) return
+  _site.rr = null
+  // FEAT-187: a line to the cluster, never a destination circle in the road (gps.js reads noRing). A plan that reached
+  // nobody keeps the previous line (the paper round's BUG-47 rule).
+  if (r.value?.segments?.length) _site.guide = { ...tourLeg(r.value), noRing: true }
 }
 
 /**
@@ -7625,10 +7628,9 @@ function _renderMissionUI () {
       // R-23: unless the job has just turned — then the bad news takes the line (_jobBeat).
       const beat = _jobBeat(m)
       hud.classList.toggle('mh-bad', !!beat)
-      // FEAT-65 slice 2: a demolition job's end is no goal — the HUD counts to its next target instead.
-      const next = _site?.mission === m.mission ? _site.next : null
-      const win = next && m.mission.lastHitS != null ? Math.max(0, Math.ceil(DEMOLITION_PARAMS.hitWindowS - (m.elapsed - m.mission.lastHitS))) : null
-      hudText.textContent = beat ?? (next ? `${km(next.dist)} to the next target` + (win != null ? `   · next hit within ${win} s` : '') : `${km(m.routeRemaining())} to go`)
+      // FEAT-267: a demolition job's end is no goal — the HUD counts the site, the paper round's "N / M delivered".
+      const site = m.mission?.targets ? _siteCount(m.mission) : null
+      hudText.textContent = beat ?? (site ? `${site.smashed} / ${site.of} smashed` : `${km(m.routeRemaining())} to go`)
         + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
           : `   · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
         + _dueSuffix()
@@ -8163,12 +8165,11 @@ function _rankTimerSource () {
   const m = missionSystem
   if (m && m.mission && (m.state === 'countdown' || m.state === 'staging' || m.state === 'running')) {
     if (m.mission.expired) return null   // FEAT-113: a job that pays nothing has no rank to chase
-    // QUAL-36 (DEC-178/181, owner 2026-11-14): a job is HURRIED or CALM. Courier-family jobs are hurried; fragile,
-    // haul and freight are calm (their letter is condition / count / kg, so a time bar would promise a grade
-    // the job does not give) unless the giver is Impatient — then the bar shows the TIP only. Demolition is
-    // always calm: its clock is the 40 s hit window.
-    const calm = !!(m.mission.fragile || m.mission.bundles || m.mission.cargoKg || m.mission.targets)
-    if (calm && (m.mission.targets || !m.mission.traits?.includes('impatient'))) return null
+    // QUAL-36 (DEC-399, superseding DEC-178; DEC-181): a job is HURRIED or CALM. Courier-family jobs and demolition are
+    // hurried; fragile, haul and freight are calm (their letter is condition / count / kg, so a time bar would promise a
+    // grade the job does not give) unless the giver is Impatient — then the bar shows the TIP only.
+    const calm = !!(m.mission.fragile || m.mission.bundles || m.mission.cargoKg)
+    if (calm && !m.mission.traits?.includes('impatient')) return null
     // R-22 (owner, 2026-10-24): the bar shows only once the goal is NEAR — the last nearFrac of the
     // route (never under nearMinM) — and stays from there. Latched per job, so a GPS re-plan that
     // lengthens the route cannot take it away again.
@@ -8230,12 +8231,6 @@ function _promiseRows (m) {
   } else if (kind === 'freight') {
     const T = rankTable('freight', region)
     value = j.cargoKg; lineOf = (l) => T[l]; below = () => 'upon delivery'; marginTo = () => 1
-  } else if (kind === 'demolition') {
-    // FEAT-65: the share smashed so far — it only climbs, so a rung not yet reached is a GOAL, not lost.
-    const T = rankTable('demolition', region), k = _siteCount(j)
-    value = k.of ? k.smashed / k.of : 0
-    lineOf = (l) => T[l]; below = (x) => `${Math.round(x * 100)}%+ smashed`
-    marginTo = (x) => (value - x) / Math.max(0.01, 1 - x)
   } else {
     // Courier: the rung is the band the clock is in NOW (_rtLive, read every frame whether or not the
     // bar is showing — R-22 hides the bar, not the deed you still hold); the margin is how close the
@@ -8257,8 +8252,6 @@ function _promiseRows (m) {
     if (value == null) return { what: ladder[0].what, next: below(ladder[0].line), tone: _promiseTone(null) }
     const i = ladder.findIndex(r => r.line == null || value >= r.line)
     const held = ladder[i]
-    // FEAT-65: on a climbing axis (demolition) nothing is lost yet — show the first rung as the goal.
-    if (held.line == null && kind === 'demolition') return { what: ladder[i - 1].what, next: below(ladder[i - 1].line), tone: _promiseTone(null) }
     if (held.line == null) return { what: held.what, next: null, tone: 'var(--bad-text)', lost: true }
     return { what: held.what, next: below(held.line), tone: _promiseTone(marginTo(held.line)) }
   }
@@ -8282,7 +8275,6 @@ function _promiseRows (m) {
   // R-29: the load's count lives here too (it was its own bare line, #job-cargo), so the overlay is one box.
   if (kind === 'haul') rows.unshift({ label: 'Cargo', what: `${value} bundle${value === 1 ? '' : 's'} aboard`, tone: 'var(--text)' })
   else if (kind === 'freight') rows.unshift({ label: 'Cargo', what: `${j.cargoKg} kg`, tone: 'var(--text)' })
-  else if (kind === 'demolition') { const k = _siteCount(j); rows.unshift({ label: 'Site', what: `${k.smashed} / ${k.of} smashed`, tone: 'var(--text)' }) }
   return rows
 }
 function _updateJobPromise () {
@@ -10100,7 +10092,7 @@ function _jobSnapshot () {
   s.offerId = m.offerId
   s.planned = planned
   if (_freight?.mission === m) s.freightHealth = _freight.health?.health ?? null
-  if (_site?.mission === m) { s.smashed = _site.targets.flatMap((t, i) => t.smashed ? [i] : []); s.lastHitS = m.lastHitS ?? null }   // FEAT-65
+  if (_site?.mission === m) { s.smashed = _site.targets.flatMap((t, i) => t.smashed ? [i] : []) }   // FEAT-65
   if (_haul?.mission === m && s.state !== 'loading') {
     s.haul = _haul.handles.flatMap((h, i) => _inBed(h) ? [{ kind: _haul.drops[i].kind, ..._bedLocalPose(h) }] : [])
     s.haulOut = _haul.handles.flatMap((h, i) => _inBed(h) ? [] : [{ kind: _haul.drops[i].kind, ..._worldPose(h) }])
@@ -10158,7 +10150,7 @@ function _reloadCargo (m, sj) {
     _loose.outSince = -Infinity
     m.cargoOut = true
   }
-  if (m.targets) { _placeSite(m, sj.smashed ?? []); m.lastHitS = sj.lastHitS ?? null }   // FEAT-65: the same site, the smashed ones still gone, its window as it was
+  if (m.targets) _placeSite(m, sj.smashed ?? [])   // FEAT-65: the same site, the smashed ones still gone (a pre-FEAT-267 save's lastHitS is ignored)
   if (!sj.haul) return
   // ponytail: a piece whose model has not loaded is dropped — they load at boot, long before a resume.
   _haul = { mission: m, handles: [], drops: [], t0: simTime, zone: null }
@@ -11612,6 +11604,7 @@ function loop (t) {
     const spentMs = performance.now() - newTime * 1000
     paperRouteSystem.pumpReroute(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - spentMs))
   }
+  if (_site?.rr) _pumpSiteGuide(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - (performance.now() - newTime * 1000)))   // FEAT-267
 }
 
 // PERF-21 for late arrivals: the boot prewarm compiled every light state's variant of every material
