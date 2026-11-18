@@ -153,7 +153,7 @@ export const runState = {
 }
 
 /** BUG-211: a meal adding under this many hours is wholly wasted; one losing over MEAL_WASTE_H is partly. [DEFAULT] */
-export const MEAL_KEEP_H = 0.05, MEAL_WASTE_H = 0.25
+export const MEAL_NONE_H = 0.05, MEAL_WASTE_H = 0.25
 
 export class DaySystem {
     /**
@@ -349,12 +349,12 @@ export class DaySystem {
         return Math.max(left, holdH) - left
     }
 
-    /** BUG-211: what a meal of `holdH` would waste now: 'all' (adds under MEAL_KEEP_H: it stays in the bag), 'some'
-     *  (loses over MEAL_WASTE_H: eaten, warned first) or null. Null with hunger off. */
+    /** BUG-211: what a meal of `holdH` would waste now: 'all' (adds under MEAL_NONE_H), 'some' (loses over MEAL_WASTE_H)
+     *  or null — the inventory's warning before eating. Null with hunger off. */
     mealWaste (holdH) {
         if (!DAY_PARAMS.hungerOn) return null
         const gain = this.mealGainH(holdH)
-        return gain < MEAL_KEEP_H ? 'all' : holdH - gain > MEAL_WASTE_H ? 'some' : null
+        return gain < MEAL_NONE_H ? 'all' : holdH - gain > MEAL_WASTE_H ? 'some' : null
     }
 
     /** Past the last meal's hold. The energy box says so in its hunger word and bar (FEAT-198), never a number. */

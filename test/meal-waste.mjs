@@ -1,8 +1,8 @@
 // test/meal-waste.mjs — BUG-211 (owner 2026-11-17: "Eating one potato took me to full and then eating another didn't seem
-// to increase my hunger any further"). A meal that would add nothing stays in the bag, and the screen says why; a meal
-// that would add part of itself is eaten with a warning. The rule is DaySystem.mealGainH, the one eat() itself applies,
+// to increase my hunger any further"). Before eating, the inventory says when a meal would add nothing ('too full') or only
+// part of itself ('nearly full'). A warning, never a refusal (the opening's scripted peanuts eat on cue). The rule is DaySystem.mealGainH, the one eat() itself applies,
 // so the refusal can never disagree with what eating does. Pure node: DaySystem + InventorySystem, no world.
-import { DaySystem, DAY_PARAMS, MEAL_KEEP_H as KEEP_H } from '../src/day.js'
+import { DaySystem, DAY_PARAMS, MEAL_NONE_H as NONE_H } from '../src/day.js'
 import { InventorySystem } from '../src/inventory.js'
 import { ITEMS, foodHoldH } from '../data/items.js'
 
@@ -24,7 +24,7 @@ check('eat() adds exactly what mealGainH said', Math.abs(day.fedLeftH() - left1 
   `gain ${gain2.toFixed(2)} h, fedLeft ${left1.toFixed(2)} → ${day.fedLeftH().toFixed(2)} h`)
 
 // The inventory, wired as main.js wires it: the eat effect plus the BUG-211 note.
-const NOTE = { all: { keep: true, text: 'too full' }, some: { keep: false, text: 'nearly full' } }   // main.js _MEAL_NOTE's shape
+const NOTE = { all: 'too full', some: 'nearly full' }   // main.js _MEAL_NOTE's shape
 const note = (h) => NOTE[day.mealWaste(h)] ?? null
 const inv = new InventorySystem({ slotCap: () => 8,
   effects: { eat: (e) => day.eat(foodHoldH(e.id, false)) },
@@ -33,16 +33,16 @@ inv.start()
 inv.grant('potatoCooked', 2)
 const nOf = () => inv.list().filter(r => r.id === 'potatoCooked').reduce((k, r) => k + r.n, 0)
 // Fill to where a potato adds nothing (the hold rule: already there; a stacking rule, FEAT-250: at its cap).
-for (let i = 0; i < 20 && day.mealGainH(potH) >= KEEP_H; i++) day.eat(potH)
-check('a potato that would add nothing stays in the bag', day.mealGainH(potH) < KEEP_H && inv.use('potatoCooked') === false && nOf() === 2,
-  `gain ${day.mealGainH(potH).toFixed(2)} h, potatoes ${nOf()}, ${day.hungerWord()}`)
-const row = inv.list().find(r => r.id === 'potatoCooked')
-check('its row carries the note (button disabled + hint)', row.note?.keep === true && !!row.note.text)
+for (let i = 0; i < 20 && day.mealGainH(potH) >= NONE_H; i++) day.eat(potH)
+check('a potato that would add nothing says "too full" before it is eaten', day.mealGainH(potH) < NONE_H && inv.list().find(r => r.id === 'potatoCooked').note === 'too full',
+  `gain ${day.mealGainH(potH).toFixed(2)} h, ${day.hungerWord()}`)
+check('…and is still eaten when the player insists (a scripted beat eats on cue)', inv.use('potatoCooked') === true && nOf() === 1)
+inv.grant('potatoCooked', 1)
 // Two hours later part of the potato would land: it is eaten, with the partial-waste warning.
 day.advanceMinutes(120)
 const g = day.mealGainH(potH)
 const r2 = inv.list().find(r => r.id === 'potatoCooked')
-check('partly wasted: eaten, warned first', g >= KEEP_H && r2.note?.keep === false && inv.use('potatoCooked') === true && nOf() === 1,
+check('partly wasted: warned "nearly full", eaten', g >= NONE_H && r2.note === 'nearly full' && inv.use('potatoCooked') === true && nOf() === 1,
   `gain ${g.toFixed(2)} of ${potH} h`)
 // Hungry again: no note, the meal is all there.
 day.advanceMinutes(10 * 60)

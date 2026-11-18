@@ -3815,9 +3815,10 @@ const inventorySystem = new InventorySystem({
   notes: { eat: (e) => _mealNote(foodHoldH(e.id, _kitAtCamp())) },   // BUG-211: a meal on a full stomach
 })
 /** BUG-211 (owner 11-17: "eating another didn't seem to increase my hunger any further"): the eat hint, by
- *  daySystem.mealWaste (eat()'s own rule). Wholly wasted, the meal stays in the bag. Words only, no hours on screen. */
-const _MEAL_NOTE = { all: { keep: true, text: 'You are too full to eat this. It would go to waste.' },
-  some: { keep: false, text: 'You are nearly full. Some of this would go to waste.' } }
+ *  daySystem.mealWaste (eat()'s own rule), said before eating. A warning, never a refusal: a scripted beat eats on cue
+ *  (the opening's peanuts at camp, DEC-347, on a stomach the safe drive kept fed). Words only, no hours on screen. */
+const _MEAL_NOTE = { all: 'You are too full. Eating this now would waste it.',
+  some: 'You are nearly full. Some of this would go to waste.' }
 const _mealNote = (holdH) => _MEAL_NOTE[daySystem.mealWaste(holdH)] ?? null
 // Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
 const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
