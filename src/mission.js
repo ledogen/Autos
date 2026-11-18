@@ -39,7 +39,7 @@
  * loop. update() is a couple of distance checks per frame.
  */
 
-import { computePar, gradeRun, PAR_REF, PAR_SLACK } from './par.js'
+import { computePar, routeDistance, gradeRun, PAR_REF, PAR_SLACK } from './par.js'
 import { roadQuality } from './road-quality.js'
 import { DAY_PARAMS } from './day.js'
 import { runLog, scalars } from './run-log.js'   // FEAT-242: the opt-in run log (every hook is behind runLog.on)
@@ -858,11 +858,11 @@ export class MissionSystem {
      *        `stops` (FEAT-89): a MULTI-DROP of up to that many POIs of `pois` — see _multiDrop.
      * @returns {object|null} the mission, with fromPoi / startZone / endPoiId set
      */
-    planOffer (poi, { rng, dest = null, minM = 0 } = {}) {
+    planOffer (poi, { rng, dest = null, minM = 0, distMemo = null } = {}) {
         const anchor = { aId: poi.aId, bId: poi.bId, s: poi.s, poiId: poi.id }
         const tries = this._getRegion() ? REGION_ROLL_TRIES : 1
         let m = null
-        for (let i = 0; i < tries && !m; i++) m = this._roll(anchor, { rng, dest, minM })
+        for (let i = 0; i < tries && !m; i++) m = this._roll(anchor, { rng, dest, minM, distMemo })
         if (!m) return null
         if (dest?.fetch) m = fetchRoute(m, poi.id)
         if (dest?.stops > 1) m = this._multiDrop(m, { rng, dest, tries })
@@ -932,7 +932,7 @@ export class MissionSystem {
      *   reward needs the distance, owner 2026-10-25). Anchored POI legs only; the roadside floor
      *   (LEG_MIN) is above any value passed today.
      */
-    _roll(anchor = null, { rng = Math.random, dest = null, minM = 0 } = {}) {
+    _roll(anchor = null, { rng = Math.random, dest = null, minM = 0, distMemo = null } = {}) {
         const road = this._getRoad()
         if (!road) return null
         // The POST-CULL registered network — the roads that actually exist. Planning off the raw
@@ -1118,7 +1118,9 @@ export class MissionSystem {
         }
         // Price a finished route: par, the HUD's arc table, the region's guard 2, the mission record.
         const priced = (segments, poly) => {
-            const { time, distance } = computePar(segments)
+            // FEAT-292: `distMemo` (a Map) asks for the route and its distance only, par unpriced (`par` reads 1): the
+            // camp's crossing choice (poi.js _evenRequisition) measures ~85 routes and keeps none.
+            const { time, distance } = distMemo ? { time: 1, distance: routeDistance(segments, distMemo) } : computePar(segments)
             if (!(time > 0)) return null
 
             // Cumulative XZ arc along the map polyline, for the HUD's route-remaining readout.

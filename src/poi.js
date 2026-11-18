@@ -1566,7 +1566,7 @@ export class PoiSystem {
     _evenRequisition (out, crossings, region, seed, P) {
         const road = this._d.getRoad(), roster = out.slice(0, -1), today = out.at(-1)
         const ms = new MissionSystem({ getRoad: () => road, getRegion: () => region })
-        const plan = (src, o) => ms.planOffer(src, o)
+        const memo = new Map(), plan = (src, o) => ms.planOffer(src, { ...o, distMemo: memo })   // distance only (mission.js)
         const off = (c) => Math.abs((requisitionTotal(seed, [...roster, c], c, plan) ?? Infinity) - P.poiCampReqTargetM)
         let best = today, bestOff = off(today)
         if (bestOff <= P.poiCampReqBand * P.poiCampReqTargetM) return today
