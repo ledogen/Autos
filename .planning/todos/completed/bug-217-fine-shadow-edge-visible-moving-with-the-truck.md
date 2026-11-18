@@ -1,7 +1,7 @@
 ---
 id: BUG-217
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-18
 source: owner, in chat, 2026-11-18, with capture autos-capture-1794991981756.json (tutorial, current main)
@@ -12,7 +12,7 @@ lane: engine & world
 # BUG-217: The fine shadow map's edge is visible about 20 m ahead and behind the truck, on ground already in coarse shadow
 
 ## Next steps
-Owner look: `wip/bug-217/sheet.jpg` (before | after, numbers on each frame), then drive the two capture spots on the lane's dev server. "Good" → land `land/bug-217-shadow-seam`.
+Done. Owner: "Good: land it" (2026-11-18). Landed on main de060867. Follow-on: BUG-229 (crest seam between the two maps).
 
 ## Summary
 Driving on a mountainside that is in the far (coarse) shadow, a darker patch of near (fine) shadow travels with the truck. Its edge is visible roughly 20 m ahead and 20 m behind.
