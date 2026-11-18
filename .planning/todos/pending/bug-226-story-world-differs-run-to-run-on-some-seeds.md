@@ -30,7 +30,7 @@ mom and the roster but not the seed actually played, so the swap looked like the
   played 2152877108, 3785467181 and 3147998271 (the third after a second refusal, of 255433741); 873064618 played
   3091031517. Every start logged `[story] seed "<seed>" refused (1 road could not be given a drivable profile …) — re-roll 1/3`.
 - The flip on demand is the refusal itself: a playable seed (4182, 77031, 1018248781) is stable; a refused one re-rolls.
-- Refusal rate on 20 random seeds (headless): see Log.
+- Refusal rate on 20 random seeds (headless, wip/bug-226/seeds20.txt): 0 / 20 refused, so 0 / 20 would re-roll.
 
 ## Tracker
 - [x] Reproduced, with the cause visible on every start (the re-roll log line).
