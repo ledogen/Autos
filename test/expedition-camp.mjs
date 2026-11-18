@@ -323,6 +323,30 @@ for (const s of SEEDS) {
         && board.lines().filter((l) => l.state !== 'done').every((l) => l.grade === null))
 }
 if (SEEDS === PINNED) check(`the seeds hold a kept camp and a moved one (${kept.n} kept, ${kept.moved} moved)`, kept.n > 0 && kept.moved > 0)
+
+// BUG-225: PoiSystem.build never throws. Adversarial worlds, each built as story entry builds it (its spawn, the main
+// piece) AND with no piece filter (story.js _checkSeed's degraded entry: the validator threw, nodes null). 6666666 at
+// (0,0) with no filter threw in the camp's crossing chooser: a candidate reached only over a wall-bowing edge the
+// planner drops, an Infinity distance passed a requisition line's [0, ∞] band (mission.js _roll).
+const MUST_BUILD = [{ s: '6666666' }, { s: '6666666', C: { x: 0, z: 0 }, warm: REGION_RADIUS_M, filter: false }]
+if (SEEDS === PINNED) for (const w of MUST_BUILD) {
+    const seed = parseWorldSeed(w.s), C = w.C ?? spawnDecision(seed, P)
+    const road = new RoadSystem(seed, P)
+    if (!w.C) wirePondNoGo(road, seed, P)
+    road.setRadius(w.warm ?? REGION_WARM_RADIUS_M)
+    road.update(new THREE.Vector3(C.x, 0, C.z))
+    const nodes = w.filter === false ? null : validateArea(road, C, discArea(REGION_RADIUS_M, REGION_MARGIN), P).mainNodes
+    const terrain = makeTerrainHeadless(seed, P, road)
+    const water = new WaterSystem(seed, P, (x, z) => terrain.rawHeightWorld(x, z))
+    const poi = new PoiSystem({ getRoad: () => road, getWater: () => water, getTerrain: () => terrain, getSeed: () => seed, getParams: () => P })
+    let err = null
+    try { poi.build(C, REGION_RADIUS_M, nodes); poi.buildHouses(C, REGION_RADIUS_M, nodes) } catch (e) { err = e }
+    const list = err ? [] : poi.list(), camp = list.find((q) => q.type === 'expeditionCamp')
+    const ms = new MissionSystem({ getRoad: () => road, getRegion: () => ({ x: C.x, z: C.z, r: REGION_RADIUS_M, nodes }) })
+    const L = camp && requisitionTotal(seed, list, camp, (q, o) => ms.planOffer(q, o))
+    console.log(`\nBUG-225 must-build ${w.s} at (${C.x.toFixed(0)}, ${C.z.toFixed(0)}), ${nodes ? 'main piece' : 'no piece filter'}: ${camp?.id ?? 'no camp'}, ${L == null ? '—' : (L / 1000).toFixed(1) + ' km'}`)
+    check('PoiSystem.build does not throw, and sites a camp whose every line plans', !err && !!camp && L > 0, String(err?.stack ?? err))
+}
 // expedition-rewards option 2: every line hands a supply back, and every supply item is real.
 check('every requisition line has a supply, and every supply item is an item',
     REQUISITION.every((l) => LINE_SUPPLY[l.id]?.text) && Object.values(LINE_SUPPLY).every((s) => !s.item || ITEMS[s.item]),
