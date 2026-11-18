@@ -62,3 +62,8 @@ To build, mirroring the paper round as FEAT-266 leaves it:
   Impatient / Patient now apply. RANK_TABLE.demolition, hitWindowS, nearestTarget/guideTo, lastHitS gone. Clean-run model:
   wip/feat-267/clean-run.log (9 sites, 0.69–0.72 par at 40 km/h). 41/41 affected gates, full smoke 38/38 (zero console
   errors), pad-e2e ALL OK. Sheet wip/feat-267/sheet.jpg. Owed: feat267-demolition-drive.
+- 2026-11-17 (lane s): DEC-403 built on land/feat-267-pay-per-target. economy.js `sharesPaid` / `payTarget` (a share banked per fall,
+  `mission.sitePaid` saved with the job), settle pays only the rest (the tip); expire/cancel results carry the kept shares.
+  Gates: economy.mjs + offer-board.mjs extended; 41/41 affected green (wip/feat-267/gates-r2.log). Full smoke 38/38 zero console
+  errors (smoke-r2.log; the demolition step takes a board job: $0.50 a share, expiry keeps $1.00), pad-e2e ALL OK. Sheet
+  wip/feat-267/sheet-r2.jpg (full clear: $10 → $18.99 = base $5.25 + tip $3.74 exactly).
