@@ -23,8 +23,8 @@ Owner's words, verbatim (inbox 20261118061918-0bvh):
 > Cooking a potato at camp with your inventory full doesn't warn you that your inventory is full, it just passes time without doing anything.
 
 ## Tracker
-- [ ] Cooking with no room for the result warns that the inventory is full, before any time passes
-- [ ] No time passes when nothing can be produced
+- [x] Cooking with no room for the result warns that the inventory is full, before any time passes
+- [x] No time passes when nothing can be produced
 
 ## Decisions
 
@@ -39,3 +39,4 @@ src/camp*.js · the cook flow in src/main.js
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118061918-0bvh).
+- 2026-11-17 ui-1117b: InventorySystem.canConvert refuses before the fade; camp card shows "inventory full" (.cp-warn). Gate inventory extended. Look pending.

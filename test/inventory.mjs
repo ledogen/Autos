@@ -199,6 +199,8 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
   full.start(); full.grant('potatoCooked', 5); full.grant('potato', 2)   // pack + a full cooked stack + raw: no slot left
   check('convert refuses, changing nothing, when the cooked has no room',
     !full.convert('potato', 'potatoCooked') && full.list().find(r => r.id === 'potato').n === 2 && full.slotsUsed() === 3)
+  check('BUG-209: canConvert says so up front — full: no; room or a lone raw: yes; none aboard: no',
+    !full.canConvert('potato', 'potatoCooked') && f.canConvert('potato', 'potatoCooked') && !f.canConvert('coffee', 'potatoCooked'))
   check('DEC-310: the kit at camp holds food 1.2x as long, the same food away from camp does not',
     COOKING_KIT_FOOD_MULT === 1.2 && Math.abs(foodSatietyH('potatoCooked', true) - 4.8) < 1e-9 && foodSatietyH('potatoCooked', false) === 4
     && Math.abs(foodSatietyH('chiliDog', true) - 12) < 1e-9 && foodSatietyH('chiliDog', false) === 10)

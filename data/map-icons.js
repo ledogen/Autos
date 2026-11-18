@@ -183,10 +183,10 @@ export const FAMILY_LABEL = {
 export const FAMILY_COLOR = {
     delivery:   '#5ad06a',   // green
     fragile:    '#ff9f43',   // orange
-    papers:     '#ffffff',   // white
+    papers:     '#ffcf3c',   // yellow = UI-STYLE --key (owner, 2026-11-18, DEC-421: Larry yellow; was white)
     demolition: '#ff5a4e',   // red — smash the props (FEAT-65)
     freight:    '#5ab6ff',   // blue
-    haul:       '#ffffff',   // white, with papers (owner, 2026-11-13: "change the haul diamond color to white for simplicity")
+    haul:       '#9b5fd1',   // purple = UI-STYLE --haul (owner, 2026-11-18, DEC-421: haul purple; was white)
 }
 
 /** An empty, taken or locked diamond: nothing on offer there right now. */

@@ -686,7 +686,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
             if (Math.abs(sp.payMult - want) > 1e-12
                 || card.pay !== wantPay
                 || card.terms.join('|') !== `3.0 km|${sp.stock} bundles available`
-                || card.times.join('|') !== `available for: ${formatGameDuration(o.expiresH - t)}|time limit: ${formatGameDuration(b.deadlineH(o, 300))}`) badPay++   // BUG-162
+                || card.times.join('|') !== `new stock in: ${formatGameDuration(o.expiresH - t)}|time limit: ${formatGameDuration(b.deadlineH(o, 300))}`) badPay++   // BUG-162; FEAT-272: the yard's stock clock reads "new stock in"
             // §6: a gate the stock can't meet never rolls; the card prints the count behind it.
             if (sp.bonus) {
                 gated++

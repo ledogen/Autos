@@ -23,9 +23,9 @@ Owner's words, verbatim (inbox 20261118062707-vgo6):
 > Change the "use" button to say "eat" for all food items. Also, when you hover the "eat" button, it should show you how much hunger you're going to recover. Maybe draw a green box around the hunger bar and move it to the post-meal level.
 
 ## Tracker
-- [ ] The button on every food item reads "Eat"
-- [ ] Hovering Eat shows the hunger it will recover
-- [ ] The preview is a green box round the hunger bar, shown at the post-meal level (he said "maybe")
+- [x] The button on every food item reads "Eat"
+- [x] Hovering Eat shows the hunger it will recover
+- [x] The preview is a green box round the hunger bar, shown at the post-meal level (he said "maybe")
 
 ## Decisions
 
@@ -40,3 +40,4 @@ the inventory item card (src/inventory*.js, src/main.js) · the hunger bar
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118062707-vgo6).
+- 2026-11-17 ui-1117b: built (eat label; green post-meal box on the hunger bar via the hover and the pad highlight). Look pending.
