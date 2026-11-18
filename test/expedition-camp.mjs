@@ -45,7 +45,8 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
-const SEEDS = ['1', '6', '2167923713', '3109505264', '3873008110', '398411380', '660454599']
+const PINNED = ['1', '6', '2167923713', '3109505264', '3873008110', '398411380', '660454599']
+const SEEDS = process.argv.length > 2 ? process.argv.slice(2) : PINNED   // a census: node test/expedition-camp.mjs <seed…>
 // 2167923713: a BUG-63 parallel crosses the wall (FEAT-154). BUG-128: 3109505264, a road bowing past the wall lay on the fuel
 // line's shortest path; 3873008110, the one gas station stood on such a road. 398411380: a row 20 m from a junction stood on
 // its steep leg's vertical knee, 18 cm off its plane, until rows moved to fit one (poi.js _rowOnPlane) (2026-11-07).
@@ -318,7 +319,7 @@ for (const s of SEEDS) {
     check('a delivered line keeps its grade; the others have none', board.lines().filter((l) => l.grade).map((l) => l.grade).join() === 'A'
         && board.lines().filter((l) => l.state !== 'done').every((l) => l.grade === null))
 }
-check(`the seeds hold a kept camp and a moved one (${kept.n} kept, ${kept.moved} moved)`, kept.n > 0 && kept.moved > 0)
+if (SEEDS === PINNED) check(`the seeds hold a kept camp and a moved one (${kept.n} kept, ${kept.moved} moved)`, kept.n > 0 && kept.moved > 0)
 // expedition-rewards option 2: every line hands a supply back, and every supply item is real.
 check('every requisition line has a supply, and every supply item is an item',
     REQUISITION.every((l) => LINE_SUPPLY[l.id]?.text) && Object.values(LINE_SUPPLY).every((s) => !s.item || ITEMS[s.item]),
