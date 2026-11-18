@@ -81,7 +81,7 @@ export const FIRE_SMOKE = {
   riseMax:  0.34,
   spread:   0.10,     // m — birth scatter across the heap
   drift:    0.06,     // m/s — lateral wander, killed by DRAG, so the column stays mostly vertical
-  opacity:  0.42,     // peak alpha before the puff texture's own soft edge — subtle
+  opacity:  0.70,     // peak alpha before the puff texture's own soft edge
   color:    0xdcdad4, // pale ash grey (r3: was 0xa8a6a0, too dark against ground and night)
 }
 

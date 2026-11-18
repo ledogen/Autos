@@ -146,7 +146,7 @@ now** (owner, 2026-10-10) — there is one region; the Region column is the desi
 | R1 | a pallet of potting soil | generalStore → any | ASSET-47 | 344 | posted. 18 bags × 18 kg + pallet |
 | R1 | eight tyres | autoShop → any | ASSET-61 | 105 | posted. 8 × 10.5 kg (650 mm × 210 mm on a 15" rim ≈ 215/70R15) + pallet |
 | R1 | a pallet of full propane tanks | generalStore / gasStation → any | ASSET-72 (reuses ASSET-05's cylinder) | 80 | posted. 4 × 16.8 kg (20 lb cylinder full) + small pallet. The single tank is a courier thing |
-| R1 | a pallet of empty propane tanks | any → generalStore / gasStation | ASSET-72 | 43 | posted, back to refill; any giver but the general store. 4 × 7.7 kg + small pallet |
+| R1 | a pallet of empty propane tanks | any → generalStore / gasStation | ASSET-72 | 43 | posted, back to refill; residence / general store / gas station → residence / gas station (DEC-406, was any giver but the store → store / gas station). 4 × 7.7 kg + small pallet |
 | R1 | mulch | generalStore / farm → any | ASSET-51 (bulk heap, mulch variant) | 150–250 | not posted. **A range because there is no model yet** — fixed when the heap is built |
 | R1 | steel car rims, a stack of 4 or 8 | autoShop → any | ASSET-53 | 40–100 | not posted. **A range because there is no model yet** (4 or 8 rims × ~10 kg) |
 | R1 | a drum of oil | generalStore / gasStation / farm → generalStore / gasStation / farm | ASSET-30 on the small pallet | 213 | posted (owner, 2026-10-12). Full of oil: 208 L × 0.88 + 18 kg drum, + small pallet |
@@ -157,7 +157,7 @@ now** (owner, 2026-10-10) — there is one region; the Region column is the desi
 | R2 | a pallet of soft drinks | generalStore → foodVendor / gasStation | ASSET-46 | 240 | posted. 24 trays × 24 cans × 0.37 kg + trays, + pallet |
 | R2 | a pallet of cinder blocks | generalStore → workSite | ASSET-55 | 785 | posted. **An overload, and it rolls** (owner, 2026-10-10). 45 blocks (8" CMU) × 17 kg + pallet |
 | R2 | a pallet of concrete bags | generalStore → workSite | ASSET-47 (concrete variant) | 670 | posted. **An overload, and it rolls** (owner, 2026-10-10). 18 × 80 lb bags (36 kg) + pallet |
-| R2 | sheets of plywood | sawmill → any | ASSET-54 | 330 | not posted — the sawmill does not exist yet. 12 sheets of 3/4" 4×8 × 27.5 kg. Rides angled over the tailgate |
+| R1 | sheets of plywood | generalStore → workSite / residence | ASSET-54 | 330 | **posted (DEC-406, FEAT-69 list B #1)**; the sawmill version waits for the sawmill. 12 sheets of 3/4" 4×8 × 27.5 kg. Rides angled over the tailgate |
 | R2 | bed full of topsoil | farm → any | ASSET-51 (bulk heap, topsoil variant) | 500–700 | not posted. **A range because there is no model yet**; an overload, set by feel once the heap is built |
 | R2 | five railway ties | generalStore / gasStation / farm → generalStore / gasStation / farm | ASSET-52 | 455 | posted (owner, 2026-10-12). 5 hardwood ties, 7×9 in × 2.6 m, × 91 kg. Rides angled over the tailgate |
 | R3 | a job box | residence → workSite | ASSET-57 | 175 | posted (route: owner, 2026-10-11). 95 kg steel chest + ~80 kg of tools — the tools are unseen, so that half is an assumption |

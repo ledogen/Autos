@@ -17,6 +17,14 @@
 //   §4 the pool cap — the ornaments are PINNED like demolition targets: never reclaimed by DEBRIS_CAP, which
 //      still holds the thrown bodies to 12.
 //   §5 cost (REPORT ONLY — wall clock): physics step time with 0 / 10 / 30 awake ornaments.
+//   §6 FEAT-268 (DEC-405, owner: "Barrels and crates at the farm should get this treatment as well … realistic but
+//      randomized weights. Max crate weight should be 200 kilograms."): the farm's drums and crates are knockable,
+//      the pallet stays solid; each load is deterministic per placement and inside its range (crates ≤ 200 kg); the
+//      engine body carries poi.js knockMass's mass AND centre of mass; the demolition kinds are untouched. The hit
+//      table (20 / 40 / 60 km/h × empty / median / full) holds the BUG-108 step rule; its costs are REPORTED.
+//   §7 FEAT-268 the flamingo "launched pretty hard": the light props struck at 20–80 km/h across the bumper and
+//      the wheel line leave at ≤ 3× the truck's speed (a flamingo pinched rigid under a tire took 197 kN and left
+//      at 54× before its shell got a crush strength).
 //
 // Run: node test/lawn-knock.mjs
 
@@ -39,7 +47,9 @@ const { computeStaticEquilibrium } = await import('../src/suspension.js')
 const { RUNNING } = await import('../src/ignition.js')
 const { DebrisSystem, DEBRIS_CAP } = await import('../src/debris.js')
 const { DamageModel, TRACK_IDS } = await import('../src/damage.js')
-const { PoiSystem, satSolid } = await import('../src/poi.js')
+const { PoiSystem, satSolid, knockMass } = await import('../src/poi.js')
+const { TARGET_TYPES } = await import('../src/demolition.js')
+const { DEBRIS_TYPES } = await import('../src/debris.js')
 const { PoiPhysics } = await import('../src/terrain-physics.js')
 const { makeQueryContacts } = await import('../src/world-contacts.js')
 const { getWheelPosition } = await import('../src/suspension.js')
@@ -53,7 +63,10 @@ const MASS = { flamingoUp: 0.3, flamingoDown: 0.3, campChair: 3.5, gnome: 10, be
   propaneTank: 16.8, pottedPlant: 14 }
 
 /** main.js's ornament spec for a registry key (the _buildPoiMeshes satellite loop). */
-const ornamentSpec = (key) => { const k = PROP_MODELS[key].knockable; return { model: key, massKg: k.massKg, friction: 0.6, restitution: k.restitution ?? 0.3 } }
+const ornamentSpec = (key) => { const k = PROP_MODELS[key].knockable
+  return { model: key, massKg: k.massKg ?? k.emptyKg, friction: 0.6, restitution: k.restitution ?? 0.3, crushN: k.crushN } }
+// FEAT-268: the farm's knockables (the yardClutter drums and crates) and the one that stays solid.
+const FARM = ['drumClosed', 'drumOpen', 'drumCrushed', 'barrelPlastic', 'smallCrate', 'largeCrate']
 
 /** A flat world: engine, 6 km ground slab, the real DebrisSystem, every lawn knockable loaded. */
 async function world () {
@@ -61,18 +74,20 @@ async function world () {
   const ground = engine.createBody({ type: 'static', position: { x: 0, y: -5, z: 0 } })
   engine.addBox(ground, { x: 3000, y: 5, z: 3000 }, { friction: 0.9, group: GROUP_TERRAIN })
   const debris = new DebrisSystem(engine, new THREE.Scene())
-  for (const key of Object.keys(MASS)) await debris.load(`ornament:${key}`, ornamentSpec(key))
+  for (const key of [...Object.keys(MASS), ...FARM]) await debris.load(`ornament:${key}`, ornamentSpec(key))
   return { engine, debris }
 }
 
 /** Stand ornament `key` as main.js _updateOrnaments does: its body at the base pose + half its height, asleep. */
-function stand (debris, engine, key, x, z, yaw = 0, massKg) {
+function stand (debris, engine, key, x, z, yaw = 0, massKg, fill = null) {
   // main.js: the model's base (ground + its lift) + (half.y − lift + 1 cm) — on flat ground at y 0, half.y + 1 cm.
   const kind = `ornament:${key}`, half = debris.halfExtents(kind)
   const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw)
   const still = { x: 0, y: 0, z: 0 }
   const body = debris.spawn(kind, { x, y: half.y + 0.01, z }, still,
     { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true, ...(massKg ? { massKg } : {}) })
+  const md = fill != null && knockMass({ key, x, z, variant: 0 }, half, fill)   // main.js _updateOrnaments (FEAT-268)
+  if (md) engine.setMassData(body, md.massKg, md.inertia, md.center)
   engine.sleep(body)
   return body
 }
@@ -95,10 +110,10 @@ const fwdSpeed = (vs) => vs.velocity.dot(fwd.set(0, 0, -1).applyQuaternion(vs.qu
  * One strike: the truck held at `speed` into `key` standing 15 m ahead (null = the baseline run). Records the
  * truck's forward and vertical speed per step, the body's speed, and prices damage exactly as main.js's step does.
  */
-async function strike (key, speed, massKg) {
+async function strike (key, speed, massKg, { ox = 0, yaw = 0, fill = null } = {}) {
   const { engine, debris } = await world()
   const t = truck(engine, speed)
-  const body = key ? stand(debris, engine, key, 0, -15, 0, massKg) : null
+  const body = key ? stand(debris, engine, key, ox, -15, yaw, massKg, fill) : null
   const m = body != null ? engine.getMass(body) : 0
   const dmg = new DamageModel({ params: t.P })
   const v = [], vy = [], bv = [], lin = new THREE.Vector3(), ang = new THREE.Vector3(), p0 = new THREE.Vector3(), p = new THREE.Vector3(), q = new THREE.Quaternion()
@@ -233,12 +248,12 @@ console.log('\n§4 the pool cap')
 
 // ── §5 cost (report only) ─────────────────────────────────────────────────────────────────────────────
 console.log('\n§5 cost — the truck\'s physics step with N ornaments AWAKE (tumbling after a 1 m drop), median of 60 steps, report only')
-for (const n of [0, 10, 30]) {
+for (const [n, farm] of [[0], [10], [30], [9, true]]) {   // the last: a farm's 9 drums and crates (FEAT-268), median loads
   const { engine, debris } = await world()
   const t = truck(engine, 0)
-  const keys = Object.keys(MASS), bodies = []
+  const keys = farm ? FARM : Object.keys(MASS), bodies = []
   for (let i = 0; i < n; i++) {
-    const b = stand(debris, engine, keys[i % keys.length], -6 + (i % 6) * 2.4, -10 - Math.floor(i / 6) * 2.4, i)
+    const b = stand(debris, engine, keys[i % keys.length], -6 + (i % 6) * 2.4, -10 - Math.floor(i / 6) * 2.4, i, undefined, farm ? 0.125 : null)
     const p = new THREE.Vector3(), q = new THREE.Quaternion(); engine.getTransform(b, p, q)
     engine.setTransform(b, { x: p.x, y: p.y + 1, z: p.z }, q); engine.wake(b); bodies.push(b)
   }
@@ -250,8 +265,87 @@ for (const n of [0, 10, 30]) {
     ms.push(performance.now() - t0)
   }
   ms.sort((a, b) => a - b)
-  console.log(`    ${String(n).padStart(2)} awake (${bodies.filter(b => engine.isAwake(b)).length} still awake at the end): ${(ms[30] * 1000).toFixed(0)} µs/step median, ${(ms[57] * 1000).toFixed(0)} µs p95`)
+  console.log(`    ${String(n).padStart(2)} ${farm ? 'farm' : 'lawn'} awake (${bodies.filter(b => engine.isAwake(b)).length} still awake at the end): ${(ms[30] * 1000).toFixed(0)} µs/step median, ${(ms[57] * 1000).toFixed(0)} µs p95, ${(ms[59] * 1000).toFixed(0)} µs worst`)
   engine.dispose()
+}
+
+// ── §6 FEAT-268: the farm's drums and crates ─────────────────────────────────────────────────────────
+console.log('\n§6 the farm\'s drums and crates (FEAT-268)')
+{
+  const sat = (key, x = 0, z = 0, variant = 0) => ({ key, x, y: 0, z, yaw: 0, variant })
+  const clutter = modelsTagged('yardClutter')
+  for (const key of FARM) check(`${key}: yard clutter, knockable over ${PROP_MODELS[key].knockable?.emptyKg}–${PROP_MODELS[key].knockable?.fullKg} kg, no fixed collider`,
+    clutter.includes(key) && PROP_MODELS[key].knockable?.fullKg > PROP_MODELS[key].knockable.emptyKg && satSolid(sat(key)) == null)
+  check('the pallet stays solid (not named by DEC-405)', clutter.includes('pallet') && satSolid(sat('pallet')) != null)
+  check('every crate tops out at the owner\'s 200 kg', FARM.filter(k => /Crate/.test(k)).every(k => PROP_MODELS[k].knockable.fullKg <= 200))
+  // Determinism and range over 2000 placements per kind (the fields dressYard derives from the seed).
+  const { engine, debris } = await world()
+  let rnd = 268, same = true, inRange = true
+  const r01 = () => ((rnd = (rnd * 1664525 + 1013904223) >>> 0) / 4294967296)
+  for (const key of FARM) {
+    const k = PROP_MODELS[key].knockable, half = debris.halfExtents(`ornament:${key}`), m = []
+    for (let i = 0; i < 2000; i++) {
+      const s = sat(key, (r01() - 0.5) * 4000, (r01() - 0.5) * 4000, Math.floor(r01() * 0x7fffffff))
+      const a = knockMass(s, half), b = knockMass({ ...s }, half)
+      same &&= a.massKg === b.massKg && a.center.y === b.center.y
+      inRange &&= a.massKg >= k.emptyKg && a.massKg <= k.fullKg + 1e-9
+      m.push(a.massKg)
+    }
+    m.sort((x, y) => x - y)
+    const at = (p) => m[Math.floor(p * (m.length - 1))].toFixed(0)
+    console.log(`    ${key.padEnd(14)} kg: min ${at(0)}  p25 ${at(0.25)}  median ${at(0.5)}  p75 ${at(0.75)}  p95 ${at(0.95)}  max ${at(1)}  (${(100 * m.filter(x => x > (k.emptyKg + k.fullKg) / 2).length / m.length).toFixed(0)} % past half full)`)
+    const med = (m[999] - k.emptyKg) / (k.fullKg - k.emptyKg)
+    check(`${key}: the median placement is ${(100 * med).toFixed(0)} % full (u³ draw: 12.5 %)`, Math.abs(med - 0.125) < 0.03)
+  }
+  check('a placement\'s load is the same on every call (no state, nothing saved)', same)
+  check('every load lies in its row\'s range', inRange)
+  // The engine body: a full drum stood as main.js stands it weighs knockMass's mass, with its centre of mass low.
+  for (const [key, fill] of [['drumClosed', 0], ['drumClosed', 1], ['largeCrate', 0.125], ['largeCrate', 1]]) {
+    const b = stand(debris, engine, key, 20 * fill, 60, 0, undefined, fill)
+    const md = knockMass(sat(key, 20 * fill, 60), debris.halfExtents(`ornament:${key}`), fill)
+    const com = engine.massProperties(b).com, p = new THREE.Vector3(), q = new THREE.Quaternion(); engine.getTransform(b, p, q)
+    check(`${key} ${(100 * fill).toFixed(0)} % full: the engine body weighs ${engine.getMass(b).toFixed(1)} kg (knockMass ${md.massKg.toFixed(1)}), centre of mass ${(com.y - p.y).toFixed(3)} m from the box centre (${md.center.y.toFixed(3)})`,
+      Math.abs(engine.getMass(b) / md.massKg - 1) < 1e-3 && Math.abs(com.y - p.y - md.center.y) < 1e-3)
+  }
+  engine.dispose()
+  // Demolition's barrels and crates are their own kinds (src/demolition.js), untouched by the knockable rows.
+  check('demolition targets unchanged: barrel = DEBRIS_TYPES.barrel (density 86), drumOpen 18 kg, smallCrate 18 kg',
+    TARGET_TYPES.barrel.model === 'drumClosed' && TARGET_TYPES.barrel.massKg === undefined && DEBRIS_TYPES.barrel.density === 86
+    && TARGET_TYPES.drumOpen.massKg === 18 && TARGET_TYPES.smallCrate.massKg === 18 && TARGET_TYPES.smallCrate.restitution === 0.1)
+
+  console.log('    the hit (speed held): what           km/h  kg      truck Δv m/s  worst step / bound  launch ×v  armor lost  worst part lost')
+  for (const key of ['drumClosed', 'barrelPlastic', 'smallCrate', 'largeCrate']) for (const fill of [0, 0.125, 1]) for (const kmh of [20, 40, 60]) {
+    const speed = kmh / 3.6, base = await strike(null, speed), r = await strike(key, speed, undefined, { fill })
+    if (r.hit < 0) { check(`${key} at ${kmh} km/h: the truck reached it`, false); continue }
+    let worst = 0, lost = 0, launch = 0
+    for (let s = Math.max(1, r.hit); s < Math.min(r.v.length, r.hit + 60); s++) {
+      worst = Math.max(worst, (r.v[s - 1] - r.v[s]) - (base.v[s - 1] - base.v[s]))
+      lost = Math.max(lost, base.v[s] - r.v[s])
+    }
+    for (let s = r.hit; s < Math.min(r.bv.length, r.hit + 20); s++) launch = Math.max(launch, Math.hypot(r.bv[s].x, r.bv[s].z))
+    const bound = 2 * r.m * speed / r.M
+    const armorLost = ['armorFront', 'armorLeft', 'armorRight', 'armorRear'].reduce((a, id) => a + (base.cond[id] - r.cond[id]), 0)
+    const partLost = TRACK_IDS.reduce((a, id) => Math.max(a, base.cond[id] - r.cond[id]), 0)
+    const worstPart = TRACK_IDS.reduce((a, id) => (base.cond[id] - r.cond[id] > base.cond[a] - r.cond[a] ? id : a), TRACK_IDS[0])
+    console.log(`    ${(key + ' ' + ['empty', 'median', 'full'][[0, 0.125, 1].indexOf(fill)]).padEnd(29)} ${String(kmh).padStart(4)} ${r.m.toFixed(0).padStart(4)}  ${lost.toFixed(2).padStart(12)}  ${worst.toFixed(3)} / ${bound.toFixed(3)}  ${(launch / speed).toFixed(2).padStart(9)}  ${(100 * armorLost).toFixed(2).padStart(9)}%  ${(100 * partLost).toFixed(2)}% ${partLost > 5e-4 ? worstPart : ''}  pushed ${r.pushedZ.toFixed(1)} m`)
+    // BUG-108's bound is a free strike's: a body the truck runs OVER (launched at < 0.5×: the light small crate tips
+    // under the chamfer and a front wheel climbs it) loses the truck speed to the climb instead, so that row is reported.
+    if (launch >= 0.5 * speed) check(`${key} ${r.m.toFixed(0)} kg at ${kmh} km/h: worst one-step speed loss ${worst.toFixed(3)} ≤ 1.25 × the momentum bound ${bound.toFixed(3)}`, worst <= 1.25 * bound + 1e-3)
+  }
+}
+
+// ── §7 FEAT-268: the light props' launch ──────────────────────────────────────────────────────────────
+console.log('\n§7 the light props\' launch, 20–80 km/h across the bumper and the wheel line (FEAT-268)')
+for (const key of ['flamingoUp', 'flamingoDown', 'beachBall']) {
+  let worst = 0, at = ''
+  for (const kmh of [20, 40, 60, 80]) for (const ox of [0, 0.4, 0.6, 0.75, 0.9]) for (const yaw of [0, Math.PI / 2]) {
+    const speed = kmh / 3.6, r = await strike(key, speed, undefined, { ox, yaw })
+    for (let s = Math.max(0, r.hit); r.hit >= 0 && s < r.bv.length; s++) {
+      const k = r.bv[s].length() / speed
+      if (k > worst) { worst = k; at = `${kmh} km/h, ${ox} m off centre, ${yaw ? 'broadside' : 'end on'}` }
+    }
+  }
+  check(`${key}: the fastest launch over 40 strikes is ${worst.toFixed(2)}× the truck's speed (${at}) — ≤ 3×`, worst <= 3)
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall lawn-knock checks passed')

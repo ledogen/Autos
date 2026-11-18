@@ -148,13 +148,17 @@ export const PROP_MODELS = {
   // two materials (DrumPaint red-oxide + DrumSteel bungs), no textures.
   // src/debris.js hulls the GLB's own vertices, so `collision` here is documentation, not the
   // collider — but it records what the ticket authored: cylinder r 0.29, h 0.85, 18 kg empty.
-  // ALSO farm yard clutter (FEAT-71) — as a static MESH only. The yard never makes a body of it; the
-  // thrown-prop life above is a separate path and the two are not to be conflated (owner 2026-09-22).
+  // ALSO farm yard clutter (FEAT-71): since FEAT-268 (DEC-405) a knockable body near the truck, like the lawn
+  // furniture (main.js _updateOrnaments) — still a separate path from the thrown prop above.
   drumClosed: {
     url: 'assets/models/drum-closed.glb',
     collision: { shape: 'hull-from-mesh', size: [0.58, 0.85, 0.58] },
     tags: ['yardClutter'],
     yardGroup: [2, 3],
+    // FEAT-268 (owner, 2026-11-17: "Barrels and crates at the farm should get this treatment as well … realistic but
+    // randomized weights"): knockable like the lawn furniture, each one's load drawn per placement (poi.js knockMass).
+    // 18 kg is the empty drum (ASSET-30); full is 95 % of 208 L of water, 198 kg (diesel would be 166 kg).
+    knockable: { emptyKg: 18, fullKg: 216, shell: 'cylinder' },
   },
   // ASSET-30's other two variants, static yard clutter only (FEAT-71). Same DrumPaint / DrumSteel
   // materials. Open: 316 tris, lid off, rolled rim — ticket collision cylinder r 0.29 h 0.85.
@@ -165,11 +169,13 @@ export const PROP_MODELS = {
     collision: { shape: 'hull-from-mesh', size: [0.58, 0.85, 0.58] },
     tags: ['yardClutter'],
     yardGroup: [1, 3],
+    knockable: { emptyKg: 18, fullKg: 216, shell: 'cylinder' },   // FEAT-268: open, so rainwater or anything
   },
   drumCrushed: {
     url: 'assets/models/drum-crushed.glb',
     collision: { shape: 'box', size: [0.62, 0.61, 0.62] },
     tags: ['yardClutter'],
+    knockable: { emptyKg: 18, fullKg: 28, shell: 'cylinder' },   // FEAT-268: scrap — holds only sludge, ≤ 10 kg
   },
   // ASSET-29 — 55-gallon HDPE barrel, 348 tris, 0.585 x 0.892 m, base-seated. BarrelBlue (the
   // recolour hook, unused — blue is the only plastic barrel) + BarrelBung. Ticket collision is a
@@ -179,6 +185,7 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.585, 0.892, 0.585] },
     tags: ['yardClutter'],
     yardGroup: [1, 3],
+    knockable: { emptyKg: 9, fullKg: 207, shell: 'cylinder' },   // FEAT-268: 9 kg HDPE + 198 kg water, as the drum
   },
 
   // ASSET-27 — timber stringer pallet, empty. 268 tris, 1.00 x 0.145 x 1.20 m (stringers along -Z,
@@ -206,11 +213,17 @@ export const PROP_MODELS = {
   // 0.81 m cube, 1 per pallet. mass_kg 18 / 45, inert until dynamic props (FEAT-36).
   // The plain two are farm yard clutter (FEAT-71); the FRAGILE stencil reads as freight in transit,
   // so those stay cargo only.
+  // FEAT-268 knockable crates. Empty: ~50 % slat cover of 19 mm pine (500 kg/m³) over the six faces plus the frame —
+  // 9 kg small, 25 kg large. Full: produce at ~0.7 t/m³ fills the small one to 80 kg; the large one would hold
+  // 330 kg, and the owner's cap is 200 kg ("Max crate weight should be 200 kilograms"). The demolition crate
+  // (src/demolition.js TARGET_TYPES) is its own 18 kg kind and does not read these rows.
   smallCrate: { url: 'assets/models/small-crate.glb', collision: { shape: 'box', size: [0.58, 0.45, 0.45] },
-    tags: ['yardClutter'], yardYaw: 0.3, yardGroup: [1, 3] },
+    tags: ['yardClutter'], yardYaw: 0.3, yardGroup: [1, 3],
+    knockable: { emptyKg: 9, fullKg: 80, shell: 'box', restitution: 0.1 } },
   smallCrateFragile: { url: 'assets/models/small-crate-fragile.glb', collision: { shape: 'box', size: [0.58, 0.45, 0.45] } },
   largeCrate: { url: 'assets/models/large-crate.glb', collision: { shape: 'box', size: [0.81, 0.81, 0.81] },
-    tags: ['yardClutter'], yardYaw: 0.3, yardGroup: [1, 2] },
+    tags: ['yardClutter'], yardYaw: 0.3, yardGroup: [1, 2],
+    knockable: { emptyKg: 25, fullKg: 200, shell: 'box', restitution: 0.1 } },
   largeCrateFragile: { url: 'assets/models/large-crate-fragile.glb', collision: { shape: 'box', size: [0.81, 0.81, 0.81] } },
   testRock: {
     url: 'assets/models/test-rock.glb',
@@ -233,7 +246,9 @@ export const PROP_MODELS = {
     yardGroup: [1, 2],   // flamingos come in pairs
     // FEAT-149: knocked over and sent rolling by the truck (src/main.js _updateOrnaments). FEAT-251 mass: the
     // blow-moulded HDPE body is 0.24 m² of ~0.6 mm wall (0.14 kg) and the two steel wire legs ~0.06 kg each.
-    knockable: { massKg: 0.3 },
+    // FEAT-268 crushN: the shell's strength. Stepping on one flattens it, so ~500 N; the tire can push no harder on
+    // it (suspension.js). Without it a flamingo pinched rigid under a tire took 197 kN and left at 54× the truck.
+    knockable: { massKg: 0.3, crushN: 500 },
   },
 
   // ASSET-01 — the grazing pose.  SHORTER but LONGER: the neck swings forward
@@ -245,7 +260,7 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.16, 0.59, 0.73] },
     tags: ['lawnFurniture'],
     yardGroup: [1, 2],
-    knockable: { massKg: 0.3 },   // FEAT-149
+    knockable: { massKg: 0.3, crushN: 500 },   // FEAT-149; crushN FEAT-268, as flamingoUp
   },
 
   // ASSET-24 — the player's campfire.  472 tris, 0.708 x 0.378 x 0.675 m, four

@@ -251,7 +251,10 @@ export const THINGS = [
     { id: 'propanePackFull',  phrase: 'a pallet of full propane tanks',  family: 'freight', massKg: [80, 80],
       pools: ['generalStore', 'gasStation'], load: 'propanePallet' },
     { id: 'propanePackEmpty', phrase: 'a pallet of empty propane tanks', family: 'freight', massKg: [43, 43],
-      pools: ANY_GIVER.filter(k => k !== 'generalStore'), to: ['generalStore', 'gasStation'], load: 'propanePallet' },
+      pools: ['residence', 'generalStore', 'gasStation'], to: ['residence', 'gasStation'], load: 'propanePallet' },   // DEC-406 (owner, 2026-11-17): thinned from every giver
+    // DEC-406: twelve sheets of 3/4 in at 27.5 kg (the built plywood-sheets.glb, ASSET-54), cargo.md's row.
+    { id: 'plywood',      phrase: 'twelve sheets of plywood', family: 'freight', massKg: [330, 330],
+      pools: ['generalStore'], to: ['workSite', 'residence'], load: 'plywoodSheets' },
     { id: 'softDrinks',   phrase: 'a pallet of soft drinks',  family: 'freight', massKg: [240, 240],
       pools: ['generalStore'], to: ['foodVendor', 'gasStation'], load: 'softDrinkPallet' },   // owner, 2026-10-11
     // The deliberate overloads (owner, 2026-10-10: let them roll) — past the Ranger's ~500–570 kg payload.
