@@ -35,17 +35,15 @@ const STEP = 20, NEAR = 18
 const out = { seeds: SEEDS, hud: [], tours: [], demoMap: [] }
 const KEEPS = [null, 0, 5, 25]   // BUG-212: no hysteresis (main before), then RR_PARAMS.keepM of 0 (ties only) / 5 / 25 m
 
-// Walk `d` metres along `poly` from the vertex nearest `c` (forward = toward the end). Returns { x, z, end }.
-function along (poly, c, d) {
-    let bi = 0, bd = Infinity
-    for (let i = 0; i < poly.length; i++) { const e = (poly[i].x - c.x) ** 2 + (poly[i].z - c.z) ** 2; if (e < bd) { bd = e; bi = i } }
-    let p = { x: poly[bi].x, z: poly[bi].z }
-    for (let i = bi; i < poly.length - 1 && d > 0; i++) {
-        const q = poly[i + 1], L = Math.hypot(q.x - p.x, q.z - p.z)
-        if (L >= d) return { x: p.x + (q.x - p.x) * d / L, z: p.z + (q.z - p.z) * d / L, end: false }
-        d -= L; p = { x: q.x, z: q.z }
+// The point `u` metres along `poly` from its start (a planner line starts at the truck's road point). Never "from the nearest
+// vertex": a tour that comes back past the truck would hand the driver its return pass (it ping-ponged on one).
+function at (poly, u) {
+    for (let i = 0; i < poly.length - 1; i++) {
+        const p = poly[i], q = poly[i + 1], L = Math.hypot(q.x - p.x, q.z - p.z)
+        if (L >= u) return { x: p.x + (q.x - p.x) * u / (L || 1), z: p.z + (q.z - p.z) * u / (L || 1), end: false }
+        u -= L
     }
-    return { ...p, end: true }
+    return { ...poly.at(-1), end: true }
 }
 const segPt = (g) => g.centerline.pointAt(g.s1)
 const legEnd = (line) => segPt(tourLeg(line).segments.at(-1))
@@ -130,7 +128,7 @@ for (const s of SEEDS) {
         // start a little behind the first stop's road point, on the line from the region centre's side
         const init = drain(planGuideJob(road, C, stops, region))
         if (!init?.poly) return null
-        c = along(init.poly, init.poly[0], 0)
+        c = { x: init.poly[0].x, z: init.poly[0].z }
         for (let step = 0; step < 900 && owed.size; step++) {
             ev.steps++
             const tp = performance.now()
@@ -150,16 +148,15 @@ for (const s of SEEDS) {
             prevTarget = target; prevOrder = order; prevLen = len; line = tour
             // the scripted deviations, once, a third of the way in
             if (!script && ev.served === Math.floor(stops.length / 3) && ev.steps > 3) {
-                if (scen === 'missed' && !missed) { missed = target; script = { poly: tour.poly, left: 12 } }
-                if (scen === 'uturn' && !missed) { missed = 'u'; script = { poly: trail.slice().reverse(), left: 10 } }
+                if (scen === 'missed' && !missed) { missed = target; script = { poly: tour.poly, u: 0, left: 12 } }
+                if (scen === 'uturn' && !missed) { missed = 'u'; script = { poly: trail.slice().reverse(), u: 0, left: 10 } }
                 if (scen === 'offroute' && !missed) {
                     const q = list[(Math.random() * list.length) | 0], r = q && planFrom(c, doorAt({ x: q.x, z: q.z }, 'x'))
-                    missed = 'off'; if (r?.poly?.length) script = { poly: r.poly, left: 15 }
+                    missed = 'off'; if (r?.poly?.length) script = { poly: r.poly, u: 0, left: 15 }
                 }
             }
-            const path = script ? script.poly : tour.poly
             trail.push({ x: c.x, z: c.z })
-            const n = along(path, c, STEP); c = { x: n.x, z: n.z }
+            const n = script ? at(script.poly, script.u += STEP) : at(tour.poly, STEP); c = { x: n.x, z: n.z }
             if (script && (--script.left <= 0 || n.end)) { script = null; prevLen = null }
             for (const [id, t] of owed) {
                 const rp = reach(t)
