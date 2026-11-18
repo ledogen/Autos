@@ -57,4 +57,5 @@ To build, mirroring the paper round as FEAT-266 leaves it:
   (gradeRun), only with every target down; at the deadline with any standing the job expires unpaid (DEC-004, the paper fare's rule).
   Guide = paper-route.js `planGuideJob` (shared with the paper re-plan) over one stop a cluster (`siteStops`), leg via `tourLeg`.
   Impatient / Patient now apply. RANK_TABLE.demolition, hitWindowS, nearestTarget/guideTo, lastHitS gone. Clean-run model:
-  wip/feat-267/clean-run.log (9 sites, 0.69–0.72 par at 40 km/h). Gates/smoke: see the branch report.
+  wip/feat-267/clean-run.log (9 sites, 0.69–0.72 par at 40 km/h). 41/41 affected gates, full smoke 38/38 (zero console
+  errors), pad-e2e ALL OK. Sheet wip/feat-267/sheet.jpg. Owed: feat267-demolition-drive.
