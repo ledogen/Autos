@@ -1,7 +1,7 @@
 ---
 id: BUG-214
 type: bug
-status: open
+status: done
 severity: major
 opened: 2026-11-17
 source: owner, 2026-11-17 (inbox) — "Sometimes POI pads or the camping pad that's constructed make big ugly spiky walls on their perimeter."
@@ -69,3 +69,4 @@ src/road.js (_withPoiPad, _poiPadCarve), src/terrain.js (_carveTableGen), test/p
   Affected gates 87/87 green (serial, 86 min, wip/bug-214/gates.log). pad-e2e ALL OK. Smoke: run 1 failed the
   opening's DEC-357 blink step (a 2 s timing check, load ~10), run 2 PASS 39 steps. Unverified: an in-app look (the
   sheets are the chunk-grid heights rendered headlessly).
+- 2026-11-18 CLOSED. Owner on card `bug214-pad-walls-pick`: option 1, "land the spike fix, leave the banks". The spike fix is on main; the steep-site rejection and the longer ring are not built.

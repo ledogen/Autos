@@ -39,3 +39,4 @@ src/shadow-fade.js, src/main.js
 
 ## Log
 - 2026-11-18 minted by the orchestrator from the owner's chat message and capture.
+- 2026-11-18 Owner on card `bug217-shadow-seam-look`: "Good: land it" — likes the performance of hills in the coarse map only, shadow definition "totally good enough". Follow-on seam ticketed as BUG-229. Landing in progress.

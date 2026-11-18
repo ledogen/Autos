@@ -156,10 +156,38 @@ export const TUT = {
         { speaker: KATIE, phone: true, text: `Anyway, since I know you got nothing going on today, why don't we go picnic out at the old McGill ranch. `
             + `I'll let you pick a spot and I'll meet you out there.` },
         { speaker: KATIE, phone: true, text: `Grab us a bag of peanuts at the gas station on your way, would you? Park out front of the store, not at the pumps.` },
-        { speaker: KATIE, phone: true, text: `You know where to go, I'll see you there!` },
+        // FEAT-288 P3b (DEC-422: "explain the list on the side, setting a waypoint, direct the player to the legend"): the
+        // map beat, inside her call — open the map, the Shopping list, a waypoint on her station (main.js fills {snack}
+        // with its POI id; _tutWaypointOk takes a drop on it alone), the legend pointed at, the map closed. She holds the
+        // line to the store (`holds`), where tut-shop picks the call up.
+        { speaker: KATIE, phone: true, until: 'map', allow: [], text: `Not sure which station? Open your map: `
+            + `<span class="kc-kb"><span class="dlg-key">M</span></span><span class="kc-pad"><span class="dlg-key">View</span></span>.` },
+        { speaker: KATIE, phone: true, until: 'shoptab', allow: [], hi: ['#map-list-head [data-tab="shopping"]'],
+            text: `That list on the side shows every shop around here. Switch it to Shopping: `
+            + `<span class="kc-kb"><span class="dlg-key">Q</span></span><span class="kc-pad"><span class="dlg-key">X</span></span>.` },
+        { speaker: KATIE, phone: true, until: 'waypoint', allow: ['map: drop / clear the waypoint'], hi: ['#map-list .ml-row[data-key="{snack}"]'],
+            text: `There's the station. Walk the list to it with <span class="kc-kb"><span class="dlg-key">↑</span> <span class="dlg-key">↓</span></span>`
+            + `<span class="kc-pad">the <span class="dlg-key">D-pad</span></span> and drop a waypoint on it: `
+            + `<span class="kc-kb"><span class="dlg-key">N</span></span><span class="kc-pad"><span class="dlg-key">Y</span></span>.` },
+        { speaker: KATIE, phone: true, holds: true, until: 'mapshut', allow: [], hi: ['#map-legend'],
+            text: `And the key to all those little marks is down in the corner. Close the map `
+            + `(<span class="kc-kb"><span class="dlg-key">M</span></span><span class="kc-pad"><span class="dlg-key">View</span></span>) and holler when you're at the store.` },
     ],
-    // …and the gauge, at the snack's station once the peanuts are bought, as you take the brake off to leave (main.js
-    // _evePump, DEC-306, DEC-323). DEC-345: mom calls, the owner's words; then the lesson (a PLACEHOLDER). DEC-354: she
+    // FEAT-288 P3b (DEC-422: "Katie needs to guide you through the shopping process, how to select an item, how to check
+    // out"): parked at the store, the shop open, she is still on the line — the peanuts row and its add to cart only, then
+    // check out only (discard and the cart's × locked: mom's money always covers the bag, main.js _momCash), then her
+    // send-off (DEC-345, the owner's words) until you leave the shop, and her click. Mom's gas call follows (tut-gas).
+    'tut-shop': [
+        { speaker: KATIE, phone: true, answered: true, until: 'cart', allow: ['#svc-screen [data-item="bagOfPeanuts"]'],
+            hi: ['#svc-screen .sv-line[data-item="bagOfPeanuts"]', '#svc-screen [data-item="bagOfPeanuts"] [data-act="stow"]'],
+            text: `Got it? Pick the peanuts off the shelf: <span class="kc-kb"><span class="dlg-key">↑</span> <span class="dlg-key">↓</span> to the row, `
+            + `<span class="dlg-key">Enter</span></span><span class="kc-pad">the <span class="dlg-key">D-pad</span> to the row, <span class="dlg-key">A</span></span> to open it, then add to cart.` },
+        { speaker: KATIE, phone: true, until: 'bought', allow: ['#svc-screen [data-act="checkout"]'], hi: ['#svc-screen [data-act="checkout"]', '#svc-screen .sv-wallet'],
+            text: `Now check out. That pays for whatever's in your cart.` },
+        { speaker: KATIE, phone: true, until: 'shopshut', allow: [], hi: ['#svc-screen [data-act="close"]'], text: `You know where to go, I'll see you there!` },
+    ],
+    // …and the gauge, at the snack's station once the peanuts are bought, as the shop closes (main.js _evePump, DEC-306,
+    // DEC-323; DEC-422 moved it off the brake). DEC-345: mom calls, the owner's words; then the lesson (a PLACEHOLDER). DEC-354: she
     // stays on the line through the fill-up (`holds`), and her send-off (tut-snackcamp) hangs up.
     'tut-gas': [
         { speaker: 'Mom', phone: true, text: `Hey, is everything alright? I almost forgot, when I looked over the truck last night I noticed it was plumb outta gas.` },

@@ -1,7 +1,7 @@
 ---
 id: FEAT-265
 type: feature
-status: open
+status: done
 severity: major
 opened: 2026-11-17
 source: owner, 2026-11-17 — "I would consider this a bad seed. ... To go from the food vendor to larrys is simply too far. I feel like it creates a dead zone in the map that a player is less willing to visit because trips in and out of there take so long and that dead zone may not provide a critical service like gas or access to an auto shop."
@@ -248,3 +248,4 @@ branch (`wip/tutb2/`); `python3 -I wip/feat-265/tutcmp.py` prints the table; she
 - 2026-11-17: minted by the orchestrator from the owner's capture and note.
 - 2026-11-17: diagnosed + 46-seed census + 5 options as routed overlays (wip/feat-265/, git-invisible); sheets
   overview.jpg + 6 seed sheets. Nothing in src/ changed. Owed card feat265-dead-zones-pick.
+- 2026-11-18 CLOSED. Owner on card `feat265-b2-look`: "Good: land it". Option 3 (DEC-427) is on main.
