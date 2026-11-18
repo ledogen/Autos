@@ -109,7 +109,7 @@ import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + fl
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_CALL, PAYCHECK, LARRY_PACK, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT, PHONE } from '../data/dialogue.js'
-import { TUTORIAL, PACK_TOSS, FIRING_CAM } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149); FEAT-288 P6: the firing's orbit
+import { TUTORIAL, PACK_TOSS, flatRadius, FIRING_CAM } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149); FEAT-288 P6: the firing's orbit
 import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
@@ -2137,7 +2137,7 @@ const map2d = new Map2D({
   // FEAT-211: the player's waypoint — { x, z, poly } with poly the line the GPS guides along (null while a job has the
   // guide: the waypoint is then only a pin), or null; and the drop / clear (null) from the map's input, true if it acted.
   getWaypoint: () => _waypoint ? { x: _waypoint.x, z: _waypoint.z, poly: _waypointOn() ? _tutLine(_waypoint.route)?.poly ?? null : null }
-    : (({ x, z } = {}) => x == null ? null : { x, z, poly: null })(_tutRanchPin() ?? undefined),   // DEC-346: the tutorial's own (its line is the GPS's)
+    : _tutMapLeg(),   // DEC-346 / FEAT-288 P4: the tutorial leg's own pin and line
   onWaypoint: (p) => !dialogueSystem.holding && _setWaypoint(p),   // a dialogue over the map keeps its Enter
   // Q / E with no source under the cursor: step the parked offer panel the map is open behind.
   onCycle: (d) => { if (missionSystem?.state === 'offer') missionSystem.cycle(d) },
@@ -3371,8 +3371,9 @@ function _rebuildPoiMarkers () {
     }
 
     // The ring means "park here and something happens", so it belongs only to markers where
-    // something does. The services are unbuilt and mom's house has her own doorstep prompt.
-    if (!q.jobs) continue
+    // something does: a job giver, and mom's house (FEAT-288, DEC-422: "Mom's house should have a marked parking spot
+    // just like everyone else" — her door, camp.js atMoms, answers 25 m round her marker, so the 10 m ring sits inside it).
+    if (!q.jobs && q.type !== 'momsHouse') continue
     // FEAT-88: a haul giver's "park here" is its drop zone, not a ring round the pad.
     if (q.drop) { _addDropMark(q); continue }
     const box = q.park ? dropZoneWorld(q, q.park) : null
@@ -4698,9 +4699,10 @@ const TUT_PARAMS = { lowTankFrac: 0.125, gasCash: 3, offRoadS: 4,
 const TUT_STAMPS = { pack: 8, larry: 8, snack: 9, pump: 10, camp: 10, home: 17, bed: 21.5, joint: 31 }   // joint: 07:00 next morning (FREE_WILL), DEC-357
 let _waypoint = null  // FEAT-211: { x, z, door, route } while one is set: the road point, its planner stop, the line to it (see _setWaypoint)
 let _evePump = null   // { q, done }: the snack station's pump while its fill-up is due, or null (not saved: a resume skips it)
-// FEAT-184 stage 4: the flat halfway home. _eveHomeFrom is the crow distance to mom's when the drive home began (after the
-// station, if there was one); the flat lands at half of it, once. Not saved: a resume carries the flat in the damage model.
-let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: stage 5 — the tow happened, it's night
+// FEAT-184 stage 4: the flat on the drive home. _eveFlatR is the crow radius round mom's inside which it goes off, once
+// (data/tutorial.js flatRadius: FLAT.alongM along the drive home's line, FEAT-288 P4). Not saved: a resume carries the flat
+// in the damage model.
+let _eveFlatR = null, _eveFlat = false, _eveTowed = false   // _eveTowed: stage 5 — the tow happened, it's night
 // FEAT-184 (DEC-151): the evening's tire is on mom — the part once and its fitting once (ServiceCenter onMom). Not saved:
 // a resume mid-evening owes it again.
 const _momOwes = { part: true, labour: true, patch: true }   // patch: FEAT-217, the first flat patched at the shop
@@ -4714,7 +4716,7 @@ window.__tutorial = () => ({ phase: _tutCardOpen ? 'card' : _firingDay() ? (dial
   camp: _firingDay() && _campDoor() ? { x: _campDoor().x, z: _campDoor().z } : null,   // DEC-304
   until: dialogueSystem.current()?.until ?? null })   // DEC-359: the card up waits for this action: the snack's camping area
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
-window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, pumpsShut: _pumpsShut(), homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
+window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, pumpsShut: _pumpsShut(), flatR: _eveFlatR, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
@@ -4832,6 +4834,14 @@ const _atRanch = (door, v) => campSystem.zoneAt(v.x, v.z) === door.zone || Math.
  *  saved, gone on arrival). The player's own pin, when one is set, is shown instead. */
 const _tutRanchPin = () => _tutDrive() && dialogueSystem.has(DLG.played) && _dayStop() === 'camp' && !dialogueSystem.has('tut-ranch')
   && _campUi?.mode !== 'camp' ? _campDoor() : null   // DEC-356: a camp made short of the pin clears it (and the line, _eveTarget)
+/** FEAT-288 P4 (DEC-422: "Tutorial missions should show their destination on the map and the route should be plotted on the
+ *  map"): the leg in play as the map's waypoint — a pin on its door and the GPS's own line (detour and all) — never saved.
+ *  The drive out to the ranch keeps DEC-346/356's rule: gone on arrival, or once camp is made short of it. */
+const _tutMapLeg = () => {
+  if (!_tutDrive() || !dialogueSystem.has(DLG.played) || (_dayStop() === 'camp' && !_tutRanchPin())) return null
+  const leg = _tutLeg()
+  return leg && { x: leg.door.x, z: leg.door.z, poly: _tutLine(leg.base)?.poly ?? null }
+}
 /** Mom's toss: the starting pack on the ground by her steps, falling. Idempotent: only when it is neither on board nor down. */
 function _tossPack () {
   const q = _mom()
@@ -5042,10 +5052,11 @@ function _showResetCountdown (n) {
 function _eveningLessons (q, v, stop) {
   // FEAT-184 stage 3: the pedals once the key has caught.
   if (vehicleState.ignition?.state === 'running') _tut('tut-drive')
-  // Stage 4: halfway home from the camping area (DEC-304), the front left goes flat — once. Then V shows it.
+  // Stage 4: on the drive home from the camping area (DEC-304), FLAT.alongM along its line (FEAT-288 P4: before the
+  // tunnel), the front left goes flat — once. Then V shows it.
   if (stop === 'home') {
-    _eveHomeFrom ??= Math.hypot(q.x - v.x, q.z - v.z)
-    if (!_eveFlat && Math.hypot(q.x - v.x, q.z - v.z) < 0.5 * _eveHomeFrom) {
+    _eveFlatR ??= flatRadius(_homeGuide()?.poly, q)
+    if (!_eveFlat && _eveFlatR != null && Math.hypot(q.x - v.x, q.z - v.z) < _eveFlatR) {
       _eveFlat = true
       if (!damageModel.flat[0]) { damageModel.flat[0] = true; damageModel.popped.push(0) }   // the bang (drained by the game layer)
       _flatSpare()   // …and the spare is flat too
@@ -5053,8 +5064,10 @@ function _eveningLessons (q, v, stop) {
     }
   }
   if (damageScreen.isOpen && damageModel.flat.some(Boolean)) _tut('tut-damage')
-  // Stage 5: towed and back on the road, it's night — the headlights.
-  if (_eveTowed && !serviceScreen.isOpen && !vehicleState.parked) _tut('tut-lights')
+  // Stage 5: towed and the tire bought, it's night — the headlights.
+  // FEAT-288 P4 (DEC-422): as the tire's check-out lands, not on the shift. The cart fits the tire at once and a highlighted
+  // shelf row is fitted for a look, so the flat alone cannot tell; mom's tire (or patch) is spent only at the check-out.
+  if (_eveTowed && _eveFlat && !_flatOwed() && !(_momOwes.part && _momOwes.patch)) _tut('tut-lights')
   // DEC-357 (owner, 2026-11-16): the tire fixed, the driver is SLEEPY — the eye blinks (and day.js's slower hands), no doze —
   // so her energy card makes sense at the door. Idempotent: lands the band once; her door's bed stamp drains on from it.
   if (stop === 'home' && _eveFlat && !_flatOwed() && !dialogueSystem.has('tut-home') && daySystem.stage() !== 'sleepy') daySystem.setEnergy(TUT_PARAMS.sleepyH)
@@ -5179,7 +5192,7 @@ function _resetRunLocals () {
   _closeMenus()   // BUG-183: every registered menu, through its own close
   fuelStop.reset(); _pumpReceiptT = 0; _showResetCountdown(0)
   _waypoint = null
-  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
+  _evePump = null; _eveFlatR = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
   _momOwes.part = _momOwes.labour = _momOwes.patch = true; _skipArmedUntil = 0
   exitFreecam()
 }

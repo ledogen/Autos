@@ -141,19 +141,19 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-18 09:30; rewrite, don't append)
+## Current state (2026-11-18 10:30; rewrite, don't append)
 
-**Main** (nothing pushed): landed on 11-18, in order: FEAT-268, int-1117d, UI batch, FEAT-288 P7 + P1, int-1118a, numbers, FEAT-26 rock slides (DEC-425), FEAT-288 P2, FEAT-290, BUG-218, FEAT-265 option 3 (DEC-427), alerts (BUG-215, BUG-204 partly), FEAT-292 camp crossing (DEC-424), FEAT-279 sign dive (docs), FEAT-288 P3a, FEAT-291 multi-drop, FEAT-293 driving AI (DEC-428), BUG-214 option 1 (pad spike fix), BUG-216 tunnel profile corner. Play build :8002 = main. Combined smoke on main run c PASSED (39 steps + pad-e2e) through FEAT-291; FEAT-293 and BUG-214 landed after it, each green on its branch. The hourly check-in cron runs to 11:07 (session-only).
+**Main** (nothing pushed): landed on 11-18, in order: FEAT-268, int-1117d, UI batch, FEAT-288 P7 + P1, int-1118a, numbers, FEAT-26 rock slides (DEC-425), FEAT-288 P2, FEAT-290, BUG-218, FEAT-265 option 3 (DEC-427), alerts (BUG-215, BUG-204 partly), FEAT-292 camp crossing (DEC-424), FEAT-279 sign dive (docs), FEAT-288 P3a, FEAT-291 multi-drop, FEAT-293 driving AI (DEC-428), BUG-214 option 1 (pad spike fix), BUG-216 tunnel profile corner, FEAT-288 P5 quest marker, BUG-225 crash fix. Play build :8002 = main. Combined smoke on main run c PASSED (39 steps + pad-e2e) through FEAT-291; FEAT-293 and BUG-214 landed after it, each green on its branch. The hourly check-in cron runs to 11:07 (session-only).
 
-**KNOWN CRASH ON MAIN:** FEAT-292's `_evenRequisition` throws in `PoiSystem.build` on seed 6666666 (`src/mission.js:1290`, `pEnd` undefined). Fix in progress: CarGame-land-gps · land/bug-225-camp-crossing-throw (Opus): root cause, 400-seed sweep, gate, ticket BUG-225. LAND AT ONCE when green. If the owner asks, the alternative is reverting the FEAT-292 merge (56111a8a).
-
-**09:30 note:** the BUG-225 fix has three commits on its branch (677b5613 fix, gate, ticket) and its 400-seed sweep + smoke were still running; the Chrome slots are the bottleneck (four lanes queued). Also started at 09:25: CarGame-land-feat180-dusk · land/bug-221-portal-shelf (Opus) and CarGame-land-211d · land/bug-224-nan-seat (Opus; it removes the smoke's re-seat workaround).
+**10:30 note:** BUG-225 (FEAT-292's throw on seed 6666666) is LANDED: a one-line guard in src/mission.js `_roll` + a gate in expedition-camp; 343 of its 400-seed sweep were clean at landing (logs CarGame-land-gps/wip/bug-225/sweep-{a,b}.log: read the rest) and its agent's browser run had not finished. The Chrome slots are the bottleneck all morning.
+- land/bug-221-portal-shelf @ 5c5d4fca (CarGame-land-feat180-dusk): fix + gate green, pad-e2e ALL OK, smoke failed once on the DEC-357 blink flake; my re-run writes `wip/bug-221/smoke2.log` (ends `SMOKE2-EXIT n`). LAND when the opening step passes there. Its census also found ribbons/pads up to 0.86 m (one point 1.99 m, seed 948023748) above the analytic deck within 25 m of run ends: NOT ticketed yet (next free BUG-226).
+- land/bug-224-nan-seat (CarGame-land-211d): cause found (the sim steps the truck at the lab pose for ~1.1 s while the seat awaits the network build; launched to 142 km; a later seat goes NaN). Second agent building: pending-seat hold, full seat reset, finite guard at physics.js Step 3e.
+- P5's sheet shows a large cyan GPS start arrow filling a third of the screen at mom's door: asked the owner whether it is real; ticket it if so.
 
 **Running agents (worktree · branch · what):**
 - CarGame-content · land/feat-288-p3b-map-shop · P3b close-out (Opus): browser proof, sheet, DEC-356 coverage.
 - CarGame-spare-base · land/feat-288-p6-opening · P6 + BUG-203 (Opus). Card `feat288-opening-look`.
 - CarGame-land-feat180 · land/feat-288-p4-world · P4 (Opus).
-- CarGame-land-feat34 · land/feat-288-p5-marker · P5 quest marker (Opus). Card `feat288-marker-look`.
 - CarGame-spare · land/feat-276-277-paper-throw · thrown-paper physics + halo (Opus). Card `paper-throw-try`.
 The four FEAT-288 branches all touch src/main.js: land them one at a time, re-merging main into the next and re-running tut-gate + the smoke's tutorial steps.
 
