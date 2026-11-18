@@ -1469,8 +1469,10 @@ renderer.shadowMap.enabled = true
 // extent for texel size, so the dissolve has to start later or it eats a visible chunk of the
 // shadowed world. 0.82 of the ±40 m near frustum ⇒ full shadows to ~33 m, gone by 40 m.
 installShadowEdgeFade({ fadeStart: 0.82 })
-// BUG-78: the near map's shadow also gates the far cascade, so the truck can be kept OUT of the
-// far map (see the wrapped shadow pass by sunFar) without its shadow dropping to the near light's 40 % share.
+// BUG-78 + BUG-217: the two sun lights' shadows act as one. The near map's shadow also gates the far
+// cascade, so the truck can be kept OUT of the far map (see the wrapped shadow pass by sunFar) without its
+// shadow dropping to the near light's 40 % share; and ground the far map shades ignores the near map, so
+// the near map's box and its clipped casters never show as a brightness edge (equations in shadow-fade.js).
 installNearShadowCoupling()
 // PERF-16: stop re-rendering the sun's whole shadow pass every frame. Three defaults autoUpdate=true,
 // so the 1536²/2048² shadow map is re-rendered each frame even parked under a static sun (measured
