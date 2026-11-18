@@ -1,6 +1,6 @@
 // FEAT-216 / DEC-327: the machine-word rules in src/alerts.js — criticals persist, oil/filter words at 50/40/30, 10 % re-reports.
 import assert from 'node:assert/strict'
-import { wordAction, stepOf, wearLevel, engineLevel, AlertCycle } from '../src/alerts.js'
+import { wordAction, stepOf, wearLevel, engineLevel, AlertCycle, pollWords } from '../src/alerts.js'
 
 // oil / air filter: dirty at 50 %, again at 40 %, very dirty at 30 % and every 10 % below
 assert.deepEqual([0.6, 0.5, 0.4, 0.31, 0.3, 0.2, 0.1].map(wearLevel), [0, 1, 1, 1, 2, 2, 2])
@@ -33,4 +33,17 @@ assert.deepEqual([0.21, 0.2, 0.05, 0].map(c => engineLevel(c, 0.2)), [0, 1, 1, 2
 assert.equal(wordAction(1, 1, 1, 2, true), 'none')   // knocking keeps going down: no re-open, no fade
 assert.equal(wordAction(1, 2, 0, 1, true), 'show')   // seized replaces knocking
 assert.equal(wordAction(2, 0, 10, 0, true), 'close') // repaired / new run (main.js closes every slot on entry)
+
+// BUG-215: a shop visit swings two wheels' bent level 0/1 many times (preview fit / unfit, cart replay); held, it raises nothing.
+const opened = []
+const al = { open: (id) => opened.push(id), close () {} }
+const st = { levels: null, steps: null }, ex = new Map(), txt = Array.from({ length: 6 }, () => [null, 'bent'])
+const poll = (lv, held) => pollWords(al, ex, st, lv, lv.map(() => 9), () => false, txt, 0, 4, held)
+poll([0, 0, 0, 0, 0, 0])
+for (let k = 0; k < 14; k++) { poll(k % 2 ? [0, 0, 0, 0, 0, 0] : [1, 0, 1, 0, 0, 0], true) }
+assert.equal(opened.length, 0)
+poll([1, 0, 1, 0, 0, 0], true); poll([0, 0, 0, 0, 0, 0], true)   // closed with the wheels back to the old level: still nothing
+poll([0, 0, 0, 0, 0, 0], false); assert.equal(opened.length, 0)
+poll([1, 0, 1, 0, 0, 0], false); poll([1, 0, 1, 0, 0, 0], false)  // a real bend after the visit: once per wheel
+assert.deepEqual(opened, ['w0', 'w2'])
 console.log('alert-reports: ok')

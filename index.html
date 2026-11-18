@@ -1359,6 +1359,12 @@
     #machine-word { top: 14%; color: var(--warn); }
     #machine-word.bad { color: var(--bad); }
     #stranded-hint { top: 20%; }
+    /* BUG-204: while the rank tile is up (#rank-timer shown by main.js), the strip's words sit UNDER the job stack (rank
+       bar, tile, deed line: ~196 px tall at 1x, scaled by FEAT-248's zoom) instead of on top of the tile, "Wrong way"
+       and the GPS chevrons; the 8 % / 14 % / 20 % rows keep their spacing. */
+    body:has(#rank-timer[style*="block"]) :is(#spawn-toast, #ignition-hint, #reset-countdown) { top: 196px; }
+    body:has(#rank-timer[style*="block"]) #machine-word { top: 226px; }
+    body:has(#rank-timer[style*="block"]) #stranded-hint { top: 256px; }
     /* FEAT-47: the doze/blink overlay. Two eyelids that meet in the middle — a crossfade to black
        reads as a fade-out, closing lids read as a blink, which is the whole point. Above the HUD
        and panels, below the story loading screen (z 200). JS only ever writes the two transforms
