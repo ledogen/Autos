@@ -2349,6 +2349,13 @@ const STEPS = [
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     const nut = 'document.querySelector("#svc-screen .sv-line[data-item=bagOfPeanuts]")'
     check(await js(`!!${nut}`), `the gas station sells no peanuts: "${(await js('document.querySelector("#svc-screen").textContent')).slice(0, 200)}"`)
+    // DEC-356: the shelf's own guard keeps the gas money (any other row "Katie asked for the peanuts", a second bag "one bag
+    // will do", their buttons off). Her cards lock those rows before a click can reach them, so the guard is read off the
+    // hook here and after check out; the shop renders it as the row's why line with its buttons off (service-screen.js).
+    const snackLock = (id) => js(`window.__worstDay().snackLock(${JSON.stringify(id)})`)
+    { const other = await js('document.querySelector("#svc-screen .sv-line[data-item]:not([data-item=bagOfPeanuts])")?.dataset.item ?? null')
+      check(await snackLock('bagOfPeanuts') === null && (!other || await snackLock(other) === 'Katie asked for the peanuts'),
+        `DEC-356 at the snack stop: the peanuts ${await snackLock('bagOfPeanuts')}, ${other} ${other && await snackLock(other)}`) }
     // the wrong row: locked (DEC-356's "Katie asked for the peanuts" is the shop's own guard; her card refuses the click outright)
     { const other = 'document.querySelector("#svc-screen .sv-line[data-item]:not([data-item=bagOfPeanuts])")'
       if (await js(`!!${other}`)) { await js(`${other}.click()`)
@@ -2370,6 +2377,7 @@ const STEPS = [
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')
     check(await until(async () => (await tut()).stop === 'pump' && await waits() === 'shopshut', 3000), `checking out did not buy the peanuts and turn her card: ${JSON.stringify(await tut())}`)
     check(!await js('window.__worstDay().pumpsShut'), 'the peanuts bought, the pumps stayed shut (DEC-323)')
+    check(await snackLock('bagOfPeanuts') === 'one bag will do', `DEC-356: the peanuts bought, the shelf sells a second bag (${await snackLock('bagOfPeanuts')})`)
     // her send-off: leave, and only leave (a second bag: DEC-356's guard, checked below; here the row is locked too). The
     // click is refused at once (tut-gate.js computes it); the marks follow on the gate's 100 ms paint of the re-rendered shelf.
     await js(`${nut}.click()`)
@@ -2391,19 +2399,6 @@ const STEPS = [
     { const g = said.findLastIndex(t => /pull up at a pump/.test(t))
       check(said[g + 1] !== 'Mom: <click>', `mom hung up before the fill-up (DEC-354: she stays on the line): ${JSON.stringify(said.slice(g - 2, g + 2))}`) }
     check(await js('window.__econ.money') === 3, `the peanuts did not leave mom's $3 of gas money: $${await js('window.__econ.money')}`)
-    // DEC-356, between cards (the store is free again, BETWEEN): the shelf itself keeps the gas money — a second bag says
-    // "one bag will do", any other row "Katie asked for the peanuts", their buttons off.
-    await simFor(1); await park(true)
-    check(await until(shopUp, 3000), 'parked at the store again on the pump stop, no shop')
-    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
-    for (const [q, why] of [[nut, 'one bag will do'], ['document.querySelector("#svc-screen .sv-line[data-item]:not([data-item=bagOfPeanuts])")', 'Katie asked for the peanuts']]) {
-      if (q !== nut && !await js(`!!${q}`)) continue   // a shelf of peanuts alone has no other row
-      await js(`${q}.click()`)
-      const lk = await js(`({ why: !!document.querySelector("#svc-screen .sv-kids")?.textContent.includes(${JSON.stringify(why)}), on: [...document.querySelectorAll("#svc-screen .sv-kids :is([data-act=stow], [data-act=buy], [data-act=eat])")].filter(b => !b.disabled).length })`)
-      check(lk.why && lk.on === 0, `the pump stop's shelf sells past mom's gas money (DEC-356, "${why}"): ${JSON.stringify(lk)}`)
-    }
-    await tap('Escape')
-    check(await until(async () => !await shopUp(), 2000), 'Escape did not close the store the second time')
     const pz = await js(`(() => { const q = window.__poi().list().find(q => q.id === window.__worstDay().pump.id); return window.__towSeat(q) })()`)
     await tp(pz.x, pz.z, pz.heading); await park(true)
     check(await until(() => js('document.getElementById("pump-display").classList.contains("on")'), 3000), "the station: parking at its pump opened no pump")
