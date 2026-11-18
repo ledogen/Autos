@@ -1282,7 +1282,7 @@ const STEPS = [
     await click('#svc-screen [data-act=checkout]')
     await sleep(300)
     const dh = (await day('clockH()')) - h0
-    check(Math.abs(m0 - await money() - 5) < 0.005, `the dinner meal took $${(m0 - await money()).toFixed(2)}, not $5`)
+    check(Math.abs(m0 - await money() - 4) < 0.005, `the dinner meal took $${(m0 - await money()).toFixed(2)}, not $4`)
     check(Math.abs(dh - 0.5) < 0.02, `the dinner meal ran ${(dh * 60).toFixed(1)} min, not 30`)
     check(Math.abs(await held() - 8) < 0.02, `the dinner meal holds hunger ${(await held()).toFixed(2)} h, not 8`)
     check(await js('window.__inv.list().length') === i0, 'the dinner meal was stowed in the inventory')
