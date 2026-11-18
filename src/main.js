@@ -3076,6 +3076,7 @@ autoDrive.attach({   // FEAT-293: the driving AI drives the live network from wh
   road: () => roadSystem, region: () => storySystem?.region() ?? null, params: RANGER_PARAMS, vs: vehicleState, seed: () => worldSeed,
   flat: () => damageModel.flat.some(Boolean), teleport: (x, z, h) => teleportToGround(x, z, h, 0.5, true),
 })
+window.__autoDrive = autoDrive   // dev handle — the smoke's toggle and hand-back step
 
 // FEAT-33: is the starter motor actually turning? Not the same as state === 'cranking' — the key
 // stays at START while it is held, so an over-crank against an already-running engine still has the

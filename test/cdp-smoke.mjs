@@ -331,6 +331,20 @@ const STEPS = [
     check(b.y > ground - 1, `truck below the ground after teleport: y ${b.y.toFixed(1)} vs terrain ${ground.toFixed(1)}`)
     check(Math.abs(b.y - a.y) < 0.5, `truck still falling 5 sim-s after the seat: dy ${(b.y - a.y).toFixed(2)} m/s`)
   }],
+  ['autoDrive', async () => {
+    // FEAT-293 (DEC-428): the debug panel's Driving AI, from the road point the teleport left the truck on. On, it drives
+    // off along the road by itself (nothing pressed); a driving key (D) hands the truck back at once and unticks it.
+    const c0 = await car()
+    await js('window.__autoDrive.setOn(true)')
+    await simFor(10)
+    const c1 = await car(), st = await js('({ on: window.__autoDrive.on, status: window.__autoDrive.status })')
+    const moved = Math.hypot(c1.x - c0.x, c1.z - c0.z)
+    check(st.on && moved >= 40, `the driving AI did not drive: ${moved.toFixed(1)} m in 10 sim-s, ${JSON.stringify(st)}`)
+    await tap('d')
+    const back = await js('({ on: window.__autoDrive.on, status: window.__autoDrive.status })')
+    check(!back.on && /took the wheel/.test(back.status), `a driving key did not hand the truck back: ${JSON.stringify(back)}`)
+    console.log(`  autoDrive: ${moved.toFixed(0)} m in 10 sim-s (${st.status}); D handed it back`)
+  }],
   ['map', async () => {
     await tap('m')
     check(await until(() => js('window.__map2d().isOpen() && document.getElementById("map-window").style.display !== "none"'), 2000), 'M did not open the map')

@@ -33,7 +33,7 @@ const GATE = process.argv.includes('--gate')
 const DT = 1 / 60, SLEW = 4.8   // rad/s — PAD_PARAMS.steerSlewRate
 // The gate's stretch: seed 7301 [DEFAULT], a 600 m drive from the network edge nearest the origin (gentle: < 6 % there).
 const KM = GATE ? 0.6 : +arg('km', 5), RADIUS = GATE ? 800 : +arg('radius', 1500), OUT = arg('out', GATE ? null : 'wip/feat-293/soak.jsonl')
-const seeds = GATE ? [7301] : arg('seed') ? [+arg('seed')] : Array.from({ length: +arg('seeds', 4) }, () => (Math.random() * 2 ** 31) >>> 0)
+const seeds = GATE ? [7301] : arg('seed') ? arg('seed').split(',').map(Number) : Array.from({ length: +arg('seeds', 4) }, () => (Math.random() * 2 ** 31) >>> 0)
 const BANDS = [0.08, 0.15, 0.24, Infinity], BAND_NAMES = ['<8%', '8-15%', '15-24%', '>24%']
 const band = g => BANDS.findIndex(b => Math.abs(g) < b)
 
