@@ -12,8 +12,9 @@ lane: SM-3 missions
 # FEAT-267: Demolition runs on the papers' deadline and route planner
 
 ## Next steps
-Built on `land/feat-267-demolition-deadline` (see Log). The owner drives a demolition job on the play build and answers
-the owed card `feat267-demolition-drive` (the slack number, the deadline rule, the words).
+Built on `land/feat-267-demolition-deadline`, then DEC-403's pay per target on `land/feat-267-pay-per-target` (see Log).
+The owner drives a demolition job on the play build and answers the owed card `feat267-demolition-drive` (the slack
+number, the par stretch, the words).
 
 ## Summary
 A demolition job becomes a hurried job like a paper round: one deadline for the whole job, priced from the planned
@@ -43,10 +44,12 @@ To build, mirroring the paper round as FEAT-266 leaves it:
 - [x] GPS follows the remaining tour and turns back for a missed target when shorter
 - [x] Slack set slightly easier than courier's, number on the card (1.25 vs 1.0 [DEFAULT])
 - [x] Gates and the smoke's demolition step updated; saves from before still load
+- [x] DEC-403: the base paid a share per target as each falls; the tip on time at the settle; an expiry or abandon keeps the shares
 - [ ] Owner drives a demolition job
 
 ## Decisions
 - 2026-11-17, owner: DEC-399.
+- 2026-11-17, owner: DEC-403 (pay per target, tip on time only).
 
 ## Files
 `src/demolition.js` · `src/mission.js` · `src/par.js` · `data/offers.js`
