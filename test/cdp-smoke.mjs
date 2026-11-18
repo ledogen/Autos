@@ -2228,7 +2228,7 @@ const STEPS = [
     check(await until(() => js('!!window.__gps()'), 3000), 'BUG-203: the line never came on with the pedals card')
     await readCards()
     check(await wrongWayEitherWay(), 'BUG-203: no "Wrong way" with the truck turned against the tutorial\'s line')
-    await readCards()
+    await readCards(); await crank()   // a re-seat leaves the engine off
     // FEAT-229: the FIRING DAY — no job (free will is after the paycheck), the HUD and the GPS to mom's first.
     const eve = () => js(`(() => ({ s: window.__mission().state, tut: window.__tutorial().phase, gps: !!window.__gps(),
       hud: getComputedStyle(document.getElementById('mission-hud')).display !== 'none' && document.getElementById('mission-hud').textContent.trim() }))()`)
