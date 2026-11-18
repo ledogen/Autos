@@ -44,3 +44,4 @@ data/map-icons.js · the mission card · src/main.js
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118010708-kmdu).
+- 2026-11-17 ui-1117b: STOPPED. Yellow is free (--key / --camp) but the palette has no purple (only the proposed epic #9b5fd1 and the camp-vibe view purple #b98ae0). Choice on the owed card.
