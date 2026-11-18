@@ -248,12 +248,12 @@ console.log('\n§4 the pool cap')
 
 // ── §5 cost (report only) ─────────────────────────────────────────────────────────────────────────────
 console.log('\n§5 cost — the truck\'s physics step with N ornaments AWAKE (tumbling after a 1 m drop), median of 60 steps, report only')
-for (const n of [0, 10, 30]) {
+for (const [n, farm] of [[0], [10], [30], [9, true]]) {   // the last: a farm's 9 drums and crates (FEAT-268), median loads
   const { engine, debris } = await world()
   const t = truck(engine, 0)
-  const keys = Object.keys(MASS), bodies = []
+  const keys = farm ? FARM : Object.keys(MASS), bodies = []
   for (let i = 0; i < n; i++) {
-    const b = stand(debris, engine, keys[i % keys.length], -6 + (i % 6) * 2.4, -10 - Math.floor(i / 6) * 2.4, i)
+    const b = stand(debris, engine, keys[i % keys.length], -6 + (i % 6) * 2.4, -10 - Math.floor(i / 6) * 2.4, i, undefined, farm ? 0.125 : null)
     const p = new THREE.Vector3(), q = new THREE.Quaternion(); engine.getTransform(b, p, q)
     engine.setTransform(b, { x: p.x, y: p.y + 1, z: p.z }, q); engine.wake(b); bodies.push(b)
   }
@@ -265,7 +265,7 @@ for (const n of [0, 10, 30]) {
     ms.push(performance.now() - t0)
   }
   ms.sort((a, b) => a - b)
-  console.log(`    ${String(n).padStart(2)} awake (${bodies.filter(b => engine.isAwake(b)).length} still awake at the end): ${(ms[30] * 1000).toFixed(0)} µs/step median, ${(ms[57] * 1000).toFixed(0)} µs p95`)
+  console.log(`    ${String(n).padStart(2)} ${farm ? 'farm' : 'lawn'} awake (${bodies.filter(b => engine.isAwake(b)).length} still awake at the end): ${(ms[30] * 1000).toFixed(0)} µs/step median, ${(ms[57] * 1000).toFixed(0)} µs p95, ${(ms[59] * 1000).toFixed(0)} µs worst`)
   engine.dispose()
 }
 
