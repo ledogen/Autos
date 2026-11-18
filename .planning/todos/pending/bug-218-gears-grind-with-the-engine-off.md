@@ -47,4 +47,4 @@ src/damage.js, src/physics.js
 
 ## Log
 - 2026-11-18 minted by the orchestrator from the owner's inbox.
-- 2026-11-18 built (d3282677): shaft-mismatch rule + dead-engine drag cap. manual-gearbox §16 holds it; fingerprint-physics identical to main.
+- 2026-11-18 built (d3282677): shaft-mismatch rule + dead-engine drag cap. manual-gearbox §16 holds it; fingerprint-physics identical to main. 41/41 affected gates green; pad-e2e ALL OK (load ~10-15); cdp-smoke green (load 12-15).
