@@ -2775,7 +2775,8 @@ const STEPS = [
     // (DEC-157) and mom's call opens it.
     for (let i = 0; i < 12 && await js('document.getElementById("tut-card").style.display !== "flex"'); i++) { await btn(0); await sleep(150) }
     check(await js('document.getElementById("tut-card").style.display === "flex"'), 'the pad never reached the tutorial card')
-    await padTo('tc-play'); await btn(0)
+    check(await navFocus() === 'tc-skip', `FEAT-289: the tutorial card does not open on skip (on "${await navFocus()}")`)
+    await padTo('tc-play'); await btn(0)   // deliberately the tutorial: the D-pad steps down from skip
     check(await until(async () => await js(live) && await js('window.__worldCode().split("/")[0]') === TUTORIAL.seed && await dlg(), 60000, 250),
       `A on "play" did not load the tutorial seed with mom's call up: ${JSON.stringify(await js('window.__tutorial()'))}`)
     // Read on to mom's first lesson naming a key (her call's M, the drive's W / S): it reads the pad's button, not the keyboard's.

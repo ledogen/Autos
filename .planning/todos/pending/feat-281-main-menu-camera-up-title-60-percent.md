@@ -25,8 +25,8 @@ Owner's words, verbatim (inbox 20261118023958-g9fw and 20261118024140-6xz5):
 > main menu increase autos font size by 60%
 
 ## Tracker
-- [ ] The main menu camera sits a little higher
-- [ ] The AUTOS title is 60 % larger than today
+- [x] The main menu camera sits a little higher
+- [x] The AUTOS title is 60 % larger than today
 - [ ] Both read correctly at both UI scales (FEAT-248)
 
 ## Decisions
@@ -42,3 +42,4 @@ src/main.js (main-menu scene) · index.html / CSS (title)
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118023958-g9fw and 20261118024140-6xz5).
+- 2026-11-17 ui-1117b: camera look-at +0.35 m (CAM_RISE_M in stage.js); title 30 -> 48 px, spacing 9 -> 14. UI-scale check (FEAT-248) not done. Look pending.
