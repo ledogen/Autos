@@ -12,7 +12,7 @@ lane: Places and Missions
 # FEAT-275: Add the mailboxes to Larry's pool
 
 ## Next steps
-Owner look (card mailboxes-look). The src/main.js hook that draws the roadside ones is NOT built (another agent's file): `wip/mailboxes/main-hook.txt` in the lane worktree, ~6 lines, then the FEAT-276 halo has a mailbox to sit on.
+Owner look (card `mailboxes-look-2`): the mailboxes moved out to the road per DEC-429. "Good: land it" → land `land/feat-275-280-mailboxes`. No main.js hook is needed any more (they are yard satellites, drawn by the existing loop).
 
 ## Summary
 Put the mailbox models (ASSET-22, built, unplaced) into Larry's pool, so a paper route has a mailbox to aim at.
@@ -30,16 +30,24 @@ Owner's words, verbatim (inbox 20261118013250-sf5w):
 Paper-route juice, one owner message (inbox 20261118013250-sf5w) split into four tickets: ASSET-91 (houses), FEAT-275 (mailboxes in Larry's pool), FEAT-276 (halo), FEAT-277 (thrown-paper physics). He said it follows FEAT-266, which landed 2026-11-17.
 
 ## Tracker
-- [x] Mailbox models are in Larry's pool and appear as paper-route targets or beside them (data + placement done; the roadside ones need the main.js hook to DRAW — see Next steps)
-- [ ] The target halo (FEAT-276) sits on a mailbox
+- [x] Mailbox models are in Larry's pool (tag `mailbox`, ASSET-22's eleven, knockable)
+- [x] DEC-429: every residence that is not an RV has one, on the road shoulder at its pad's end, door to the road, base on the drive surface (gate `mailbox-census`)
+- [x] DEC-429: no lone roadside mailboxes (FEAT-280 withdrawn, code deleted; the gate asserts zero)
+- [x] DEC-429: knocked down costs nothing and it stands again the next run / reload (nothing saved)
+- [ ] Owner look (card mailboxes-look-2)
+- [ ] The target halo (FEAT-276) sits on a mailbox: paper-route houses have none now (they are not residences); waits on the route rebuild below
 
 ## Decisions
-- Read "Larry's pool" as the residence pool Larry's house is dressed from, plus the paper-route houses: a new pool tag `mailbox` (11 flavours, uniform draw per place), NOT `lawnFurniture` (eleven of them would swamp the yard scatter). Agent's reading, awaiting the owner's look.
-- One mailbox per recipient house (the open question's recommended answer): Larry's and mom's pads carry one on the pad's road edge, every paper-route house one on its verge.
+- Read "Larry's pool" as the residence pool Larry's house is dressed from: a new pool tag `mailbox` (11 flavours, uniform draw per place), NOT `lawnFurniture` (eleven of them would swamp the yard scatter). Agent's reading.
 - Knockable, DEC-394: each flavour has a mass (8 kg classic .. 150 kg masonry pillar).
+- 2026-11-18, owner (DEC-429): "remove the random clutter boxes ... bring larrys and mom's boxes out to the road. It's okay if they don't sit on the pad, just align them to the earthwork ... they should be on the shoulder. No penalty if the player knocks them down, they just respawn next time. Every residence that is not an RV should also get mailboxes."
+- As built for DEC-429: post 0.5 m inside the shoulder's outer edge (7.0 m off the centreline; the lane ends at 5.0), at the pad end the seed picks (a blocked end tries the other, then slides along the road up to 4.5 m), height = sampleRoadTopY there (the drive surface). Residences = POIs tagged `residence` (mom's, Larry's, the five `residence` slots, the three farms: two barns and the produce stall, a farm is a residence per the 2026-10-07 ruling); RV = the model's `rv` flag (the Winnebago). Paper-route houses get none: they are FEAT-61 roadside targets, not residences, and a box there would be a lone box.
+- "Respawn next time" read as: standing again the next time the markers are built (a new run, a reload, re-entering story mode), like the lawn furniture; nothing is saved. It does NOT reset when you drive away and come back in the same session.
 
 ## Open questions
-- How the mailboxes sit with the houses: one per recipient house, or standalone? He did not say.
+- Owner's aspiration (DEC-429), future work, nothing built: turn most of Larry's delivery targets into residence models with pads ("About 30% can remain just boxes wherever").
+- Owner's aspiration (DEC-429), future work, nothing built: when Larry's mission is rebuilt, the objective is to throw the mail onto the PORCH of every residence on the route. Larry's current scoring is untouched.
+- Respawn reading: should a knocked mailbox also stand again when you leave and come back in the same run? (A small main.js change if yes.)
 
 ## Links
 FEAT-266, FEAT-276, FEAT-72, FEAT-71, ASSET-22

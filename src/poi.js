@@ -659,6 +659,7 @@ export class PoiSystem {
         this._list = []
         this._pool = []         // every viable pad the last build saw; see pool()
         this._houses = []       // FEAT-61 newspaper customers; see houses()
+        this._mailboxes = []    // FEAT-275 the paper-route houses' mailboxes; see mailboxes()
         this._built = null      // {x,z,r,seed} the current list was built for
     }
 
@@ -700,6 +701,9 @@ export class PoiSystem {
      * `houses().concat(list().filter(hasTag('newsCustomer')))`, which is what customers() returns.
      */
     houses () { return this._houses }
+
+    /** FEAT-275 (DEC-429): the paper-route houses' mailboxes, on the shoulder: satellite records plus `id` (the house), built with the houses. */
+    mailboxes () { return this._mailboxes }
 
     /** Every POI or house carrying `tag`. The tag-driven query systems ask instead of type-matching. */
     tagged (tag) {
@@ -830,8 +834,9 @@ export class PoiSystem {
         // FEAT-275 (DEC-429): each residence's mailbox, out on the shoulder. BEFORE the pads are handed over, so
         // padReachNodes() is the junction ground _evaluate sited against, not these pads themselves; the shoulder's
         // height is the road's and no pad reaches inside the shoulder edge (road.js POI_ROAD_FEATHER).
+        const junctions = road.padReachNodes()
         for (const q of out) {
-            const mb = this._residenceMailbox(road, q, P, seed)
+            const mb = this._residenceMailbox(road, q, P, seed, junctions)
             if (mb) q.satellites.push(mb)
         }
         road.setPoiPads(out)
@@ -848,38 +853,44 @@ export class PoiSystem {
     /**
      * FEAT-275 (DEC-429): a residence's mailbox, on the road SHOULDER at one end of its pad, where the pad meets the
      * road: "bring larrys and mom's boxes out to the road ... It's okay if they don't sit on the pad, just align them
-     * to the earthwork ... they should be on the shoulder. Every residence that is not an RV". The post stands
-     * poiMailboxInset inside the shoulder's outer edge (clear of the lane by the shoulder less the box's half depth),
-     * door (-Z) to the road, at the pad end the seed picks; a blocked end (a junction apron, another road, a bore,
-     * water) tries the other, then slides along the road. Its height is sampleRoadTopY: inside the road footprint
-     * that IS the surface the truck drives on (main.js _groundSampleY), so the base sits on it (`onRoad`: the yard's
-     * analyticHeight re-seat, the carved dirt 0.25 m under it, leaves it alone). Null for an RV (the
-     * model's `rv` flag) or a place with no viable spot. A knockable satellite like the lawn furniture: knocked, it
-     * lies where it fell until the markers are rebuilt (the next run or reload); nothing is saved.
+     * to the earthwork ... they should be on the shoulder. Every residence that is not an RV". At the pad end the
+     * seed picks; a blocked end tries the other, then slides along the road. Null for an RV (the model's `rv`
+     * flag), a non-residence, or no viable spot. `junctions`: padReachNodes() before the POI pads are handed over.
      */
-    _residenceMailbox (road, q, P, seed) {
+    _residenceMailbox (road, q, P, seed, junctions) {
         if (!q.tags?.includes('residence') || !q.halfLen || PROP_MODELS[q.modelKey]?.rv) return null
-        const ed = q.aId != null && road.edgeParData(q.aId, q.bId)
+        const end = hash32(`poi-mailbox-end:${seed}:${q.id}`) & 1 ? 1 : -1
+        const arcs = [0, 1.5, 3, -1.5, 4.5, -3].flatMap(du => [end, -end].map(sg => q.s + sg * (q.halfLen + du)))
+        return this._shoulderMailbox(road, q, arcs, P, seed, junctions)
+    }
+
+    /**
+     * FEAT-275 (DEC-429): a mailbox on the road SHOULDER beside `site` ({ id, aId, bId, side }), at the first arc of
+     * `arcs` that passes. The post stands poiMailboxInset inside the shoulder's outer edge (7.0 m off the centreline;
+     * the lane ends at 5.0), door (-Z) to the road. Rejected: a bore, junction ground (`junctions`), another road
+     * nearer than its own, water. Its height is sampleRoadTopY: inside the road footprint that IS the surface the
+     * truck drives on (main.js _groundSampleY), so the base sits on it (`onRoad`: the yard's analyticHeight
+     * re-seat, the carved dirt 0.25 m under it, leaves it alone). A knockable satellite like the lawn furniture:
+     * knocked, it lies where it fell until the markers are rebuilt (the next run or reload); nothing is saved.
+     */
+    _shoulderMailbox (road, site, arcs, P, seed, junctions) {
+        const ed = site.aId != null && road.edgeParData(site.aId, site.bId)
         if (!ed?.centerline) return null
         const cl = ed.centerline, water = this._d.getWater?.()
         const lat = (P.roadHalfWidth ?? 5) + (P.roadShoulderWidth ?? 2.5) - P.poiMailboxInset
-        const end = hash32(`poi-mailbox-end:${seed}:${q.id}`) & 1 ? 1 : -1
-        for (const du of [0, 1.5, 3, -1.5, 4.5, -3]) {
-            for (const sg of [end, -end]) {
-                const s = q.s + sg * (q.halfLen + du)
-                if (road.tunnelSpanAt?.(ed.key, s)) continue
-                const cp = cl.pointAt(s), ct = cl.tangentAt(s)
-                const tl = Math.hypot(ct.x, ct.z) || 1
-                const nx = ct.z / tl * q.side, nz = -ct.x / tl * q.side
-                const x = cp.x + nx * lat, z = cp.z + nz * lat
-                if (road.padReachNodes().some(nd => Math.hypot(nd.x - x, nd.z - z) <= nd.reach)) continue
-                if (this._otherRoadNear(road, ed.key, x, z, lat)) continue
-                if (water && (water.isRoadNoGo(x, z) || water.streamChannelAt?.(x, z)?.inChannel)) continue
-                const y = road.sampleRoadTopY(x, z)
-                if (y == null || !isFinite(y)) continue
-                return { key: mailboxKey(seed, q.id), x, y, z, lift: 0, yaw: Math.atan2(nx, nz), onRoad: true,
-                         variant: hash32(`poi-mailbox-paint:${seed}:${q.id}`) & 0x7fffffff }
-            }
+        for (const s of arcs) {
+            if (road.tunnelSpanAt?.(ed.key, s)) continue
+            const cp = cl.pointAt(s), ct = cl.tangentAt(s)
+            const tl = Math.hypot(ct.x, ct.z) || 1
+            const nx = ct.z / tl * site.side, nz = -ct.x / tl * site.side
+            const x = cp.x + nx * lat, z = cp.z + nz * lat
+            if (junctions.some(nd => Math.hypot(nd.x - x, nd.z - z) <= nd.reach)) continue
+            if (this._otherRoadNear(road, ed.key, x, z, lat)) continue
+            if (water && (water.isRoadNoGo(x, z) || water.streamChannelAt?.(x, z)?.inChannel)) continue
+            const y = road.sampleRoadTopY(x, z)
+            if (y == null || !isFinite(y)) continue
+            return { key: mailboxKey(seed, site.id), x, y, z, lift: 0, yaw: Math.atan2(nx, nz), onRoad: true,
+                     variant: hash32(`poi-mailbox-paint:${seed}:${site.id}`) & 0x7fffffff }
         }
         return null
     }
@@ -956,7 +967,7 @@ export class PoiSystem {
         for (const q of roster) delete q.paperTier
         const dist = larry ? roadDistFromLarry(road, larry, [...cands, ...roster],
             { x: center.x, z: center.z, r: radius, nodes }, REGION_MARGIN) : null
-        if (!dist) { this._houses = []; return this._houses }
+        if (!dist) { this._houses = []; this._mailboxes = []; return this._houses }
         let picked = []
         for (const rung of houseRungs()) {
             const inBand = (q) => (dist.get(q.id) ?? Infinity) <= rung.d
@@ -985,6 +996,17 @@ export class PoiSystem {
 
         picked.forEach((q, i) => { q.index = i; q.type = 'house'; q.tags = ['newsCustomer'] })
         this._houses = picked
+        // FEAT-275 (DEC-429, the orchestrator's reading of "About 30% can remain just boxes"): every route house keeps
+        // a box, on the shoulder in front of its target, like a residence's. Junction ground only: the POI pads are
+        // in padReachNodes() by now, and a route house is not one of them.
+        const story = road.storyPadReach()
+        const junctions = road.padReachNodes().filter(nd => !story.some(p => p.x === nd.x && p.z === nd.z))
+        const seed = this._d.getSeed()
+        this._mailboxes = []
+        for (const h of picked) {
+            const mb = this._shoulderMailbox(road, h, [0, 1.5, -1.5, 3, -3].map(d => h.s + d), P, seed, junctions)
+            if (mb) this._mailboxes.push({ ...mb, id: h.id })   // id: the house it serves
+        }
         return picked
     }
 
@@ -1418,6 +1440,7 @@ export class PoiSystem {
         this._list = []
         this._pool = []
         this._houses = []
+        this._mailboxes = []
         this._barricades = []   // FEAT-154
         this._returns = []
         this._built = null

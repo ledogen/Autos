@@ -3352,20 +3352,7 @@ function _rebuildPoiMarkers () {
     // in poi.js (deterministic in the seed); this only dresses them. FEAT-149/251: a knockable one
     // (every lawn item but the fire pit; the farm's drums and crates, FEAT-268) becomes a body near the truck (_updateOrnaments); the rest
     // are solid in place (poi.js satSolid, synced with the markers).
-    for (const sat of q.satellites ?? []) {
-      const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
-      m.position.set(sat.x, sat.y, sat.z)
-      m.rotation.y = sat.yaw
-      yard.add(m)
-      const knock = PROP_MODELS[sat.key]?.knockable
-      if (knock) {
-        const kind = `ornament:${sat.key}`
-        // FEAT-268: a drum or crate loads at its empty mass; each one's own load is set at spawn (poi.js knockMass).
-        void debrisSystem.load(kind, { model: sat.key, massKg: knock.massKg ?? knock.emptyKg, friction: 0.6,
-          restitution: knock.restitution ?? 0.3, crushN: knock.crushN })
-        _ornaments.push({ kind, mesh: m, lift: sat.lift ?? 0, body: null, sat })
-      }
-    }
+    for (const sat of q.satellites ?? []) _spawnSatellite(sat, yard)
 
     // FEAT-50: a pump island's two zones — the store lot's box curtain, in fuel blue rather than
     // job orange, because the brake there opens the pump, never an offer.
@@ -3426,6 +3413,31 @@ function _rebuildPoiMarkers () {
     pip.visible = false
     _poiGroup.add(pip)
     _customerRings.set(h.id, [ring, pip])
+  }
+  // FEAT-275 (DEC-429): each route house's mailbox, on the shoulder in front of its target (poi.js mailboxes()).
+  // A yard of its own, so it hides with its terrain chunk like the markers' yards.
+  for (const sat of poiSystem.mailboxes()) {
+    const g = new THREE.Group()
+    g.userData.x = sat.x; g.userData.z = sat.z
+    _poiGroup.add(g)
+    _poiYards.push(g)
+    _spawnSatellite(sat, g)
+  }
+}
+
+/** FEAT-71: one satellite (yard prop or mailbox) into `parent`; a knockable one also joins _ornaments. */
+function _spawnSatellite (sat, parent) {
+  const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
+  m.position.set(sat.x, sat.y, sat.z)
+  m.rotation.y = sat.yaw
+  parent.add(m)
+  const knock = PROP_MODELS[sat.key]?.knockable
+  if (knock) {
+    const kind = `ornament:${sat.key}`
+    // FEAT-268: a drum or crate loads at its empty mass; each one's own load is set at spawn (poi.js knockMass).
+    void debrisSystem.load(kind, { model: sat.key, massKg: knock.massKg ?? knock.emptyKg, friction: 0.6,
+      restitution: knock.restitution ?? 0.3, crushN: knock.crushN })
+    _ornaments.push({ kind, mesh: m, lift: sat.lift ?? 0, body: null, sat })
   }
 }
 
