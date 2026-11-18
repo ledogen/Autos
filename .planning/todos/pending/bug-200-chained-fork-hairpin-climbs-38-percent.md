@@ -89,3 +89,9 @@ BUG-179, DEC-366, DEC-064, DEC-065, DEC-047, DEC-070, DEC-396, FEAT-82, QUAL-13
 ## Log
 - 2026-11-17: minted by the orchestrator from the owner's verdict on BUG-179's round-2 sheet.
 - 2026-11-17, Lane B: investigation done. Option E prototype c5052efd. Gates and BUG-179 measure: see the next entry.
+- 2026-11-17, Lane B: E prototype c5052efd, affected gates 76/78 serial (`wip/bug-200/gates-E.log`): RED
+  vertical-curvature (21 kinks over 0.03 /m, ceiling 19; junction crest 0.129 /m vs 0.11 at seed 11 (1929, −1254)) and
+  junction-edge-lip (pad tear 0.169 m at 917338424 (98.6, −1019.6)). leg-overlap-tear, deg2-leg-trim green. BUG-179's 4
+  tears still fixed (measure-E.json); site #13 (seed 209215080) shared-pavement step 0.11 → 0.48 m. Building E means
+  making the tight pass respect the curvature rule (its residual tolerance lets small kinks through). World fingerprint
+  not run: E moves every junction's recovery profile (profiles / surface / carve / tiles), and 8 more runs over 32 seeds.
