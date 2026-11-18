@@ -5684,9 +5684,11 @@ export class RoadSystem {
         // removed the near-bore remnant. What the bound was kept for there holds by construction:
         //   • spans and portals: the bore/cut/fill CLASS lives on the solved stations (prof.cls, prof.segs,
         //     extendBorePortals below); this pass writes only the 4 m samples, so it cannot move a span.
-        //   • the grade caps (gMaxBore in the tube): a [¼ ½ ¼] pass makes every new segment grade a convex
-        //     mix of its neighbours' (pinned ends included), so no grade ever exceeds the steepest
-        //     station grade it smooths. The bound broke this: clipping put back corners and overshoot.
+        //   • the grade caps: a [¼ ½ ¼] pass makes every new segment grade a convex mix of its neighbours'
+        //     (pinned ends included), so no grade exceeds the steepest station grade within the window
+        //     (~2 stations). Near a portal that window reaches the open approach — the portal is a
+        //     transition, not a line (road-tunnel.mjs) — but never past the steepest grade there. The
+        //     bound broke this: clipping put corners back with overshoot (spot A: 15.5 % on a 10 % climb).
         //   • tube, lining, collider, containment, the portal cut: all read this deck (runProfile), so
         //     they move with it — MESH == PHYSICS in the bore by construction.
         // Its one real effect is the deck's departure from the priced stations: ≤ ~0.4 m at a big corner
