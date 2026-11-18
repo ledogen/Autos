@@ -11,12 +11,17 @@
 //     shut) and the shop beat (the peanuts only, check out only, leave only); every until is a main.js _UNTIL action.
 // 4. Release (BUG-183) and the quest mark (P5): no step → everything allowed, and main.js hands the gate null outside the tutorial and after a
 //    run's end (the browser half — nothing marked after a skip — is test/cdp-smoke.mjs's opening step).
+// 5. P8's speaker slide (src/dialogue.js cardSlide, DEC-426 Q2): over every played script as framed, the same speaker cycles
+//    in place, a change of speaker slides the old card out by the side it came in from and the new one in from the other,
+//    the sides alternate per change, the first card enters from the left and the last leaves by its side. (The browser
+//    half — the slide on screen, a press mid-slide, reduced motion — is test/cdp-smoke.mjs's opening step.)
 
 import { readFileSync, readdirSync } from 'node:fs'
 import { BINDINGS } from '../src/gamepad.js'
 import { LOCKED, ICON_ACT, ZONES, BETWEEN, isSelector, allows, allowsEl, stepFor } from '../src/tut-gate.js'
 import * as DLG from '../data/dialogue.js'
 import { ITEMS } from '../data/items.js'
+import { DialogueSystem, cardSlide } from '../src/dialogue.js'
 
 let fails = 0
 const ok = (c, msg) => { if (!c) { fails++; console.log('  FAIL ' + msg) } }
@@ -146,6 +151,36 @@ ok(/function _questMark \(\) \{\n  const id = _tutStep\(\)\?\.quest\n/.test(main
 // The sleep card's value lock is the button's own disabled state, recomputed from the tutorial's state on every sync — so a
 // skip, the night's end or a reload (fresh DOM, _firingDay() read off the save) leaves Sleep live.
 ok(/go\.disabled = _firingDay\(\) && /.test(main) && !/cp-sleep-go[^\n]*disabled = true/.test(main), 'main.js: Sleep is greyed only while _firingDay() (DEC-426 Q1)')
+
+// ── 5. P8: the speaker slide ──
+{ const S = (speaker) => ({ speaker })
+  const walk = (cards) => { let side = -1, prev = null; const out = []
+    for (const c of [...cards, null]) { const m = cardSlide(prev, c, side); out.push(m); side = m.side; prev = c }
+    return out }
+  // Katie, Katie, the manager, then nothing: cycle; out left + in right; out right.
+  const w = walk([S('Katie'), S('Katie'), S('The manager')])
+  ok(w[0].out === 0 && w[0].in === -1, `P8: the first card enters from the left, nothing leaves: ${JSON.stringify(w[0])}`)
+  ok(w[1].out === 0 && w[1].in === 0, `P8: the same speaker's next card cycles in place: ${JSON.stringify(w[1])}`)
+  ok(w[2].out === -1 && w[2].in === 1, `P8: a change of speaker: out by the side it came in (left), in from the other: ${JSON.stringify(w[2])}`)
+  ok(w[3].out === 1 && w[3].in === 0, `P8: the last card leaves by its own side: ${JSON.stringify(w[3])}`)
+  // A, B, A: per change, not per person — A's second turn enters from the right's opposite (left), not "A's side".
+  const a = walk([S('A'), S('B'), S('A'), S('C')])
+  ok(a.slice(0, 4).map(m => m.in).join() === '-1,1,-1,1', `P8: sides alternate per change of speaker: ${a.map(m => m.in)}`)
+  // Every played script, framed as main.js frames it (DEC-354's ring and <click> cards included): each step obeys the rule.
+  const dlg = new DialogueSystem(DLG.PHONE)
+  const scripts = [...Object.values(DLG.TUT), ...['FIRING', 'MOM_CALL', 'LARRY_CALL', 'PAYCHECK', 'BOSS_CHECK', 'LARRY_PACK', 'RUN_INTRO', 'PAPER_ROUTE_INTRO'].map(k => DLG[k])]
+    .filter(cs => Array.isArray(cs) && cs.length)
+  let changes = 0
+  for (const cs of scripts) {
+    const f = dlg._frame(cs), m = walk(f)
+    for (let i = 1; i < f.length; i++) {
+      const same = f[i].speaker === f[i - 1].speaker
+      if (!same) changes++
+      ok(same ? !m[i].out && !m[i].in : m[i].out === m[i - 1].side && m[i].in === -m[i].out,
+        `P8: ${f[i - 1].speaker} → ${f[i].speaker} (${same ? 'cycle' : 'slide'}): ${JSON.stringify(m[i])}`)
+    }
+  }
+  ok(changes > 5, `P8: the scripts hold ${changes} changes of speaker (the ring card → the caller counts)`) }
 
 console.log(fails ? `tut-gate: ${fails} FAIL` : `tut-gate: PASS (${steps} steps)`)
 process.exit(fails ? 1 : 0)
