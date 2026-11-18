@@ -300,6 +300,8 @@ export const GATES = [
     desc: 'FEAT-153 job-pool census: 300 boards on the real POI_ROSTER — every giver posts ≥ 3 % of live offers, and every POI type posts ≥ 3 % or ends ≥ 0.3 jobs per board MEANT for it (a `to` or a fetch pickup naming it; generic things end anywhere and are not counted). Before FEAT-153 the office ended 0.15 and the school 0.10 and neither posted' },
   { file: 'par-oracle.mjs', subsystem: 'story', cost: 'fast', extraDeps: ['src/main.js'],
     desc: 'FEAT-29 par oracle: SM-INV-2 (par never reads the car), determinism, independent time-marched check, SIGNED grade (downhill faster), curvature monotonicity, mid-edge arc-range splitting, junction penalty, spawn-heading convention' },
+  { file: 'gps-readout.mjs', subsystem: 'story', cost: 'fast', extraDeps: [],
+    desc: 'BUG-205: the run HUD\'s "to go" is the metres along the GPS line to the stop it leads to — a multi-drop\'s current leg (never the job\'s end), a fetch\'s outbound leg (never out-and-back, never matched onto the return beside the pickup) — and routeLeftM (the tutorial\'s and the waypoint\'s readout) the arc, never the chord' },
   { file: 'gps-route.mjs', subsystem: 'story', cost: 'fast', extraDeps: ['src/main.js'],
     desc: 'FEAT-39 GPS assist route bake: travel order (reversed edges + partial first/last ranges), turn sign (+ve = right) + the straight deadband, windowed progress monotonic + full-scan re-acquire, 3-D arc from gradeAt' },
   { file: 'sky-ephemeris.mjs', subsystem: 'sky', cost: 'fast', extraDeps: [],
