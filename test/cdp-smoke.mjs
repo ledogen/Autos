@@ -238,6 +238,23 @@ const faceTo = async (h) => { const v = await car()
 const orbitAt = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), c = window.__cam().position
   return Math.atan2(c.x - (q.modelX ?? q.x), c.z - (q.modelZ ?? q.z)) })()`)
 const dAng = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a))
+// BUG-203: seated on the nearest road along it, then turned round: one of the two faces against any line along that road,
+// so "Wrong way" shows at one of them unless something silences it. Puts the truck back where it stood.
+async function wrongWayEitherWay () {
+  const v = await car(), h0 = await heading()
+  const r = await js(`(v => { const nr = window.__roadSys().queryNearest(v.x, v.z, 200)
+    return nr?.point ? { x: nr.point.x, z: nr.point.z, h: Math.atan2(-nr.tangent.x, -nr.tangent.z) } : null })(window.__vs.position)`)
+  check(r, 'no road near the truck to face along')
+  let shown = false
+  for (const h of [r.h, r.h + Math.PI]) {
+    await js(`window.__seated = false; window.__teleport(${r.x}, ${r.z}, ${h}).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), 'the seat on the road never seated')
+    if ((shown = await until(wrongWayUp, 3000))) break
+  }
+  await js(`window.__seated = false; window.__teleport(${v.x}, ${v.z}, ${h0}).then(() => { window.__seated = true })`)
+  check(await until(() => js('window.__seated'), 30000, 250), 'the seat back never seated')
+  return shown
+}
 // A fake pad: navigator.getGamepads stubbed to one standard-mapping pad whose buttons and sticks are
 // window.__fp.b / .axes (gamepad.js polls it every frame). padOff hands back the real one.
 const padOn = () => js(`window.__realPads ??= navigator.getGamepads.bind(navigator)
@@ -2209,10 +2226,9 @@ const STEPS = [
     // turned against it, the alert shows (either way round: one of the two points against the line)
     check(!await js('window.__wwOver'), `BUG-203: "Wrong way" showed over the opening's cards (${await js('window.__wwOver')} polls)`)
     check(await until(() => js('!!window.__gps()'), 3000), 'BUG-203: the line never came on with the pedals card')
-    { await readCards(); const h0 = await heading(); let shown = await until(wrongWayUp, 2500)
-      if (!shown) { await faceTo(h0 + Math.PI); shown = await until(wrongWayUp, 3000) }
-      check(shown, 'BUG-203: no "Wrong way" with the truck turned against the tutorial\'s line')
-      await faceTo(h0); await readCards() }
+    await readCards()
+    check(await wrongWayEitherWay(), 'BUG-203: no "Wrong way" with the truck turned against the tutorial\'s line')
+    await readCards()
     // FEAT-229: the FIRING DAY — no job (free will is after the paycheck), the HUD and the GPS to mom's first.
     const eve = () => js(`(() => ({ s: window.__mission().state, tut: window.__tutorial().phase, gps: !!window.__gps(),
       hud: getComputedStyle(document.getElementById('mission-hud')).display !== 'none' && document.getElementById('mission-hud').textContent.trim() }))()`)
@@ -2874,9 +2890,7 @@ const STEPS = [
       check(!await js('document.querySelectorAll(".tut-locked, .tut-hi").length'), `skip at the ${at}: the tutorial gate's marks stayed`)
       const mom = await js('(q => ({ x: q.x, z: q.z }))(window.__poi().list().find(q => q.type === "momsHouse"))')
       check(await js(`window.__map2d()._onWaypoint({ x: ${mom.x}, z: ${mom.z} })`) && await until(() => js('!!window.__gps()'), 3000), `skip at the ${at}: a waypoint drew no line`)
-      const h0 = await heading(); let shown = await until(wrongWayUp, 2500)
-      if (!shown) { await faceTo(h0 + Math.PI); shown = await until(wrongWayUp, 3000) }
-      check(shown, `skip at the ${at}: no "Wrong way" turned against a waypoint's line (left silenced)`)
+      check(await wrongWayEitherWay(), `skip at the ${at}: no "Wrong way" turned against a waypoint's line (left silenced)`)
       await js('window.__map2d()._onWaypoint(null)')
     }
   }],
