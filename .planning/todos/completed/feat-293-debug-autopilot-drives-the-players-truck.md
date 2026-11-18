@@ -1,7 +1,7 @@
 ---
 id: FEAT-293
 type: feature
-status: open
+status: done
 severity: major
 opened: 2026-11-18
 source: owner, in chat, 2026-11-18 (DEC-428)
@@ -157,3 +157,4 @@ step), test/drive-ai-soak.mjs, test/drive-ai.mjs (gate), test/playtest-bench.mjs
   last seat → lab in/out → story run → mom's seat NaN (strutComp ~3e5 m, then NaN from the engine's getVelocity in
   stepPhysics); the step now re-seats the truck. Then camp passed 3/3 (subset, 2 full smokes; smoke 2 failed later at the
   known DEC-357 blink flake), pad-e2e ALL OK. Bench refused to start: host audio clock stalled (coreaudiod): unverified.
+- 2026-11-18 CLOSED. Owner on card `feat293-driving-ai-watch`: "Good: land it" — "I'm blown away. This is a great first pass. I agree that it's likely that the crashes aren't the AI's fault. That makes this an invaluable tool for playtesting the validity of worlds and roads." On main.

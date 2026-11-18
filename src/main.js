@@ -107,7 +107,7 @@ import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, deedLine
 import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
-import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
+import { DialogueSystem, cardSlide } from './dialogue.js'   // FEAT-61: sequential character cards; FEAT-288 P8: the speaker slide
 import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_CALL, PAYCHECK, LARRY_PACK, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT, PHONE } from '../data/dialogue.js'
 import { TUTORIAL, PACK_TOSS, flatRadius, FIRING_CAM } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149); FEAT-288 P6: the firing's orbit
 import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
@@ -4033,7 +4033,34 @@ const dialogueSystem = new DialogueSystem(PHONE)   // DEC-354: phone calls frame
 // streams. The first press fills it (the advance handlers below), the next one turns it; one blip when full.
 const DLG_WORD_MS = 80   // [DEFAULT] ~12 words a second
 const _DLG_PAD_KEYS = new Set(['w', 's', 'm', 'v', 'tab', 'space', 'x'])   // FEAT-125: see _renderDialogue; FEAT-184: X (recovery)
-const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0 }
+const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0, side: -1, anims: [], delay: 0 }
+// FEAT-288 P8 (DEC-426 Q2): a change of speaker slides, the same speaker's next card cycles in place (dialogue.js cardSlide).
+// The card going out is a copy of the panel (.dlg-ghost: no ids, takes no pointer) that leaves by the side it came in from;
+// the live panel, ALREADY the new card (so the tutorial gate, menu-nav and every check read the card that is up), comes in
+// from the other side once the copy is gone. Web Animations on `translate` (composited by the browser; no per-frame JS).
+// A press mid-slide lands it at once, filled, and is spent (_dlgFill): no card is ever turned unread, none is lost.
+// prefers-reduced-motion (the browser's "avoid motion" accessibility setting): an instant swap.
+const DLG_OUT_MS = 150, DLG_IN_MS = 200   // [DEFAULT] short: 350 ms door to door on a change of speaker, 200 ms for a first card
+const _dlgOff = (s) => s < 0 ? 'calc(-100vw - 100%)' : 'calc(100vw + 100%)'   // past the screen's edge from anywhere on it
+function _dlgSlide (panel, prev, next) {
+  for (const a of _dlg.anims) a.finish()   // a slide still running lands first
+  const m = cardSlide(prev, next, _dlg.side)
+  _dlg.side = m.side; _dlg.anims = []; _dlg.delay = 0
+  if (!m.out && !m.in || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  if (m.out) {
+    const g = panel.cloneNode(true)
+    for (const n of [g, ...g.querySelectorAll('[id]')]) n.removeAttribute('id')
+    g.classList.add('dlg-ghost')
+    panel.after(g)
+    const a = g.animate([{ translate: '0px' }, { translate: _dlgOff(m.out) }], { id: 'dlg-out', duration: DLG_OUT_MS, easing: 'cubic-bezier(.5, 0, 1, 1)', fill: 'forwards' })
+    a.onfinish = () => g.remove()
+    _dlg.anims.push(a)
+  }
+  if (m.in) {
+    _dlg.delay = m.out ? DLG_OUT_MS : 0
+    _dlg.anims.push(panel.animate([{ translate: _dlgOff(m.in) }, { translate: '0px' }], { id: 'dlg-in', duration: DLG_IN_MS, delay: _dlg.delay, easing: 'cubic-bezier(0, 0, .2, 1)', fill: 'backwards' }))
+  }
+}
 /** Wrap every word of `el` (text nodes, inside .dlg-key spans too) in a hidden span; returns them in order.
  *  FEAT-174: the other input's half of a line (kc-kb / kc-pad) is left whole, so the stream spends no time on
  *  words that are not shown, and a switch mid-card shows that half at once. */
@@ -4067,6 +4094,10 @@ function _dlgShow (n) {
 }
 /** The press that lands on a card still filling fills it, and is spent. */
 function _dlgFill () {
+  if (_dlg.anims.some(a => a.playState === 'running')) {   // FEAT-288 P8: mid-slide, the press lands the card, whole
+    for (const a of _dlg.anims) a.finish()
+    _dlg.anims = []; _dlgShow(Infinity); return true
+  }
   if (!_dlg.words) return false
   _dlgShow(Infinity)
   return true
@@ -4076,6 +4107,7 @@ function _renderDialogue () {
   const panel = document.getElementById('dialogue-panel')
   if (!panel) return
   const card = dialogueSystem.current()
+  if (card !== _dlg.card) _dlgSlide(panel, _dlg.card, card)   // before the paint: the copy that leaves carries the card that was up
   panel.style.display = card ? 'block' : 'none'
   panel.classList.toggle('dlg-waits', !!card?.until)   // DEC-359: menu-nav.js lets the pad work the card under a waiting one
   if (card?.call !== 'ring') stopRing()   // FEAT-288 P7: any other card, or none (skip, pause, run end), ends the ringer
@@ -4092,7 +4124,7 @@ function _renderDialogue () {
     // and a grade or a phrase (B, "ten good deeds") is emphasis, never a key.
     for (const k of tx.querySelectorAll('.dlg-key')) if (_DLG_PAD_KEYS.has(k.textContent.trim().toLowerCase())) k.innerHTML = keycap(k.textContent.trim())
     clearInterval(_dlg.timer)
-    Object.assign(_dlg, { card, words: _hideWords(tx), n: 0, t0: performance.now() })
+    Object.assign(_dlg, { card, words: _hideWords(tx), n: 0, t0: performance.now() + _dlg.delay })   // P8: streams as it slides in
     _dlg.timer = setInterval(() => _dlgShow(Math.floor((performance.now() - _dlg.t0) / DLG_WORD_MS) + 1), DLG_WORD_MS / 2)
     _dlgShow(1)
   }

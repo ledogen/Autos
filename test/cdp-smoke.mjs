@@ -24,6 +24,8 @@ import { ECONOMY_PARAMS } from '../src/economy.js'
 import { DAY_PARAMS } from '../src/day.js'
 import { summarize, parseLines, report } from '../tools/run-log-summary.mjs'   // the runlog step reads its real log back
 import { TUTORIAL } from '../data/tutorial.js'   // FEAT-184: the tutorial seed's world (DEC-402)
+import { FIRING, PHONE } from '../data/dialogue.js'   // FEAT-288 P8: the firing's cards, framed, to count what was shown
+import { DialogueSystem } from '../src/dialogue.js'
 import { SHOP_TYPES } from '../src/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -2187,6 +2189,22 @@ const STEPS = [
       await js(`document.documentElement.dataset.uiScale = '${was}'`) }
     // DEC-320: the firing opens on Katie's call, wrapping up as Billy arrives; then the manager.
     check(await until(async () => await speaker() === 'Katie', 3000), `the run did not open on the firing's call (speaker "${await speaker()}")`)
+    // FEAT-288 P8 (DEC-426 Q2): every card shown from here, with the slide it came with — the copy leaving (.dlg-ghost's
+    // 'dlg-out') and the live panel's 'dlg-in', each as the side it moves by (-1 left, +1 right, 0 none) — and a sequence's
+    // end as { end, out }. Read off the page's own animations; nothing in src/ records it.
+    await js(`(() => { const R = window.__dlgRec = [], p = document.getElementById('dialogue-panel')
+      const sgn = (a) => !a ? 0 : a.effect.getKeyframes().some(k => /^(calc\\()?-/.test(k.translate ?? '')) ? -1 : 1
+      // the live panel's slide is read as it is STARTED: a press in the same task lands it (finish) before this observer runs
+      let enter = 0, animate = p.animate.bind(p)
+      p.animate = (kf, o) => { if (o?.id === 'dlg-in') enter = kf.some(k => /^(calc\\()?-/.test(k.translate ?? '')) ? -1 : 1; return animate(kf, o) }
+      new MutationObserver(recs => {
+        let out = 0, card = false
+        for (const r of recs) {
+          for (const n of r.addedNodes) if (n.classList?.contains('dlg-ghost')) out = sgn(n.getAnimations().find(a => a.id === 'dlg-out'))
+          card ||= r.target.id === 'dlg-text' }
+        if (card) R.push({ sp: document.getElementById('dlg-speaker').textContent, tx: document.getElementById('dlg-text').textContent, out, in: enter }), enter = 0
+        else if (out) R.push({ end: true, out })
+      }).observe(p.parentNode, { childList: true, subtree: true }) })()`)
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
       return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), h: window.__day().clockH() } })()`)
     const a = await at(); await sleep(1000); const b = await at()
@@ -2221,12 +2239,29 @@ const STEPS = [
     // BUG-136: the days before the clock's zero; the HUD read day 0 as "Day 0, -6 am".
     const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
     check(await until(async () => await hudClock() === 'Day 0, 7 am', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day 0, 7 am" (BUG-136)`)
-    let boss = false, hung = false
-    for (let i = 0; i < 8 && ['Katie', 'The manager'].includes(await speaker()); i++) {
-      boss ||= await speaker() === 'The manager'; hung ||= !boss && await js('document.getElementById("dlg-text").textContent') === '<click>'
-      await tap('Enter'); await sleep(250) }
-    check(boss, 'the firing had no card from the manager')
-    check(hung, "the firing's call did not hang up (<click>) before the manager (DEC-354)")
+    // FEAT-288 P8: Katie's <click> cycles in place; the manager is a change of speaker: Katie's card leaves by the left (she
+    // came in from there, the first card of a showing), his comes in from the right, and leaves by the right at the end.
+    // A press mid-slide (here a click, dispatched in the same task as the press that started the slide, so it IS mid-slide
+    // on any load) lands his card whole and is spent: he is still up. Then presses as fast as CDP sends them, keys and
+    // clicks: the cards shown are the framed script's, none lost.
+    await tap('Enter'); await sleep(120)   // Katie's first card (filled under the orbit checks) → her <click>
+    const mid = await js(`(() => { const p = document.getElementById('dialogue-panel'), run = () => p.getAnimations().some(a => a.id === 'dlg-in' && a.playState === 'running')
+      const words = () => [...document.querySelectorAll('#dlg-text span')].filter(w => !w.children.length)
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      const sp = document.getElementById('dlg-speaker').textContent, sliding = run(), ghost = !!document.querySelector('.dlg-ghost')
+      document.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }))
+      return { sp, sliding, ghost, landed: !run(), filled: words().every(w => w.style.visibility !== 'hidden'), after: document.getElementById('dlg-speaker').textContent } })()`)
+    check(mid.sp === 'The manager' && mid.sliding && mid.ghost, `P8: the change of speaker to the manager did not slide: ${JSON.stringify(mid)}`)
+    check(mid.landed && mid.filled && mid.after === 'The manager', `P8: a click mid-slide did not land the manager's card whole, or turned it: ${JSON.stringify(mid)}`)
+    for (let i = 0; i < 12 && await speaker(); i++) {   // as fast as CDP goes, alternating key and click
+      if (i % 2) await tap('Enter'); else { for (const type of ['mousePressed', 'mouseReleased']) await client.cmd('Input.dispatchMouseEvent', { type, x: 400, y: 200, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 }) } }
+    { const R = await js('window.__dlgRec'), cards = R.filter(r => !r.end), want = new DialogueSystem(PHONE)._frame(FIRING)
+      check(1 + cards.length === want.length && cards.every((c, i) => c.sp === want[i + 1].speaker),
+        `P8: the firing's cards shown are not its script's (${want.length} framed, the first read before): ${JSON.stringify(R)}`)
+      check(cards[0]?.tx === '<click>', "the firing's call did not hang up (<click>) before the manager (DEC-354)")
+      check(cards[0]?.out === 0 && cards[0]?.in === 0, `P8: Katie's <click> slid — the same speaker must cycle in place: ${JSON.stringify(cards[0])}`)
+      check(cards[1]?.sp === 'The manager' && cards[1].out === -1 && cards[1].in === 1, `P8: Katie's card did not leave by the left, the manager's come in from the right: ${JSON.stringify(cards[1])}`)
+      check(R.at(-1)?.end && R.at(-1).out === 1, `P8: the manager's card did not leave by the right, the side it came in from: ${JSON.stringify(R.at(-1))}`) }
     // The card: up, the sim held under it; "play" on seed 6 loads the tutorial seed with seed 6 to come back to.
     check(await until(() => js('document.getElementById("tut-card").style.display === "flex"'), 3000), `the firing did not end on the tutorial card: ${JSON.stringify(await tut())}`)
     check((await tut()).phase === 'card', `the card is up but the tutorial reads ${JSON.stringify(await tut())}`)
@@ -2244,7 +2279,14 @@ const STEPS = [
     { const h0 = await heading(); await faceTo(h0 + Math.PI); await sleep(1500)
       check(!await js('window.__gps()') && !await wrongWayUp(), 'BUG-203: a line or "Wrong way" under mom\'s call, the truck turned round')
       await faceTo(h0) }
+    // FEAT-288 P8: prefers-reduced-motion (the browser's "avoid motion" setting) swaps the card at once: the ring card → mom
+    // is a change of speaker, and nothing slides.
+    await client.cmd('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+    const rec0 = await js('window.__dlgRec.length')
     await readCards()   // her call, up to the key card (DEC-359: it waits for the key, the game runs under it)
+    await client.cmd('Emulation.setEmulatedMedia', { features: [] })
+    { const R = (await js('window.__dlgRec')).slice(rec0), m = R.find(r => r.sp === 'Mom')
+      check(m && R.every(r => !r.out && !r.in), `P8: under reduced motion a card slid (or mom's call never showed): ${JSON.stringify(R.slice(0, 4))}`) }
     check(await js('window.__tutorial().until') === 'engine', `mom's call did not stop at the key card: ${JSON.stringify(await js('window.__tutorial()'))}`)
     await crank(); await readCards()   // the key catches: her <click>, then the driving lesson
     // DEC-354: a call rings first and hangs up last — the key card (FEAT-184) inside it.
