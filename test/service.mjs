@@ -83,7 +83,7 @@ tier = 1.5
 check('…× the day tier', near(svc.repairQuote('engine', 0.7).price, (SU.price + REPAIRS.engine.price * 0.2) * 1.5))
 tier = 1
 damage.set('springRear', 0)
-check('a spring pair is priced off the fitted pair', near(svc.repairQuote('springRear', 0.8).price, SU.price + PARTS.springsOEM.price * 0.8))
+check('a spring pair is priced at the spring rate (FEAT-285)', near(svc.repairQuote('springRear', 0.8).price, SU.price + REPAIRS.spring.price * 0.8))
 check('worn brakes: nothing to repair', (damage.set('brakeFront', 0.2), svc.targets('brakeFront').length === 0))
 check('a collapsed wheel is replaced, never straightened', repairTargets('wheel', 0).length === 0 && repairTargets('wheel', 0.01)[0] === 0.05)
 damage.set('engine', 0)
@@ -210,7 +210,7 @@ owned = svc.ownedRepairRows()
 const spr = owned.find(r => r.id === 'springsHD')
 check('a worn spring pair is, up to the cap', spr?.targets.at(-1) === REPAIR_CAP)
 wallet = 100; hours = 0
-check('re-arch it to the cap: priced off the part', svc.repairOwned(spr.index, REPAIR_CAP) && near(wallet, 100 - SU.price - PARTS.springsHD.price * 0.4)
+check('re-arch it to the cap: priced at the spring rate (FEAT-285)', svc.repairOwned(spr.index, REPAIR_CAP) && near(wallet, 100 - SU.price - REPAIRS.spring.price * 0.4)
   && near(hours, REPAIRS.spring.hours * 0.4)   // off the truck: no access time
   && near(inventory.list()[spr.index].cond, REPAIR_CAP))
 inventory.take(spr.index)
