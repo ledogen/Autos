@@ -133,4 +133,5 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - 2026-11-17: DEC-402 re-pin (lane a, `land/tut-seed-search-r3`): data/tutorial.js → 1872706826; test/tutorial-seed.mjs AT/KM/CROW from
   its census line (gate green); smoke reads TUTORIAL.seed, and its BUG-173 shoulder pick now centres on the joint on a 2 m grid (the
   seed's only flat shoulder is 264 m out; the 4 m grid around the truck found none). Walk + sheet: wip/tut-repin/sheet.jpg. Flagged:
-  the flat lands on a 17.7 % climb beside a tunnel mouth. Unverified: a real drive.
+  the flat lands on a 17.7 % climb beside a tunnel mouth. Full smoke PASS (wip/tut-repin/smoke.log); run 1 failed once at the DEC-357
+  blink check (2 s window; passed in both other runs, the check now prints its state). pad-e2e ALL OK. Unverified: a real drive.
