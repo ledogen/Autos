@@ -23,8 +23,8 @@ Owner's words, verbatim (inbox 20261118063529-ortt):
 > The initial cost to repair springs and dampers is too prohibitive, let's lower it to 4 dollars. I'm also pretty sure that the economy scaling is not applying to The labor cost.
 
 ## Tracker
-- [ ] The labor cost scales with the economy exactly as the parts cost does
-- [ ] A gate or number check shows labor at two cost levels
+- [x] The labor cost scales with the economy exactly as the parts cost does
+- [x] A gate or number check shows labor at two cost levels
 
 ## Decisions
 
@@ -39,3 +39,4 @@ data/parts.js · the maintenance cost code (src/service*.js)
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118063529-ortt).
+- 2026-11-18 lane land/numbers-1118: NOT REPRODUCED in code. Every labour price in src/service.js (REPAIR_SETUP in _quote, fitLabour, _jobs hub/bead, align, patch, oil) already multiplies `this.tier()`; recovery's roadside tire service multiplies at the end. Added a check in test/service.mjs: labour = setup × tier and a spring repair = (setup + 4×gap) × tier at tiers 1 and 2. Labour HOURS do not scale (by design, the clock). If the owner saw a flat $ somewhere, a screenshot of which screen is needed.
