@@ -1357,8 +1357,9 @@ const STEPS = [
   // FEAT-65: the camp's own demolition line (the requisition is open from the step above). Taken at the
   // camp it starts there (no approach); its targets stand as models along the route's last km; near
   // the truck they are bodies, ASLEEP until touched; a kicked one counts smashed on the HUD. Slice 2:
-  // arriving at the site's end with targets standing settles nothing and the GPS turns back to the
-  // nearest one; it moves on as each falls, and the last one down settles the line wherever the truck is.
+  // arriving at the site's end with targets standing settles nothing; FEAT-267: the rank bar shows, the GPS
+  // leg turns back to a standing cluster and moves on as each falls, and the last one down settles the
+  // line wherever the truck is, lettered on time.
   ['demolition', async () => {
     const pois = 'window.__map2d()._getPois()'
     const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
@@ -1392,28 +1393,38 @@ const STEPS = [
     await js(`(() => { const t = ${bodies}[0], p = new (window.__vs.position.constructor)(), q = new (window.__vs.quaternion.constructor)()
       window.__physicsEngine.getTransform(t.body, p, q); window.__physicsEngine.applyImpulse(t.body, { x: 200, y: 100, z: 0 }, p) })()`)
     check(await until(() => js('window.__cargo().site.filter(t => t.smashed).length === 1'), 3000), 'a kicked target did not count smashed')
-    check(await until(() => js('/1 \\/ \\d+ smashed/.test(document.getElementById("job-promise")?.textContent ?? "")'), 2000),
-      `the HUD does not count it: "${await js('document.getElementById("job-promise")?.textContent')}"`)
-    // 11-05 (owner, option b): the first smash starts the site window; the job line counts it down.
-    check(await until(() => js('/next hit within \\d+ s/.test(document.getElementById("mission-hud").textContent)'), 2000),
-      `the job line shows no site window: "${await js('document.getElementById("mission-hud").textContent')}"`)
-    // Arrive with the rest standing: nothing settles, and the GPS goes BACK to the nearest one standing.
-    const end = await js('(() => { const m = window.__mission().mission, a = m.poly.at(-2), b = m.poly.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()')
+    // FEAT-267 (DEC-399): the job line counts the site like the paper round ("1 / N smashed"); no hit window.
+    const hud = 'document.getElementById("mission-hud").textContent'
+    check(await until(() => js(`/1 \\/ \\d+ smashed/.test(${hud})`), 2000), `the job line does not count it: "${await js(hud)}"`)
+    check(!/within/.test(await js(hud)), `the job line still shows a hit window: "${await js(hud)}"`)
+    // Arrive with the rest standing: nothing settles, the rank bar shows (a hurried job), and the GPS leg goes BACK to a
+    // cluster still standing — the remaining tour from the truck (paper-route.js planGuideJob, re-planned every tourS).
+    const end = await js('(() => { const m = window.__mission().mission, a = m.poly.at(-2), b = m.poly.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)), fx: b.x - a.x, fz: b.z - a.z } })()')
     await seat(end.x, end.z, end.h)
-    check(await until(() => js('window.__site().next?.back === true && window.__site().gps === window.__site().guide.route'), 3000),
-      `past the end the GPS does not turn back to a target: ${await js('JSON.stringify(window.__site().next)')}`)
+    const legEnd = '(s => s.guide?.customers?.[0])(window.__site())'
+    const behind = `(c => c && (c.x - ${end.x}) * ${end.fx} + (c.z - ${end.z}) * ${end.fz} < 0 && c.members.some(i => !window.__site().targets[i].smashed))(${legEnd})`
+    check(await until(() => js(`${behind} && window.__site().gps === window.__site().guide`), 4000),
+      `past the end the GPS leg does not turn back to a standing cluster: ${await js(`JSON.stringify(${legEnd} && { x: ${legEnd}.x, z: ${legEnd}.z, members: ${legEnd}.members })`)}`)
+    check(await js('window.__site().gps?.noRing === true'), 'the demolition GPS leg carries a destination circle (FEAT-187)')
     check(await js('window.__mission().state') === 'running', `arriving with targets standing settled the line: ${await js('window.__mission().state')}`)
-    // Fell the GPS's target: it moves on to another standing one. Then the rest: the line settles where it is.
-    const i0 = await js('window.__site().next.i')
-    await js(`window.__site().targets[${i0}].smashed = true`)
-    check(await until(() => js(`(n => n && n.i !== ${i0} && !window.__site().targets[n.i].smashed)(window.__site().next)`), 2000), 'the GPS did not move on when its target fell')
-    // That smash refilled the window; let it run out (a game minute is a second of the job's clock) and the line
-    // settles where it is, with the two that fell. (The last one down settling it is the same `cleared` line.)
-    check(await js('window.__mission().state') === 'running', 'the line settled before its window ran out')
-    await js('window.__day().advanceMinutes(41)')
-    check(await until(() => js('window.__mission().state === "done"'), 5000), `the site window ran out and the line did not settle: ${await js('window.__mission().state')}`)
-    check(await js('(n => new RegExp(`Smashed\\\\s*2 \\\\/ ${n}`).test(document.getElementById("mp-body")?.textContent ?? ""))(window.__mission().mission.targets.length)'),
-      `the result card does not count the two smashed: "${await js('document.getElementById("mp-body")?.textContent')}"`)
+    check(await until(() => js('document.getElementById("rank-timer").checkVisibility()'), 3000), 'no rank bar on the demolition job at its site (DEC-399: hurried)')
+    // Fell the leg's cluster: the next plan moves the leg on to another standing one.
+    const c0 = await js(`${legEnd}.id`)
+    await js(`${legEnd}.members.forEach(i => { window.__site().targets[i].smashed = true })`)
+    check(await until(() => js(`(c => c && c.id !== ${JSON.stringify(c0)} && c.members.some(i => !window.__site().targets[i].smashed))(${legEnd})`), 4000)
+      || await js('window.__site().targets.every(t => t.smashed)'), 'the GPS leg did not move on when its cluster fell')
+    // The letter is TIME (courier's and the paper round's rule), not the share: burn the job's clock to ~0.85 par (a game
+    // minute is a second of it; the camp's line has no deadline), then fell the rest — the line settles with every target
+    // down, lettered on its par ratio.
+    await js('(m => window.__day().advanceMinutes(Math.max(0, Math.ceil(0.85 * m.mission.par - m.elapsed))))(window.__mission())')
+    check(await js('window.__mission().state') === 'running', 'the line settled before its last target fell')
+    await js('window.__site().targets.forEach(t => { t.smashed = true })')
+    check(await until(() => js('window.__mission().state === "done"'), 5000), `felling the last target did not settle the line: ${await js('window.__mission().state')}`)
+    const res = await js(`(m => { const r = m.result, th = m.mission.terms?.thresholds ?? { S: 0.652, A: 0.707, B: 0.794, C: 1 }
+      return { letter: r.letter, want: 'SABC'.split('').find(l => r.ratio <= th[l]) ?? 'D', ratio: r.ratio } })(window.__mission())`)
+    check(res.letter === res.want && res.letter !== 'S', `the line is not lettered on time: ${JSON.stringify(res)}`)
+    check(await js('(n => new RegExp(`Smashed\\\\s*${n} \\\\/ ${n}`).test(document.getElementById("mp-body")?.textContent ?? ""))(window.__mission().mission.targets.length)'),
+      `the result card does not count every target smashed: "${await js('document.getElementById("mp-body")?.textContent')}"`)
     await js('document.getElementById("mp-accept").click()')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
