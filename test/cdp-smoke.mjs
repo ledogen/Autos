@@ -258,6 +258,48 @@ const STEPS = [
     home = await car()
     check(fin(home.x, home.y, home.z), `truck position not finite: ${JSON.stringify(home)}`)
   }],
+  ['rockslide', async () => {
+    // FEAT-26: the debug trigger on a parked truck. Seat it on the face-side lane of the nearest candidate cut, trigger
+    // ("Rock Slide Now"), and the director releases at once (forced + parked): the batch spawns invisible (alphaHash at
+    // opacity 0), fades in over 0.5 s, comes down onto the deck, and at least one rock touches the truck (its centre
+    // inside the truck's footprint grown by its radius) on one of up to three slides.
+    const c = await js(`(() => { const p = window.__vs.position, c = window.__rockslide.candidatesNear(p.x, p.z, 1500, 1, 5)[0]
+      return c && { x: c.imp.x, z: c.imp.z, h: Math.atan2(-c.c.tx * c.dir, -c.c.tz * c.dir), rel: c.face.rel } })()`)
+    check(!!c, 'no rock slide candidate within 1500 m of the seed-6 spawn')
+    if (!c) return
+    const h0 = await js('(f => Math.atan2(-f.x, -f.z))(new window.__vs.position.constructor(0, 0, -1).applyQuaternion(window.__vs.quaternion))')
+    let touched = false, tries = 0, faded = false, onDeck = false, n0 = await js('window.__rockslide.events')
+    for (; tries < 3 && !touched; tries++) {
+      await seat(c.x, c.z, c.h)
+      await js('window.__rockslide.trigger()')
+      check(await until(() => js(`window.__rockslide.events > ${n0 + tries}`), 3000), 'the forced slide never released on a parked truck')
+      const sl = await js('(s => s && { n: s.bodies.length, op: s.mat.opacity, hash: s.mat.alphaHash })(window.__rockslide.slides.at(-1))')
+      check(sl && sl.n >= 5 && sl.n <= 15 && sl.op < 0.5 && sl.hash, `the slide spawned wrong (5–15 rocks, fading from 0, alpha-hashed): ${JSON.stringify(sl)}`)
+      await simFor(0.6)
+      faded ||= (await js('window.__rockslide.slides.at(-1)?.mat.opacity')) === 1
+      for (let k = 0; k < 40 && !touched; k++) {
+        await simFor(0.25)
+        const q = await js(`(() => { const R = window.__rockslide, vs = window.__vs, e = window.__physicsEngine, sl = R.slides.at(-1)
+          const P = new vs.position.constructor(), Q = vs.quaternion.clone(), qi = vs.quaternion.clone().invert(); let hit = false, deck = false
+          for (const b of sl?.bodies ?? []) { e.getTransform(b, P, Q); const l = P.clone().sub(vs.position).applyQuaternion(qi)
+            hit ||= Math.abs(l.x) < 0.95 + 0.4 && Math.abs(l.z) < 2.6 + 0.4 && Math.abs(l.y) < 1.5
+            deck ||= window.__roadSys().sampleRoadTopY(P.x, P.z) != null && Math.abs(P.y - window.__roadSys().sampleRoadTopY(P.x, P.z)) < 1 }
+          return { hit, deck } })()`)
+        touched ||= q.hit; onDeck ||= q.deck
+      }
+    }
+    check(faded, 'a slide never finished its 0.5 s fade-in')
+    check(onDeck, 'no slide rock ever reached the road deck')
+    check(touched, 'three slides on a parked truck in the lane and no rock touched it')
+    console.log(`  rockslide: candidate at (${c.x.toFixed(0)}, ${c.z.toFixed(0)}), the truck touched on slide ${tries}`)
+    // Leave the world as boot did for the steps after: no rocks, the truck back where it booted (seat() moved the spawn
+    // to the cut: re-seat at home with its boot heading), then R for fresh parts and tires.
+    await js('window.__rockslide.clear()')
+    await seat(home.x, home.z, h0)
+    await tap('r')
+    check(await until(async () => { const q = await car(); return q.v < 0.2 && Math.hypot(q.x - home.x, q.z - home.z) < 5 }, 5000),
+      'after the slides, R did not re-seat the truck at the spawn')
+  }],
   ['boreCam', async () => {
     // FEAT-246: seed 6's nomenu spawn is in a bore (a test seed). The right stick swings the chase camera a full turn
     // round the truck; at every sample it must stay INSIDE the bore (nothing of the road group, the lining and crown, or

@@ -24,6 +24,7 @@ import { HiLift, basin, rollDeg } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine, GROUP_STATIC, GROUP_ROAD } from './physics-engine.js'
 import { TerrainPhysics, RoadPhysics, PropPhysics, PoiPhysics } from './terrain-physics.js'
+import { RockslideDirector, storySlideLines, storySlideGate } from './rockslide.js'   // FEAT-26: rock slides (DEC-400, DEC-425)
 import { DebrisSystem, bedDropPoints, inBedWell, strapPose, cubeLayout, STACK_RADIUS, BARREL_CUBE_SIDE, BARREL_CUBE_LAYERS } from './debris.js'
 import { PhysicsWireframes } from './physics-debug.js'
 import { getWheelPosition, computeStaticEquilibrium } from './suspension.js'
@@ -2730,6 +2731,7 @@ const _gui = initDebug(RANGER_PARAMS, {
     debrisSystem.spawn('rock', { x: p.x, y: p.y, z: p.z }, { x: v.x, y: v.y, z: v.z })
   },
   loadFreight:         (key, massKg) => _loadFreight(key, massKg),   // FEAT-96 scaffolding: '' empties the bed
+  rockslideNow:        () => rockslides.trigger(),   // FEAT-26: arm a slide at the next candidate ahead (parked: the nearest)
   applyQuality:        (name) => applyQuality(name),   // PERF-06: master Quality tier (draw distance + shadows + props + res)
   rebuildTerrain:      ()  => { if (terrainSystem) terrainSystem.rebuildAllChunks() },
   rebuildTerrainFull:  ()  => debouncedRebuildFull(),
@@ -2825,6 +2827,20 @@ const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
 // group's bore lining (ONE ray per frame; camera-boom.js says why the deck under the truck does not shorten it).
 setCameraBoomProbe(makeBoomProbe(physicsEngine, (x, z, y) => terrainSystem.analyticHeight(x, z, undefined, y), GROUP_STATIC | GROUP_ROAD))
 const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
+// FEAT-26 (DEC-400): rock slides off the cut slopes. Its rocks are debris bodies outside the throw cap; it reads the
+// road and the ground, never the save (a slide in flight is not saved: a reload drops it).
+const rockslides = new RockslideDirector({ debris: debrisSystem, road: () => roadSystem,
+  heightAt: (x, z) => terrainSystem ? terrainSystem.analyticHeight(x, z) : 0, hasGround: (x, z) => terrainPhysics.hasChunkAt(x, z),
+  clockH: () => daySystem.clockH(), freeze: (bodies, on) => debrisSystem.setEnabled(bodies, !on) })
+// The fade shader compiles at boot, not on the first slide: compiled lazily it was one 267 ms frame at the spawn.
+renderer.compile(new THREE.Mesh(rockslides._geos[0], rockslides.fadeMaterial()), camera, scene)
+window.__rockslide = rockslides   // dev handle — the debug panel's "Rock slide now" and test/cdp-smoke.mjs
+/** DEC-425: the director's story gate — null in free roam (DEC-400's rate); in story, armed only on a flagged line. */
+function _slideStory () {
+  if (!storySystem.isActive()) return null
+  const ms = missionSystem, m = ms?.state === 'running' ? ms.mission : null
+  return storySlideGate(rockslides.lines, rockslides.fired, m?.line ?? null, m?.distance, () => ms.routeRemaining())
+}
 
 // ── FEAT-96: the strapped load — a freight job's, or the debug "Load Cargo" pick ─────────────
 // One load at a time; loading another replaces it. The load is placed AT REST where strapPose
@@ -9748,6 +9764,8 @@ const storySystem = new StorySystem({
       region: economySystem.terms().region,   // FEAT-114: which rank row a bonus gate must be reachable on
     })
     _boardLog = logBoard(offerBoard, daySystem.clockH())   // FEAT-42: the board's history, for the run save
+    rockslides.lines = storySlideLines(worldSeed, offerBoard.lines().map(l => l.id))   // DEC-425: which lines get a slide (from the seed)
+    rockslides.fired = new Set()
     // ORDER MATTERS: the roster decides where mom lives, and camping is handed that answer.
     // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping
     // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
@@ -10463,6 +10481,7 @@ function _runSnapshot () {
     playedS: _playedS,   // FEAT-146: the summary's playtime
     waypoint: _waypoint && { x: _waypoint.x, z: _waypoint.z },   // FEAT-211: the player's pin (re-snapped and re-planned on resume)
     returnSeed: _returnSeed,   // FEAT-184 (DEC-158): the run's own world, while its tutorial plays on the tutorial seed
+    slidesFired: [...rockslides.fired],   // DEC-425: the requisition lines that have had their rock slide (run progress)
   }
 }
 
@@ -10489,6 +10508,7 @@ function _restoreRun (s) {
   runPaper.tier = s.paperTier
   _renderPaperUI()
   dialogueSystem.restoreSeen(s.dialogueSeen)   // before the handoff, or the run intro plays again
+  rockslides.fired = new Set(s.slidesFired ?? [])   // DEC-425
   for (const pad of s.campPads) { roadSystem?.setCampPads(campSystem.makeCampAt(pad)); _refreshGroundAround(pad) }
   if (s.board) {   // null: a tutorial's load back keeps the fresh board onRegionLive built
     offerBoard = new OfferBoard({ seed: worldSeed, pois: poiSystem.list(), nowH: s.board.t0H,
@@ -11573,6 +11593,12 @@ function loop (t) {
   _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
   flushPadRumble(pad.active && getCameraMode() !== 'freecam')   // FEAT-247: one mixed vibration effect per frame
   debrisSystem.update(_renderAlpha)   // FEAT-36: engine → debris meshes, at the truck's render alpha
+  // FEAT-26: the slide director — the odometer's draw, the pick ahead, the release, the fade. Held with the sim;
+  // never in the lab or the tutorial (its protected legs) — there it only cleans up.
+  if (!(_simHeld || _genHold || _heldPause())) {
+    rockslides.update(frameTime, { x: vehicleState.position.x, y: vehicleState.position.y, z: vehicleState.position.z,
+      vx: vehicleState.velocity.x, vz: vehicleState.velocity.z }, !_labActive && !_inTutorial(), _slideStory())
+  }
 
   // Restore physics position/quaternion — the interpolated copies were render-only.
   vehicleState.position  = _physPos
