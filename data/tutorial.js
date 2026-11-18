@@ -16,8 +16,9 @@ export const PACK_TOSS = { x: 2.2, z: -3.5, y: 1.2 }
 // Q5: about 250 m into the drive home, "depending on the seed"): the flat goes off once the truck is closer to mom's, by
 // crow, than the point alongM metres along the drive home's own line (the plan _homeGuide draws, the camping area's door to
 // hers). A pure distance, no height: BUG-216's deck moves near the tunnel cannot shift it. Measured on 1872706826
-// (test/tutorial-seed.mjs, 2026-11-18): the line is 0.78 km, its tunnel starts 457 m along it; the flat goes off 250 m along,
-// ~200 m short of the portal (it went off at 433 m, 24 m short, on the old half-the-crow-distance rule).
+// (test/tutorial-seed.mjs, 2026-11-18): the line is 0.78 km and its tunnel starts 457 m along it; the flat goes off at the
+// line's first vertex past 250 m, 264 m along, 193 m short of the portal (the gate holds ≥ 150 m), and the tow to the same
+// auto shop shrinks 0.75 → 0.66 km. The old half-the-crow-distance rule set it off at 433 m, 24 m short of the portal.
 export const FLAT = { alongM: 250 }
 /** The crow radius round `home` inside which the flat goes off: `home` to the point `alongM` along the line `poly`
  *  ({x, z}[]); null with no line, or a line shorter than that. */
