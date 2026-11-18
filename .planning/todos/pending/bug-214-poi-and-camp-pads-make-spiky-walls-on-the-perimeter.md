@@ -66,4 +66,6 @@ src/road.js (_withPoiPad, _poiPadCarve), src/terrain.js (_carveTableGen), test/p
 - 2026-11-18 census + option 1 on land/bug-214-pad-walls (3e0329c0, gate a42b372d). fingerprint-world vs main: story
   windows' poi (satellite y only, ≤ 3 cm; no x/z moves), surface, carve, water differ (terrain near pads); network,
   profiles, junctions, tiles, props identical. Driveway on 4 seeds: 10 cm lip and 1 m grade unchanged, ≤ 4.8 cm height.
-  Affected gates: see the handoff. Unverified: in-app look (sheets are the chunk-grid heights rendered headlessly).
+  Affected gates 87/87 green (serial, 86 min, wip/bug-214/gates.log). pad-e2e ALL OK. Smoke: run 1 failed the
+  opening's DEC-357 blink step (a 2 s timing check, load ~10), run 2 PASS 39 steps. Unverified: an in-app look (the
+  sheets are the chunk-grid heights rendered headlessly).
