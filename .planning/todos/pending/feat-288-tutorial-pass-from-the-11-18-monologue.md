@@ -342,7 +342,7 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - [x] Itemised plan + conflicts + questions written here (no code): § Plan, 44 items, DEC-422
 - [ ] Owner answers card `feat288-tutorial-plan` (or the defaults stand)
 - [ ] P1 dialogue: draft tags out, mom's parking line, "Anyway,", mom at the shop, the paycheck moves to mom
-- [ ] P7 phone sounds: ring and flip-shut, owner's ear
+- [x] P7 phone sounds: ring and flip-shut, owner's ear
 - [ ] P2 the gate: one lock + highlight for keys, mouse and pad; nothing locked after a skip
 - [ ] P3a lessons 1: forced diagnostics → inventory → spare, break camp locked, eating locked, the sleep lesson, lunches at breakfast, B advances a card
 - [ ] P3b lessons 2: the map beat, the shop beat, mom's gas call on leaving the shop, the end menu
@@ -354,10 +354,11 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 
 ## Decisions
 - 2026-11-18, owner: the monologue (Description), recorded whole as DEC-422.
+- 2026-11-18, owner: the five answers and "build it" (DEC-426).
 - 2026-11-18, owner (via the orchestrator, chat): on the sleep lesson, "I think it might always make you wake up at 630 but doesn't make the player choose 630. Or maybe it doesn't … I didn't actually try it, I just saw that it let me choose any time."
 
 ## Open questions
-Each has a default a builder uses if the card is not answered.
+ANSWERED 2026-11-18 (DEC-426): Q1 = A. Q2 = a speaker's card slides out of frame when they finish and the next speaker's slides in from the opposite side; cards from the same speaker cycle in place. Q3 = the end stays as built (manager, one press, tutorial over, Larry's call in the truck): P3b's end-menu item is DROPPED. Q4 = default (four lunches, leave with three). Q5 = default, depending on the seed. The original questions, for the record:
 - Q1 The sleep lesson's control. (A) the slider is highlighted and the player slides it to 06:30 themselves; Sleep is greyed and refuses until it reads 06:30 — **default**, it still teaches the alarm. (B) preset to 06:30 and locked, one button: shorter, teaches less.
 - Q2 Separating two speakers back to back: **default** keep the ring card (now with sound) for an incoming call and the `<click>` card (with the flip sound); on any change of speaker, the name in that character's own colour and a 0.2 s slide. Alternatives: portraits that swap sides; a "call ended" system line instead of the `<click>` card.
 - Q3 The end menu (the joint's job card): **default** browse-only (accept locked), leaving it ends the tutorial. Alternative: accept live on the first playthrough (the world does not reload there), which a later run cannot match.
@@ -374,3 +375,4 @@ data/tutorial.js, data/dialogue.js, src/main.js, src/menu-nav.js, src/hud-menu.j
 - 2026-11-18 minted by the orchestrator; the monologue is quoted in full above.
 - 2026-11-18 the sleep note was not lost: it is DEC-357 ("a wake time other than 06:30 is refused with 'Set this time instead: wake 06:30'"). The plan must check in the browser whether that still works on main.
 - 2026-11-18 lane s: plan written (§ Plan, 44 items, 8 packages), DEC-422, card feat288-tutorial-plan. Facts (a)–(f) measured on main (e42a56ff) in the browser and on the headless tutorial-seed build; no code changed.
+- 2026-11-18 P7 built on land/feat-288-p7-phone: `src/phone-audio.js` (ring + flip-shut, synthesized), `call` marker on the frame cards in dialogue.js `_frame`, one hook in main.js `_renderDialogue`; Sounds-tab entries in FEAT-120. Owner's ear owed (card feat288-phone-sounds-ear); nobody has heard it.
