@@ -2194,12 +2194,15 @@ const STEPS = [
     // end as { end, out }. Read off the page's own animations; nothing in src/ records it.
     await js(`(() => { const R = window.__dlgRec = [], p = document.getElementById('dialogue-panel')
       const sgn = (a) => !a ? 0 : a.effect.getKeyframes().some(k => /^(calc\\()?-/.test(k.translate ?? '')) ? -1 : 1
+      // the live panel's slide is read as it is STARTED: a press in the same task lands it (finish) before this observer runs
+      let enter = 0, animate = p.animate.bind(p)
+      p.animate = (kf, o) => { if (o?.id === 'dlg-in') enter = kf.some(k => /^(calc\\()?-/.test(k.translate ?? '')) ? -1 : 1; return animate(kf, o) }
       new MutationObserver(recs => {
         let out = 0, card = false
         for (const r of recs) {
           for (const n of r.addedNodes) if (n.classList?.contains('dlg-ghost')) out = sgn(n.getAnimations().find(a => a.id === 'dlg-out'))
           card ||= r.target.id === 'dlg-text' }
-        if (card) R.push({ sp: document.getElementById('dlg-speaker').textContent, tx: document.getElementById('dlg-text').textContent, out, in: sgn(p.getAnimations().find(a => a.id === 'dlg-in')) })
+        if (card) R.push({ sp: document.getElementById('dlg-speaker').textContent, tx: document.getElementById('dlg-text').textContent, out, in: enter }), enter = 0
         else if (out) R.push({ end: true, out })
       }).observe(p.parentNode, { childList: true, subtree: true }) })()`)
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
