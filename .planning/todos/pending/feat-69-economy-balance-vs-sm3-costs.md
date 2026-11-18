@@ -316,6 +316,7 @@ PAY: it already scales with weight. Pay = (the route's par x (1 + 0.0007 x kg)) 
 `src/economy.js` · `src/par.js` · `data/shop-stock.js` · `data/parts.js` · `data/offers.js` · `test/budget-recount.mjs`
 
 ## Log
+- 2026-11-17 (freight r2, `land/feat-69-freight-r2`, DEC-406): `test/freight-mass-census.mjs` (offered mass, 40 seeds x 5 days). Before: median 65 kg, 8.5 % >= 300 kg, empty propane 43.4 % of posts. Added plywood (330, generalStore -> workSite/residence); empty propane pools thinned to residence/store/gas -> residence/gas. After: median 105 kg, 11.7 %, propane 21.4 %. Every other list-B item needs recoloured or new art: owed (card feat69-freight-r2-look). Goal (45-55 %) NOT met.
 - 2026-11-17 (budget lane s2, `land/feat-69-budget`): dive answers built: freight B 300 kg, oil change $6; DEC-385..390; run-log-summary SHOP TIME block; budget-recount section 5 (answers, day by day). Gates: see commit. Unverified: the freight median count rides the offer-board sim, not a drive.
 - 2026-11-16 (Lane U, `land/feat-69-proposal`): `test/budget-recount.mjs` (rainy-day, not a gate, ~1 s) re-grades all
   51 recorded drives under today's par (41 S) and models jobs, days and runs from the real offer board. The 11-06
