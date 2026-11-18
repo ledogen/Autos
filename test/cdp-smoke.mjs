@@ -23,6 +23,7 @@ import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
 import { ECONOMY_PARAMS } from '../src/economy.js'
 import { DAY_PARAMS } from '../src/day.js'
 import { summarize, parseLines, report } from '../tools/run-log-summary.mjs'   // the runlog step reads its real log back
+import { TUTORIAL } from '../data/tutorial.js'   // FEAT-184: the tutorial seed's world (DEC-402)
 import { SHOP_TYPES } from '../src/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -2003,7 +2004,7 @@ const STEPS = [
     { const h0 = await js('window.__day().clockH()'), c0 = await car(); await sleep(800)
       const c1 = await car(); check(await js('window.__day().clockH()') === h0 && Math.hypot(c1.x - c0.x, c1.z - c0.z) < 0.01, 'the sim ran under the tutorial card') }
     await js('document.getElementById("tc-play").click()')
-    check(await until(async () => await js(live) && await world() === '3590618618', 60000, 250), `"play" did not load the tutorial seed (world ${await world()}, ${JSON.stringify(await tut())})`)
+    check(await until(async () => await js(live) && await world() === TUTORIAL.seed, 60000, 250), `"play" did not load the tutorial seed (world ${await world()}, ${JSON.stringify(await tut())})`)
     check((await tut()).returnSeed === '6', `the tutorial's world does not carry seed 6 back: ${JSON.stringify(await tut())}`)
     check(Math.abs(await js('window.__day().clockH()') + 17) < 0.1, `the tutorial's day is not 07:00 on day 0 (clockH ${await js('window.__day().clockH()')})`)
     // DEC-160: the tutorial saves as part of the run, the way back in it.
@@ -2080,9 +2081,11 @@ const STEPS = [
     // rolling resistance, so a truck with the brake off stays put), clear of hard props within 6 m, and 90 m from every
     // place. The old pick (the first ±9 m point beside the joint) sat on a 13–35 % cross-slope 2.3 m from a trunk: the
     // truck perched or rolled, by frame timing. The old tutorial seed 822480141 had no such point within 250 m along the joint's road.
-    // The check below is unchanged.
-    const sh = await js(`(() => { const v = window.__vs.position, H = window.terrain; let best = null
-      for (let dx = -300; dx <= 300; dx += 4) for (let dz = -300; dz <= 300; dz += 4) { const x = v.x + dx, z = v.z + dz
+    // The check below is unchanged. FEAT-229 (DEC-402): on 1872706826 the only such spot within 400 m is one ~10 m patch
+    // 264 m north of the joint, so the search centres on the joint (not wherever R left the truck) on a 2 m grid (the 4 m
+    // one stepped over the 3 m band; ~1 s).
+    const sh = await js(`(() => { const v = window.__poi().list().find(p => p.type === 'foodVendor'), H = window.terrain; let best = null
+      for (let dx = -300; dx <= 300; dx += 2) for (let dz = -300; dz <= 300; dz += 2) { const x = v.x + dx, z = v.z + dz
         const g = Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
         if (g >= 0.015 || g < 1e-9 || (best && g >= best.g)) continue   // g === 0: height not streamed in yet (3590618618 read a flat 0 at a 35 % slope), not a flat spot
         const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
@@ -2359,7 +2362,8 @@ const STEPS = [
     // DEC-357: the tire fixed, the driver is SLEEPY, and blinks on the held clock's drive (day.js blinkOnly).
     check(await js('window.__day().stage()') === 'sleepy', `the tire fixed, the driver is not sleepy (DEC-357): ${await js('window.__day().energyH()')} h`)
     { const h1 = await clock(); await js('window.__day()._nextBlinkH = 1e-4')
-      check(await until(() => js('!!window.__day()._blink'), 2000) && await clock() === h1, 'DEC-357: no blink on the sleepy night drive, or the clock ran') }
+      const ok = await until(() => js('!!window.__day()._blink'), 2000) && await clock() === h1
+      check(ok, ok || `DEC-357: no blink on the sleepy night drive, or the clock ran: clock ${h1} → ${await clock()} ${await js('JSON.stringify({ parked: window.__vs.parked, stage: window.__day().stage(), next: window.__day()._nextBlinkH, tut: window.__tutorial(), dlg: document.getElementById("dlg-text")?.textContent })')}`) }
     // Parked at hers: home safe (DEC-325), her hunger line, her sleep card, the timer preset to wake at 07:00 on
     // day 0 — and sleeping ends the firing day.
     // Not seat(): its settle waits on the sim, and the lessons that land on arrival hold it — read them first.
@@ -2535,7 +2539,7 @@ const STEPS = [
     for (const [name, open] of Object.entries(CASES)) {
       await js('document.getElementById("pm-menu").click()')   // out of the last run (or free roam) to the main menu
       await js('document.getElementById("mm-new").click()')
-      await js('document.getElementById("su-seed").value = "3590618618"; document.getElementById("su-start").click()')   // data/tutorial.js
+      await js(`document.getElementById("su-seed").value = "${TUTORIAL.seed}"; document.getElementById("su-start").click()`)   // data/tutorial.js
       check(await until(() => js(live), 45000, 250), `${name}: the tutorial run never went live`)
       for (let i = 0; i < 12 && !await js('document.getElementById("tut-card").style.display === "flex"'); i++) { await tap('Enter'); await sleep(250) }
       check(await until(() => js('document.getElementById("tut-card").style.display === "flex"'), 3000), `${name}: the firing did not end on the tutorial card`)
@@ -2705,7 +2709,7 @@ const STEPS = [
     for (let i = 0; i < 12 && await js('document.getElementById("tut-card").style.display !== "flex"'); i++) { await btn(0); await sleep(150) }
     check(await js('document.getElementById("tut-card").style.display === "flex"'), 'the pad never reached the tutorial card')
     await padTo('tc-play'); await btn(0)
-    check(await until(async () => await js(live) && await js('window.__worldCode().split("/")[0]') === '3590618618' && await dlg(), 60000, 250),
+    check(await until(async () => await js(live) && await js('window.__worldCode().split("/")[0]') === TUTORIAL.seed && await dlg(), 60000, 250),
       `A on "play" did not load the tutorial seed with mom's call up: ${JSON.stringify(await js('window.__tutorial()'))}`)
     // Read on to mom's first lesson naming a key (her call's M, the drive's W / S): it reads the pad's button, not the keyboard's.
     const lessonCap = () => js('(k => k && JSON.stringify({ kb: getComputedStyle(k.querySelector(".kc-kb")).display, pad: getComputedStyle(k.querySelector(".kc-pad")).display, key: k.querySelector(".kc-kb").textContent, text: k.querySelector(".kc-pad").textContent }))(document.querySelector("#dlg-text .dlg-key .keycap"))')
