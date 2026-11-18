@@ -12,7 +12,8 @@ lane: Engine & world
 # BUG-228: Colour banding in smooth gradients (menu floor, sky, lit ground); the bands move with the exposure
 
 ## Next steps
-Add dithering at the output and measure its cost; show the owner a before | after on the Mac Air's own screen.
+Built on `land/bug-228-banding` (not landed). Owner's look on the Mac Air (card `bug228-banding-look`); then land.
+The GPU-cost bench (PERF-40, active cycles) is owed on a quiet machine.
 
 ## Summary
 The game draws straight to an 8-bit-per-channel canvas (256 levels per colour, the normal output depth) with no
@@ -28,10 +29,39 @@ about half a level of screen-space noise in the fragment shader before output), 
 instructions per pixel. Our custom-shader materials (terrain, sky, road, water) need the same chunk added by hand.
 
 ## Tracker
-- [ ] Dither on every material that draws a smooth gradient (terrain, sky, stage floor, roads, water, props).
-- [ ] Before | after captures of the menu floor, a dusk sky and a lit hillside, magnified.
-- [ ] Cost measured (GPU by active cycles, PERF-40 bench) and shown.
+- [x] Dither on every material that draws a smooth gradient (terrain, sky, stage floor, roads, water, props).
+- [x] Before | after captures of the menu floor, a dusk sky, a lit hillside and fog, magnified (`wip/bug-228/sheet.jpg`).
+- [ ] Cost measured (GPU by active cycles, PERF-40 bench) and shown. Instruction delta only so far (below); the bench
+      needs a quiet machine (load 11–14 on 11-18).
 - [ ] Owner's look on the Mac Air.
+
+## Decisions
+- Where the bands are born: at the final 8-bit write only. Checked every intermediate: the sky LUT and fog cube are
+  half-float, the impostor albedo is half-float, the exposure meter is a log-luminance meter averaged to one float
+  (it moves the bands, it does not make them). The terrain bake's 8-bit sRGB albedo stores surface colour, not light
+  (the lighting gradient is computed live after it), so it is not a band source. The menu's CSS scrim is not one
+  either: Chrome already dithers CSS gradients (0 bands under the scrim); the menu's bands are the 3D floor.
+- One chunk, installed centrally: `THREE.ShaderChunk.dithering_fragment` made unconditional in `src/main.js` (next to
+  the shadow chunk patches), so every built-in material and every GLB/clone dithers without `material.dithering`;
+  the five custom output shaders (sky, moon, dust, impostors, lab floor) include it by hand, after fog.
+- Triangular ±1-level noise, not three's uniform ±0.5: measured, the uniform one left flat patches up to 25 px at
+  values near a level's centre (they would slide with the exposure like the bands did); triangular gives 13. Static
+  screen-space pattern (a hash of the pixel position, no time term), channels R+ G− B+ as three's.
+- The moon is additive: it dithers only where it adds light, or its quad would re-grain the sky inside it.
+
+## Open questions
+- None for the code. The look is the owner's (card).
+
+## Links
+- PERF-53, PERF-40 (the bench that is owed).
+
+## Files
+- `src/main.js` (the chunk), `src/sky.js`, `src/moon.js`, `src/dust.js`, `src/props/prop-impostor.js`, the lab floor in
+  `src/main.js`. Tools (git-invisible): `wip/bug-228/` shots.mjs, analyze.mjs, sheet.mjs.
 
 ## Log
 - 2026-11-18 minted by the orchestrator from the inbox note.
+- 2026-11-18 built (land/bug-228-banding). Runs of ≥ 8 identical pixels along a line, before → after: menu floor
+  17 → 3 (longest 91 → 12 px), dusk sky 31 → 5 (53 → 13), fog 15 → 12 (98 → 21), lit hillside 3 → 0 (texture
+  already hid it). The leftover runs are chance runs in the grain, no edge. Cost: ~30 scalar ALU ops incl. 2 sin per
+  pixel (estimate from the GLSL, not a compiled count). Bench owed.
