@@ -2388,6 +2388,8 @@ const STEPS = [
     await readCards()
     await tap('Escape')
     check(await until(async () => !await shopUp(), 2000), 'Escape did not close the gas station shop')
+    // her send-off clears on the HUD poll (10 Hz): read on before it has, readCards stops at it as a card that waits
+    check(await until(async () => await waits() !== 'shopshut', 2000), "the shop closed, Katie's send-off card stayed up")
     // DEC-422 (was DEC-345's brake): the shop closed, Katie hangs up and mom calls — the truck still parked at the store.
     await readCards(800, 'Phone')   // her click; mom's ring is left up to look at
     check(await until(() => js('/Ring ring ring/.test(document.getElementById("dlg-text")?.textContent ?? "") && window.__vs.parked'), 5000),
