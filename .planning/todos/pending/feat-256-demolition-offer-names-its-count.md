@@ -1,7 +1,7 @@
 ---
 id: FEAT-256
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 — "Emolition missions show ? to smash I think it should say the number of signs or barrels or whatever. Actually, let's just roll this into the offer text. It should say needs 10 old signs, knockdown, or 5 old barrels knocked down Remove it from the bottom.Remove the text that says \"pay per target smashed\""
@@ -36,3 +36,5 @@ The card sentence now reads "Earl needs 10 old drums crushed along the Miller pl
 
 ## Log
 - 2026-11-17: land/missions-1117. offer-board, offer-census, demolition-site green.
+
+- 2026-11-17 CLOSED by the orchestrator on the owner's card answer ("Good: close them", card missions-1117-look). On main, in the play build.

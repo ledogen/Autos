@@ -1,7 +1,7 @@
 ---
 id: FEAT-251
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 — "Did I ever make a ticket about being able to crash into lawn furniture and it goes flying? The only thing I want players to actually collide with is the fire pit. Otherwise at a bare minimum we need to make them pass through everything else, but I'd rather it use the demolition system and spawn in a rigid body physics object when the player bumps into the lawn ornament. So it can have mass and hit the truck and tumble."
@@ -64,3 +64,5 @@ data/prop-models.js, src/main.js (`_updateOrnaments`), src/poi.js (`satSolid` co
 - 2026-11-17 (s2): built on land/feat-251-lawn. Affected gates 48/48 green (--serial, cdp-smoke not run on a branch).
   fingerprint-physics and fingerprint-world ALL IDENTICAL to main 099f883f: the world print hashes satellite placement,
   and the colliders are derived at runtime (satSolid), so no entry moves. Unverified: an in-game drive (owed card).
+
+- 2026-11-17 CLOSED by the orchestrator on the owner's card answer ("Good: land it", card feat251-lawn-drive; his follow-up (farm barrels and crates, the flamingo launch) is FEAT-268). On main, in the play build.
