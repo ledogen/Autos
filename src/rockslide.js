@@ -31,8 +31,13 @@ export const SLIDE = {
   rockR: [0.15, 0.32],    // m, blob radius (medRock shape ×1.25 long, ×0.7 tall): ~25–300 kg of granite
   density: 2650,          // kg/m³ granite (the hull is solid, so this IS the material)
   friction: 0.7, restitution: 0.15,   // debris.js `rock`
-  v0: 2,                  // m/s down the fall line at release, with the matching rolling spin
-  axisScale: [1.25, 0.7, 1.0],   // the scatter's medRock proportions
+  // v0 m/s down the fall line at release, with the matching rolling spin. The study (30 seeds, 180 real cuts): at 0 m/s
+  // 82 % of slides put a rock into the face-side lane, at 6 m/s 98 % (and 81 % put three), and the arrival scatter
+  // shrinks (p10–p90 3.8–5.8 s → 2.2–4.2 s). DEC-400's "optional slope aligned velocity": it adds consistency, so it is on.
+  v0: 6,
+  // Rounder than the scatter's medRock (1.25 × 0.7 × 1.0): a flat blob slides and stops in the ditch (33 % reach the
+  // lane at 4 m/s against 46 % round). Same blob generator, same colour, same faceting.
+  axisScale: [1.1, 0.9, 1.0],
   // Candidacy
   stepM: 5,               // station spacing along a run
   minDeg: 35,             // every 1 m step of the face at least this steep…
@@ -191,10 +196,11 @@ export function batchBodies (heightAt, face, radii, rng, { n = null, v0 = SLIDE.
 }
 
 /**
- * Arrival model [s]: release → the rocks' median front at lateral `latM` m past the face's toe (toward and across
- * the road). Fit to the study's real cut slopes (test/rockslide-study.mjs --real): a + b·√drop + latM / vRoad.
+ * Arrival model [s]: release → a rock crossing lateral `latM` m past the face's toe (toward and across the road).
+ * Least squares over the study's real cuts (test/rockslide-study.mjs --real, round rocks at v0 6 m/s, every rock that
+ * reached the lane): a + b·√drop + latM / vRoad. Valid over the candidates' range (drop 4–12 m, lat 6–11 m).
  */
-export const ARRIVAL = { a: 0.6, b: 0.7, vRoad: 6 }
+export const ARRIVAL = { a: -0.48, b: 0.69, vRoad: 5.1 }   // 977 rocks; |residual| p50 0.41 s, p90 1.0 s
 export const arrivalS = (face, latM, A = ARRIVAL) => A.a + A.b * Math.sqrt(face.dropM) + Math.max(0, latM) / A.vRoad
 
 /**
@@ -272,6 +278,25 @@ export class RockslideDirector {
 
   /** Debug / smoke: arm now (the rate is skipped). A parked truck gets its slide at the nearest candidate at once. */
   trigger () { this.armed = true; this._forced = true; this.pick = null; this._scan = null }
+
+  /**
+   * Debug / smoke / the owner's sheet: candidates on every run within r of (x, z), at most `max`, ≥ 100 m apart, for
+   * an approach at v. A full scan (~a second per km of road): never on the frame path.
+   */
+  candidatesNear (x, z, r = 600, max = 20, v = 20) {
+    const road = this._road(), out = []
+    for (const [key, e] of road?._network ?? []) {
+      if (!e.points || e.points.length < 2 || !e.polyCum) continue
+      const L = e.polyCum[e.polyCum.length - 1]
+      for (let s = 0; s <= L && out.length < max; s += this.P.stepM) {
+        const q = runAt(e.points, e.polyCum, s)
+        if (Math.hypot(q.x - x, q.z - z) > r || out.some(o => Math.hypot(o.c.x - q.x, o.c.z - q.z) < 100)) continue
+        const c = candidateAt(road, this._heightAt, e, s, 1, v) ?? candidateAt(road, this._heightAt, e, s, -1, v)
+        if (c) out.push({ ...c, key })
+      }
+    }
+    return out
+  }
 
   /** Where the truck is on its run: { e, key, s, dir, lat(n) } or null off the network. */
   _onRoad (t) {

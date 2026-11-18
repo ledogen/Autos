@@ -51,7 +51,7 @@ const randQuat = (rng) => {
 }
 
 /** One batch on a planar slope. Returns per-rock { tLane, zLane, tToe, xEnd, mass }. */
-export async function planarBatch ({ deg, H, radius, v0, n, seed, axis, roll = false, mu = SLIDE.friction }) {
+export async function planarBatch ({ deg, H, radius, v0, n, seed, axis = SLIDE.axisScale, roll = true, mu = SLIDE.friction }) {
   const rng = mulberry32(seed)
   const eng = await createPhysicsEngine()
   const th = deg * Math.PI / 180, nrm = { x: Math.sin(th), y: Math.cos(th) }
@@ -113,10 +113,11 @@ if (import.meta.url === `file://${process.argv[1]}` && process.argv.includes('--
   const quick = process.argv.includes('--quick')
   const DEGS = quick ? [30, 45] : [25, 30, 35, 40, 45, 50]
   const HS = quick ? [4, 8] : [3, 5, 8, 12]
-  const RS = quick ? [0.32] : [0.2, 0.32, 0.45]
-  const VS = quick ? [0, 2] : [0, 2, 4]
+  const RS = quick ? [0.23] : [0.15, 0.23, 0.32]
+  const VS = quick ? [0, 6] : [0, 2, 4, 6]
   const BATCHES = 3
   console.log(`planar slopes: deck edge ${SHOULDER} m past the toe, near lane ${LANE} m, far edge ${FAR} m; ${BATCHES} batches of 5–15 rocks per cell`)
+  console.log('  (round slide rocks, rolling spin matched to v0; r = blob radius, ×1.1 long ×0.9 tall)')
   console.log('  deg   H  r[m]  v0 |  lane%  short%  over% | t_lane p10/p50/p90 [s] | spread p90 [m]')
   const rows = []
   for (const deg of DEGS) for (const H of HS) for (const radius of RS) for (const v0 of VS) {

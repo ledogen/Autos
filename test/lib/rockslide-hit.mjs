@@ -76,6 +76,7 @@ export async function driveSlide (w, debris, cand, v, lane, seed, { maxS = 40 } 
   const rec = { v, lane, released: false, touched: false, rocks: 0, impacts: [], punct: 0, fatal: null, tRel: null, tTouch: null, minGap: Infinity }
   const fwd = new THREE.Vector3(), J = { x: 0, y: 0, z: 0 }, rp = new THREE.Vector3(), rq = new THREE.Quaternion(), qi = new THREE.Quaternion()
   let lastStream = 0, t = 0
+  const stepMs = { before: [], slide: [] }
   for (let k = 0; k < maxS * 60; k++, t += DT) {
     // Pure pursuit down the lane, speed held, never a brake for the rocks.
     const look = Math.max(8, 0.9 * v)
@@ -94,7 +95,9 @@ export async function driveSlide (w, debris, cand, v, lane, seed, { maxS = 40 } 
     dir0.update(DT, { x: vs.position.x, y: vs.position.y, z: vs.position.z, vx: vs.velocity.x, vz: vs.velocity.z })
     if (!rec.released && dir0.events) { rec.released = true; rec.tRel = t; rec.rocks = dir0.last.rocks; rec.dropM = dir0.last.dropM; rec.T = dir0.last.T }
     debris.beforeStep(w.chassis, DEFAULT_VEHICLE_MODEL.bed ?? null)
+    const t0 = performance.now()
     stepPhysics(vs, P, DT, w.queryContacts, w.ctx)
+    ;(rec.released ? stepMs.slide : stepMs.before).push(performance.now() - t0)
     const hit = readRimStrikes(w.engine, w.chassis, vs.rimForce, DT, vs.rimHazard)
     dmg.step(vs, P, DT)
     const landed = dmg.feedContact(classifyImpactRegion(hit.point, hit.normal), hit.impulse, P.mass, DT, vs.velocity)
@@ -116,6 +119,8 @@ export async function driveSlide (w, debris, cand, v, lane, seed, { maxS = 40 } 
   rec.lost = +TRACK_IDS.reduce((a, id) => a + (1 - dmg.get(id)), 0).toFixed(3)
   rec.worst = TRACK_IDS.map(id => [id, 1 - dmg.get(id)]).sort((a, b) => b[1] - a[1]).slice(0, 3).filter(x => x[1] > 0.001).map(([id, l]) => `${id} −${(100 * l).toFixed(0)}%`)
   rec.minGap = +rec.minGap.toFixed(2)
+  const q = (a, f) => { const b = [...a].sort((x, y) => x - y); return b.length ? +b[Math.min(b.length - 1, Math.floor(f * b.length))].toFixed(3) : null }
+  rec.stepMs = { before: { p50: q(stepMs.before.slice(60), 0.5), max: q(stepMs.before.slice(60), 1) }, slide: { p50: q(stepMs.slide, 0.5), max: q(stepMs.slide, 1) } }
   dir0.clear()
   return rec
 }
