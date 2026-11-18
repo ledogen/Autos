@@ -12,13 +12,14 @@ lane: SM-3
 # BUG-222: The requisition's return spot is farther than the FEAT-154 nearness limit on about a quarter of seeds
 
 ## Next steps
-Orchestrator: land `land/bug-222-return-spot` (the own-road fix). Owner: the rule question under Open questions decides
-the remaining far returns (all geometry); until then the gate's pinned seeds stay green and the census seeds stay red.
+Owner: the rule question under Open questions decides the far returns (geometry). Orchestrator: the own-road fix on
+`land/bug-222-return-spot` is correct but neutral on nearness; land it or hold it with the owner's answer.
 
 ## Summary
 The "return spot" is the FEAT-154 edge fade's return (`poi.js returnPoint`), not a requisition. The gate wants it within
 40 m of the row the truck left by (100 m on that row's own road); on 60 worlds 24 rows on 17 seeds missed. Root cause of
-5 of them: a row dropped the return spots of every road within 60 m, not only its own. Fixed. The other 19 are geometry.
+5 of them: a row dropped the return spots of every road within 60 m, not only its own. Fixed, but over 400 seeds it
+moves nothing (168 → 165 far rows): the quarter of seeds is geometry under the 2390 m rule, an owner question.
 
 ## Description
 ### Cause
@@ -43,7 +44,10 @@ returns 49 m off on the sibling, 46 m from the truck against 48 m. That is "near
 
 ### Measured
 - 60 study seeds (wip/bug-222/base-*.log, fix-*.log, `probe.mjs`, `an.py`): far rows 24 on 17 seeds → 19 on 15.
-- 400 random seeds (wip/bug-222/sweep-*.log, `sweep.mjs`, `sweep-an.py`): SWEEP400.
+- 400 random seeds (wip/bug-222/sweep-*.log, `sweep.mjs`, `sweep-an.py`; before = the old filter on the same build):
+  0 throws. Far rows 168 of 8676 on 105 seeds → 165 on 110; metres p50 110 → 112, max 385 both. Spots came back on 206
+  seeds; 18 seeds gained a far row (a near-tie flipped to a sibling), about as many lost one. So the fix is right by the
+  2026-11-01 rule but does NOT move the gate's nearness: the quarter of seeds is the geometry below, not this defect.
 
 ## Tracker
 - [x] Cause found: rows dropped return spots on other roads (5 of 24); the other 19 are geometry under the 2390 m rule
