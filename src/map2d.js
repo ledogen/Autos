@@ -416,7 +416,7 @@ export class Map2D {
      *        — story-mode mission overlay (route + start/end pins); null when no mission is live
      * @param {() => ?object} [o.getBoard] — FEAT-67: the mission board as a VIEW (main.js builds it;
      *        this module stays economy-free). null outside story mode. Shape:
-     *          status(poiId) → { source:boolean, family:string|null, families:string[], nextText:string|null }
+     *          status(poiId) → { source:boolean, family:string|null, families:string[] }   (FEAT-271: no stock timer under the icon)
      *          view(poiId, idx) → { count, idx, card, poly, start, end, nextText } | null
      *          name(poiId) → string; clock() → string (FEAT-211, the list's head)
      *          shop(poi, open) → FEAT-211, the Shopping row of a POI that sells (null for one that doesn't):
@@ -2972,19 +2972,6 @@ export class Map2D {
                 ctx.fillText(ico.label, sx, ly)
                 ctx.textAlign = 'left'
                 ctx.textBaseline = 'alphabetic'
-            }
-            // FEAT-67: the one always-on addition — under every source, the shortest time until any
-            // of its slots turns over (the moment a new offer appears there).
-            if (st?.source && st.nextText) {
-                const ty = sy + half + (ico.label ? 17 : 3)
-                const txt = st.nextText
-                ctx.font = `600 10px ${MAP_LABEL_FONT}`
-                ctx.textAlign = 'center'; ctx.textBaseline = 'top'
-                ctx.strokeStyle = 'rgba(207,226,189,0.9)'; ctx.lineWidth = 3; ctx.lineJoin = 'round'
-                ctx.strokeText(txt, sx, ty)
-                ctx.fillStyle = '#6b4a00'
-                ctx.fillText(txt, sx, ty)
-                ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
             }
         }
     }

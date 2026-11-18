@@ -1100,7 +1100,8 @@ export class OfferBoard {
         // twice. The board clock is how long the offer stays POSTED; the other is the delivery window
         // once taken — so say each in its own words.
         // Reworded again 2026-10-24 (owner): "available for: 10h" and "time limit: 4h 22m".
-        if (isFinite(expiresInH)) times.push(`available for: ${formatGameDuration(expiresInH)}`)
+        // FEAT-272 (DEC-412): the firewood yard's line is shelf stock, always there; the clock is its restock.
+        if (isFinite(expiresInH)) times.push(`${sp.stock ? 'new stock in' : 'available for'}: ${formatGameDuration(expiresInH)}`)
         if (!sp.line && par > 0) times.push(`time limit: ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept; never on a job take() gives none
         return {
             family: sp.family,

@@ -5442,19 +5442,17 @@ const _boardView = {
   status (poiId) {
     const now = daySystem.clockH()
     // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
-    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, families: [], nextText: null }
+    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, families: [] }
     // Per frame per diamond, so this must not PLAN: it drops only offers already known to have no
     // route (planDistinct memoises null on the offer). The hover card and the prompt do the full
     // _takeableOffers check, so a dead offer greys its diamond the first time it is looked at.
     const live = _jointQuiet(poiId, now) ? [] : offerBoard.offers(poiId, now).filter(o => o.route !== null)
-    const next = offerBoard.nextTurnoverH(poiId, now)
     // FEAT-210: every family on offer, once each, in offer order — the map splits the diamond by them.
     const families = [...new Set(live.map(o => offerBoard.spec(o)?.family).filter(Boolean))]
     return {
       source: true,
       family: families[0] ?? null,
       families,
-      nextText: next != null ? formatGameDuration(next - now) : null,
     }
   },
   view (poiId, idx) {
