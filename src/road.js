@@ -8982,7 +8982,8 @@ export class RoadSystem {
         // feather), NOT via _mergeCarve — see _poiPadCarve for why the pad must dominate its own
         // footprint. `latDist` gates it to zero inside the ribbon + shoulder, so this line cannot
         // change the road surface; with no pads set (free roam, every gate) it is a null check.
-        cs = this._withPoiPad(cs, wx, wz, rawAmp, latDist)
+        const pq = this._poiPadCarve(wx, wz, rawAmp, latDist)
+        if (pq) cs = this._withPoiPad(cs, pq)
 
         // Junction-pad carve (first-class pad footprint, incl. the back-arc bulb) composed with the leg
         // + connector carve — never LESS coverage than any alone, and smooth where they overlap (all ride
@@ -10563,22 +10564,16 @@ export class RoadSystem {
     }
 
     /**
-     * BUG-214: the POI / camp bench (_poiPadCarve) composed over the run + connector carve `cs` as a second earthwork
-     * LAYER: the road's carve first, then the bench pulls THAT surface toward its own design by `pq.dom` (the road
-     * gate × the bench's own falloff). h = h_road + d·(benchY − h_road) is a convex mix, so the ground always lies
-     * between the bench, the road's design and the terrain: a spike is impossible by construction. It replaces
-     * max(blendW) with a dom-weighted target, which let the road's target leak in under the BENCH's coverage —
-     * BUG-129's leak the other way round: a road 35 m up the hill whose toe only just reached (cs.blendW 0.001,
-     * gradeY 16 m above the bench) took 39 % of the target at bench weight 0.61, a 3.6 m spike beside a camp pad
-     * (seed 281831). And the bench sizes its bank from the ground it MEETS — h_road, the surface it is blended over —
-     * not the raw terrain: in a road's 4.6 m cut, raw read level with the bench, so its bank was the 2.5 m minimum
-     * and stood up 2.9 : 1 against the cut (seed 957815). Shared by _sampleCarveWorld and the terrain mesh
-     * (_buildCarveTable): mesh == collision by construction. Returns `cs` untouched where no bench reaches.
+     * BUG-214: the POI / camp bench `pq` (_poiPadCarve) composed over the run + connector carve `cs` as a second
+     * earthwork LAYER: the road's carve first, then the bench pulls THAT surface toward its own design by `pq.dom`
+     * (the road gate × the bench's own falloff). h = h_road + d·(benchY − h_road) is a convex mix, so the ground
+     * always lies between the bench, the road's design and the terrain: a spike is impossible by construction.
+     * It replaces max(blendW) with a dom-weighted target, which let the road's target leak in under the BENCH's
+     * coverage — BUG-129's leak the other way round: a road 35 m up the hill whose toe only just reached (cs.blendW
+     * 0.001, gradeY 16 m above the bench) took 39 % of the target at bench weight 0.61, a 3.6 m spike beside a camp
+     * pad (seed 281831). Shared by _sampleCarveWorld and the terrain mesh (_buildCarveTable): mesh == collision.
      */
-    _withPoiPad(cs, wx, wz, rawAmp, latDist) {
-        if (!this._padsAll) return cs
-        const pq = this._poiPadCarve(wx, wz, cs ? rawAmp + cs.blendW * (cs.gradeY - rawAmp) : rawAmp, latDist)
-        if (!pq) return cs
+    _withPoiPad(cs, pq) {
         const d = pq.dom
         if (!cs) return d > 0 ? { blendW: d, gradeY: pq.gradeY } : null
         if (!(d > 0)) return cs
@@ -10843,8 +10838,7 @@ export class RoadSystem {
         // rides the bank, and its shared triangle interpolates above the bench INSIDE the pad.
         if (bestSd <= PAD_RIM_HOLD) return { blendW: 1.0, gradeY: designY, dom: gate }
 
-        // Outside the hold: ramp designY → the ground over shoulder + fill/cut toe (`rawAmp` is the ground the bench
-        // MEETS, the road-carved surface where a road's carve reaches: BUG-214, see _withPoiPad), mirroring
+        // Outside the hold: ramp designY → raw over shoulder + fill/cut toe, mirroring
         // _carveCrossSection and _junctionPadCarve so a pad toe looks like every other toe.
         const over = bestSd - PAD_RIM_HOLD
         const fillReach = shoulderWidth + Math.max(0, designY - rawAmp) * fillSlope

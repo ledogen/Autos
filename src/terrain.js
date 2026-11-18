@@ -1647,7 +1647,8 @@ export class TerrainSystem {
                 // FEAT-46 POI lay-by bench — the SAME dominance composition _sampleCarveWorld uses, so
                 // mesh == collision on the pullout by construction. latDist gates it out of the road's
                 // own cross-section; with no pads set this is a null check.
-                cs = this._roadSystem._withPoiPad(cs, wx, wz, rawH, latDist)   // BUG-214: one layered composition, shared with physics
+                const pq = this._roadSystem._poiPadCarve(wx, wz, rawH, latDist)
+                if (pq) cs = this._roadSystem._withPoiPad(cs, pq)   // BUG-214: one layered composition, shared with physics
 
                 // Junction-pad carve composed with the leg + connector carve by the same _mergeCarve physics uses
                 // (mesh == collision at the rim). Covers the open-side rim no run reaches.
