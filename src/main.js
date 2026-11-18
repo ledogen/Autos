@@ -76,7 +76,7 @@ import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearb
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
-import { initTutGate, stepFor, BETWEEN } from './tut-gate.js'       // FEAT-288 P2: the tutorial's lock and highlight
+import { initTutGate, stepFor, allows, refuse, BETWEEN } from './tut-gate.js'   // FEAT-288 P2: the tutorial's lock and highlight
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -2148,7 +2148,7 @@ const map2d = new Map2D({
   // guide: the waypoint is then only a pin), or null; and the drop / clear (null) from the map's input, true if it acted.
   getWaypoint: () => _waypoint ? { x: _waypoint.x, z: _waypoint.z, poly: _waypointOn() ? _tutLine(_waypoint.route)?.poly ?? null : null }
     : _tutMapLeg(),   // DEC-346 / FEAT-288 P4: the tutorial leg's own pin and line
-  onWaypoint: (p) => !dialogueSystem.holding && _setWaypoint(p),   // a dialogue over the map keeps its Enter
+  onWaypoint: (p) => !dialogueSystem.holding && _tutWaypointOk(p) && _setWaypoint(p),   // a dialogue over the map keeps its Enter
   // Q / E with no source under the cursor: step the parked offer panel the map is open behind.
   onCycle: (d) => { if (missionSystem?.state === 'offer') missionSystem.cycle(d) },
   // Parked at a giver = "I want one of the jobs HERE": the map shows no other POI's card meanwhile.
@@ -4724,9 +4724,11 @@ window.__tutorial = () => ({ phase: _tutCardOpen ? 'card' : _firingDay() ? (dial
   : _morningLeg() ? 'morning' : 'free', returnSeed: _returnSeed, seed: _seedString,
   stop: _tutDrive() && dialogueSystem.has(DLG.played) ? _dayStop() : null, pack: (({ x, z } = {}) => x == null ? null : { x, z })(_packOnGround() ?? undefined),
   camp: _firingDay() && _campDoor() ? { x: _campDoor().x, z: _campDoor().z } : null,   // DEC-304
-  until: dialogueSystem.current()?.until ?? null })   // DEC-359: the card up waits for this action: the snack's camping area
+  until: dialogueSystem.current()?.until ?? null,   // DEC-359: the card up waits for this action: the snack's camping area
+  wpt: _waypoint && { x: _waypoint.x, z: _waypoint.z } })   // FEAT-288 P3b: the player's own pin (the map also draws the leg's, P4)
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
-window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, pumpsShut: _pumpsShut(), flatR: _eveFlatR, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
+window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, pumpsShut: _pumpsShut(), flatR: _eveFlatR, flat: _eveFlat, towed: _eveTowed, held: damageModel.held,
+  snackLock: (id) => _snackLock({ id }) })   // DEC-356's shelf guard (the smoke: her cards lock the rows it would refuse)
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
@@ -4810,7 +4812,10 @@ const _packOnGround = () => runWorldItems.items.find(it => it.entry.id === 'pack
 // (tut-snackcamp), Katie's call (tut-katie).
 const TUT_SNACK = 'bagOfPeanuts'
 const _snackOnBoard = () => inventorySystem.list().some(r => r.id === TUT_SNACK)
-const _snackBought = () => dialogueSystem.has('tut-snackcamp') || _snackOnBoard()
+// FEAT-288 P3b: bought means checked out. The cart previews its lines on the truck and the inventory (discard restores
+// them), so a bag only added to the cart is already "on board": read as bought, it skipped Katie's check out card and
+// sent the day to the pump with the purchase still undoable. (_snackOnBoard alone stays right for "one bag will do".)
+const _snackBought = () => dialogueSystem.has('tut-snackcamp') || (_snackOnBoard() && !serviceCenter.cart.length)
 const _snackShop = () => {
   const L = _larry(), d = q => Math.hypot(q.x - L.x, q.z - L.z)
   return L ? poiSystem.list().filter(q => q.type === 'gasStation').sort((a, b) => d(a) - d(b))[0] ?? null : null
@@ -4820,6 +4825,18 @@ const _snackShop = () => {
  *  the tank. Null (for sale) everywhere else. */
 const _snackLock = (e) => !_tutDrive() || _servicePoi?.type !== 'gasStation' || !['snack', 'pump'].includes(_dayStop()) ? null
   : e.id !== TUT_SNACK ? 'Katie asked for the peanuts' : _snackOnBoard() ? 'one bag will do' : null
+/** FEAT-288 P3b: within reach of the snack's station — Katie's waypoint card takes a drop there and nowhere else. */
+const TUT_SNACK_WAYPOINT_M = 150   // m — the station's own road point is well inside; a pad's row-centred drop lands on it
+const _nearSnack = (p) => { const q = _snackShop(); return !!q && Math.hypot(p.x - q.x, p.z - q.z) < TUT_SNACK_WAYPOINT_M }
+/** Katie's map beat's ring on the station's list row: its POI id into the card's {snack}. */
+const _fillSnack = (cards) => cards.map(c => c.hi ? { ...c, hi: c.hi.map(q => q.replace('{snack}', _snackShop()?.id ?? '')) } : c)
+/** FEAT-288 P3b: the tutorial gate's say on a waypoint — every input that drops one (N, the pad's Y, a click on the sheet)
+ *  lands here: refused unless the step allows it, and under Katie's waypoint card anywhere but her station. */
+function _tutWaypointOk (p) {
+  if (allows('map: drop / clear the waypoint') && (!p || dialogueSystem.current()?.until !== 'waypoint' || _nearSnack(p))) return true
+  refuse(null)
+  return false
+}
 /** Mom's money (DEC-306): the bag's shelf price today in whole dollars, plus the gas money she does not mention — the
  *  wallet is topped up to it from her hand-over until the bag is bought, so spending it on something else first cannot
  *  strand the errand. */
@@ -4850,7 +4867,9 @@ const _tutRanchPin = () => _tutDrive() && dialogueSystem.has(DLG.played) && _day
 const _tutMapLeg = () => {
   if (!_tutDrive() || !dialogueSystem.has(DLG.played) || (_dayStop() === 'camp' && !_tutRanchPin())) return null
   const leg = _tutLeg()
-  return leg && { x: leg.door.x, z: leg.door.z, poly: _tutLine(leg.base)?.poly ?? null }
+  // fixed (FEAT-288 P3b): not the player's pin, so Y / a click on it drops one (the map lesson's waypoint on her station)
+  // instead of a clear that clears nothing
+  return leg && { x: leg.door.x, z: leg.door.z, poly: _tutLine(leg.base)?.poly ?? null, fixed: true }
 }
 /** Mom's toss: the starting pack on the ground by her steps, falling. Idempotent: only when it is neither on board nor down. */
 function _tossPack () {
@@ -4883,6 +4902,7 @@ function _undoWorstDay () {
   const i = _eveSpare ? inventorySystem.list().findIndex(r => r.id === 'spareTire' && r.flat) : -1
   if (i >= 0) { if (_eveSpare.granted) inventorySystem.take(i); else inventorySystem.amend(i, { flat: false }) }
   _evePump = null; _eveFlat = false; _eveTowed = false; _eveSpare = null
+  if (_dayStop() === 'snack') _setWaypoint(null)   // FEAT-288 P3b: the pin Katie's map beat had you drop on the station
   economySystem.withholdPaycheck(0)   // DEC-150/306: mom's money goes too — a skip enters free will on the paycheck alone
   // DEC-238: the errand's pack back on the truck, from the ground or (still at mom's) anew.
   const g = _packOnGround()
@@ -5023,10 +5043,14 @@ function _eveningBeats () {
     if (stop === 'pack') { _tossPack(); if (_packOnGround()) _tut('tut-pickup') }
     const L = _larry()
     if (stop === 'larry' && L && vehicleState.parked && _inPoiSpot(L)) _tut(DLG.larryPack, LARRY_PACK, null, true)
-    if (stop === 'snack') _tut('tut-picnic')   // DEC-345: his cards over, Katie calls — the picnic, and a snack on the way
+    if (stop === 'snack') _tut('tut-picnic', _fillSnack(TUT['tut-picnic']))   // DEC-345: his cards over, Katie calls — the picnic, and a snack on the way
+    // FEAT-288 P3b: parked at the store, its shop open, Katie (still on the line) walks you through the cart; the waypoint
+    // her map beat had you drop on it is spent here (it was the lesson's: no pin may outlive the tutorial).
+    if (stop === 'snack' && serviceScreen.isOpen && _servicePoi?.id === _snackShop()?.id && !dialogueSystem.has('tut-shop')) { _setWaypoint(null); _tut('tut-shop') }
     if (dialogueSystem.has('tut-handover') && !_snackBought() && economySystem.money() < _momCash()) economySystem.addSpot(_momCash() - economySystem.money())
-    // DEC-323: the peanuts bought at the store, mom calls as you take the brake off to leave (DEC-345) and sends you to a pump.
-    if (stop === 'pump' && !vehicleState.parked && !serviceScreen.isOpen) _tut('tut-gas')
+    // DEC-323: the peanuts bought at the store, mom calls as the shop closes (DEC-422; DEC-345 had it on the brake) and sends
+    // you to a pump.
+    if (stop === 'pump' && !serviceScreen.isOpen) _tut('tut-gas')
     // DEC-346: the camping area, the old McGill ranch — mom's send-off, the line and the map's pin already on it
     // (_tutRanchPin); arrived (its zone, or the waypoint's radius at its door) Katie calls and walks you through the camp:
     // the hunt, the vibe bar once you look, the snack once camp is made. A camp made there with the peanuts eaten (before
@@ -5329,6 +5353,14 @@ const _UNTIL = {
   snack: () => !_snackOnBoard(),
   lunch: () => _lunches() < TUT_PARAMS.breakfastLunches,
   slept: () => dialogueSystem.has(DLG.morning),   // DEC-426 (Q1): the night on mom's alarm ends the firing day
+  // FEAT-288 P3b: Katie's map beat (tut-picnic) and shop beat (tut-shop)
+  map: () => map2d.isOpen(),
+  shoptab: () => map2d.tab === 'shopping',
+  waypoint: () => !!_waypoint && _nearSnack(_waypoint),
+  mapshut: () => !map2d.isOpen(),
+  cart: () => serviceCenter.cart.length > 0 || _snackBought(),   // her card unlocks the peanuts' add to cart alone
+  bought: () => _snackBought(),
+  shopshut: () => !serviceScreen.isOpen,
 }
 /** On the HUD poll: clear the card on screen if it waits for an action and that action is done. */
 function _untilTick () {
