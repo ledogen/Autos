@@ -298,9 +298,10 @@ export const RR_PARAMS = {
     tourS:    1.0,    // s between FEAT-266 quiet re-plans of the remaining tour from the truck: a house passed without a
                       // throw turns the line back within this (plus the ~ms job) when going back is the shorter tour
     snapM:    200,    // queryNearest search radius for the truck's own road point
-    keepM:    25,     // BUG-212: m a re-planned tour must beat the one being followed by before the guide switches order.
-                      // Two owed stops with near the same road point (neighbours across the road) tie to the metre, and
-                      // the re-plan every tourS flipped the leg between them every second or two [DEFAULT, census-measured]
+    keepM:    5,      // BUG-212: m a re-planned tour must beat the one being followed by before the guide switches order.
+                      // Tours tie to the metre (stops up to ~1 km apart), and the re-plan every tourS flipped the GPS leg
+                      // between them every second or two. Census (test/gps-multistop-census.mjs, 6 random seeds, 448
+                      // drives): 0 m left 2 flip-backs, 5 m and 25 m none — the smallest that stops it [census-measured]
 }
 
 const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
