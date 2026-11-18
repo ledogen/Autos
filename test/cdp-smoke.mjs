@@ -3116,6 +3116,9 @@ const STEPS = [
     // and its card shows), LB / RB page its offers (D-pad ← / → are spare), the first B leaves the list with the map still open, the second closes it.
     await btn(8)
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
+    // The list keeps its tab across runs: the opening's map lesson (FEAT-288 P3b) leaves it on Shopping. X switches back.
+    if (await js('window.__map2d().tab') !== 'missions') { console.log(`  pad: the map list opened on ${await js('window.__map2d().tab')}; X to Missions`); await btn(2) }
+    check(await until(async () => await js('window.__map2d().tab') === 'missions', 2000), `the map list is not on Missions: ${await js('window.__map2d().tab')}`)
     // Not a shop (SHOP_TYPES: its brake opens the shop screen; the jobs are a button in it, FEAT-104) nor Larry's (the paper route):
     // the flake that hit A, Spare and B was a random world whose busiest giver was a shop. Nor a giver with pump zones:
     // parked there the brake opens the pump (world 1505891932, prompt "to use the pump"). Nor a haul giver (BUG-157):
