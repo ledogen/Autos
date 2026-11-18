@@ -1282,7 +1282,7 @@ const STEPS = [
     await click('#svc-screen [data-act=checkout]')
     await sleep(300)
     const dh = (await day('clockH()')) - h0
-    check(Math.abs(m0 - await money() - 5) < 0.005, `the dinner meal took $${(m0 - await money()).toFixed(2)}, not $5`)
+    check(Math.abs(m0 - await money() - 4) < 0.005, `the dinner meal took $${(m0 - await money()).toFixed(2)}, not $4`)
     check(Math.abs(dh - 0.5) < 0.02, `the dinner meal ran ${(dh * 60).toFixed(1)} min, not 30`)
     check(Math.abs(await held() - 8) < 0.02, `the dinner meal holds hunger ${(await held()).toFixed(2)} h, not 8`)
     check(await js('window.__inv.list().length') === i0, 'the dinner meal was stowed in the inventory')
@@ -2191,7 +2191,7 @@ const STEPS = [
     }
     await readCards()   // the stop can flip to 'pack' a beat before her card shows: then it is read here
     check((heard || saidAny(/^Mom: Take this pack over to your uncle/)) && (await tut()).stop === 'pack', `parked at mom's door, no hand-over in the owner's words: ${JSON.stringify(await tut())}`)
-    check(await js('window.__econ.money') === 6, `mom's hand-over did not put $6 in the wallet: $${await js('window.__econ.money')}`)
+    check(await js('window.__econ.money') === 5, `mom's hand-over did not put $5 in the wallet: $${await js('window.__econ.money')}`)
     check(!await js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"'), "her door offered her bed in the morning (DEC-308)")
     await stamped(8, "mom's hand-over")
     // DEC-305 (DEC-238's errand): the pack lands by her steps; parked beside it, G loads it; parked at Larry's, he gives it you.

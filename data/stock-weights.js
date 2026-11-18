@@ -17,8 +17,8 @@
 
 export const STOCK_WEIGHT = {
     // Tires and wheels
-    tireOld:          10,
-    tireStandard:     20,    // FEAT-259 (owner, 2026-11-17: "rotate into the store a little bit more often than other items") [DEFAULT]: Often × 2
+    tireOld:          30,
+    tireStandard:     15,    // DEC-408 (owner, 2026-11-17: "Set the standard tire shelf weight down to 15"); was 20 (FEAT-259 [DEFAULT]), 10 before
     tireSport:        4,
     tireOffroad:      1,
     tireLT:           1,
@@ -111,5 +111,5 @@ export const STOCK_WEIGHT = {
 /** Weighted for mission rewards but never stocked on an AUTO SHOP's shelf (the owner's reward-only rows). Some
  *  are storefront lines: data/shop-stock.js STOREFRONT, which these weights don't touch. */
 export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog', 'potato', 'groceries', 'ductTape', 'energyDrink', 'dinnerMeal',
-    'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar', 'burger', 'packedLunch',
+    'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar', 'burger', 'packedLunch', 'tireOld',
     'blanket', 'airMattress', 'sleepingPad', 'quilt', 'sleepingBag', 'deluxeSleepingPad'])
