@@ -512,12 +512,15 @@ export function dressYard (q, seed, yard) {
     for (let groupTry = 0; out.length < want && groupTry < 24; groupTry++) {
         const key = pool[Math.floor(rnd() * pool.length)]
         const spec = PROP_MODELS[key]
+        // FEAT-290: `yardMax` caps how many of one asset a single yard holds, over all its groups.
+        const have = out.reduce((n, o) => n + (o.key === key), 0)
+        if (spec.yardMax != null && have >= spec.yardMax) continue
         const col = spec.collision
         const r = col.radius ?? Math.hypot(col.size[0], col.size[2]) * 0.5
         // A sphere's origin is its centre (the beach ball), so it stands on its radius.
         const lift = col.shape === 'sphere' ? col.radius : 0
         const [gMin, gMax] = spec.yardGroup ?? [1, 1]
-        const group = Math.min(want - out.length, gMin + Math.floor(rnd() * (gMax - gMin + 1)))
+        const group = Math.min(want - out.length, (spec.yardMax ?? Infinity) - have, gMin + Math.floor(rnd() * (gMax - gMin + 1)))
         let last = null
         for (let k = 0; k < group; k++) {
             let at = null
