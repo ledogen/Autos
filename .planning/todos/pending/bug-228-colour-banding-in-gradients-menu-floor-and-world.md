@@ -64,4 +64,5 @@ instructions per pixel. Our custom-shader materials (terrain, sky, road, water) 
 - 2026-11-18 built (land/bug-228-banding). Runs of ≥ 8 identical pixels along a line, before → after: menu floor
   17 → 3 (longest 91 → 12 px), dusk sky 31 → 5 (53 → 13), fog 15 → 12 (98 → 21), lit hillside 3 → 0 (texture
   already hid it). The leftover runs are chance runs in the grain, no edge. Cost: ~30 scalar ALU ops incl. 2 sin per
-  pixel (estimate from the GLSL, not a compiled count). Bench owed.
+  pixel (estimate from the GLSL, not a compiled count). Bench owed. Affected gates 19/19, cdp-smoke 40/40 and pad-e2e
+  green (load 10–11). Pattern static: 0 of 560 000 floor pixels change between two still frames 1 s apart.
