@@ -75,6 +75,7 @@ const ROCK_N      = 20    // ~50 kg each: a tonne in the bed, so the rear squats
 const ROCK_GAP    = 0.20    // s between rocks: staggered so the 50 kg impulses cannot stack
 const ROCK_DROP_H = 2.6     // m above the bed floor → ~7 m/s at contact: a firm thump, not a launch
 const PARALLAX    = 5 * Math.PI / 180   // rad — cursor-follow orbit limit, both axes
+const CAM_RISE_M = 0.35   // m — FEAT-281 (owner: "slide the main menu camera up a little bit"): the look-at point rises, the rig with it, so the truck sits lower in frame [DEFAULT]
 const LENS_SHIFT_MM = -4.5   // mm of 35 mm film: −4.5 ≈ 10 % of a 16:9 frame to the right (more on a narrower window)
 const LENS_EASE_S   = 0.25   // s — time constant of the slide back to centre once the menu is gone (and out again)
 // Click-drag orbit, layered UNDER the parallax so the resting shot is unchanged until someone drags.
@@ -404,7 +405,7 @@ export class MenuStage {
     const q = new THREE.Quaternion().setFromAxisAngle(this._axisY, TRUCK_YAW)
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q)    // model forward = -Z
     const left = new THREE.Vector3(-1, 0, 0).applyQuaternion(q)
-    this._camTarget.set(this._rockSpot.x, p.wheelRadius * 1.25, this._rockSpot.z)
+    this._camTarget.set(this._rockSpot.x, p.wheelRadius * 1.25 + CAM_RISE_M, this._rockSpot.z)
     this._camBase.copy(this._camTarget)
       .addScaledVector(fwd, 5.9)
       .addScaledVector(left, 3.1)

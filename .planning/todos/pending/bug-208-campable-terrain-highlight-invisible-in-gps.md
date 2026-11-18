@@ -38,3 +38,4 @@ the camp zone highlight (src/camp*.js, src/map*.js)
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118061907-sgl1).
+- 2026-11-17 ui-1117b: the route halo alpha 0.95 -> 0.5 so the 6 px camp casing shows through the 7 px halo. Only the full map has this line (not the minimap). Not screenshotted. Look pending.

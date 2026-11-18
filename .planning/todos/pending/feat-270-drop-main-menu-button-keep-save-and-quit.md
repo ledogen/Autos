@@ -23,9 +23,9 @@ Owner's words, verbatim (inbox 20261118005628-kk6s):
 > We have a main menu button not gated on having to be parked and we have a save and exit button that is gated on having to be parked. My recommendation is drop the main menu button and only keep save and quit. This way it's encouraged to stop the truck unless you are willing to give up
 
 ## Tracker
-- [ ] The pause menu has no Main menu button
-- [ ] Save and quit stays gated on the truck being parked
-- [ ] Giving up (the owner's "unless you are willing to give up") still has a route out
+- [x] The pause menu has no Main menu button
+- [x] Save and quit stays gated on the truck being parked
+- [x] Giving up (the owner's "unless you are willing to give up") still has a route out
 
 ## Decisions
 
@@ -40,3 +40,4 @@ the pause menu (index.html, src/main.js, src/menu-nav.js)
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118005628-kk6s).
+- 2026-11-17 ui-1117b: pm-menu hidden in a story run; save and exit (parked) or give up are the ways out. Free roam keeps main menu. Look pending.

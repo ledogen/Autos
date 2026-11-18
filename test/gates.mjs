@@ -24,6 +24,8 @@
 // Adding a gate: add an entry here AND write test/<file>. Keep this list in run order.
 
 export const GATES = [
+  { file: 'terrain-bake-slots.mjs', subsystem: 'perf', cost: 'fast', extraDeps: [],
+    desc: 'BUG-202: every chunk drawn from the terrain bake finds its own pixels in its toroidal atlas slot, over the Ultra chunk ring (19 across > 12 slots) and with the stream centre walked out and back' },
   { file: 'frame-cap.mjs', subsystem: 'perf', cost: 'fast', extraDeps: [],
     desc: 'BUG-169/PERF-48: the render frame cap draws cap fps (display rate when 0) fed synthetic rAF timestamps at 60/90/120/144/240 Hz, for caps 30/60/90/120/display' },
   { file: 'leg-overlap-tear.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],

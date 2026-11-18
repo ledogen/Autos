@@ -91,6 +91,7 @@ this ramp. The CSS drifted from it; the CSS is what moves.
 | `--warn` / `-line` / `-text` | `#ffb020` / `#b8801f` / `#e8d7b0` | Caution that is not failure: load verdicts, refused seed, a missed throw | `#ffd43b` |
 | `--bad` / `-line` / `-text` | `#ff5a4e` / `#8a4a44` / `#ff8a7a` | Failure, abandon, overload, damage | `#ff6b6b`, `#ff6b5b`, `#ff8f7a`, `#c0392b`, `#e0705c` |
 | `--poi` / `-text` | `#ff9f43` / `#ffb066` | Points of interest, recovery | `#ff7a18`, `#ffd9a8` |
+| `--haul` | `#9b5fd1` | The haul mission family's diamond (DEC-421, owner 2026-11-18: purple may designate a mission type). Not for anything else | — |
 | `--camp` / `-text` | `#ffdc3c` / `#ffe89a` | Camping (map casing, tent "on", camp prompt) | — |
 
 The `-text` variant is the light tint used for body text on that colour's panel. The `-line`
@@ -109,7 +110,7 @@ shows it reads from that place.
 | Rank S/A/B/C/D | `RANK_COLOR`, `src/economy.js` | rank timer strip, tiles, cards |
 | Energy stages | `STAGE_COLOR`, `src/day.js` | energy meter, sleep bar |
 | Hunger words | `HUNGER_COLOR`, `src/day.js` | the energy box's hunger line and bar; built from `STAGE_COLOR`'s ramp (FEAT-198) |
-| Job family | `FAMILY_COLOR`, `data/map-icons.js` | map diamonds |
+| Job family (papers = `--key` yellow, haul = `--haul` purple, DEC-421) | `FAMILY_COLOR`, `data/map-icons.js` | map diamonds, the offer panel's diamond, list rows, legend |
 | Camp vibe (flat / view / shade / water) | `.vseg-*` / `.lg-*` / `.cp-*` in `index.html` | currently copied in 3 places; a future cleanup folds them into vars |
 | Part condition (sound / worn / damaged / failing) | condition bands, `src/damage-screen.js` | damage pictogram and legend |
 | Equipped item | `#c9a24a`, `src/inventory-screen.js` | slot border, tag, tooltip |
