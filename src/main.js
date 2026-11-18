@@ -107,7 +107,7 @@ import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp 
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_CALL, PAYCHECK, LARRY_PACK, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT, PHONE } from '../data/dialogue.js'
 import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149)
-import { simulateThrow, launchVelocity, accuracyScore, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
+import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin } from './paper-route.js'
@@ -2113,7 +2113,8 @@ const map2d = new Map2D({
   getRegion: () => storySystem?.region() ?? null,
   // FEAT-46: POI icons — how the player finds one to drive to. Empty outside story mode.
   getPois: () => poiSystem.list(),
-  getCustomers: () => poiSystem.customers(),   // FEAT-61: you cannot drive a route you cannot see
+  // FEAT-61: you cannot drive a route you cannot see. DEC-398: only the round's planned houses still owed — never the rest.
+  getCustomers: () => paperRouteSystem.routeCustomers().filter(c => !paperRouteSystem.isDelivered(c.id)),
   // FEAT-61: what the customers MEAN right now, and which way to set off.
   //
   // `onRoute` is the PAPER ROUTE only — it decides whether the customer dots are jobs or scenery, and
@@ -3402,8 +3403,8 @@ function _rebuildPoiMarkers () {
 /**
  * FEAT-61: which delivery targets are lit.
  *
- * THIS IS WHY PAPERS "COULDN'T BE DELIVERED" (owner-reported 2026-08-09). A region holds 16
- * customers and a tier-1 route visits four of them — but every customer wore a green circle, so
+ * THIS IS WHY PAPERS "COULDN'T BE DELIVERED" (owner-reported 2026-08-09). A region holds 11
+ * customers (16 then) and a rung-one route visits four of them — but every customer wore a green circle, so
  * twelve of the sixteen targets on screen were decoys. A paper landed dead centre in one of those
  * scored nothing and, because the miss read-out is distance-gated, said nothing either. The circle
  * has to mean "this one, now", or it is not a target.
@@ -4260,9 +4261,9 @@ function _updateThrownRolls (dt) {
  * Score one landing and show it.
  *
  * ON A ROUTE, the paper route owns the answer: it credits a specific customer once, spends the
- * inventory, and decides whether that was the last paper. Off a route this falls back to scoring
- * against the nearest customer in the region — a practice throw, and the same read-out that proved
- * the target circles and the ballistics agree with each other.
+ * inventory, and decides whether that was the last paper. Off a route a practice throw reads nothing:
+ * DEC-398, no house is a target off a round, so none is scored or named (it used to score the nearest
+ * customer in the region — an invisible one).
  */
 function _scoreLanding (hit) {
   const R = POI_PARAMS.poiHouseTargetR
@@ -4287,19 +4288,6 @@ function _scoreLanding (hit) {
       // which is exactly how this read as one (owner, 2026-08-09).
       _showThrowReadout('<span style="color:var(--warn)">nobody on your route lives there</span>')
     }
-    return
-  }
-
-  let best = null, bestD = Infinity
-  for (const c of poiSystem.customers()) {
-    const d = Math.hypot(c.x - hit.x, c.z - hit.z)
-    if (d < bestD) { bestD = d; best = c }
-  }
-  const q = best ? accuracyScore(bestD, R) : 0
-  if (q > 0) {
-    _showThrowReadout(`<span style="color:var(--money)">${bestD.toFixed(2)} m — ${Math.round(q * 100)}%</span>`)
-  } else if (best && bestD < 25) {
-    _showThrowReadout(`<span style="color:var(--warn)">missed by ${(bestD - R).toFixed(1)} m</span>`)
   }
 }
 
@@ -5377,7 +5365,7 @@ gpsSystem = new GpsSystem(scene, {
     // of beating it (owner, 2026-08-11). The clock measuring a different line is the REASON the
     // guidance must be optimal rather than faithful. Par itself never moves — see paper-route.js
     // line() for why route and guide are two objects.
-    if (paperRouteSystem?.isCarrying()) return paperRouteSystem.line()
+    if (paperRouteSystem?.isCarrying()) return paperRouteSystem.gpsLine()   // FEAT-266: the leg to the next house on the tour
     const s = missionSystem?.state
     // 'staging' counts: that is precisely when a POI job wants guidance, because the reason the
     // start zone exists is that you may be pointing the wrong way and have to decide which.

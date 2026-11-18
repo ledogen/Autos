@@ -213,6 +213,12 @@ abandoning the ones going badly. Unresolved in the bible; not resolved here.
 > perhaps spirit-related). **Never "bell" — always "deadline".** The coverage-ratio text below
 > (`parEff`, per-tier customers, the perfect-round ladder) is superseded where it disagrees.
 > Provenance: `design-amendments-2026-10-21-mission-recut.md` §7; FEAT-141.
+>
+> **[AMENDED 2026-11-17, owner — DEC-398, FEAT-266] A route is its planned houses.** A region places 11
+> customers (the top rung's count); every rung's N come from them, and the round is the N the plotter picks.
+> Only those N count: a paper on any other porch scores nothing. Only those N are drawn (rings, map,
+> turn arrows). The GPS follows the shortest tour from the truck through the ones still owed, so it matches
+> the route on Larry's card at the start and turns back to a missed house exactly when that is shorter.
 
 The first real mission type. Given by the uncle (see `opening.md`).
 

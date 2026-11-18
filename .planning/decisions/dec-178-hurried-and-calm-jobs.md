@@ -1,6 +1,6 @@
 ---
 id: DEC-178
-status: standing
+status: superseded
 decided: 2026-11-14
 area: story
 governs: QUAL-36, FEAT-87, src/rank-timer.js, src/main.js, mission types

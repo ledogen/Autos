@@ -1,0 +1,55 @@
+---
+id: FEAT-267
+type: feature
+status: open
+severity: major
+opened: 2026-11-17
+source: owner, 2026-11-17 — "demolition should follow the papers, timer, and route planning. I'm happy with the clustered placement of the barrels. ... i think we just make demo a straight hurried job."
+relates: FEAT-65, FEAT-266, FEAT-256, DEC-399, DEC-398, DEC-020, src/demolition.js, src/paper-route.js, src/mission.js, data/offers.js
+---
+lane: SM-3 missions
+
+# FEAT-267: Demolition runs on the papers' deadline and route planner
+
+## Next steps
+Missions lane (Opus), AFTER FEAT-266 lands (it changes the planner and guide this reuses): build it; the owner drives
+a demolition job and confirms the slack number.
+
+## Summary
+A demolition job becomes a hurried job like a paper round: one deadline for the whole job, priced from the planned
+tour through its targets, a rank on time with the rank bar, and the GPS following the shortest tour through the
+targets still standing, turning back for a missed one when that is the shorter way. The 40 s per-hit window goes.
+The clustered placement of the targets stays as it is.
+
+## Description
+Today (FEAT-65): before the first smash the job is a drive under its due-in deadline; the first smash starts a 40 s
+window that every smash refills; when it runs out the job settles on the share smashed; no rank bar (DEC-178, now
+superseded by DEC-399).
+
+To build, mirroring the paper round as FEAT-266 leaves it:
+- Deadline from the tour's par through the job's targets, with demolition's own slack.
+- Slack: "slightly easier than Courier because you have to slow down and drive off the road to hit barrels". Courier
+  is the reference; the number is the builder's default until the owner confirms it on the drive card.
+- Rank on time against that deadline, with the rank bar, as a hurried job.
+- The guide is the shortest tour from the truck through the targets still standing (DEC-398's rule).
+- Only the job's own targets are shown (already true: FEAT-256's count in the sentence stays).
+- Open for the builder to state, not decide: what a job that ends at the deadline with targets standing pays (today:
+  the share smashed), and how the share smashed and the time rank combine into one letter. The paper round's own
+  rule (coverage and time) is the model; anything it does not answer goes on the card as a question.
+
+## Tracker
+- [ ] One deadline from the planned tour; the 40 s hit window removed (code, saves, HUD line, run log)
+- [ ] Rank bar and time rank as a hurried job; the letter's rule stated
+- [ ] GPS follows the remaining tour and turns back for a missed target when shorter
+- [ ] Slack set slightly easier than courier's, number on the card
+- [ ] Gates and the smoke's demolition step updated; saves from before still load
+- [ ] Owner drives a demolition job
+
+## Decisions
+- 2026-11-17, owner: DEC-399.
+
+## Files
+`src/demolition.js` · `src/mission.js` · `src/par.js` · `data/offers.js`
+
+## Log
+- 2026-11-17: minted by the orchestrator from the owner's ruling in chat.

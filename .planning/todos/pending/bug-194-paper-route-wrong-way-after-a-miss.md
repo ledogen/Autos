@@ -36,3 +36,4 @@ Root: the guide was the shortest tour through all owed houses and only re-planne
 
 ## Log
 - 2026-11-17: paper-reroute green.
+- 2026-11-17: superseded by FEAT-266 (DEC-398): the guide is the shortest tour through the planned houses still owed, re-planned every 1 s; the nearest-house rule is gone.
