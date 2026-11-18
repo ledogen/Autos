@@ -81,12 +81,13 @@ async function soakSeed (seed) {
     const f = freshState(P, a.x, top + 1.0, a.z, Math.atan2(-(b.x - a.x), -(b.z - a.z)))
     for (const k in f) if (vs[k]?.isVector3 || vs[k]?.isQuaternion) vs[k].copy(f[k]); else vs[k] = f[k]   // the rig holds the vectors
     if (BOX) fitTransmission(P, vs, BOX)
+    vs.engineHealth = 1   // the damage model writes it each step; a tow comes back running
     w.stream(a.x, a.z)
     ap.locate(a)
   }
   seat(0)
   const rec = { seed, km: 0, buildS: +buildS.toFixed(1), bandKm: [0, 0, 0, 0], bandInt: [0, 0, 0, 0], interventions: [], manoeuvres: {}, junctions: 0,
-    reseats: 0, missShift: 0, stalls: 0, latWorst: { lat: 0 }, topV: 0, vSum: 0, vTSum: 0, n: 0, lat: [], offDeckS: 0, stepUs: [], tireWear: 0, yErr: [] }
+    reseats: 0, reseatWhy: {}, missShift: 0, stalls: 0, latWorst: { lat: 0 }, topV: 0, vSum: 0, vTSum: 0, n: 0, lat: [], offDeckS: 0, stepUs: [], tireWear: 0, yErr: [] }
   let t = 0, lastStream = 0, settle = 1.5, prevState = 'drive'
   const simCap = KM * 1000 / 3 + 120
   const halfW = P.roadHalfWidth ?? 5
@@ -111,7 +112,7 @@ async function soakSeed (seed) {
     }
     // Trouble straight off a seat is the seat's, not the driver's: move on 40 m more (sim time still runs, so a spot that
     // keeps failing cannot spin this loop for ever).
-    if (c.trouble) { rec.reseats++; t += 0.5; ap.resume(40); seat(ap.idx); damage.setAll(1); damage.flat.fill(false); damage.publish(P); continue }
+    if (c.trouble) { rec.reseats++; rec.reseatWhy[c.trouble] = (rec.reseatWhy[c.trouble] ?? 0) + 1; t += 0.5; ap.resume(40); seat(ap.idx); damage.setAll(1); damage.flat.fill(false); damage.publish(P); continue }
     // the player's control path (src/vehicle.js, the pad branch)
     vs.throttle = vs.smoothThrottle = c.throttle; vs.brake = vs.smoothBrake = c.brake; vs.handbrake = c.hand
     const lim = P.maxSteerAngle / (1 + v / P.speedSteerRef)
@@ -155,7 +156,7 @@ for (const seed of seeds) {
   const r = await soakSeed(seed)
   const lat = r.lat, us = r.stepUs
   const line = { seed, km: r.km, simS: r.simS, buildS: r.buildS, junctions: r.junctions, bandKm: r.bandKm.map(x => +x.toFixed(2)), bandInt: r.bandInt,
-    interventions: r.interventions, manoeuvres: r.manoeuvres, reseats: r.reseats, missShift: r.missShift, stalls: r.stalls, topV: +r.topV.toFixed(1), meanV: +(r.vSum / Math.max(1, r.n)).toFixed(1), meanPlan: +(r.vTSum / Math.max(1, r.n)).toFixed(1),
+    interventions: r.interventions, manoeuvres: r.manoeuvres, reseats: r.reseats, reseatWhy: r.reseatWhy, missShift: r.missShift, stalls: r.stalls, topV: +r.topV.toFixed(1), meanV: +(r.vSum / Math.max(1, r.n)).toFixed(1), meanPlan: +(r.vTSum / Math.max(1, r.n)).toFixed(1),
     lat: { med: +pct(lat, 0.5).toFixed(2), p99: +pct(lat, 0.99).toFixed(2), worst: +Math.max(0, ...lat).toFixed(2) }, offDeckS: +r.offDeckS.toFixed(1), latWorst: r.latWorst,
     tireWearPctPerKm: r.tireWear, stepUs: { med: +pct(us, 0.5).toFixed(1), p99: +pct(us, 0.99).toFixed(1), worst: r.worstStep },
     pathYErr: +pct(r.yErr, 0.5).toFixed(2) }
