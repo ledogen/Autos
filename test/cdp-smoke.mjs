@@ -386,6 +386,10 @@ const STEPS = [
     const back = await js('({ on: window.__autoDrive.on, status: window.__autoDrive.status })')
     check(!back.on && /took the wheel/.test(back.status), `a driving key did not hand the truck back: ${JSON.stringify(back)}`)
     console.log(`  autoDrive: ${moved.toFixed(0)} m in 10 sim-s (${st.status}); D handed it back`)
+    // Leave the truck as the teleport step did: at rest, brake latched. Handed back at ~80 km/h it would coast on with
+    // nobody driving through map / freecam / settings and into the lab, and a later seat at mom's went NaN (strut
+    // compression ~3e5 m, the engine's velocity NaN): three `camp` failures, 2026-11-18.
+    await park()
   }],
   ['map', async () => {
     await tap('m')
