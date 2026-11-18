@@ -57,3 +57,5 @@ src/ (a new clutter module) · src/main.js load path
   main.js queues the yards behind the loading screen and drains ≤ 1 ms/frame once it lifts. Gate clutter-stream (new);
   affected gates green; fingerprint-world ALL IDENTICAL to main. 2 seeds: the whole stream lands in 2 frames; p99 frame in
   the 10 s after load 54.8 / 56.3 ms vs main 48.8 / 62.9 (box at load 6–9: same). No 2 km drive bench: nothing of this runs after those 2 frames.
+- 2026-11-18 on main 24929f9b merged: affected gates 24/24; smoke 1 failed at the known DEC-357 blink flake, re-run PASS
+  40/40; pad-e2e ALL OK. Sheet wip/feat-278/sheet.jpg (seeds 4182, 77031, 1018248781; main | branch identical).
