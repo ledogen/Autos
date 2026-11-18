@@ -11,7 +11,7 @@ lane: engine & world
 # BUG-218: A missed shift grinds the gears with the engine not running
 
 ## Next steps
-The owner's run log shows a missShift at 0 rpm, 0 m/s costing 2 % of the transmission (Logs/run-660454599). Find the missed-shift damage rule and gate it on a turning input shaft: with the engine stopped and the truck at rest nothing spins, so nothing can grind. State the physical rule used (shaft speed difference), not an engine-on flag, so a rolling truck with a dead engine is still handled honestly.
+Built on `land/bug-218-grind-engine-off`; the owner tries it (a parked truck with the engine off shifts silently through every gear).
 
 ## Summary
 A missed shift grinds the gears with the engine not running.
@@ -20,11 +20,23 @@ A missed shift grinds the gears with the engine not running.
 Owner: "You should not be able to grind gears on an engine that's not running."
 
 ## Tracker
-- [ ] Built
-- [ ] A gate or smoke step holds it
+- [x] Built
+- [x] A gate or smoke step holds it
 - [ ] Owner has looked
 
 ## Decisions
+- The rule is physical, in `src/drivetrain.js` stepManual (the one source of `missShift`, so the grind sound, pad
+  rumble, damage alert, −2 % wear and the run-log event all follow it): a shift with the clutch engaged grinds only
+  when |input shaft − target gear's speed| > 100 rpm. The input shaft rides the flywheel (engine speed); the target
+  gear turns with the output (axle × that gear's ratio, N = 0).
+  - Engine off, parked: both shafts at rest, every gear selects cleanly.
+  - Engine off, rolling, clutch engaged: still grinds (in N the stopped input shaft meets a turning output; in gear
+    the wheels motor the dead engine at the old ratio). Clutch disengaged it is the synchro's job, accepted as before.
+  - Engine running: grinds as before, except a clutchless shift rev-matched within 100 rpm now goes through.
+  - Approximation: a shift TO N with the clutch engaged is judged by the same mismatch (N has no teeth to mesh).
+- Found on the way: a dead engine in gear on a parked truck made the rears chatter ±1.2 rad/s (its drag, non-zero at
+  0 rpm, was applied whole and flipped sign every step; tach read ~150 rpm). The drag is now capped at the torque
+  that stops the rear axle in one step.
 
 ## Open questions
 
@@ -35,3 +47,4 @@ src/damage.js, src/physics.js
 
 ## Log
 - 2026-11-18 minted by the orchestrator from the owner's inbox.
+- 2026-11-18 built (d3282677): shaft-mismatch rule + dead-engine drag cap. manual-gearbox §16 holds it; fingerprint-physics identical to main.
