@@ -238,6 +238,8 @@ branch (`wip/tutb2/`); `python3 -I wip/feat-265/tutcmp.py` prints the table; she
   passes unchanged, output line-for-line equal to main's; fingerprint-world six windows identical; census 18/27 kept as
   predicted. Affected gates 84/84 green (o3-gates*.log in wip/feat-265/). 1872706826's network gains one 826 m run the
   tutorial never drives (POI roster hash equal to main's).
+  Smoke PASS 38 steps (load 9.4), pad-e2e ALL OK (load 9.9). Restore cost, A/B vs the berth build at load ~11
+  (b2diag, 3 passes): 1872706826 15.3 -> 12.1 G instructions (1.86 -> 1.55 s); 3200351065 and 1264166411 same work.
 - 2026-11-17: clearance fix (`_v2RestoreLegs`/`_v2RestoreGrazes`): road-clearance PASS, urquhart-restore 6/6,
   fingerprint-world identical to main; census 7 re-routed + 2 dropped of 27. Tutorial under B2 measured (838 -> 738
   hard m, 19.1 -> 38 % climb); option 3 checked in a copy. Affected gates 77/78 (tutorial-seed red). Card feat265-b2-look rewritten.
