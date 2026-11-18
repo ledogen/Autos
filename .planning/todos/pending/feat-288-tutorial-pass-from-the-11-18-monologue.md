@@ -335,6 +335,21 @@ Cost: one extra mesh and one cloned material set per marked item, about 40 lines
 when the item is picked up. The pulse alone was considered and rejected: from 15 m and in her shade the pack is too small
 to read even when lit.
 
+**As built (P5, 2026-11-18).**
+- The target is named by the tutorial's STEP, through the gate (no second system): a card's `quest` (an item id;
+  data/dialogue.js `tut-pickup` = `'pack'`), or main.js `_TUT_PACK` (BETWEEN plus `quest: 'pack'`) while `_dayStop()` is
+  'pack' and no card is up (the pack fallen off on the way to Larry's is marked again). The step is main.js `_tutStep`,
+  the same function `initTutGate` reads, so a skip, the tutorial's end, a run end and a reload past the pack give no mark.
+  Not a world-item flag: § 5's `quest: true` would ride the save and outlive the tutorial; outside the tutorial nothing is marked.
+- `_questMark()` (main.js, every frame): one unlit beam, `_ringGeo` + the rings' upward alpha fade, 0.25 m × 6 m, white
+  (the paper target's), opacity 0.7, not tone-mapped (reads in her shade and at night), fogged like the world; its foot
+  0.4 m above the item's largest half extent, so it never covers the item. The pulse is debris.js `blink(body, k, rgb)`
+  in white at 1 Hz while the item's body is live (blink now clones a body's materials on first use, so the pack model's
+  shared materials are never tinted); put out when the mark leaves.
+- Cost (wip/feat-288-p5/sheet.mjs, beside the pack, 300 frames): +1 draw call while marked (151 vs 147 after G; the
+  other 3 are the pack itself); frame p50 16.7 ms both, p90 18.2 vs 18.1 (vsync-capped, within noise). 0 calls otherwise.
+- Sheet wip/feat-288-p5/sheet.jpg: her door / 4 m / 18 m × 08:00, 19:30, 22:30; fog 0.03; big UI.
+
 ### 6. The opening camera
 
 `_updateFiringCam` (main.js:5237) sets the camera's angle every frame from the clock, so input has no effect. Change:
@@ -389,7 +404,7 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - [x] P3a lessons 1: forced diagnostics → inventory → spare, break camp locked, eating locked, the sleep lesson, lunches at breakfast, B advances a card
 - [ ] P3b lessons 2: the map beat, the shop beat, mom's gas call on leaving the shop, the end menu
 - [ ] P4 world fixes: mom's ring (story-wide), legs on the map, the flat before the tunnel, mom's card on the tire's check-out
-- [ ] P5 quest-item mark on the pack
+- [x] P5 quest-item mark on the pack (the step names it; beam + white pulse; owner look owed: card feat288-marker-look)
 - [ ] P6 opening camera: free rotation, resumes; BUG-203
 - [ ] P8 speaker separation (after Q2)
 - [ ] Owner has played it
@@ -428,3 +443,6 @@ data/tutorial.js, data/dialogue.js, src/main.js, src/menu-nav.js, src/hud-menu.j
 - 2026-11-18 P7 built on land/feat-288-p7-phone: `src/phone-audio.js` (ring + flip-shut, synthesized), `call` marker on the frame cards in dialogue.js `_frame`, one hook in main.js `_renderDialogue`; Sounds-tab entries in FEAT-120. Owner's ear owed (card feat288-phone-sounds-ear); nobody has heard it.
 - 2026-11-18 P1 dialogue built on land/feat-288-p1-dialogue (words and speakers only; 6 data/dialogue.js cards re-worded, 7 draft tags out, mom's two paycheck lines in). run-all affected gates green; smoke boot,opening PASS (38 steps). Left for P3/P4: mom's "marked spot" in tut-park waits on her ring (P4); tut-gas / tut-pickup keep their current words (§ 2's versions tie to P2/P3b flow).
 - 2026-11-18 P3a built on land/feat-288-p3a-lessons (§ 3 "As built (P3a)"): flat → diagnostics (swap locked, back out) → inventory (the spare only) → picker → the shop's tow only; press-any-key cards lock what lies under them (break camp under Katie, leave/sleep under mom); no eating between cards; Sleep greyed until 06:30 (DEC-426 Q1); four lunches at breakfast, none before (Q4); pad B turns a press-any-key card. Affected gates 55/55 green; smoke PASS 39 steps (load ~9.6); pad-e2e ALL OK (load ~8.9). The pad B check rides the smoke's real tutorial (Katie's talk, fake pad), not pad-e2e. Six lines await the owner's words (Open questions). Unverified: a human play on a real pad.
+- 2026-11-18 P5 built on land/feat-288-p5-marker (§ 5 "As built (P5)"): beam + white pulse on the pack, named by the
+  gate's step (`quest`), gone with the step. tut-gate PASS; affected gates 21/21; smoke/pad-e2e: see the landing report.
+  Sheet wip/feat-288-p5/sheet.jpg (lane worktree). Unverified: a human look, a real pad.
