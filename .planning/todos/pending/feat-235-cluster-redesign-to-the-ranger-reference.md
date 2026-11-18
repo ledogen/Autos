@@ -12,9 +12,7 @@ lane: B (after FEAT-233)
 # FEAT-235: Gauge cluster reshaped to the Ranger reference: pods, cluster outline, light backing
 
 ## Next steps
-Round 1 built on `land/feat-235` @ 70f9ee99 (not on main; DEC-331): HELD for the owner's look, card `feat235-cluster-look`
-(sheet CarGame-run-shape/wip/feat-235/sheet.jpg). Land on a yes; further rounds as in FEAT-34.
-Round 1 is built on `land/feat-235` (lane A). The owner looks at `wip/feat-235/sheet.jpg` in the run-shape worktree (reference, before/after, in game at his canvas and a small window). His answer sets round 2: every shape is a named number atop `src/cluster.js` (POD_DX, POD_E, POD_DY, CORNER, ARCH_PEAK, INSET_*, FACE_LIGHT).
+Round 3 is built on `land/feat-235-r3` (DEC-391): V1 (main) with round 2's key corner and straight right edge, the notch's left side narrowed, the left pod's bottom down. The owner looks at `wip/feat-235/cluster-r3-sheet.jpg` in the spare-base worktree (V1, V2, V3; key off and running). His answer lands it or sets round 4.
 
 ## Summary
 The owner reopens the cluster design against the Ranger owner-manual reference (artifact https://claude.ai/artifact/XJrmfoRMYu4Rd77onpbAmF). Wanted: the pods that frame the gauges; tach and speedo roughly as now; coolant and fuel separated slightly left and right and closer together vertically; the dark rectangle reshaped to the cluster outline (broad curve on top, flat bottom, the small inset at the bottom); a roughly triangular, automotive-curved dark backing for the two small gauges; a lighter cluster-shaped backing behind everything; the key stays bottom right; no oil pressure or battery gauge; warning lights and shift indicator stay where they are.
@@ -23,6 +21,8 @@ The owner reopens the cluster design against the Ranger owner-manual reference (
 - [x] Reference read and its named features listed
 - [x] Reference read and its named features listed (see Decisions)
 - [x] Round 1 pictures against the reference
+- [x] Round 2 built (`land/feat-235-r2`, never landed); owner: revert to V1, keep its key place and frame (DEC-391)
+- [x] Round 3 built (`land/feat-235-r3`)
 - [ ] Owner approves a round
 
 ## Decisions
@@ -30,7 +30,10 @@ The owner reopens the cluster design against the Ranger owner-manual reference (
 - Not copied: the right-hand pod (oil, battery: the owner's "not adding"); the drawing's mirror-symmetric right end (ours is a shoulder round the key, which DEC-267/285 pin); the drawing's separate text telltales.
 - Judgment calls (agent, owner asleep): the left pod sits 15 below the dial axis (the drawing's temp is near the axis, fuel low), so both pods' bottoms are level; the face colour `#575049` (a lighter plastic, not the drawing's white; one constant); the canvas grows 494 → 516 layout units wide (568 → 593 CSS px) to fit the staggered pod at the old GAP.
 
+- DEC-391 (round 3, owner 2026-11-17, supersedes DEC-350): "revert back to V1. The only changes from V2 that I preferred are the ignition location and the shape change of the frame. So bring those into V1. I prefer having the two ton pod/gauges from v1 / Then make the bottom notch in the background a little bit narrower so that the left side pod fits neatly into the crook Maybe you can bring the bottom edge of the left side pod down so that it matches the same margin on the left side of the pod". Built: key in the corner under the speedo and the right edge straight down (from r2); notch's left top now ROOM right of the left pod's corner (INSET_L, 240 to 187 wide); FUEL_DROP 7 so the pod's bottom margin is 13 like its left.
+
 ## Log
 - 2026-11-16: filed from the owner's inbox note.
 2026-11-16 (bookkeeping sweep): round 1 built 059259a8 (branch land/feat-235 @ 70f9ee99, DEC-331); boxes 1-2 ticked per the night log (wip/orch/night-1116.md). Not landed.
 - 2026-11-16 (lane A, round 1): `land/feat-235`. src/cluster.js: the housing is the hull of the pods' grown circles with one arch tangent to temp and speedo (`OUTLINE`, `_outlinePath`), the light face inside, `_leftPodPath` for the triangle pod, the flat-bottomed dial pod. Least light face 7 around every pod (`wip/feat-235/check-geom.mjs`). Per-frame draw (update(), batches of 50, 3 × 400): median 0.018–0.020 ms before and after. gpu-reset --mode=crash PASS (cluster blank 0.221 → 0.221); SMOKE_STEPS=boot PASS. Pictures `wip/feat-235/` (sheet.jpg). Unverified: the owner's look.
+- 2026-11-17 (lane u, round 3): `land/feat-235-r3`. Only the key place and frame hunks of r2 ported; notch and pod per DEC-391. Sheet `wip/feat-235/cluster-r3-sheet.jpg`. Gates: see commit. Unverified: the owner's look.
