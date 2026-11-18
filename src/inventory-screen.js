@@ -111,7 +111,7 @@ function slotHtml (it, attrs = '', cls = '') {
   if (!it) return `<div class="inv-slot ${cls}" ${attrs}></div>`
   // A part's rarity tints the slot behind its shared per-slot icon (data/parts.js RARITY_COLOR).
   const tint = it.rarity ? ` style="background:${RARITY_COLOR[it.rarity]}40"` : ''
-  return `<div class="inv-slot full${it.equipped ? ' worn' : ''} ${cls}" ${attrs}${tint}>`
+  return `<div class="inv-slot full${it.equipped ? ' worn' : ''} ${cls}" data-id="${it.id}" ${attrs}${tint}>`   // data-id: FEAT-288 P2's lesson selectors
     + `<img src="${THUMB(it.id)}" alt="" onerror="this.parentNode.classList.add('noimg'); this.remove()">`
     + `<span class="sl-name">${it.name}</span>`
     + (it.n > 1 ? `<span class="sl-n">&times;${it.n}</span>` : '')

@@ -23,6 +23,7 @@
 // counts while one is showing — unless it waits for an action (DEC-359): that one owns no key.
 
 import { pad } from './gamepad.js'
+import { allowsEl } from './tut-gate.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -60,6 +61,8 @@ function cardContainer () {
 
 // The inventory's slots are divs; BUG-109: so are the damage screen's list rows, and its pictogram parts are SVG.
 const ITEMS = 'button, input, .inv-slot[data-slot], .inv-slot[data-packslot], .inv-slot[data-ground], #dmg-screen .ds-part[data-track], #dmg-screen .ds-row[data-track]'
+/** The items the arrows can land on and Enter can press: showing, and not locked by the tutorial (FEAT-288 P2, src/tut-gate.js). */
+const live = (c) => [...c.querySelectorAll(ITEMS)].filter(el => el.offsetParent !== null && allowsEl(el))
 
 let cur = null   // the highlighted item
 // FEAT-133: where it was, so a card that re-renders its innerHTML (the inventory, on every change)
@@ -134,7 +137,7 @@ function onKey (e) {
   if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) return
   e.preventDefault()
   e.stopPropagation()
-  const items = [...c.querySelectorAll(ITEMS)].filter(el => el.offsetParent !== null)
+  const items = live(c)
   if (!items.length) return
   if (!items.includes(cur)) {
     // Re-rendered under the highlight (same card, fresh nodes): resume at its index and act on this
@@ -150,7 +153,7 @@ function onKey (e) {
     // A card that re-renders on the press (the shop's rows) detached the highlighted node: put the highlight back on
     // the same place, else it vanishes and the next D-pad press has to find it (owner, 2026-11-15).
     if (!cur.isConnected && (menuContainer() ?? cardContainer()) === c) {
-      const now = [...c.querySelectorAll(ITEMS)].filter(el => el.offsetParent !== null)
+      const now = live(c)
       if (now.length) highlight(now[Math.min(curIdx, now.length - 1)])
     }
     requestAnimationFrame(sync)
@@ -185,7 +188,7 @@ const WAKE_CARDS = ['camp-panel', 'inv-screen', 'dmg-screen', 'svc-screen']
 function wakeMenu () {
   const c = menuContainer() ?? (WAKE_CARDS.includes(cardContainer()?.id) ? cardContainer() : null)
   if (!c) return
-  const items = [...c.querySelectorAll(ITEMS)].filter(el => el.offsetParent !== null)
+  const items = live(c)
   if (!items.length || (cur?.isConnected && c.contains(cur))) return
   if (c === menuContainer()) { if (!items.includes(cur)) { highlight(items[0]); curBox = c; curIdx = 0 }; return }
   // A card that re-rendered under the highlight keeps its place; a fresh one starts on its primary button (never a text field: it would take the typing).

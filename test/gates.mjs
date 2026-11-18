@@ -382,4 +382,6 @@ export const GATES = [
     desc: 'INFRA-07 the main.js gate: the real app in Chrome — boot, drive, R, teleport, map, freecam (R-11), lab, story entry, mom\'s camp hold + R closes it (R-12), backtick (R-13), take and start a job, and (FEAT-125) a run end to end on the pad alone — zero console errors; SMOKE_STEPS=boot,pad runs a subset while developing' },
   { file: 'pad-e2e.mjs', subsystem: 'app', cost: 'heavy', browser: true, extraDeps: ['src', 'data', 'index.html', 'vite.config.js'],
     desc: 'FEAT-125/FEAT-41 the pad contract in the real app: a scripted fake gamepad drives analog pedals, position steering + assist, last-moved-wins, unplug safety, the button layout, then the menus pad-only and the choices surviving a reload' },
+  { file: 'tut-gate.mjs', subsystem: 'story', cost: 'fast', extraDeps: ['index.html', 'src/main.js'],
+    desc: 'FEAT-288 P2: the tutorial gate (src/tut-gate.js) — every lesson card in data/dialogue.js is a step (`allow`), every allow / hi entry is a locked BINDINGS action or a selector whose #ids and item ids exist; the base lock refuses only inventory / damage / camp / recovery / abandon / waypoint (never driving, the brake, the key, lights, map, pause, back, reset); a step with `allow` locks the cards\' other elements, back and pause never; no step (skip, end, run end) allows everything (BUG-183)' },
 ]
