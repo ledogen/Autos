@@ -20,6 +20,11 @@
 //      FEAT-157: one line per type — a haul, a courier, a freight drum, a fragile crate, each spec carrying
 //      its load and tier, each card's deed line in its own axis. FEAT-65: the fifth, demolition, is given
 //      AT THE CAMP and plans OUT from it to a roadside site (inside the wall), never back to the camp.
+//   6. THE CROSSING EVENS THE REQUISITION (FEAT-292, DEC-424) — against the same seed built with today's siting
+//      (poiCampReqBand ∞): a world whose loaded total is within the band keeps its camp, rows, returns and line
+//      sources exactly; one outside it moves to a crossing nearer the target, and its ordinary offers plan as before.
+//      Every fetch line leaves its source by the nearer end (no longer than either forced exit); the crossing
+//      chooser's distance-only total (par.js routeDistance) equals the board's planned one. The seeds hold one of each.
 //
 // Heavy: routes a full 2800 m region per seed (~15 s each).
 import * as THREE from 'three'
@@ -28,7 +33,8 @@ import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { parseWorldSeed } from '../src/seed.js'
 import { WaterSystem } from '../src/water.js'
 import { PoiSystem, POI_PARAMS } from '../src/poi.js'
-import { OfferBoard } from '../src/offer-board.js'
+import { OfferBoard, requisitionTotal } from '../src/offer-board.js'
+import { routeDistance } from '../src/par.js'
 import { REQUISITION, LINE_SUPPLY } from '../data/offers.js'
 import { ITEMS } from '../data/items.js'
 import { PROP_MODELS } from '../data/prop-models.js'
@@ -39,10 +45,13 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
-const SEEDS = ['1', '6', '2167923713', '3109505264', '3873008110', '398411380']
+const PINNED = ['1', '6', '2167923713', '3109505264', '3873008110', '398411380', '660454599']
+const SEEDS = process.argv.length > 2 ? process.argv.slice(2) : PINNED   // a census: node test/expedition-camp.mjs <seed…>
 // 2167923713: a BUG-63 parallel crosses the wall (FEAT-154). BUG-128: 3109505264, a road bowing past the wall lay on the fuel
 // line's shortest path; 3873008110, the one gas station stood on such a road. 398411380: a row 20 m from a junction stood on
 // its steep leg's vertical knee, 18 cm off its plane, until rows moved to fit one (poi.js _rowOnPlane) (2026-11-07).
+// 660454599: the owner's lost run (FEAT-292), a 32 km requisition at today's crossing — its camp moves.
+const kept = { n: 0, moved: 0 }
 let fails = 0
 const check = (label, ok, detail = '') => {
     console.log(`  ${ok ? '[ ok ]' : '[FAIL]'} ${label}${ok ? '' : '  ' + detail}`)
@@ -61,10 +70,10 @@ for (const s of SEEDS) {
     const region = { x: C.x, z: C.z, r: REGION_RADIUS_M, nodes: rep.mainNodes }
     const terrain = makeTerrainHeadless(seed, P, road)
     const water = new WaterSystem(seed, P, (x, z) => terrain.rawHeightWorld(x, z))
-    const build = (noCamp = false) => {
+    const build = (noCamp = false, today = false) => {
         const poi = new PoiSystem({ getRoad: () => road, getWater: () => water, getTerrain: () => terrain,
-                                    getSeed: () => seed, getParams: () => P })
-        if (noCamp) poi._siteCamp = () => null
+                                    getSeed: () => seed, getParams: () => (today ? { ...P, poiCampReqBand: Infinity } : P) })
+        if (noCamp) poi._campCrossings = function * () {}
         poi.build(C, REGION_RADIUS_M, rep.mainNodes)
         poi.buildHouses(C, REGION_RADIUS_M, rep.mainNodes)
         return poi
@@ -183,7 +192,10 @@ for (const s of SEEDS) {
             || road.sampleRoadTopY(back.x, back.z) == null || (C.x - back.x) * fx + (C.z - back.z) * fz < 0
     })
     check(`from past every row the fade returns to a road inside ${rIn} m, near the row (40 m, or 100 m on its own road), facing in (${exempt} rows on unconnected roads exempt)`,
-        !badBack.length, `${badBack.length} rows`)
+        !badBack.length, `${badBack.length} rows: ` + badBack.map((row) => {
+            const c = mid(row), f = face(c), b = poi.returnPoint(c.x - 20 * f.x, c.z - 20 * f.z)
+            return `row (${c.x.toFixed(0)}, ${c.z.toFixed(0)}) r ${r(c).toFixed(0)} on ${road.queryNearest(c.x, c.z, 15)?.runKey} → ${b ? `(${b.x.toFixed(0)}, ${b.z.toFixed(0)}) r ${r(b).toFixed(0)}, ${Math.hypot(b.x - c.x, b.z - c.z).toFixed(0)} m on ${road.queryNearest(b.x, b.z, 15)?.runKey}` : 'none'}`
+        }).join('; '))
     const late = rows.slice(1).filter((row) => r(mid(row)) > wall + POI_PARAMS.poiEdgeFadeM).length
     console.log(`       rows past the fade line (a junction just inside the wall): ${late}`)
 
@@ -257,6 +269,46 @@ for (const s of SEEDS) {
     check(`ordinary offers plan the same with the lines open (${n})`, moved === 0, `${moved} moved`)
     check('no ordinary offer ends at the camp', toCamp === 0, `${toCamp}`)
 
+    // 6. FEAT-292 (DEC-424).
+    const PP = { ...POI_PARAMS, ...P }, T = PP.poiCampReqTargetM, band = PP.poiCampReqBand * T
+    const tw = build(false, true), tList = tw.list(), tCamp = tList.find((q) => q.type === 'expeditionCamp')
+    const total = (pois, c) => requisitionTotal(seed, pois, c, (q, o) => ms.planOffer(q, o))
+    const L = lines.reduce((a, o) => a + (o.route?.distance ?? NaN), 0), L0 = total(tList, tCamp)
+    const srcs = (b) => b.lines().map((l) => l.poiId).join()
+    const tBoard = new OfferBoard({ seed, pois: tList, nowH: 6 })
+    console.log(`       requisition ${(L / 1000).toFixed(1)} km (today's crossing ${(L0 / 1000).toFixed(1)} km): ${camp.id === tCamp.id ? 'kept' : `moved from ${tCamp.id}`}`)
+    if (camp.id === tCamp.id) {
+        kept.n++
+        check('within the band: the camp, its rows, returns and line sources are today\'s exactly',
+            Math.abs(L0 - T) <= band && JSON.stringify(camp) === JSON.stringify(tCamp)
+                && JSON.stringify(poi.barricades()) === JSON.stringify(tw.barricades()) && JSON.stringify(poi._returns) === JSON.stringify(tw._returns)
+                && srcs(board) === srcs(tBoard), `${(L0 / 1000).toFixed(1)} km`)
+    } else {
+        kept.moved++
+        check('outside the band, the camp moved to a crossing nearer the target', Math.abs(L0 - T) > band && Math.abs(L - T) < Math.abs(L0 - T),
+            `${(L0 / 1000).toFixed(1)} → ${(L / 1000).toFixed(1)} km`)
+        // The camp is no destination and gives no ordinary job, so moving it re-plans none of them.
+        let diff = 0
+        for (const id of tBoard.sources()) for (const x of tBoard.offers(id, 6)) {
+            if (x._spec?.line || tBoard.spec(x).family === 'papers') continue
+            const y = board.offers(id, 6).find((o) => o.id === x.id)
+            const a = tBoard.planDistinct(x, planOne(tBoard)), b = y && board.planDistinct(y, planOne(board))
+            if (JSON.stringify(a?.poly) !== JSON.stringify(b?.poly)) diff++
+        }
+        check('its ordinary offers plan exactly as in today\'s world', diff === 0, `${diff} differ`)
+    }
+    check('the roster is today\'s: the camp is chosen after it', ids(poi) === ids(tw))
+    const longer = []
+    for (const o of lines.filter((x) => x._spec.family !== 'demolition' && x.route)) {
+        const src = list.find((q) => q.id === o.poiId), dest = { ...board.destWish(o, list, new Set()), nearerEnd: false }
+        const ex = [0.1, 0.9].map((u) => ms.planOffer(src, { rng: () => u, dest })?.distance ?? Infinity)
+        if (!(o.route.distance <= Math.min(...ex) + 1e-6)) longer.push(`${o._spec.line} ${o.route.distance.toFixed(0)} vs ${ex.map((d) => d.toFixed(0))}`)
+    }
+    check('every fetch line leaves its source by the nearer end', !longer.length, longer.join(', '))
+    const drift = lines.filter((o) => o.route).map((o) => Math.abs(routeDistance(o.route.segments) - o.route.distance)).reduce((a, b) => Math.max(a, b), 0)
+    const memo = new Map(), Lfast = requisitionTotal(seed, list, camp, (q, o) => ms.planOffer(q, { ...o, distMemo: memo }))
+    check('the chooser\'s distance-only total is the board\'s', drift < 1e-6 && Math.abs(Lfast - L) < 1e-6, `${drift} m, ${Lfast - L} m`)
+
     const o = lines[0]
     const taken = board.take(o.id, 6, 300)
     check('a taken line has no deadline and leaves both tags', taken?.dueH === Infinity
@@ -270,6 +322,7 @@ for (const s of SEEDS) {
     check('a delivered line keeps its grade; the others have none', board.lines().filter((l) => l.grade).map((l) => l.grade).join() === 'A'
         && board.lines().filter((l) => l.state !== 'done').every((l) => l.grade === null))
 }
+if (SEEDS === PINNED) check(`the seeds hold a kept camp and a moved one (${kept.n} kept, ${kept.moved} moved)`, kept.n > 0 && kept.moved > 0)
 // expedition-rewards option 2: every line hands a supply back, and every supply item is real.
 check('every requisition line has a supply, and every supply item is an item',
     REQUISITION.every((l) => LINE_SUPPLY[l.id]?.text) && Object.values(LINE_SUPPLY).every((s) => !s.item || ITEMS[s.item]),

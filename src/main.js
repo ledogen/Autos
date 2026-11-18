@@ -114,7 +114,7 @@ import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FE
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, planGuideJob, stepJob, tourLeg, accuracyTier } from './paper-route.js'
-import { AlertCycle, wordAction, stepOf, wearLevel, engineLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
+import { AlertCycle, pollWords, wordAction, stepOf, wearLevel, engineLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
 import { SCENARIOS } from '../data/scenarios.js'   // FEAT-62: authored scenarios
@@ -1306,14 +1306,13 @@ const _isCrit = (i, l) => (i === 0 && l > 0) || (i >= 1 && i <= 4 && l === 2) ||
 // Turn around" is open while the GPS says the truck points against the route.
 const _alerts = new AlertCycle()
 const ALERT_WORD_S = 4
-let _wordLevels = null
-let _wordSteps = null
+const _wordState = { levels: null, steps: null }
 const _wordExpiry = new Map()   // alert id -> performance.now() ms it closes
 function _machineWords () {
   if (!DAMAGE_PARAMS.enabled || menuStage.isActive() || storySystem.isEntering()) {
     // a new run / the menu: no word of the last truck survives (BUG-184 resets the damage baselines the same way)
     for (let i = 0; i < _MACHINE_WORD.length; i++) { _alerts.close('w' + i); _wordExpiry.delete('w' + i) }
-    _wordLevels = null; return
+    _wordState.levels = null; return
   }
   const lv = (c) => c <= 0 ? 2 : c < KNOCK_FROM ? 1 : 0
   const cond = [damageModel.get('engine'), ...WHEEL_IDS.map(id => damageModel.get(id)), ...WHEEL_IDS.map(id => damageModel.get(id)),
@@ -1323,17 +1322,7 @@ function _machineWords () {
     ...TIRE_IDS.map((id, i) => cond[9 + i] <= 0 ? 2 : damageModel.flat[i] ? 1 : 0),
     wearLevel(cond[13]), wearLevel(cond[14])]
   const steps = cond.map(stepOf)
-  now.forEach((l, i) => {
-    const prev = _wordLevels?.[i] ?? l, crit = _isCrit(i, l), id = 'w' + i
-    const act = wordAction(prev, l, steps[i], _wordSteps?.[i] ?? steps[i], crit)
-    if (act !== 'none') { _alerts.close(id); _wordExpiry.delete(id) }
-    if (act === 'show') {
-      _alerts.open(id, _MACHINE_WORD[i][l], l === 2)
-      if (!crit) _wordExpiry.set(id, performance.now() + ALERT_WORD_S * 1000)
-    }
-    if (crit) _alerts.open(id, _MACHINE_WORD[i][l], l === 2)   // a no-op while open; raises it on a loaded run too
-  })
-  _wordLevels = now; _wordSteps = steps
+  pollWords(_alerts, _wordExpiry, _wordState, now, steps, _isCrit, _MACHINE_WORD, performance.now(), ALERT_WORD_S, serviceScreen.isOpen)
 }
 /** Per frame: expire old words, mirror the GPS wrong-way flag, and paint the alert the cycle shows. */
 function _paintAlerts (dt) {

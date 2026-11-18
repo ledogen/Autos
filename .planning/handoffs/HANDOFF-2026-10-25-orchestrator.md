@@ -141,27 +141,26 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-18 05:35; rewrite, don't append)
+## Current state (2026-11-18 06:35; rewrite, don't append)
 
-**Main** (nothing pushed): landed on 11-18, in order: FEAT-268 farm props, int-1117d, UI batch, phone sounds (FEAT-288 P7), FEAT-288 P1 dialogue, int-1118a (food additive rule, gps/food/camp, pad/cam/light, FEAT-287 rumble), numbers (FEAT-284, FEAT-285, BUG-213 check), FEAT-26 rock slides with DEC-425, FEAT-288 P2 lock gate (`src/tut-gate.js`), FEAT-290 pit cap, BUG-218 gear grind. Play build :8002 = main. A combined browser smoke + pad-e2e on main was queued at 04:55 (`wip/main-smoke-1118.log`, detached; look for "SMOKE EXIT" / "PAD EXIT"): do NOT merge while it is in its run; read it before trusting the combination. An hourly check-in cron runs to 11:07 in the orchestrator session (session-only).
+**Main** (nothing pushed): landed on 11-18, in order: FEAT-268, int-1117d, UI batch, FEAT-288 P7 + P1, int-1118a, numbers (FEAT-284/285, BUG-213 check), FEAT-26 rock slides (DEC-425), FEAT-288 P2 (`src/tut-gate.js`), FEAT-290 pit cap, BUG-218 gear grind, FEAT-265 option 3 (DEC-427; the tutorial world gains one road the tutorial never drives: told the owner, he may ask to revert). Play build :8002 = main. Combined smoke on main: run 1 failed only the known "DEC-357: no blink" flake, pad-e2e ALL OK; run 2 (`wip/main-smoke-1118b.log`) was mid-run at 06:35: read its "SMOKE EXIT" line; do NOT merge while it runs. The hourly check-in cron runs to 11:07 (session-only).
+
+**Ready to land once main's smoke is done:** land/bugs-1118-alerts (CarGame-land-211d; BUG-215 alert poll held in the shop + BUG-204 strip under the job stack; gates, smoke, pad green). BUG-204 stays open for the GPS chevrons in 3D and fragile-job bars.
 
 **Running agents (worktree · branch · what):**
-- CarGame-content · land/feat-288-p3a-lessons · FEAT-288 P3a forced lessons (Opus). Then P3b → P4 → P5 → P6 (+BUG-203) → P8, serially. Answers: DEC-426.
-- CarGame-spare · land/feat-291-multi-drop · FEAT-291 food-vendor multi-drop on the paper-route tour code (Opus). Card `feat291-multi-drop-drive`.
-- CarGame-land-gps · land/feat-292-camp-crossing · FEAT-292 (DEC-424). Near its context limit (290k): if it hands back unfinished, a fresh close-out agent. Card `feat292-camp-crossing-play`.
-- CarGame-perf (:3887) · land/feat-265-dead-zones · OPTION 3 (DEC-427 supersedes DEC-423). Land when green and the tutorial world is identical.
-- CarGame-land-212b (:3890) · land/bug-217-shadow-seam · residual edge at capture 2; at 264k tokens, same close-out rule. Needs the owner's second look.
-- CarGame-land-feat34 · land/feat-293-driving-ai · FEAT-293 / DEC-428, staged; handoff `lanes/ai.handoff.md`. Card `feat293-driving-ai-watch`.
-- CarGame-land-211d · land/bugs-1118-alerts · BUG-215 + BUG-204 (Sonnet).
-- CarGame-land-feat180 · land/bug-214-pad-walls · BUG-214 diagnosis + screenshot sheets (Opus). Card `bug214-pad-walls-pick`.
-- CarGame-land-feat180-dusk · land/bug-216-bottoming-spots · BUG-216 diagnosis only (Opus). Card `bug216-bottoming-spots`.
+- CarGame-content · land/feat-288-p3a-lessons · FEAT-288 P3a (Opus). Then P3b → P4 → P5 → P6 (+BUG-203) → P8, serially.
+- CarGame-spare · land/feat-291-multi-drop · close-out (Sonnet): gates, smoke, pad, census, card `feat291-multi-drop-drive`. Paper route and the demolition refactor are unproven until it reports.
+- CarGame-land-gps · land/feat-292-camp-crossing · FEAT-292 (DEC-424), in its browser runs; at 292k tokens: fresh close-out agent if it stops short.
+- CarGame-land-feat34 (:3893) · land/feat-293-driving-ai · close-out (Opus): the smoke's `camp` step fails after the `autoDrive` step (twice: treat as real), cost spikes 3–35 ms untraced, tunnel-portal wedge (seed 1830183820 at (125, −42)) to write up for a ticket, pad + bench check. CLAUDE.md's bench paragraph must be re-pointed to `src/autopilot.js` when it lands (orchestrator edits CLAUDE.md).
+- CarGame-land-feat180 · land/bug-214-pad-walls · BUG-214 diagnosis + sheets (Opus). Card `bug214-pad-walls-pick`.
+- CarGame-land-feat180-dusk · land/bug-216-bottoming-spots · building fix 1 (tunnel profile corner: drop BUG-90's near-tunnel ±0.25 m rounding cap if what it protected still holds; gate curvature inside tunnels). At 288k tokens: fresh agent if it stops short. Land when green and tutorial-seed passes untouched.
+- CarGame-spare-base · land/feat-279-sign-proposal · FEAT-279 deep dive `.planning/dives/FEAT-279-signs.html` (Opus), card `feat279-signs-dive`.
+- CarGame-land-211d · land/feat-275-280-mailboxes · mailboxes (Sonnet), card `mailboxes-look`.
 
-**Finished, waiting on the owner:** BUG-200 option E (land/bug-200-hairpin-grade @ 86776580, CarGame-machine, http://m4air:3282, card `bug200-e-look`). BUG-219 map tabs (is the offer-card case what he saw?). FEAT-285: "initial cost" was read as the part rate, not the $5 setup. BUG-218: a rev-matched clutchless shift now goes through (say if unwanted). Cards: `reward-pool-dilution`, `feat290-yard-props-pick`, `feat26-rockslides-story-drive`.
+**Waiting on the owner:** BUG-200 option E (`bug200-e-look`, :3282): BUG-216 found E SHARPENS the sag at a ramp's foot (4.9 → 6.8 %/m at (657, 1912)); card `bug216-bottoming-spots` asks whether to sag-limit E's foot (recommended) before E lands. BUG-217 round 2 (`bug217-shadow-seam-look`, :3890 @ a5640ad2: terrain out of the near shadow map; softer cut-bank edges) needs his look then lands. BUG-219 map tabs. FEAT-285 "initial cost" reading. BUG-218 rev-matched clutchless shift. Cards: `reward-pool-dilution`, `feat290-yard-props-pick`, `feat26-rockslides-story-drive`, `feat265-b2-look` (:3887), `feat293-driving-ai-watch`.
 
-**Queue:** FEAT-288 P3b.. (above), BUG-203 (with P6), paper-route additions FEAT-275/276/277 + ASSET-91, FEAT-279 proposal, FEAT-278/280, PERF-53 anti-aliasing review, BUG-202's Ultra GPU A/B. Free worktree: CarGame-spare-base (:3886 dev server of the landed rock-slide branch).
-
-**Older owed cards still unanswered:** feat287-bent-wheel-feel, feat288-phone-sounds-ear, ui-1117b-look, bugs-1117-* drive cards, feat267-demolition-drive, feat268-farm-knock-drive, food-shop-1117-look, feat69-freight-r2-look.
+**Queue:** FEAT-288 P3b.., FEAT-276/277 (after FEAT-291 lands: same files), FEAT-278, PERF-53 (needs a quiet machine), BUG-202's Ultra GPU A/B, a ticket for the gpu-reset test's "8 impostor tiles not re-baked" under load (seen twice), a ticket for the tunnel-portal wedge once the AI close-out writes it up.
 
 **Next free ids:** DEC-429 · BUG-220 · FEAT-294 · PERF-54 · ASSET-92.
 
-**Lessons from this night:** merge in separate small commands (`git merge --no-ff --no-commit`, check `--diff-filter=U`, commit, then gates, then build). In zsh a `for x in $var` does not split: wrap loops in `bash -c`. Check `uptime` before any heavy or quick tool. A flake claim needs the same step passing on a re-run at lower load. A lane dev server needs `--host` to answer on m4air. "Waiting on its own background work" notifications are not reports; if a transcript is over ~45 min old with no detached job alive, send a fresh close-out agent. When a search for a replacement turns expensive, re-read the options already offered (FEAT-265 option 3).
+**Lessons from this night:** merge in separate small commands. In zsh `for x in $var` does not split: wrap loops in `bash -c`. Check `uptime` before heavy tools. A flake claim needs the same step passing on a re-run; two failures of one step is real until disproven. A lane dev server needs `--host`. "Waiting on its own background work" is not a report. State predictions as predictions: "tutorial world identical" (FEAT-265) was a copy's claim, and the built result added a road.
