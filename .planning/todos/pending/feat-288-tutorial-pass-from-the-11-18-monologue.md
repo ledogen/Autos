@@ -344,6 +344,15 @@ rotation resumes from the current angle (its start angle re-based, so there is n
 (read the current orbit angle) and its pad-look branch already runs under a focus. BUG-203 (the wrong-way alert over the
 opening) rides along in the same package.
 
+**As built (P6, 2026-11-18).** The numbers are `FIRING_CAM` in data/tutorial.js: radius 16 m, aim 2 m over the pad, start
+0.35 rad short of square-on, 0.05 rad/s on its own (≈ 2.9°/s), `resumeS` 3 s after the last touch, then `easeS` 1.5 s of
+linear ease from 0 to that rate. By hand: the right stick at camera.js's own rate (2 rad/s at full tilt, up/down too) and a
+RIGHT-button drag (0.005 rad/px; the left click still turns the card, and the right press no longer does while the orbit
+is up). main.js `_updateFiringCam` reads camera.js `getOrbitAngles()`: moved since it last set them = a touch. The right
+drag is only on a focus that asks for it (`setCameraFocus` `rightDrag`), so camp and the chase are as they were.
+BUG-203: the tutorial's GPS line (and with it gps.js's wrong-way flag) is not handed over on the firing day until mom's
+pedals card (`tut-drive`, "Follow the line home"): the firing, the intro's card and her call show no line on the road.
+
 ### 7. Conflicts with standing records
 
 Each is partial: the record's other sentences stand. DEC-422 carries the monologue; where a sentence below disagrees, DEC-422 wins for that sentence
@@ -390,7 +399,7 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - [ ] P3b lessons 2: the map beat, the shop beat, mom's gas call on leaving the shop, the end menu
 - [ ] P4 world fixes: mom's ring (story-wide), legs on the map, the flat before the tunnel, mom's card on the tire's check-out
 - [ ] P5 quest-item mark on the pack
-- [ ] P6 opening camera: free rotation, resumes; BUG-203
+- [x] P6 opening camera: free rotation, resumes; BUG-203
 - [ ] P8 speaker separation (after Q2)
 - [ ] Owner has played it
 
@@ -428,3 +437,4 @@ data/tutorial.js, data/dialogue.js, src/main.js, src/menu-nav.js, src/hud-menu.j
 - 2026-11-18 P7 built on land/feat-288-p7-phone: `src/phone-audio.js` (ring + flip-shut, synthesized), `call` marker on the frame cards in dialogue.js `_frame`, one hook in main.js `_renderDialogue`; Sounds-tab entries in FEAT-120. Owner's ear owed (card feat288-phone-sounds-ear); nobody has heard it.
 - 2026-11-18 P1 dialogue built on land/feat-288-p1-dialogue (words and speakers only; 6 data/dialogue.js cards re-worded, 7 draft tags out, mom's two paycheck lines in). run-all affected gates green; smoke boot,opening PASS (38 steps). Left for P3/P4: mom's "marked spot" in tut-park waits on her ring (P4); tut-gas / tut-pickup keep their current words (§ 2's versions tie to P2/P3b flow).
 - 2026-11-18 P3a built on land/feat-288-p3a-lessons (§ 3 "As built (P3a)"): flat → diagnostics (swap locked, back out) → inventory (the spare only) → picker → the shop's tow only; press-any-key cards lock what lies under them (break camp under Katie, leave/sleep under mom); no eating between cards; Sleep greyed until 06:30 (DEC-426 Q1); four lunches at breakfast, none before (Q4); pad B turns a press-any-key card. Affected gates 55/55 green; smoke PASS 39 steps (load ~9.6); pad-e2e ALL OK (load ~8.9). The pad B check rides the smoke's real tutorial (Katie's talk, fake pad), not pad-e2e. Six lines await the owner's words (Open questions). Unverified: a human play on a real pad.
+- 2026-11-18 P6 built on land/feat-288-p6-opening (§ 6 "As built (P6)"): right stick + right drag turn the firing's orbit, 3 s idle then a 1.5 s ease back to 0.05 rad/s; BUG-203 fixed at the source (no tutorial line until `tut-drive`). Smoke `opening`: stick, drag, hold, resume, no wrong-way over the opening (truck turned round too), wrong-way works after; `skipMenus`: skip mid-orbit / at the card / under the ring leaves the camera on the truck, no marks, wrong-way live. Gates, smoke, pad-e2e: see the lane report. Unverified: a real pad and the owner's taste (card feat288-opening-look).
