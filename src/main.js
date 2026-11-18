@@ -4860,8 +4860,10 @@ const _tutRanchPin = () => _tutDrive() && dialogueSystem.has(DLG.played) && _day
 const _tutMapLeg = () => {
   if (!_tutDrive() || !dialogueSystem.has(DLG.played) || (_dayStop() === 'camp' && !_tutRanchPin())) return null
   const leg = _tutLeg()
-  return leg && { x: leg.door.x, z: leg.door.z, poly: _tutLine(leg.base)?.poly ?? null, fixed: true }   // FEAT-288 P3b: not
-}   // the player's pin, so Y / a click on it drops one (the map lesson's waypoint on her station) instead of a no-op clear
+  // fixed (FEAT-288 P3b): not the player's pin, so Y / a click on it drops one (the map lesson's waypoint on her station)
+  // instead of a clear that clears nothing
+  return leg && { x: leg.door.x, z: leg.door.z, poly: _tutLine(leg.base)?.poly ?? null, fixed: true }
+}
 /** Mom's toss: the starting pack on the ground by her steps, falling. Idempotent: only when it is neither on board nor down. */
 function _tossPack () {
   const q = _mom()
