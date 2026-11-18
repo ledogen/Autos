@@ -264,6 +264,35 @@ export function sampleRoute(segments) {
 function clamp(s, len) { return s < 0 ? 0 : (s > len ? len : s) }
 
 /**
+ * FEAT-292: a route's 3D distance alone — sampleRoute's `dist` without the profile or par's passes, summed segment by
+ * segment (each segment's samples are its own, so the sum is the same to the last few ulp). `memo` (a Map) keeps each
+ * segment's metres by (run, s0, s1): the camp's crossing choice plans ~85 routes over the same few roads. The
+ * expedition-camp gate holds it equal to computePar's distance.
+ */
+export function routeDistance(segments, memo = null) {
+    let dist = 0
+    for (const { centerline, gradeAt, s0, s1, runKey } of segments) {
+        const key = memo && `${runKey}|${s0}|${s1}`
+        let m = memo?.get(key)
+        if (m === undefined) {
+            m = 0
+            const dir = s1 >= s0 ? 1 : -1, span = Math.abs(s1 - s0)
+            if (span >= EPS) {
+                const n = Math.max(1, Math.ceil(span / DS)), dsXZ = span / n
+                for (let i = 1; i <= n; i++) {   // the same step as sampleRoute's distance
+                    const s = s0 + dir * span * (i / n)
+                    const dy = gradeAt(clamp(s + dir * dsXZ * 0.5, centerline.length)) - gradeAt(clamp(s - dir * dsXZ * 0.5, centerline.length))
+                    m += dsXZ / Math.max(0.2, Math.cos(Math.atan2(dy, dsXZ)))
+                }
+            }
+            memo?.set(key, m)
+        }
+        dist += m
+    }
+    return dist
+}
+
+/**
  * computePar(segments, ref) → { time, distance, speeds }
  *
  * Three passes over the sampled route:
