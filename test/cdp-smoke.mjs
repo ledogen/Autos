@@ -2382,7 +2382,8 @@ const STEPS = [
     check(await until(async () => !await shopUp(), 2000), 'Escape did not close the gas station shop')
     // DEC-422 (was DEC-345's brake): the shop closed, Katie hangs up and mom calls — the truck still parked at the store.
     await readCards(800, 'Phone')   // her click; mom's ring is left up to look at
-    check(await until(() => js('/Ring ring ring/.test(document.getElementById("dlg-text")?.textContent ?? "") && window.__vs.parked'), 5000), "the shop closed, no call from mom about the gas while still parked (DEC-422)")
+    check(await until(() => js('/Ring ring ring/.test(document.getElementById("dlg-text")?.textContent ?? "") && window.__vs.parked'), 5000),
+      `the shop closed, no call from mom about the gas while still parked (DEC-422): ${JSON.stringify({ card: `${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent ?? ""')}`, parked: await js('window.__vs.parked'), said: said.slice(-3), tut: await tut(), shop: await shopUp() })}`)
     await readCards()
     { const e = said.findIndex(t => /^Katie: You know where to go, I'll see you there!/.test(t))
       check(e > 0 && said[e + 1] === 'Katie: <click>' && said[e + 2] === 'Phone: Ring ring ring', `Katie's send-off, her click, then mom's ring: ${JSON.stringify(said.slice(e - 1, e + 4))}`) }
