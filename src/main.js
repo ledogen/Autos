@@ -5370,7 +5370,7 @@ gpsSystem = new GpsSystem(scene, {
     // FEAT-170: the opening's evening has no job, only the way home to mom's (FEAT-184: the morning's, back to the joint).
     if (_tutDrive()) return _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
     // FEAT-267: a demolition job's GPS is the leg to the next cluster on the remaining tour (_updateSite).
-    if (_site?.guide && _site.mission === missionSystem.mission) return _site.guide
+    if (_site?.guide && _site.mission === missionSystem.mission && missionSystem.isOnJob()) return _site.guide
     if (s === 'countdown' || s === 'staging' || s === 'running') return _tutLine(missionSystem.guideRoute())
     return _waypointOn() ? _tutLine(_waypoint.route) : null   // FEAT-211: last in line — a job's guide always wins
   },
