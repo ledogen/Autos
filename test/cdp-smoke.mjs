@@ -421,7 +421,7 @@ const STEPS = [
     check(await until(dlg, 3000), 'no card after the skip (FEAT-184: the last check, then Larry)')
     const dlgText = () => js('document.getElementById("dialogue-panel").textContent')
     check(/last check/.test(await dlgText()), "the manager's last check is not the first card")
-    for (let i = 0; i < 8 && /last check|\[placeholder\]|Ring ring ring/.test(await dlgText()); i++) { await tap('Enter'); await sleep(100) }   // DEC-354: Larry's call rings first
+    for (let i = 0; i < 8 && /last check|Ring ring ring/.test(await dlgText()); i++) { await tap('Enter'); await sleep(100) }   // DEC-354: Larry's call rings first
     // The owner's word stream (feat120-blip): a card fills a word at a time (the intro's 33 words take ~2.6 s);
     // a press fills it in place, the next turns it.
     const shown = () => js('[...document.querySelectorAll("#dlg-text span")].filter(w => !w.children.length && w.style.visibility !== "hidden").length')
@@ -2460,15 +2460,15 @@ const STEPS = [
     check(!await js('document.getElementById("midnight-card").classList.contains("on")'), "the tutorial's night dropped the midnight overlay")
     const e1 = await eve()
     check(e1.tut === 'morning' && /to work · park there for your last check/.test(e1.hud), `waking did not end the firing day and send the morning to "work" for the check (DEC-357): ${JSON.stringify(e1)}`)
-    // The morning: breakfast, then Katie's reminder (DEC-326), the last drive on rails. FEAT-184 stage 5: breakfast is the
+    // The morning: breakfast, then mom's reminder (DEC-326, DEC-422), the last drive on rails. FEAT-184 stage 5: breakfast is the
     // player's to eat now (her card asks for a packed lunch). FEAT-229: the day's stamps are lived hours (energy and hunger
     // pay for them), so the driver may wake hungry; the lunch she asks for feeds him.
     const stage = () => js('document.getElementById("hm-stage").textContent')   // FEAT-198: hunger's own line
     let morn = await readCards()   // up to her breakfast card, which waits for a lunch eaten (DEC-359)
     // (her breakfast card clears itself the moment a lunch is gone; this run ate two at night, so it may already be down: DEC-359)
     check(await js('window.__inv.use("packedLunch")'), 'no packed lunch for breakfast')
-    morn += await readCards()   // Katie's reminder
-    check(morn >= 1 && saidAny(/Don't forget, today's the day/), `no reminder in the morning: ${JSON.stringify(said.slice(-3))}`)
+    morn += await readCards()   // mom's reminder (DEC-422)
+    check(morn >= 1 && saidAny(/^Mom: Now go get that paycheck, honey/), `no reminder in the morning: ${JSON.stringify(said.slice(-3))}`)
     check(await until(async () => !/hungry/.test(await stage()), 1000), `breakfast did not feed the driver ("${await stage()}")`)
     if (await panel()) await tap('Escape')   // her sleep card, if it is still up over the morning
     await strayCheck('on the way to the paycheck')
