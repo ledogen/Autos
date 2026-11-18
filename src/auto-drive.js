@@ -44,7 +44,8 @@ export const autoDrive = {
     const q = vs.quaternion, fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
     const keep = reg ? (x, z) => Math.hypot(x - reg.x, z - reg.z) < reg.r - 150 : undefined
     this._route = makeRoute(() => r._network.values(), rng, { x: vs.position.x, z: vs.position.z, dir: { x: fx, z: fz } }, { keep })
-    if (!this._route.path.length) { this._off('stopped: no road here'); return }
+    const d = Math.min(Infinity, ...this._route.path.slice(0, 400).map(q => Math.hypot(q.x - vs.position.x, q.z - vs.position.z)))
+    if (!(d < 40)) { this._off('stopped: no road within 40 m (drive onto one first)'); return }
     const inBore = (x, z) => { const nr = r.queryNearest(x, z, 15); return !!nr && !!r.tunnelSpanAt?.(nr.runKey ?? '', nr.arcS ?? 0, -20) }
     this._ap = createAutopilot({ car: params, route: this._route, inBore, flat: this._h.flat })
     this._ap.locate(vs.position)
