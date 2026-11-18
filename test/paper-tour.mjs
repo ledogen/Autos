@@ -313,15 +313,17 @@ for (const t of tours.filter(Boolean)) {
         again?.already === true && paper.delivered() === 1,
         `already ${again?.already}, delivered ${paper.delivered()}`)
 
-    // FEAT-141: EVERY customer is deliverable — a paper on one outside the plotted route COUNTS.
-    // (Before FEAT-141 this was the decoy case and scored nothing.)
+    // DEC-398 (FEAT-266, replacing FEAT-141's any-customer rule): only the round's planned N count. A paper dead
+    // centre on a customer OFF the plotted route scores nothing and reads as an ordinary miss.
     const offRound = customers.find(c => !route.some(r => r.id === c.id))
-    if (offRound && route.length > 2) {
+    check('the region has a customer off the plotted route to throw at', !!offRound)
+    if (offRound) {
         drive(4)
         paper.takePaper()
         const off = paper.recordLanding(offRound.x, offRound.z)
-        check('a paper on a customer outside the plotted route still COUNTS (any N, FEAT-141)',
-            !!off?.credited && paper.delivered() === 2, `delivered ${paper.delivered()}`)
+        check('a paper on a customer OFF the plotted route scores nothing (DEC-398)',
+            !!off && !off.credited && !off.already && off.q === 0 && paper.delivered() === 1,
+            `credited ${off?.credited}, q ${off?.q}, delivered ${paper.delivered()}`)
     }
 
     // Finish on the plotted porches. The Nth delivery must end the round by itself — no more.

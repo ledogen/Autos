@@ -49,6 +49,7 @@ import {
     POI_ADJECTIVE_CHANCE, POI_THE_CHANCE, BUSINESS_TYPES, NAME_FORMS, HOUSEHOLDS, PLACE_NOUNS, LANDMARKS,
 } from '../data/offer-names.js'
 import { djb2, mulberry32 } from './seed.js'
+import { rolledCount } from './demolition.js'   // FEAT-256: the count a demolition card names
 import { STOCK_WEIGHT } from '../data/stock-weights.js'   // the bonus reward pick shares the shelf's weights
 import { basePay, payRange, regionTier, formatMoney, rankTable, fragileLines } from './economy.js'
 import { DAY_PARAMS } from './day.js'
@@ -122,8 +123,9 @@ export function windowPick (at, u, top) {
     return at.reduce((a, x) => (c(x) < c(a) ? x : a))
 }
 
-/** FEAT-168: may an offer born at `bornH` (DaySystem.clockH, day 1 starts at 0) carry REWARDS row `w`? */
-const dayAllows = (w, bornH) => !(w.minDay > Math.floor(bornH / 24) + 1)
+/** FEAT-168: may an offer born at `bornH` (DaySystem.clockH, day 1 starts at 0) carry REWARDS row `w`? DEC-364: `minDay` counts days
+ *  since free will opened (the old numbering's day), and free will opens at clockH 7 on day 1 now (was day 0, clockH -17): one day less. */
+const dayAllows = (w, bornH) => !(w.minDay > Math.floor(bornH / 24))
 
 /** FEAT-168: every reward — the REWARDS rows, then each carried part with no row, under its slot's
  *  category at its rarity's gates (data/offers.js PART_REWARD_CAT / RARITY_GATES). */
@@ -159,9 +161,6 @@ export function jobBadge (sp) {
 const fragileOf = (thing) => thing.family === 'fragile'
     ? { tier: thing.tier, tierName: thing.tierName, shockFloorG: thing.shockFloorG, onePctG: thing.onePctG, breakG: thing.breakG, sound: thing.sound } : null
 
-/** FEAT-65: a demolition gate as a whole percent of the site smashed (economy.js RANK_TABLE.demolition). */
-const smashedPct = (gate, region) => Math.round(rankTable('demolition', region)[gate] * 100)
-
 /** "S only" / "A or better" — how a card states a rank gate. */
 export function gateText (gate) { return gate === 'S' ? 'S only' : `${gate} or better` }
 
@@ -181,7 +180,6 @@ export function gateLine (gate, kind, region = 1, cargoId = 'firewood', km = 0) 
     if (kind === 'haul') return `if ${rankTable('haul', region, cargoId)[gate]}+ bundles delivered`
     if (kind === 'fragile') return `if ${Math.round(fragileLines(region, cargoId, km)[gate] * 100)}%+ intact`
     if (kind === 'freight') return 'upon delivery'
-    if (kind === 'demolition') return `if ${smashedPct(gate, region)}%+ smashed`   // FEAT-65: the share of the site
     return `if ${gateText(gate)}`
 }
 
@@ -219,7 +217,6 @@ export function deedLine (kind, region = 1, cargoId = 'firewood', km = 0, massKg
         const t = rankTable('freight', region)
         return massKg >= t.B ? 'Deed: 1 upon delivery' : `Deed: 1/2 upon delivery — under ${t.B} kg`
     }
-    if (kind === 'demolition') return `Deed: 1 ${gateLine('B', kind, region)} · 1/2 at ${smashedPct('C', region)}%+`
     return 'Deed: 1 if B or better · 1/2 at C'
 }
 
@@ -735,7 +732,7 @@ export class OfferBoard {
             deadlineSlack: (thing.deadlineSlack ?? DEADLINE_SLACK[thing.family]) * tmul('deadline'),   // FEAT-113; FEAT-142
             // FEAT-142: the traits and the terms they move that the spec does not already carry.
             traits: traits.map(t => t.id), traitNames: traits.map(t => t.name),
-            tipMult: tmul('tip'), thresholdScale: thing.family === 'delivery' ? tmul('thresholds') : 1,
+            tipMult: tmul('tip'), thresholdScale: thing.family === 'delivery' || thing.family === 'demolition' ? tmul('thresholds') : 1,   // FEAT-267: hurried (DEC-399)
             deeds: traits.find(t => t.deeds)?.deeds ?? null,
             shape: fetch ? 'fetch' : stops ? 'multi' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
             stops, multiPhrase: stops ? thing.multi : null,
@@ -1049,7 +1046,9 @@ export class OfferBoard {
                               { t: ' hauled to ' }, { t: dest, b: true }, { t: '.' })
             } else if (sp.targets) {
                 // FEAT-65: "Earl needs his old drums crushed along the Miller place."
-                sentence.push({ t: ' needs ' }, { t: sp.phrase, b: true }, { t: ' along ' }, { t: dest, b: true }, { t: '.' })
+                // FEAT-256: the count is in the sentence ("needs 10 old signs knocked down"), rolled from the offer's own stream.
+                sentence.push({ t: ' needs ' }, { t: sp.phrase.replace('{n}', route?.targets?.length ?? rolledCount(sp.targets, `demo:${this._seed}:${offer.id}`)), b: true },
+                              { t: ' along ' }, { t: dest, b: true }, { t: '.' })
             } else {
                 // A passenger is the poster themselves: "Earl needs a ride to Rust Belt Auto." A fetch
                 // names its pickup: "Earl needs a full jerry can fetched from Pump & Go."
@@ -1079,14 +1078,14 @@ export class OfferBoard {
         // in one breath. A haul reads as a trade: "Bundle costs $0.25 · sells for $0.50 – $1.00 by speed".
         const pay = !range ? null
             : sp.stock ? `Bundle costs ${money(stockPrice(par, payTier, sp.payMult))} · sells for ${money(range.base)} – ${money(range.max)} by speed`
+            // DEC-403: a demolition base is paid a share per target as each falls; the tip is time alone. PLACEHOLDER words.
+            : sp.targets ? `Pay ${money(range.base)} – ${money(range.max)}: base per target, tip on time`
             : `Pay ${money(range.base)} – ${money(range.max)} based on speed`
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
         if (sp.fragile) terms.push(sp.fragile.tierName)   // what the player is up against (owner, 2026-10-23)
-        // FEAT-65: a demolition job carries nothing; it states the site — how many stand, and that the pay
-        // follows the share smashed (haul's rule, main.js onSettle).
-        if (sp.targets) terms.push(`${route?.targets?.length ?? '?'} to smash`, 'pay per target smashed')
-        else terms.push(sp.stock ? `${sp.stock} bundles available` : `${sp.massKg} kg`)
+        // FEAT-65: a demolition job carries nothing; the count rides the sentence (FEAT-256).
+        if (!sp.targets) terms.push(sp.stock ? `${sp.stock} bundles available` : `${sp.massKg} kg`)
         // R-20: the tip is speed on fragile too; what the condition moves is the BASE (splitFragilePayout
         // pays half of it flat and half × health) — the owner asked, so the card says it.
         if (sp.fragile) terms.push('damage docks the base')
@@ -1171,8 +1170,7 @@ export class OfferBoard {
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
         if (sp.fragile) terms.push(sp.fragile.tierName)
-        if (sp.targets) terms.push(`${route?.targets?.length ?? '?'} to smash`)
-        else terms.push(sp.stock ? `${sp.stock} bundles` : `${sp.massKg} kg`)
+        if (!sp.targets) terms.push(sp.stock ? `${sp.stock} bundles` : `${sp.massKg} kg`)
         if (sp.stock) {
             // The source's own haul offer is the stock on hand (owner, 2026-10-30): a player who wants the
             // line in one trip waits for it. offer.poiId is the source at the camp too (_at).
@@ -1183,7 +1181,7 @@ export class OfferBoard {
             family: sp.family, badge: jobBadge(sp), portrait: null, flavor: null,
             // A template literal for "from": test/offer-board.mjs's import scan. FEAT-65: the demolition line
             // names its site, not a source — the camp gives it.
-            sentence: [{ t: 'The expedition camp', b: true }, { t: ' needs ' }, { t: sp.phrase, b: true },
+            sentence: [{ t: 'The expedition camp', b: true }, { t: ' needs ' }, { t: sp.phrase.replace('{n}', sp.targets ? rolledCount(sp.targets, `demo:${this._seed}:${offer.id}`) : ''), b: true },
                        ...(sp.targets ? [{ t: ' along ' }, { t: route?.placeName ?? sp.placeName, b: true }]
                            : [{ t: ` from ` }, { t: this.placeLabel(offer.poiId) ?? 'its source', b: true }]), { t: '.' }],
             pay: 'Unpaid — the camp’s requisition', terms, times: ['no time limit'], bonus: null,

@@ -249,15 +249,28 @@ export class ServiceCenter {
     }
 
     /** What the bench can bring fitted track `id` up to (repairTargets). */
-    targets (id) {
+    targets (id, from = this.damage.get(id)) {
         if (TRACKS[id].manualOnly && !this.damage.manualBox) return []
-        return repairTargets(TRACKS[id].cls, this.damage.get(id), this.parts.fitted(socketOfTrack(id)))
+        return repairTargets(TRACKS[id].cls, from, this.parts.fitted(socketOfTrack(id)))
     }
 
-    /** What repairing fitted track `id` to `target` costs now (default: as far as it goes). */
-    repairQuote (id, target = this.targets(id).at(-1)) {
+    /** What repairing fitted track `id` to `target` costs now (default: as far as it goes); `from`: the condition it starts
+     *  at (BUG-197: a repair already on the cart is re-priced from where it began). */
+    repairQuote (id, target = this.targets(id).at(-1), from = this.damage.get(id)) {
         const socket = socketOfTrack(id)
-        return this._quote(TRACKS[id].cls, socket && this.parts.fitted(socket), this.damage.get(id), target ?? 0, true)
+        return this._quote(TRACKS[id].cls, socket && this.parts.fitted(socket), from, target ?? 0, true)
+    }
+
+    /** BUG-197 (owner, 2026-11-17: "It shouldn't add a second operation, it should just correct the first one"): the cart
+     *  line already repairing this part — `m` 'repair' with its track, or 'repairOwned' with its index and `wheel` — or
+     *  null. Its `from` is the condition the part had before it, so the screen's bar edits that line, not a second one. */
+    repairLine (m, a0, wheel = false) { return this.cart.find(l => l.m === m && l.args[0] === a0 && !!l.args[2] === wheel) ?? null }
+
+    /** Queue a repair, replacing the cart line already repairing that part (repairLine): one line per part. */
+    queueRepair (m, args, label) {
+        const old = this.repairLine(m, args[0], !!args[2])
+        if (old) this.remove(this.cart.indexOf(old))
+        return this.queue(m, args, label)
     }
 
     /** Repair one fitted track to `target` (one of targets(id)). False, nothing charged, if it isn't
@@ -267,6 +280,7 @@ export class ServiceCenter {
         const q = this.repairQuote(id, target), free = this._free()
         if (!this.spend(q.price)) return false
         if (free) this.useFreeRepair()
+        if (this._line) this._line.from = this.damage.get(id)   // BUG-197: where the line began
         this.damage.set(id, target)
         this.advanceHours(q.hours)
         this.onChange()
@@ -334,16 +348,22 @@ export class ServiceCenter {
 
     /** FEAT-196: the wheel of a mounted pair in the inventory (a spare, a pair a swap took off) is
      *  straightened as its own part, still mounted — what the bench can bring it up to. */
-    ownedWheelTargets (index) {
+    ownedWheelTargets (index, from = undefined) {
         const r = this.inventory.list()[index]
-        return PARTS[r?.id]?.mounted ? repairTargets('wheel', r.wheelCond ?? 1) : []
+        return PARTS[r?.id]?.mounted ? repairTargets('wheel', from ?? r.wheelCond ?? 1) : []
     }
 
-    /** What repairing inventory entry `index` to `target` costs now; `wheel`: a mounted pair's wheel. */
-    ownedQuote (index, target, wheel = false) {
+    /** What the bench can bring inventory entry `index` up to, from `from` (default: its condition now). */
+    ownedTargets (index, from = undefined) {
         const r = this.inventory.list()[index]
-        return wheel ? this._quote('wheel', r.wheel ?? PARTS[r.id].mounted.wheel, r.wheelCond ?? 1, target, false)
-                     : this._quote(classOf(r.id), r.id, r.cond ?? 1, target, false)
+        return classOf(r?.id) ? repairTargets(classOf(r.id), from ?? r.cond ?? 1, r.id) : []
+    }
+
+    /** What repairing inventory entry `index` to `target` costs now; `wheel`: a mounted pair's wheel; `from` as repairQuote. */
+    ownedQuote (index, target, wheel = false, from = undefined) {
+        const r = this.inventory.list()[index]
+        return wheel ? this._quote('wheel', r.wheel ?? PARTS[r.id].mounted.wheel, from ?? r.wheelCond ?? 1, target, false)
+                     : this._quote(classOf(r.id), r.id, from ?? r.cond ?? 1, target, false)
     }
 
     /** Repair inventory entry `index` to `target`, as its own item (owner, 2026-10-20); `wheel`: a mounted pair's wheel. */
@@ -353,6 +373,7 @@ export class ServiceCenter {
         const q = this.ownedQuote(index, target, wheel), free = this._free()
         if (!this.spend(q.price)) return false
         if (free) this.useFreeRepair()
+        if (this._line) { const r = this.inventory.list()[index]; this._line.from = (wheel ? r.wheelCond : r.cond) ?? 1 }   // BUG-197
         this.inventory.amend(index, wheel ? { wheelCond: target } : { cond: target })
         this.advanceHours(q.hours)
         this.onChange()

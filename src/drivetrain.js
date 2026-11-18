@@ -465,7 +465,10 @@ function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve
     const target = Math.max(-1, Math.min(nGears, from + Math.sign(req)))
     if (target === from) { /* already at the end of the gate */ }
     else if (clutch > (params.clutchShiftMax ?? 0.15)) st.missShift = true          // clutch in: rejected
-    else if (target === -1 && Math.abs(vForward) > REV_THRESHOLD) { /* R refused while moving */ }
+    // R is refused rolling FORWARDS only (BUG-196): rolling backwards, R is the direction the truck already moves, and
+    // the old |v| test made 1st → R impossible on a hill start gone wrong. ponytail: the synchro takes R at any backward
+    // speed; the real M5OD's reverse is unsynchronised and grinds unless near rest either way (owner's call, 2026-11-17).
+    else if (target === -1 && vForward > REV_THRESHOLD) { /* R refused while rolling forwards */ }
     else {
       st.shiftTo = target
       st.shiftT  = (params.manualShiftTime ?? 0.25) * (params._transShiftScale ?? 1)

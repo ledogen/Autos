@@ -12,6 +12,29 @@ depends_on: none — substrate landed 2026-08-15 (was "FEAT-09 Phase 3")
 
 # FEAT-26: Random rockslide ambushes — timed tumbling rocks that try to nail the player
 
+## ⚑ ALPHA RULING 2026-11-17 (DEC-400) — this section wins over everything below it
+
+Next steps: the hazards lane (Opus) builds it on `land/feat-26-rockslides`; the owner drives it and sets the numbers.
+
+The owner moved rock slides into the alpha with no spirit ties, and gave the rules (his words, in full in DEC-400):
+- **Where:** only "in an area where the player can see them coming i.e. not a blind corner", and only from "a steep
+  enough side slope (most likely only earthworks apply) such that they will roll all the way down the hill and into
+  the road".
+- **When:** "the spawn must be timed in such a way that the engine is attempting to directly nail the player."
+  "this will require some testing to see how quickly the small rigid body rocks fall down slopes so we can get the
+  timing correct."
+- **What:** "5-15 rocks spawned all at once in a 3m region on the slope surface itself seems about right but feel
+  free to test. optionally if it adds consistency they can spawn with some slope aligned velocity."
+- **Look:** "if possible it would be nice to use a shader to 'fade them in' over .5s so the spawn isnt as obvious
+  (since the spawn will probably be visible)."
+- **How often:** "once in ~20km driving, but fully random apart from the road section candidacy".
+
+So, against the older text below: no Highway favour / spirit rate (that is beta); the batch is 5–15 rocks in a 3 m
+patch, not "1–3 medium + 5–10 small"; spawn-out-of-view is replaced by a visible spawn with a 0.5 s fade-in;
+"intentional inaccuracy" is not asked for (the engine tries to hit). A hit goes to the wear model that now exists
+(src/damage.js; the impact floor is 5 mph, DEC-395). FEAT-27 (the static slide) is NOT part of this.
+
+
 ## ⚑ STATUS 2026-08-15 — UNBLOCKED; the substrate is on main
 
 The dependency this ticket carried is **discharged**. FEAT-09 no longer exists as the plan: the

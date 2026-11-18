@@ -231,8 +231,8 @@ export const PROP_MODELS = {
     collision: { shape: 'box', size: [0.16, 0.87, 0.50] },
     tags: ['lawnFurniture'],
     yardGroup: [1, 2],   // flamingos come in pairs
-    // FEAT-149: knocked over and sent rolling by the truck (src/main.js _updateOrnaments). A plastic
-    // flamingo on wire legs.
+    // FEAT-149: knocked over and sent rolling by the truck (src/main.js _updateOrnaments). FEAT-251 mass: the
+    // blow-moulded HDPE body is 0.24 m² of ~0.6 mm wall (0.14 kg) and the two steel wire legs ~0.06 kg each.
     knockable: { massKg: 0.3 },
   },
 
@@ -279,6 +279,15 @@ export const PROP_MODELS = {
     collision: { shape: 'none', size: [0.708, 0.378, 0.675] },
   },
 
+  // ASSET-90 — the same fire burnt out (FEAT-264, DEC-393: shown after a sleep over two hours).
+  // 434 tris, built by campfire.py's build_dead(): the live model's stone ring stone for stone,
+  // same seat and FireFlameAnchor, the logs and coal bed gone — a FireAsh heap, FireCinder
+  // fragments, two FireChar stubs. No FireCoal, so src/campfire.js has nothing to glow.
+  campfireDead: {
+    url: 'assets/models/campfire-dead.glb',
+    collision: { shape: 'none', size: [0.708, 0.158, 0.675] },
+  },
+
   // ASSET-04 — the kettle barbecue.  566 tris, 0.629 x 1.066 x 0.629 m, four flat
   // materials, no textures.  LAWN FURNITURE: scatter it WITH a POI, never on bare
   // ground — the ticket's rule is that without an anchor it reads as litter, not
@@ -303,6 +312,10 @@ export const PROP_MODELS = {
     // a 0.68 m stance; the ticket's authored cylinder (r 0.28) is the bowl only and
     // would let a wheel poke through, so this box covers the stance instead.
     collision: { shape: 'box', size: [0.629, 1.066, 0.629] },
+    // FEAT-251: knocked flying, not a wall (owner, 2026-11-17: only the fire pit is solid). 15 kg: the real
+    // 22" kettle's shipping weight is ~14.5 kg, and the model agrees — 1.41 m² of enamelled ~1 mm steel
+    // shell (11 kg) plus legs, grate, ash pan and wheels.
+    knockable: { massKg: 15 },
     // Black, Weber red, bottle green.  ONE key: bowl and lid share GrillEnamel
     // because on a real kettle they are the same porcelain coat, so they must
     // recolour together.  Handles, wheels, legs, grate and damper are all FIXED —
@@ -353,6 +366,9 @@ export const PROP_MODELS = {
     tags: ['lawnFurniture', 'yardClutter'],
     collision: { shape: 'box', size: [0.31, 0.46, 0.31] },
     yardGroup: [1, 2],
+    // FEAT-251: a FULL cylinder (a spare stands full until it is swapped in): 7.7 kg tare + 9.1 kg (20 lb)
+    // of propane. Knockable in both pools — it is the same tank at a farm. The liquid is rigid here.
+    knockable: { massKg: 16.8 },
   },
 
   // ASSET-06 kit — the folding camp chair, 160 tris, ChairFrame + ChairFabric, built by
@@ -367,6 +383,10 @@ export const PROP_MODELS = {
     tags: ['lawnFurniture'],
     yardYaw: 0.5,
     yardGroup: [1, 2],
+    // FEAT-251: 3.5 kg, a steel quad chair: ~8 m of 16 mm x 0.8 mm tube (2.4 kg), 600D polyester seat and
+    // back (~0.8 kg), plastic hubs. Its body is the convex hull of the model, so the open frame meets the
+    // truck as a solid block of the chair's own outline.
+    knockable: { massKg: 3.5 },
   },
 
   // ASSET-72 — propane 4-pack on the SMALL pallet, freight cargo (FEAT-96, strapped to the bed).
@@ -406,7 +426,9 @@ export const PROP_MODELS = {
     // one side — the right way round for knockable set dressing.
     collision: { shape: 'box', size: [0.412, 0.800, 0.330] },
     tags: ['lawnFurniture'],
-    knockable: { massKg: 4 },   // FEAT-149: a ceramic gnome
+    // FEAT-149: a ceramic gnome. FEAT-251 mass: 1.2 m² of skin at ~4.5 mm earthenware (2000 kg/m³) is 10 kg
+    // (the x2 rescale made it 0.8 m tall; the old 4 kg was a 0.4 m gnome's). Resin would be ~6 kg.
+    knockable: { massKg: 10 },
     yardYaw: 0.5,   // faces the road, like the chair (owner 2026-10-07)
     // Blue / green / burgundy. The hat, beard, skin, leather and buckle are FIXED — a gnome is a
     // red hat and a white beard, and recolouring those stops it being a gnome.
@@ -443,11 +465,14 @@ export const PROP_MODELS = {
     url: 'assets/models/beach-ball.glb',
     collision: {
       shape: 'sphere', radius: 0.40, size: [0.80, 0.80, 0.80],
-      mass_kg: 0.15, restitution: 0.75,
+      mass_kg: 0.35, restitution: 0.75,
     },
     // FEAT-71 lifts a sphere-shaped satellite by its radius (dressYard), per the note above.
     tags: ['lawnFurniture'],
-    knockable: { massKg: 0.15, restitution: 0.75 },   // FEAT-149: the collision row's own mass and bounce
+    // FEAT-149: the collision row's own mass and bounce. FEAT-251 mass: 1.94 m² of PVC film at the 0.19 kg/m²
+    // a 16" ball weighs (0.1 kg on 0.53 m²) — 0.35 kg of skin. NOT modelled: the 0.32 kg of air inside (its
+    // weight is cancelled by buoyancy, its inertia is not) and air drag, so it flies farther than a real one.
+    knockable: { massKg: 0.35, restitution: 0.75 },
   },
 
   // ── POI markers ───────────────────────────────────────────────────────────────────────────
@@ -1259,9 +1284,13 @@ export const PROP_MODELS = {
 
   // ASSET-07 — potted plant, 324 tris. Thirteen geometry leaves on stems out of an 8-sided pot (no alpha cards,
   // ART-STYLE rule 7). The box is the POT; the leaves clip.
-  pottedPlant: { url: 'assets/models/potted-plant.glb', collision: { shape: 'box', size: [0.32, 0.69, 0.32] }, tags: ['lawnFurniture'] },
+  // FEAT-251: 14 kg — a ~4 kg terracotta pot and ~0.015 m³ of moist potting mix (~600 kg/m³, 9 kg) under the plant.
+  // Uniform density over the hull puts its centre of mass at the hull's middle, above the real one (low in the pot).
+  pottedPlant: { url: 'assets/models/potted-plant.glb', collision: { shape: 'box', size: [0.32, 0.69, 0.32] }, tags: ['lawnFurniture'],
+    knockable: { massKg: 14 } },
   // ASSET-08 — brick fire ring, 644 tris, 1.26 m across at 1.2x (ASSET-76, owner: "20% bigger"), footing 3.6 cm
   // below grade. One log pokes 16 cm past the ring; the box is the ring, the log is clippable.
+  // FEAT-251 (owner, 2026-11-17): the ONE lawn item the truck truly collides with — never knockable.
   firePit: { url: 'assets/models/fire-pit.glb', collision: { shape: 'box', size: [1.26, 0.40, 1.26] }, tags: ['lawnFurniture'] },
   // ASSET-12 — lumber yard kit, sawmill dressing (FEAT-91; pools FEAT-74). One generator, src/lumber.py, shared
   // with ASSET-38. Boards are modelled, ends in LumberEnd. Offcut pile was settled by a rigid-body sim and baked.

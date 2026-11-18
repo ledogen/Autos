@@ -139,7 +139,7 @@ for (const seed of [1, 2, 3, 4, 5]) {
 }
 check(`every shop, every half hour of 12 days × 5 seeds, has ${ALWAYS.join(' and ')}, new`, always)
 check('the old tire and the air filter are always stocked; the standard tire rotates',
-  ALWAYS.includes('tireOld') && ALWAYS.includes('airFilterStock') && !ALWAYS.includes('tireStandard') && STOCK_WEIGHT.tireStandard === 10)
+  ALWAYS.includes('tireOld') && ALWAYS.includes('airFilterStock') && !ALWAYS.includes('tireStandard') && STOCK_WEIGHT.tireStandard === 20)   // FEAT-259: Often × 2
 startShelves(3)
 const at = shelf('autoShop:a', 50).length - 1
 take('autoShop:a', at)

@@ -339,9 +339,13 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
         }
     }
     check('demolition rolls only at farms and work sites, always roadside, with a site dressing', demo > 0 && wrong === 0, `${demo} rolled, ${wrong} wrong`)
-    check('a demolition card counts its targets and states the deed and the gate as a share smashed',
-        card?.terms.includes('10 to smash') && /Deed: 1 if \d+%\+ smashed · 1\/2 at \d+%\+/.test(card.deed)
-            && gateLine('B', 'demolition', 1) === 'if 75%+ smashed', JSON.stringify(card && { terms: card.terms, deed: card.deed }))
+    // FEAT-267 (DEC-399): a hurried job — its deed and gate are courier's letters on time, and its deadline is par × (1 + 1.25).
+    check('a demolition card names its count in the sentence, no smash line (FEAT-256), states the deed and the gate as a time letter (FEAT-267), its time limit is par × 2.25, and its pay line says the base is paid per target, the tip on time (DEC-403)',
+        /needs \d+ /.test(card?.sentence.map(x => x.t).join('')) && !/\{n\}/.test(card?.sentence.map(x => x.t).join(''))
+            && !card.terms.some(t => /smash/.test(t)) && card.deed === 'Deed: 1 if B or better · 1/2 at C'
+            && /^Pay \$[\d.]+ – \$[\d.]+: base per target, tip on time$/.test(card.pay)   // DEC-403
+            && gateLine('B', 'demolition', 1) === 'if B or better' && DEADLINE_SLACK.demolition === 1.25,
+        JSON.stringify(card && { terms: card.terms, deed: card.deed, pay: card.pay }))
 }
 
 // ── 11. names ───────────────────────────────────────────────────────────────────────────────────
@@ -478,10 +482,10 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     const home = { bonus: 0, garage: 0 }, lunch = { school: 0, elsewhere: 0 }   // FEAT-168 off-list pulls
     for (let seed = 1; seed <= 200; seed++) {
         const b = make(seed)
-        for (let t = T0; t < T0 + 24 * 3; t += 2) for (const q of POIS) {
+        for (let t = T0; t < T0 + 24 * 4; t += 2) for (const q of POIS) {
             for (const o of b.offers(q.id, t)) {
                 const bonus = b.spec(o).bonus
-                if (bonus?.rewardId === 'diffLSD') lsd[o.bornH < 48 ? 'early' : 'late']++
+                if (bonus?.rewardId === 'diffLSD') lsd[o.bornH < 72 ? 'early' : 'late']++
                 if (bonus?.rewardId === 'schoolLunch') lunch[q.type === 'school' ? 'school' : q.type === 'larrysHouse' ? 'larry' : 'elsewhere']++
                 if (bonus && q.type === 'residence') {
                     home.bonus++; if (REWARD_CATS.residence.rare.includes(catOf[bonus.rewardId])) home.garage++
@@ -841,8 +845,8 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     const src = readFileSync(new URL('../src/offer-board.js', import.meta.url), 'utf8')
     const imports = [...src.matchAll(/from\s+'([^']+)'/g)].map(m => m[1]).sort()
     // R-07: parts.js and shop-stock.js (both data) price a reward for the card's "Tip: Compressor ($20)".
-    const allowed = ['../data/offer-names.js', '../data/offers.js', '../data/parts.js', '../data/shop-stock.js', '../data/stock-weights.js', './day.js', './economy.js', './seed.js']
-    check('offer-board.js imports only its tables (stock-weights.js: the reward pick, 2026-10-22; parts.js + shop-stock.js: reward prices, R-07), seed.js, economy.js and day.js (the clock unit)',
+    const allowed = ['../data/offer-names.js', '../data/offers.js', '../data/parts.js', '../data/shop-stock.js', '../data/stock-weights.js', './day.js', './demolition.js', './economy.js', './seed.js']
+    check('offer-board.js imports only its tables (stock-weights.js: the reward pick, 2026-10-22; parts.js + shop-stock.js: reward prices, R-07), seed.js, economy.js day.js (the clock unit) and demolition.js (FEAT-256: the card rolled count)',
         JSON.stringify(imports) === JSON.stringify(allowed), imports.join(', '))
     check('offer-board.js never reads Math.random', !/Math\.random/.test(src.replace(/\/\/.*$/gm, '')))
 }
@@ -871,7 +875,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
             const thing = THINGS.find(th => th.id === sp.thingId)
             const slack0 = thing.deadlineSlack ?? DEADLINE_SLACK[thing.family]
             if (Math.abs(sp.deadlineSlack - slack0 * tr(sp, 'deadline')) > 1e-12 || Math.abs(sp.tipMult - tr(sp, 'tip')) > 1e-12
-                || sp.thresholdScale !== (sp.family === 'delivery' ? tr(sp, 'thresholds') : 1)
+                || sp.thresholdScale !== (['delivery', 'demolition'].includes(sp.family) ? tr(sp, 'thresholds') : 1)   // FEAT-267: demolition is hurried
                 || sp.deeds !== (ids.map(x => byId[x].deeds).find(Boolean) ?? null)) badTerms++
             if (ids.includes('wholesale')) { whole++; if (sp.stock !== HAUL_STOCK[1]) wholeBad++ }
             // The card prints the trait's EFFECT on its line (owner, 2026-11-01), in this offer's numbers.
@@ -879,7 +883,7 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
                 const t = byId[ids[0]], line = b.card(o, { nowH: t + 0, route: { par: 300, distance: 2000 } })?.traits?.[0] ?? ''
                 lines++
                 const payM = (t.pay ?? 1) * (t.perPiece ?? 1)
-                const want = [payM !== 1 && (payM > 1 ? '+$' : '−$'), t.deadline && 'deadline ', t.thresholds && (sp.family === 'delivery' ? 'rank times ' : t.id === 'impatient' && 'on the clock'),   // QUAL-36: thresholdScale is 1 off delivery
+                const want = [payM !== 1 && (payM > 1 ? '+$' : '−$'), t.deadline && 'deadline ', t.thresholds && (['delivery', 'demolition'].includes(sp.family) ? 'rank times ' : t.id === 'impatient' && 'on the clock'),   // QUAL-36: thresholdScale is 1 off delivery
                               t.floors && 'load ', t.tip && 'tip', t.deeds && 'deed', t.stockFull && `the whole yard: ${HAUL_STOCK[1]}`].filter(Boolean)
                 if (!line.startsWith(`${t.name}: `) || !want.every(w => line.includes(w))) { badLine++; lineEg ||= `${t.id}: "${line}"` }
                 else if (!lineEg && payM !== 1 && t.deadline) lineEg = `"${line}"`

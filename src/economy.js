@@ -162,13 +162,13 @@ export const ECONOMY_PARAMS = {
         // KG DELIVERED, higher is better. PROVISIONAL — the owner play-tests and signs off. S / A are
         // 125 / 100 % of the Ranger's 570 kg rating (FEAT-112). GAME-FEEL REVIEW 2026-10-24 (R-18, owner:
         // "freight should always give at least half a good deed … full over ~300 kg"): B is the old C
-        // line (285 kg, half the rating) and C is ZERO — a strapped load always arrives, so every
+        // line (285 kg, half the rating; FEAT-69, owner 2026-11-17: an even 300 kg, the median freight post) and C is ZERO — a strapped load always arrives, so every
         // freight job earns at least ½ a deed and a light load is a lighter deed, never none. R2/R3 S
         // sits past what the stock truck can legally carry (that region's upgrades reach it).
         freight: [
-            { S: 712, A: 570, B: 285, C: 0 },   // PROVISIONAL
-            { S: 712, A: 570, B: 285, C: 0 },   // PROVISIONAL
-            { S: 712, A: 570, B: 285, C: 0 },   // PROVISIONAL
+            { S: 712, A: 570, B: 300, C: 0 },   // PROVISIONAL
+            { S: 712, A: 570, B: 300, C: 0 },   // PROVISIONAL
+            { S: 712, A: 570, B: 300, C: 0 },   // PROVISIONAL
         ],
         // CONDITION ON ARRIVAL (health 0..1), higher is better, PER FRAGILITY TIER (owner, 2026-10-23,
         // lever A: the harder cargo gets the easier line; the tier is data/offers.js `tier`). Read
@@ -182,9 +182,6 @@ export const ECONOMY_PARAMS = {
             fragile:     [{ S: 0.90, A: 0.83, B: 0.77, C: 0.70 }],
             sturdy:      [{ S: 0.95, A: 0.90, B: 0.85, C: 0.80 }],
         },
-        // FEAT-65: the SHARE OF THE SITE SMASHED (0..1), higher is better — its own axis (owner,
-        // 2026-11-01). Whole percents, as the card and the HUD print them. PROVISIONAL — the owner tunes.
-        demolition: [{ S: 1.0, A: 0.9, B: 0.75, C: 0.6 }],
     },
 
     // THE END-OF-RUN PAYOUT CEILING [measured 2026-08-17 at the then k 0.024 — RESOLVED by regionMult
@@ -254,6 +251,11 @@ export function regionTier (region) {
     return t[i]
 }
 
+/** DEC-364: the day number every ECONOMY reader (dayTier, expeditionGrade, fuel jitter, moon) counts in. DEC-360 renumbered the
+ *  run for the player's eyes (free will opens on day 1, was day 0); for the same time since free will opened this returns the
+ *  old number, so no cost, gate or grade moved. Anything new keyed on the day number takes `econDayOf(daySystem.day())`. */
+export const econDayOf = (day) => day - 1
+
 /** Payout multiplier for a run day. Step function of the table; past the table's last day holds; day <1 clamps. */
 export function dayTier(day) {
     const t = ECONOMY_PARAMS.dayTierTable
@@ -262,7 +264,7 @@ export function dayTier(day) {
 }
 
 /**
- * FEAT-138: a type's rank thresholds in a region — `kind` 'time' | 'freight' | 'demolition', or 'haul' with the
+ * FEAT-138: a type's rank thresholds in a region — `kind` 'time' | 'freight', or 'haul' / 'fragile' with the
  * cargo id. Region clamps like regionTier: <1 reads as 1, past the list holds the last entry.
  */
 export function rankTable (kind, region, cargoId) {
@@ -362,6 +364,15 @@ export function splitFragilePayout (par, ratio, health, payTier, payMult = 1, ti
     const baseC = Math.round(line.base * 100 * (0.5 + 0.5 * h))
     const tipC = Math.round(line.tip * 100)
     return { base: baseC / 100, tip: tipC / 100, total: (baseC + tipC) / 100 }
+}
+
+/**
+ * DEC-403 (owner, 2026-11-17): what the first `k` of a demolition job's `n` targets have paid of its `base` —
+ * n equal shares to the cent, the rounding remainder on the last, so the n shares sum to the base exactly.
+ */
+export function sharesPaid (base, n, k) {
+    const baseC = Math.round(base * 100), shareC = Math.floor(baseC / n)
+    return (k >= n ? baseC : Math.max(0, k) * shareC) / 100
 }
 
 /** Rank letters, best first. Index order IS the "or better" order bonusEarned reads. */
@@ -534,11 +545,27 @@ export class EconomySystem {
         // FEAT-142: Off the books earns no deed; The right thing to do adds ½ at C or better.
         const points = mission?.deeds === 'none' ? 0
             : pointsFor(result.letter) + (mission?.deeds === 'extraHalf' && pointsFor(result.letter) > 0 ? 0.5 : 0)
-        runEconomy.money = _cents(runEconomy.money + payout)
+        // DEC-403: a demolition job's base was banked a share per target as each fell (payTarget) — the wallet
+        // takes the rest here, so a full clear pays base + tip exactly once.
+        runEconomy.money = _cents(runEconomy.money + payout - (mission?.targets ? mission.sitePaid ?? 0 : 0))
         runEconomy.halfPoints += points * 2
         runEconomy.missions += 1
         if (result.letter in runEconomy.ranks) runEconomy.ranks[result.letter]++
         return { payout, base, tip, points, award: this._award(mission?.bonus, result.letter) }
+    }
+
+    /**
+     * DEC-403: demolition's `k`-th target is down — bank its share of the job's base (basePay on the terms frozen at
+     * accept, as settle() prices it) on the spot. Pays what the first k have earned less what is already banked
+     * (`mission.sitePaid`, saved with the job), so two falling in one poll pay both, and a resume re-seeing k pays nothing.
+     */
+    payTarget (mission, k) {
+        const mult = isFinite(mission?.payMult) ? mission.payMult : 1
+        const base = basePay(mission.par, (mission.terms ?? { payTier: regionTier(1) }).payTier ?? 1, mult)
+        const paid = sharesPaid(base, mission.targets.length, k)
+        const share = this.addSpot(paid - (mission.sitePaid ?? 0))
+        mission.sitePaid = Math.max(paid, mission.sitePaid ?? 0)
+        return share
     }
 
     /**

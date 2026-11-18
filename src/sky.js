@@ -656,6 +656,12 @@ void main () {
 const eyeCurve = (x, slope, depth, fall) => slope * x - depth * (1 - Math.exp(x / fall))
 
 // ── Day/night cycle state shared with the debug panel and main.js ─────────────────────────────────────
+/** One channel of the unlit particles' light (SkySystem.particleLight): key + fill irradiance against noon's
+ *  (`norm`), on a 0.8 curve with a 2 % floor, capped at the authored daylight look. Monotone in `key`. */
+export function particleLevel (key, fill, norm) {
+  return Math.min(1, 0.02 + 0.98 * Math.pow(Math.max(0, (0.5 * key + 0.5 * fill) * norm), 0.8))
+}
+
 export const SKY_CYCLE = { playing: false, hour: 12, dayLengthSec: 120 }
 
 // Rod vision (the Purkinje shift): as light falls through the mesopic range, ~5 cd/m² down to ~0.01, colour
@@ -996,15 +1002,27 @@ export class SkySystem {
   /** 0 = daylight … 1 = night, for the lamps (headlight pools, campfire): sun from 4° above to 6° below. */
   nightFactor () { return clamp01((4 * D2R - Math.asin(this.sunDir.y)) / (10 * D2R)) }
 
-  /** Linear RGB multiplier for the unlit particles (dust/smoke/spray): their irradiance against noon's. */
-  particleLight (out) {
+  /** Linear RGB multiplier for the unlit particles (dust/smoke/spray): their irradiance against noon's.
+   *  `sunVis` (FEAT-243, 0..1) scales the key light alone: 0 = in the terrain's shadow, lit by the fill only. */
+  particleLight (out, sunVis = 1) {
     if (!this._particleNorm) {
       const n = newState(), st = simulate(SOLAR_NOON_H, 0, n), S = this._adaptScale(st.eEye, true) * SKY_PARAMS.landGain
       this._particleNorm = 1 / (0.5 * lum(...st.eSun) * S + 0.5 * SKY_PARAMS.skyGain * lum(...st.eSky) * S * SKY_PARAMS.ambient)
     }
-    const k = this.sun.intensity + (this.sunFar ? this.sunFar.intensity : 0), a = this.ambient
-    const f = (key, sky) => Math.min(1, 0.02 + 0.98 * Math.pow(Math.max(0, (0.5 * key * k + 0.5 * sky * a.intensity) * this._particleNorm), 0.8))
-    return out.setRGB(f(this.sun.color.r, a.color.r), f(this.sun.color.g, a.color.g), f(this.sun.color.b, a.color.b), THREE.LinearSRGBColorSpace)
+    const k = (this.sun.intensity + (this.sunFar ? this.sunFar.intensity : 0)) * sunVis, a = this.ambient, sc = this.sun.color
+    const nrm = this._particleNorm
+    return out.setRGB(particleLevel(sc.r * k, a.color.r * a.intensity, nrm), particleLevel(sc.g * k, a.color.g * a.intensity, nrm),
+      particleLevel(sc.b * k, a.color.b * a.intensity, nrm), THREE.LinearSRGBColorSpace)
+  }
+
+  /** FEAT-243: the light of a particle in the terrain's shadow (key light removed, fill only) against a sunlit one's, per
+   *  channel. The particle shaders mix from it to 1 by their shadow-map lookup (dust.js SUN_SHADE_VERT); the per-frame
+   *  particleLight still does day/night, so night is not dimmed twice (after dark both sit on particleLevel's 2 % floor,
+   *  so the tint is ~1 by itself). */
+  particleShadeTint (out) {
+    const lit = this.particleLight(_c, 1), r = lit.r, g = lit.g, b = lit.b
+    this.particleLight(out, 0)
+    return out.setRGB(out.r / r, out.g / g, out.b / b, THREE.LinearSRGBColorSpace)
   }
 
   /** Opacity multiplier for the same particles: their light's luminance against noon's (unlit smoke fades out). */

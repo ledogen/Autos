@@ -12,7 +12,7 @@
 //   --all          every gate (also: `npm run test:all`) — run before commits / in CI
 //   --only=<substr>[,<substr>]   explicit subset by gate-name substring
 //   --serial       one-at-a-time (pool=1), e.g. to time a single gate without pool contention
-//   --browser      also run the `browser: true` gates (cdp-smoke — launches Chrome); CDP_SMOKE=1 does
+//   --browser      also run the `browser: true` gates (cdp-smoke, pad-e2e — launch Chrome); CDP_SMOKE=1 does
 //                  the same. Without it they are held back in EVERY mode, so `npm test` never opens Chrome.
 // If not in a git repo / git is unavailable, affected mode falls back to running ALL gates (safe).
 //

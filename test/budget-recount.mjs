@@ -98,9 +98,8 @@ export const ASSUME = {
     insultTravel: 0.2,     // [A] between jobs
     foodPerH: 0.5,         // $ per hour of hunger hold, the cheapest lines (chili dog 5/10 h, groceries 5/10 h, potato 2/4 h)
     incidentPerDay: 0,     // [A] $ day-1 of crashes: plugs, bent wheels, tows. Swept below.
-    // non-time letters — no recorded drive grades these; [A] shares of B+ / C / D:
+    // non-time letters — no recorded drive grades these; [A] shares of B+ / C / D (demolition is time since FEAT-267):
     fragile:    [0.7, 0.25, 0.05],
-    demolition: [0.7, 0.25, 0.05],
     haulLoad: 25,          // [A] bundles loaded (≤ the yard's stock), all delivered
     paceX: 1,              // the corpus ratio × this (1 = the recorded driver, the owner)
     payX: 1, oilPrice: OIL_CHANGE.price,   // lever hooks: pay × this (k), the oil change price
@@ -139,7 +138,6 @@ function job (A) {
         pay = base + (line - base) * tipMult
         if (sp.load && !sp.fragile) { const t = E.RANK_TABLE.freight[0]; letter = sp.massKg >= t.S ? 'S' : sp.massKg >= t.A ? 'A' : sp.massKg >= t.B ? 'B' : 'C' }
         else if (sp.fragile) letter = letterFrom(A.fragile)
-        else if (sp.family === 'demolition') letter = letterFrom(A.demolition)
         else letter = timeLetter
     }
     const deeds = sp.deeds === 'none' ? 0 : pointsFor(letter) + (sp.deeds === 'extraHalf' && pointsFor(letter) > 0 ? 0.5 : 0)
@@ -195,6 +193,8 @@ function summarise (A, rate, label) {
     console.log(`  ${label.padEnd(30)} gate day ${p3(gd)} · finished ${(done.length / rs.length * 100).toFixed(0).padStart(3)} % by day 30, on day ${done.length ? p3(done.map(r => r.days)) : '-'}`
         + ` · a day earns ${fmt(I / rs.reduce((a, r) => a + (r.gateDay ?? 30), 0))} vs costs ${fmt(C / rs.reduce((a, r) => a + (r.gateDay ?? 30), 0))} (day 1) → costs overtake on day ${be || '>30'}`
         + ` · short of cash before the gate ${(rs.filter(r => r.brokeEarly).length / rs.length * 100).toFixed(0)} %`)
+    const den = rs.reduce((x, r) => x + (r.gateDay ?? 30), 0)
+    return { earn: I / den, cost: C / den, be }
 }
 
 console.log(`\n── the job, day-1 prices (${SPECS.length} offers, 300 boards; par spread from the corpus, mean ${AVG_PAR.toFixed(0)} s; ${(KM_PER_PAR_S * 1000).toFixed(1)} m of route per par-second) ──`)
@@ -249,4 +249,15 @@ for (const [label, o] of LEVERS) {
     const cd = E.campDeeds; if (o.deeds) E.campDeeds = o.deeds
     for (const rate of [2, 'clock']) summarise({ ...ASSUME, ...o }, rate, `${label}, ${rate === 'clock' ? 'clock' : rate + '/day'}`)
     E.startCash = sc; E.dayTierTable = tt; E.campDeeds = cd
+}
+
+// ── 5. FEAT-69 owner answers (2026-11-17): oil $6 and freight B 300 kg are IN the game now; food $0.35/h is a model
+// lever only (Lane C owns the food prices). Day by day: what a day earns vs what it costs (day-1 cost × dayTier).
+console.log('\n── the owner answers: food $0.35/h (model), oil $' + OIL_CHANGE.price + ', freight B ' + E.RANK_TABLE.freight[0].B + ' kg ──')
+for (const [label, o] of [['as the dive had it (food 0.50, oil 8)', { foodPerH: 0.5, oilPrice: 8 }], ['answers applied', { foodPerH: 0.35 }]]) {
+    for (const paceX of [1, 1.3]) for (const rate of [1.5, 2]) {
+        const r = summarise({ ...ASSUME, ...o, paceX }, rate, `${label} pace x${paceX} ${rate}/day`)
+        console.log('    day:  ' + Array.from({ length: 14 }, (_, i) => String(i + 1).padStart(5)).join(''))
+        console.log('    net:  ' + Array.from({ length: 14 }, (_, i) => (r.earn - r.cost * dayTier(i + 1)).toFixed(1).padStart(5)).join(''))
+    }
 }

@@ -20,7 +20,7 @@
 // route, the scenario finish, camp, the fuel recovery card, and the inventory and damage screens.
 // A card does NOT hold the truck: the pad keeps driving, and only its A / X / B / D-pad change role
 // (gamepad.js CARD_KEYS). A dialogue card on top owns every key ("press any key"), so no card
-// counts while one is showing.
+// counts while one is showing — unless it waits for an action (DEC-359): that one owns no key.
 
 import { pad } from './gamepad.js'
 
@@ -48,7 +48,8 @@ function menuContainer () {
 
 /** FEAT-133: the live in-game card, or null. Screens first: the camp card opens the inventory over itself. */
 function cardContainer () {
-  if ($('dialogue-panel')?.style.display === 'block') return null
+  const dp = $('dialogue-panel')   // DEC-359: a card that waits for an action owns no key, so the card under it stays live
+  if (dp?.style.display === 'block' && !dp.classList.contains('dlg-waits')) return null
   for (const id of ['inv-screen', 'dmg-screen', 'svc-screen']) { const el = $(id); if (el?.classList.contains('open')) return el }
   for (const id of ['camp-panel', 'mission-panel', 'paper-panel', 'scenario-panel', 'recovery-card']) {
     const el = $(id)
@@ -176,12 +177,22 @@ function onKey (e) {
 
 /** A MENU opens with its highlight already on the first item, so Enter / A acts at once (owner,
  *  2026-10-25: "story mode" took a wake-up press, "new game" four). Menus only — a CARD appears
- *  while driving, and the pad's first A on one must place the highlight, never fire a button. */
+ *  while driving, and the pad's first A on one must place the highlight, never fire a button.
+ *  FEAT-254 (owner, 2026-11-17: a button is always selected, the main menu aside): the cards the player OPENS
+ *  parked — camp, inventory, damage, the shop — wake too (WAKE_CARDS), on the card's main action. The cards that
+ *  appear while driving (offers, papers, results, the scenario, recovery) keep the first-press-places rule. */
+const WAKE_CARDS = ['camp-panel', 'inv-screen', 'dmg-screen', 'svc-screen']
 function wakeMenu () {
-  const c = menuContainer()
+  const c = menuContainer() ?? (WAKE_CARDS.includes(cardContainer()?.id) ? cardContainer() : null)
   if (!c) return
   const items = [...c.querySelectorAll(ITEMS)].filter(el => el.offsetParent !== null)
-  if (items.length && !items.includes(cur)) { highlight(items[0]); curBox = c; curIdx = 0 }
+  if (!items.length || (cur?.isConnected && c.contains(cur))) return
+  if (c === menuContainer()) { if (!items.includes(cur)) { highlight(items[0]); curBox = c; curIdx = 0 }; return }
+  // A card that re-rendered under the highlight keeps its place; a fresh one starts on its primary button (never a text field: it would take the typing).
+  const first = (f) => items.findIndex(f)
+  const i = cur && !cur.isConnected && curBox === c ? Math.min(curIdx, items.length - 1)
+    : [first(el => el.hasAttribute('data-primary')), first(el => !(el.tagName === 'INPUT' && el.type !== 'range')), 0].find(k => k >= 0)
+  highlight(items[i]); curBox = c; curIdx = i
 }
 
 /** Install once. gamepad.js asks pad.menuActive() each poll to pick its menu key map. */
@@ -199,6 +210,7 @@ export function initMenuNav () {
   document.addEventListener('pointermove', (e) => { px = e.clientX; py = e.clientY }, true)
   document.addEventListener('pointerover', (e) => {
     if (e.clientX === px && e.clientY === py) return
+    if (!pad.mouseLive) return   // FEAT-255: pad mode — a mouse left resting on the UI does not take the highlight
     const c = menuContainer() ?? cardContainer()
     const el = e.target.closest?.(ITEMS)
     if (c && el && c.contains(el)) highlight(el, false)

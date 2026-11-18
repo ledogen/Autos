@@ -100,3 +100,6 @@ open cannot farm the ladder. The owner's own words "first mission is 4, ladder a
 match; stands unless the owner comes back.
 
 Owner, 2026-11-01 (later): "yes only b+ on the highest rung should advance" — (1) CONFIRMED.
+
+## Log
+- 2026-11-17: DEC-398 (FEAT-266) replaced the "any customer counts toward the round's N" rule: only the planned N count or show.

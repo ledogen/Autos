@@ -317,14 +317,14 @@ export const THINGS = [
       pools: HOUSEWARES, to: ['residence'], load: 'uprightPiano', ...STURDY, sound: 'piano', furniture: true },
 
     // ── Demolition (FEAT-65, owner 2026-11-01): smash what stands on the shoulder along the job's last km
-    // of road; the letter is the share smashed. Always a roadside job. The deed is the removal — each
+    // of road; a hurried job on the clock, settled when the last one falls (DEC-399). Always a roadside job. The deed is the removal — each
     // giver has an ordinary reason. PLACEHOLDER words and counts.
     // The farmer's old empty drums, set out along his frontage: crushed, they go to the scrapyard in one trip.
-    { id: 'scrapDrums',  phrase: 'his old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
+    { id: 'scrapDrums',  phrase: '{n} old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
       targets: [{ kinds: ['barrel', 'drumOpen'], n: [8, 12], cluster: [1, 3] }] },
     // The county is repaving: the old sign line comes down before the new one goes up, and the last job's
     // barricades are still out. The crew is behind.
-    { id: 'oldSignLine', phrase: 'the old sign line knocked down', family: 'demolition', massKg: [0, 0], pools: ['workSite'],
+    { id: 'oldSignLine', phrase: '{n} old signs and barricades knocked down', family: 'demolition', massKg: [0, 0], pools: ['workSite'],
       targets: [{ kinds: ['signGrade', 'signCurves', 'signRockslide', 'signTee', 'signCross', 'signStop', 'signIcy'],
                   n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
                 { kinds: ['roadBarrier'], n: [2, 3], cluster: [2, 3], face: 'road' }] },
@@ -374,7 +374,9 @@ export const REWARDS = [
     // Tires, wheels, the lift, the LSD and the tools (owner, 2026-10-22, the setup page). The LSD's
     // barn find is a roadside-find event (items.md §6), not a giver.
     { id: 'tireOld',    name: 'Old tire',    kind: 'part',       gates: ['C', 'B'], cat: 'tires' },
-    { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['B', 'A'], cat: 'tires' },
+    // FEAT-259 (owner, 2026-11-17: standard tires should "come up as mission reward more often") [DEFAULT]: C added, so it
+    // competes with the old tire on the easiest gate too (was B / A only: 1.2 % of item rewards against the old tire's 6.6 %).
+    { id: 'tireStandard', name: 'Tire',      kind: 'part',       gates: ['C', 'B', 'A'], cat: 'tires' },
     { id: 'tireSport',  name: 'Sport tire',  kind: 'part',       gates: ['A', 'S'], cat: 'tires' },
     { id: 'tireOffroad', name: 'All-terrain tire', kind: 'part', gates: ['A', 'S'], cat: 'tires' },
     { id: 'wheelSteel', name: 'Steel wheel', kind: 'part',       gates: ['B', 'A'], cat: 'tires' },
@@ -513,7 +515,7 @@ export const REQUISITION = [
     // recycles until it holds 20+ and clears the line in one trip. The card shows the stock on hand.
     { id: 'reqFirewood', phrase: 'firewood',       family: 'haul',     from: 'firewoodYard', stock: 20 },
     { id: 'reqCrew',     phrase: 'the crew',       family: 'delivery', from: 'workSite',     massKg: 0, passenger: true },
-    { id: 'reqSigns',    phrase: 'the turn-back signs knocked down', family: 'demolition', from: 'expeditionCamp', massKg: 0,
+    { id: 'reqSigns',    phrase: '{n} turn-back signs, crates and barrels knocked down', family: 'demolition', from: 'expeditionCamp', massKg: 0,
       targets: [{ kinds: ['turnBackSign', 'turnBackSignKeepOut', 'turnBackSignBeware', 'turnBackSignNoEntry'],
                   n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
                 { kinds: ['smallCrate'], n: [3, 5], cluster: [1, 3] }, { kinds: ['barrel'], n: [3, 5], cluster: [1, 2] }] },
@@ -670,9 +672,11 @@ export const FREIGHT_TIP_MULT = 0.5
 // 'none' (no good-deed point) or 'extraHalf' (+½ at C or better).
 // Rejected: After hours (doesn't fit the deadline system). OPEN: Wholesale on freight — built haul-only.
 const NOT_PAPERS = ['delivery', 'freight', 'fragile', 'haul']
+// FEAT-267 (DEC-399): demolition is a hurried job, so it takes courier's clock traits (and their tighter / looser rank times).
+const CLOCKED = [...NOT_PAPERS, 'demolition']
 export const TRAITS = [
-    { id: 'impatient',  name: 'impatient',  families: NOT_PAPERS, not: ['patient'],    pay: 1.20, deadline: 0.6, thresholds: 0.9 },
-    { id: 'patient',    name: 'patient',    families: NOT_PAPERS, not: ['impatient'],  pay: 0.80, deadline: 1.5, thresholds: 1.1 },
+    { id: 'impatient',  name: 'impatient',  families: CLOCKED, not: ['patient'],    pay: 1.20, deadline: 0.6, thresholds: 0.9 },
+    { id: 'patient',    name: 'patient',    families: CLOCKED, not: ['impatient'],  pay: 0.80, deadline: 1.5, thresholds: 1.1 },
     { id: 'collector',  name: 'collector',  families: ['fragile'], not: ['easygoing'], pay: 1.25, floors: 0.8 },
     { id: 'easygoing',  name: 'easygoing',  families: ['fragile'], not: ['collector'], pay: 0.85, floors: 1.25 },
     { id: 'generous',   name: 'generous',   families: NOT_PAPERS, not: ['stingy'],     pay: 1.20 },
@@ -693,7 +697,9 @@ export const DEADLINE_SLACK = {
     freight:    3.0,
     haul:       2.0,
     papers:     0.5,   // FEAT-141 (owner, 2026-10-21): the deadline is the plotted route's par × 1.5
-    demolition: 1.0,   // FEAT-65: courier's, a placeholder
+    // FEAT-267 (DEC-399, owner: "slightly easier than Courier because you have to slow down and drive off the road to hit
+    // barrels"): courier's deadline is par × 2.0; this is par × 2.25, a quarter of par more for the clusters' slow-downs [DEFAULT].
+    demolition: 1.25,
 }
 
 /** ±fraction applied to every rolled expiry (ruled 2026-09-26: ±30 %). */

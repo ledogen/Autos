@@ -4343,18 +4343,44 @@ export class RoadSystem {
         // fork off its run, both were dropped, and they shipped 4 m apart).
         pairs.sort((a, b) => (!!a.forced - !!b.forced) || (b.region - a.region) || (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0))
         // Role sets. A winner may appear in several pairs (one throat, many forks); what is barred
-        // is a run being both, or ceding twice, at this node.
-        const winners = new Set(), losers = new Set()
+        // is a run ceding twice at this node.
+        // BUG-179 (DEC-366): a run MAY both win and lose here — a CHAIN of forks — when every fork it
+        // wins lies past the fork it loses by the T's hold reach (JN_HOLD_MAX_SURFACE), so the later
+        // fork lands on B's own road, not the stretch still held to A's trunk. At MINREG (30 m) seed
+        // 1826998337 node −1,2,0 lost its second T (forks 52 m apart; a 5.0 m step where main has 0.1).
+        // The case: B cedes to A at ~45 m and C still forks off B at 268 m (seed 1684703087 node −1,0,0;
+        // barring it shipped A and B as two roads on one pavement, a 6.12 m tear past the plane hold).
+        // Distances are from the node along the run itself. Chains cannot cycle: each link needs +60 m
+        // along roughly parallel arcs.
+        const CHAIN_GAP = JN_HOLD_MAX_SURFACE   // m — past the reach B is still held to A's trunk, so C forks off B's OWN road
+        const lostAt = new Map(), wonAt = new Map()   // ck → loser cut / nearest won fork, m from node
+        const nearest = new Map()   // winner ck → { lk: the loser whose fork is nearest the node, d }
         for (const pr of pairs) {
-            if (losers.has(pr.W.ck) || winners.has(pr.L.ck) || losers.has(pr.L.ck)) { this._v2MergeSkipped('role', `${pr.L.ck} would cede to ${pr.W.ck} @${nk} (${pr.region.toFixed(0)} m)`); continue }
-            winners.add(pr.W.ck); losers.add(pr.L.ck)
+            // a MID-SPAN pair keeps the strict rule: it cannot be a link of a chain either way
+            const v = pr.variants[0]
+            const lD = pr.midSpan ? Infinity : fromNode(pr.L, v.lCut), wD = pr.midSpan ? -Infinity : fromNode(pr.W, v.wCut)
+            const chainBad = (lost, won) => lost !== undefined && won !== undefined && won < lost + CHAIN_GAP
+            if (lostAt.has(pr.L.ck) || chainBad(lostAt.get(pr.W.ck), Math.min(wD, wonAt.get(pr.W.ck) ?? Infinity))
+                || chainBad(lD, wonAt.get(pr.L.ck))) { this._v2MergeSkipped('role', `${pr.L.ck} would cede to ${pr.W.ck} @${nk} (${pr.region.toFixed(0)} m)`); continue }
+            lostAt.set(pr.L.ck, lD); wonAt.set(pr.W.ck, Math.min(wD, wonAt.get(pr.W.ck) ?? Infinity))
             out.set(pr.L.ck, {
                 legacy,
                 winner: pr.W.sp, winnerNodeAtStart: pr.W.nodeAtStart,
                 loserNodeAtStart: pr.L.nodeAtStart, midSpan: !!pr.midSpan,
                 variants: pr.variants, region: pr.region,
             })
+            if (!pr.midSpan && !(nearest.get(pr.W.ck)?.d <= wD)) nearest.set(pr.W.ck, { lk: pr.L.ck, d: wD })
         }
+        // BUG-179 (owner 2026-11-17: "newly created dead ends on old roads"): a CHAIN that cedes EVERY
+        // other leg here leaves the node holding one run — the winner's stretch back from its nearest
+        // fork, a paved dead end (36–175 m on 9 of 12 chains). So the winner's run ENDS at that fork:
+        // its spec carries `trunkEnds`, _v2CommitPromotion never builds the node-side piece, and the
+        // fork is a two-leg bend where the winner runs on into the side road. Chains only — a plain
+        // throat that cedes every leg to one winner keeps its stub (main's, out of scope).
+        // _v2TrunkEndsOk confirms at assembly that every other cession really merged.
+        const keep = nbrs.map((o) => (nk < o ? nk + '|' + o : o + '|' + nk)).filter((ck) => !lostAt.has(ck) || lostAt.get(ck) === Infinity)
+        if (keep.length === 1 && [...lostAt.keys()].some((ck) => wonAt.has(ck)) && nearest.has(keep[0]))
+            out.get(nearest.get(keep[0]).lk).trunkEnds = true
         memo.set(mk, out)
         return out
     }
@@ -5085,11 +5111,23 @@ export class RoadSystem {
         const winnerOk = (spec) => {
             const wkA = g.key(spec.winner[0]), wkB = g.key(spec.winner[1])
             const wck = wkA < wkB ? wkA + '|' + wkB : wkB + '|' + wkA
-            const wRaw = this._v2NodeMerges(g, drop, wkA, false, pass1).get(wck) || this._v2NodeMerges(g, drop, wkB, false, pass1).get(wck)
-            if (!wRaw) return true
+            // BUG-179 (DEC-366): a CHAIN at one node — the winner cedes its end at the SAME node to a third
+            // road. The T forks off the winner's OWN road past that cession, so only the fork (wCut0) must
+            // clear it by JN_HOLD_MAX_SURFACE, the role loop's rule. The winner's plan at its OTHER node keeps the
+            // adopted-strand test below, unchanged.
+            const nS = wkA === kA || wkA === kB ? wkA : wkB, nO = nS === wkA ? wkB : wkA
+            const wSame = this._v2NodeMerges(g, drop, nS, false, pass1).get(wck)
+            const wRaw = this._v2NodeMerges(g, drop, nO, false, pass1).get(wck)
+            if (!wSame && !wRaw) return true
             const wS = pass1 ? this._v2RunSample1(g, drop, spec.winner[0], spec.winner[1]) : this._v2RunSample(g, drop, spec.winner[0], spec.winner[1])
             if (!wS) return false
-            const wCut0 = spec.variants[0].wCut, lCut0 = wRaw.variants[0].lCut
+            const wCut0 = spec.variants[0].wCut
+            if (wSame) {
+                const c = wSame.variants[0].lCut
+                if (!(spec.winnerNodeAtStart ? wCut0 >= c + JN_HOLD_MAX_SURFACE : wCut0 <= c - JN_HOLD_MAX_SURFACE)) return false
+            }
+            if (!wRaw) return true
+            const lCut0 = wRaw.variants[0].lCut
             const adopt = spec.winnerNodeAtStart ? [0, wCut0] : [wCut0, wS.L]
             const wOwn = wRaw.loserNodeAtStart ? [0, lCut0] : [lCut0, wS.L]
             return !(adopt[1] > wOwn[0] + 1 && wOwn[1] > adopt[0] + 1)
@@ -6562,8 +6600,11 @@ export class RoadSystem {
         const kA = g.key(T.cellA), kB = g.key(T.cellB)
         const aKey = `g:${kA}:${pKey}`, bKey = `g:${pKey}:${kB}`
         this._network.delete(tKey)
-        this._network.set(aKey, this._v2SliceRun(T, 0, iP, T.cellA, pid))
-        this._network.set(bKey, this._v2SliceRun(T, iP, tL, pid, T.cellB))
+        // BUG-179: a chain's winner ENDS here (the plan's trunkEnds) — the piece back to the shared node is never built,
+        // so no dead end is left at it and P is a two-leg bend, the trunk running on into the side road.
+        const endA = pr.trunkEnds && kA === nKey, endB = pr.trunkEnds && kB === nKey
+        if (!endA) this._network.set(aKey, this._v2SliceRun(T, 0, iP, T.cellA, pid))
+        if (!endB) this._network.set(bKey, this._v2SliceRun(T, iP, tL, pid, T.cellB))
         // The side road: same run, new start. Its key names P instead of the shared node.
         const farKey = nAtStart ? g.key(side.cellB) : g.key(side.cellA)
         const newSideKey = nAtStart ? `g:${pKey}:${farKey}` : `g:${farKey}:${pKey}`
@@ -6595,7 +6636,7 @@ export class RoadSystem {
         // The pieces table: this piece is replaced by its departure; any OTHER piece of the same
         // side road (a split, or a mid-span's other half) stays listed.
         pieces.set(pr.sideKey, [...(pieces.get(pr.sideKey) || []).filter((k) => k !== sideKey), newSideKey])
-        pieces.set(wk0, [...(pieces.get(wk0) || [wk0]).filter((k) => k !== tKey), aKey, bKey])
+        pieces.set(wk0, [...(pieces.get(wk0) || [wk0]).filter((k) => k !== tKey), ...(endA ? [] : [aKey]), ...(endB ? [] : [bKey])])
     }
 
     // Both ends of a mid-span promotion, applied together: the trunk is cut at BOTH departure
@@ -6937,6 +6978,22 @@ export class RoadSystem {
         this._v2LoopTrims = new Map()
         const addInc = (idKey, runKey) => { const a = this._proto.nodeInc.get(idKey) || this._proto.nodeInc.set(idKey, []).get(idKey); a.push(runKey) }
         const promos = []
+        // BUG-179: a chain's winner may END at its nearest fork (the plan's `trunkEnds`) only when every OTHER leg the
+        // node plan cedes is really merged — a cession the pair-level checks drop (winner, promotable, a deleted winner)
+        // leaves that leg on the node, and the winner's stretch is then its road out. Pure, so every window agrees.
+        const trunkEndsOk = (spec, c1, c2) => {
+            const wk = [g.key(spec.winner[0]), g.key(spec.winner[1])]
+            const nk = [g.key(c1), g.key(c2)].find((k) => wk.includes(k))
+            for (const [ck, s2] of this._v2NodeMerges(g, drop, nk, !!spec.legacy)) {
+                if (s2 === spec || s2.midSpan) continue
+                const [q1, q2] = ck.split('|').map((k) => k.split(',').map(Number))
+                const r = (this._v2MergeFor(g, drop, q1, q2) || []).filter((x) => !this._v2DeleteFor(g, drop, wide, x.winner[0], x.winner[1]))
+                const s2W = [g.key(s2.winner[0]), g.key(s2.winner[1])]
+                if (!r.some((x) => !x.midSpan && x.loserNodeAtStart === s2.loserNodeAtStart
+                    && [g.key(x.winner[0]), g.key(x.winner[1])].sort().join() === s2W.sort().join())) return false
+            }
+            return true
+        }
         for (const [c1, c2] of g.edges) {
             if (drop.has(g.key(c1) + '|' + g.key(c2))) continue   // degree-capped: settled spec-time, never routed
             if (!inBand(c1) && !inBand(c2)) continue   // fully-margin edge: not registered (frontier, like rows pad)
@@ -6979,7 +7036,7 @@ export class RoadSystem {
                 // strand, no taper band. _v2PromoteTs (after this loop, once every route is
                 // registered) trims it back to the fork and re-keys it onto a node ON the trunk.
                 this._registerRun(key, cl, c1, c2)
-                for (const spec of merge) promos.push({ sideKey: key, spec })
+                for (const spec of merge) promos.push({ sideKey: key, spec, trunkEnds: !!spec.trunkEnds && trunkEndsOk(spec, c1, c2) })
             }
             else {
                 // QUAL-30: a DISJOINT pair (BUG-55 shape E — two runs sharing no node yet carving

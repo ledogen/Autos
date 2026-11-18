@@ -19,6 +19,8 @@
 //     jitter is what makes nearby ground "move" without a shadow map). Scaled by the sky's
 //     nightFactor the same way the headlight pools are (vehicle-model.js LIGHT_ENV): faint by day,
 //     full at night.
+//   • DEAD (FEAT-264, ASSET-90): the ashes-only model, nothing lit, and thin grey smoke off the heap. The
+//     smoke is NOT built here: smokeSource() names the point and smoke.js's puff pool draws it (DEC-397).
 //
 // NO SHADOWS FROM THE FIRE, for now (owner, 2026-10-01). A shadow-casting PointLight renders six
 // extra shadow passes (a cube map); with no camp props on the pad yet there is nothing near the fire
@@ -179,12 +181,14 @@ export class CampfireFx {
       return m
     })
     this._t = 0
+    this._dead = false
     this._m4 = new THREE.Matrix4()
     this._q = new THREE.Quaternion()
     this._v = new THREE.Vector3()
     this._s = new THREE.Vector3()
+    this._smokeAt = new THREE.Vector3()
 
-    this._ready = getModel('campfire').then((rec) => {
+    const live = getModel('campfire').then((rec) => {
       const inst = rec.template.clone(true)
       inst.updateMatrixWorld(true)
       inst.traverse((o) => {
@@ -202,8 +206,20 @@ export class CampfireFx {
         })
         o.material = Array.isArray(o.material) ? swapped : swapped[0]
       })
+      inst.visible = !this._dead
+      this._liveModel = inst
       this.root.add(inst)
     })
+    // ASSET-90: the burnt-out model (ashes, no logs), swapped in by setDead. Same ring, seat and anchor as the
+    // live one, so the rig position read above holds for both. Nothing in it glows, so its materials stay shared.
+    const dead = getModel('campfireDead').then((rec) => {
+      const inst = rec.template.clone(true)
+      inst.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true } })
+      inst.visible = this._dead
+      this._deadModel = inst
+      this.root.add(inst)
+    })
+    this._ready = Promise.all([live, dead])
   }
 
   /**
@@ -215,6 +231,31 @@ export class CampfireFx {
     this.root.rotation.y = (hash32(`campfire:${x.toFixed(2)}:${z.toFixed(2)}`) / 4294967296) * Math.PI * 2
     this.root.visible = true
     this.light.visible = true
+    this.setDead(false)
+  }
+
+  /**
+   * FEAT-264: burnt out (a night's sleep at the camp). Flames, embers, light and coal glow go off, and the live model
+   * gives way to ASSET-90's ashes-only one.
+   */
+  setDead (dead) {
+    this._dead = dead
+    if (this._liveModel) this._liveModel.visible = !dead
+    if (this._deadModel) this._deadModel.visible = dead
+    this.light.visible = !dead && this.root.visible
+    for (const f of this._flames) f.visible = !dead
+    for (const m of this._hotCoals) m.visible = !dead
+    for (const m of this._coalMats) m.emissiveIntensity = dead ? 0 : CAMPFIRE_PARAMS.coalGlow
+    if (dead) { this._embAlive = 0; this._embers.count = 0 }
+  }
+
+  /**
+   * ASSET-90 / DEC-397: where the dead fire smokes from (the FireFlameAnchor on the ash heap, world space), or null
+   * while it burns or no camp is up. main.js hands it to TireSmokeSystem.setFireSmoke each frame: the wisps ride that
+   * pool and its draw (smoke.js FIRE_SMOKE), so this module stays free of particles of its own.
+   */
+  smokeSource () {
+    return this.root.visible && this._dead ? this._rig.getWorldPosition(this._smokeAt) : null
   }
 
   /** Put it out. The light leaves the light loop entirely (visible=false), so a cold camp costs nothing. */
@@ -231,7 +272,7 @@ export class CampfireFx {
    * @param {number} nightFactor  SkySystem.nightFactor(): 0 day … 1 night
    */
   update (dt, nightFactor) {
-    if (!this.root.visible) return
+    if (!this.root.visible || this._dead) return
     const P = CAMPFIRE_PARAMS
     const t = (this._t += dt)
 
@@ -315,7 +356,7 @@ export class CampfireFx {
     await this._ready
     const rootVis = this.root.visible, lightVis = this.light.visible
     this.root.visible = true
-    this.light.visible = true
+    this.light.visible = true   // lit or not: the program variant must be compiled once
     try { await renderer.compileAsync(scene, camera) } catch (_) { /* best-effort */ }
     this.root.visible = rootVis
     this.light.visible = lightVis
