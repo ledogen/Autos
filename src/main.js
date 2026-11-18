@@ -2107,7 +2107,9 @@ const map2d = new Map2D({
   // FEAT-61: the paper route draws as a mission route, because that is what it is — one line, in
   // the order it will be driven. It wins over the mission's when a route is out; the two can never
   // both be live.
-  getMission: () => paperRouteSystem?.markers() ?? missionSystem?.markers() ?? null,
+  // BUG-212: a demolition job's map line is the GPS's tour from the truck (the paper round's rule, DEC-399), not the job's
+  // planned route: after a missed cluster or a U-turn the two disagreed on the order.
+  getMission: () => paperRouteSystem?.markers() ?? _siteLine() ?? missionSystem?.markers() ?? null,
   // FEAT-43: the story-mode region boundary, so the player can see where the wall is rather than
   // finding it by driving into it. Null outside story mode (and until the region center is captured).
   getRegion: () => storySystem?.region() ?? null,
@@ -6939,6 +6941,11 @@ function _clearSite () {
   _siteGroup.clear()
   _site = null
 }
+/** BUG-212: the map's line for a live demolition job — its markers with the guide's whole tour as the poly — or null. */
+function _siteLine () {
+  if (!missionSystem?.mission?.targets || !missionSystem.isOnJob() || _site?.mission !== missionSystem.mission || !_site.tour) return null   // no job first: _site is declared below the map
+  return { ...missionSystem.markers(), poly: _site.tour.poly }
+}
 /** { smashed, of } of mission `m`'s site — nothing smashed when its site isn't the one standing. */
 function _siteCount (m) {
   return { smashed: _site?.mission === m ? _site.targets.filter(t => t.smashed).length : m.siteDown ?? 0, of: m.targets?.length ?? 0 }
@@ -7010,7 +7017,7 @@ function _pumpSiteGuide (budgetMs) {
   _site.rr = null
   // FEAT-187: a line to the cluster, never a destination circle in the road (gps.js reads noRing). A plan that reached
   // nobody keeps the previous line (the paper round's BUG-47 rule).
-  if (r.value?.segments?.length) { _site.guide = { ...tourLeg(r.value), noRing: true }; _site.order = r.value.customers.map(c => c.id) }
+  if (r.value?.segments?.length) { _site.guide = { ...tourLeg(r.value), noRing: true }; _site.order = r.value.customers.map(c => c.id); _site.tour = r.value }
 }
 
 /**
