@@ -149,8 +149,23 @@ whose route is empty on every rung. Degree drops and crossing deletes are not fa
    stays dropped (a condemned road would refuse the seed, DEC-054). Restored roads: steepest 10 m 12-25 %, 0-221 m
    above 20 % per road (in the region: 18.4 % / 0 m and 24 % / 71 m on the owner's seed, 24 % / 123 m on 1979256859,
    21.1 % / 18 m on 2176144795). How many candidates the grade rule kept dropped was not counted.
+6. Clearance (FEAT-77 for a restored side; `_v2RestoreLegs` + `_v2RestoreGrazes`, 2026-11-17): a restored side is
+   outside the plan layer, so FEAT-77's clearance walk never makes it a loser (seed 1247456971 node -3,2,0: 16.6 m from
+   a sibling leg over 28 m). Now: the side routes plain; if it GRAZES one of the other legs at its two nodes (centres
+   under the graze floor 2·halfWidth + clearEdgeM = 22 m, past the geometric throat, bores excluded: the road-clearance
+   random-seed tier), it re-routes with those legs' shipped lines as `occupied` (the router prices metres inside their
+   clearance, node throats exempt, as for a pass-2 loser); if it still grazes, it stays dropped. A side that never
+   grazed routes exactly as before. The legs' lines are their pure per-edge pass-2 routes, so window invariance and
+   worker/sync parity hold by the same argument as item 3. Not covered: a restored side grazing a road that does not
+   share its node, or another restored side (left to the gate).
+   Census (46 seeds, 27 restored sides): 18 unchanged, 7 re-routed with the berth (steepest 10 m moved by -0.2 to
+   +7.5 points; worst 20 -> 27.5 % on 3590618618's warm band), 2 still graze and stay dropped (3590618618 warm band,
+   2176144795 in region). On 1872706826 (not in the 46) its 1061 m in-region side grazed: re-routed to 1006 m, 32.2 %.
 
 Results (46-seed census on the real build, `wip/feat-265/census-b2built.jsonl`, places re-sited by the real POI build):
+(Re-stated after the clearance fix, 2026-11-17: the numbers below hold except km added, mean 0.61 -> 0.55 km, max
+4.14 -> 3.02 km, and restored grades, steepest 10 m 12-27.5 %; seeds with a restore still 13, 5 in the region; max
+place stretch 3.09, median 2.21; the owner's seed unchanged.)
 - Owner's seed 3200351065: food vendor to Larry's 6.68 -> 2.99 km (2.09 km on the map); place stretch 3.67 -> 2.07.
   Two roads come back: -1,1,1 to -1,0,0 (1119 m, the one the diagnosis named) and -1,0,0 to 0,0,0 (768 m).
 - Place stretch median 2.21 -> 2.21, max 3.67 -> 3.09. Seeds >= 3.0: 2 -> 1 (3832686841: no failed route, its cause is
