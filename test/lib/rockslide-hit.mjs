@@ -51,9 +51,10 @@ export function findCandidates (w, heightAt, vMax, { maxR = 1300, spacing = 150 
 }
 
 /**
- * Drive one slide. `cand` from findCandidates; `lane` 'face' or 'far'; v [m/s]. Returns the drive's record.
+ * Drive one slide. `cand` from findCandidates; `lane` 'face' or 'far'; v [m/s]. `onStep(vs, rec, t)` after each physics
+ * step, optional. Returns the drive's record.
  */
-export async function driveSlide (w, debris, cand, v, lane, seed, { maxS = 40 } = {}) {
+export async function driveSlide (w, debris, cand, v, lane, seed, { maxS = 40, onStep = null } = {}) {
   const P = w.P, vs = w.vs
   const eq = computeStaticEquilibrium(P)
   const heightAt = (x, z) => w.terr.analyticHeight(x, z)
@@ -101,6 +102,7 @@ export async function driveSlide (w, debris, cand, v, lane, seed, { maxS = 40 } 
     const t0 = performance.now()
     stepPhysics(vs, P, DT, w.queryContacts, w.ctx)
     ;(rec.released ? stepMs.slide : stepMs.before).push(performance.now() - t0)
+    onStep?.(vs, rec, t)   // a caller's per-step read (wip/feat-26/story-hit.mjs: the bed's felt g for a fragile load)
     const hit = readRimStrikes(w.engine, w.chassis, vs.rimForce, DT, vs.rimHazard)
     dmg.step(vs, P, DT)
     const landed = dmg.feedContact(classifyImpactRegion(hit.point, hit.normal), hit.impulse, P.mass, DT, vs.velocity)
