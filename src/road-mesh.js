@@ -935,7 +935,8 @@ export class RoadMeshSystem {
             // (j.mouth, road.js leg.weld) the ribbon is trimmed to the MOUTH instead and gets one extra
             // section exactly on it — the same _ribbonSection the pad copies onto its mouth verts. The two
             // meshes then share that edge: no 2.5 m overlap, no polygon-offset contest, no open ribbon end
-            // to look into, and the skirts meet at the mouth corners.
+            // to look into, and the skirts meet at the mouth corners. BUG-201: a deg-2 bend's legs end on their
+            // connector's mouth the same way (leg.mouth from _buildDeg2ArcGeom), so no leg runs on past the turn.
             const _ptTrim = performance.now()
             let usePoints = points, useArcS0 = arcS0, useArcS1 = arcS1
             const jArcs = this._road._junctionCarveArcs ? this._road._junctionCarveArcs.get(runKey) : null

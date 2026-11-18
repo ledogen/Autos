@@ -11298,7 +11298,7 @@ function loop (t) {
   // moment the window moves — early-outs unless the stream centre changed chunk.
   if (shadowBake && !_labActive) shadowBake.syncCenter(Math.floor(streamCenter.x / CHUNK_SIZE), Math.floor(streamCenter.z / CHUNK_SIZE))
   if (shadowBake && shadowBake.hasWork() && !_labActive) { perfEvent('shadow.bake'); shadowBake.update(_streamBudget.deadline()) }   // PERF-26 tag
-  if (terrainBake && !_labActive) terrainBake.update(terrainSystem._material, terrainSystem._chunkMap, vehicleState.position)
+  if (terrainBake && !_labActive) terrainBake.update(terrainSystem._material, terrainSystem._chunkMap, vehicleState.position, Math.floor(streamCenter.x / CHUNK_SIZE), Math.floor(streamCenter.z / CHUNK_SIZE))
   perfAdd('frame.shadowBake', performance.now() - _pt)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
   _pt = performance.now()
