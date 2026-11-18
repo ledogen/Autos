@@ -445,6 +445,10 @@
        mom's alarm slider, the camp's inventory button — so the camp card sits above it. ponytail: a fixed lift clears a
        card of up to ~5 lines (zoom scales both alike); measure the card if a longer lesson ever covers it. */
     body:has(#dialogue-panel.dlg-waits) #camp-panel { bottom: 216px; }
+    /* FEAT-288 P3b: Katie's shop lesson points at the shop's rows, its check out and back, and the shop card stands at the
+       right (520 px + 16 px padding, src/service-screen.js): a card over the shop centres on the screen left of it. At
+       Big the sheet showed her card over the peanuts row. Same units as the map's rule below (% the screen's, px zoomed). */
+    body:has(#svc-screen.open) #dialogue-panel { left: calc(50% - 268px); width: min(680px, 100% - 584px); }
     /* FEAT-288 P3b: Katie's map lesson is read over the open map and points at its list column and legend (the right
        300 px), so over the map a card centres on the sheet instead, clear of that column. Under Big's zoom (FEAT-248) px
        and vw scale with the card but % stays the screen's, so the sheet's width is 100% − the map's 2 × 5vw inset − the
