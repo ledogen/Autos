@@ -50,3 +50,4 @@ src/poi.js · data pools · assets/models/mailbox*.glb
 ## Log
 - 2026-11-18 land/feat-275-280-mailboxes: pool tag + knock masses (data/prop-models.js), poi.js mailboxKey / dressYard pad mailbox / _mailboxAt route-house mailboxes, test/mailbox-census.mjs. Roadside draw needs the main.js hook (wip/mailboxes/main-hook.txt).
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118013250-sf5w).
+- 2026-11-18 proof: test/mailbox-census.mjs 12 seeds PASS (120 route + 1904 random mailboxes, 1.88/km); affected gates 49/49 green after two fixes (dist-assets tag consumer, census seed); fingerprint-world vs main: only `poi` differs (seed6 + seed11 origin story windows); cdp-smoke PASS (39 steps) and pad-e2e ALL OK; sheet wip/mailboxes/sheet.jpg (Larry's, a yard house, mom's). Unverified: the roadside ones in the browser (needs the main.js hook).

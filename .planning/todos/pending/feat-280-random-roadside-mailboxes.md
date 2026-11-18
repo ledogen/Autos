@@ -45,3 +45,4 @@ assets/models/mailbox*.glb · the clutter system
 ## Log
 - 2026-11-18 land/feat-275-280-mailboxes: poi.js _mailboxAt / _placeMailboxesOnEdge (poiMailboxSpacing 150, poiMailboxSep 60), test/mailbox-census.mjs (12 seeds). Draw needs the main.js hook.
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118013441-v9hd).
+- 2026-11-18 proof: census 12 seeds PASS, random 1.7-1.9 per km, none on deck/pad/bore/water/ditch, door within 0.9 of the road. Found: main's FEAT-292 _evenRequisition throws on seed 6666666 at C=(0,0) R=2500 (mission.js:1290), not mailbox-related; census avoids that seed.
