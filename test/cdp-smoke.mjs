@@ -2118,8 +2118,12 @@ const STEPS = [
       throw new Error('cards never stopped coming')
     }
     // GATE_SHOTS=<dir>: a screenshot of each FEAT-288 lesson's ringed state (the P3a look sheet)
-    const gateShot = async (name) => { if (!process.env.GATE_SHOTS) return; mkdirSync(process.env.GATE_SHOTS, { recursive: true }); await sleep(400)
-      writeFileSync(join(process.env.GATE_SHOTS, `${name}.png`), Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    const gateShot = async (name) => { if (!process.env.GATE_SHOTS) return; mkdirSync(process.env.GATE_SHOTS, { recursive: true })
+      const was = await js('document.documentElement.dataset.uiScale')
+      for (const sc of ['small', 'big']) {   // FEAT-248: both UI sizes
+        await js(`document.documentElement.dataset.uiScale = '${sc}'`); await sleep(400)
+        writeFileSync(join(process.env.GATE_SHOTS, `${name}-${sc}.png`), Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+      await js(`document.documentElement.dataset.uiScale = '${was}'`) }
     // DEC-320: the firing opens on Katie's call, wrapping up as Billy arrives; then the manager.
     check(await until(async () => await speaker() === 'Katie', 3000), `the run did not open on the firing's call (speaker "${await speaker()}")`)
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
@@ -2289,13 +2293,41 @@ const STEPS = [
     await readCards()
     check((await tut()).stop === 'snack' && await js("window.__inv.list().some(r => r.id === 'pack')"), `Larry's hand-over did not leave the pack on board and send the day for the snack: ${JSON.stringify(await tut())}`)
     // DEC-345: his cards over, Katie calls — the picnic at the old McGill ranch, a snack from the station on the way.
-    check(saidAny(/^Katie: .*picnic out at the old McGill ranch/) && saidAny(/^Katie: You know where to go, I'll see you there!/),
-      `at Larry's, no picnic call from Katie in the owner's words: ${JSON.stringify(said.slice(-4))}`)
-    // DEC-355: her call opens on the owner's line and names the peanuts; DEC-354: it rings and hangs up.
-    { const h = said.findIndex(t => t === 'Katie: Hey Billy! How you doing? Sorry about yesterday…'), e = said.findIndex(t => /^Katie: You know where to go/.test(t))
-      check(h > 0 && said[h - 1] === 'Phone: Ring ring ring' && said[e + 1] === 'Katie: <click>' && saidAny(/^Katie: .*bag of peanuts/),
-        `Katie's picnic call is not ring, "Hey Billy!…", the peanuts, <click>: ${JSON.stringify(said.slice(-7))}`) }
+    check(saidAny(/^Katie: .*picnic out at the old McGill ranch/), `at Larry's, no picnic call from Katie in the owner's words: ${JSON.stringify(said.slice(-4))}`)
+    // DEC-355: her call opens on the owner's line and names the peanuts; DEC-354: it rings (and hangs up at the store, below).
+    { const h = said.findIndex(t => t === 'Katie: Hey Billy! How you doing? Sorry about yesterday…')
+      check(h > 0 && said[h - 1] === 'Phone: Ring ring ring' && saidAny(/^Katie: .*bag of peanuts/),
+        `Katie's picnic call is not ring, "Hey Billy!…", the peanuts: ${JSON.stringify(said.slice(-7))}`) }
     await stamped(9, "Larry's")
+    // FEAT-288 P3b, the map beat (DEC-422: the list on the side, a waypoint, the legend pointed at): inside her call each card
+    // waits for its action, the wrong one is refused; the fake pad and the keyboard each take a turn.
+    const waits = () => js('window.__tutorial().until')
+    const wpt = () => js('(w => w && { x: w.x, z: w.z })(window.__map2d()._getWaypoint())')
+    const hi = (q) => js(`!!document.querySelector(${JSON.stringify(q)})?.classList.contains('tut-hi')`)
+    check(await waits() === 'map' && !await js('window.__map2d().isOpen()'), `her call did not stop on "open your map": ${JSON.stringify(await tut())}`)
+    await gateShot('10-map-card')
+    await padOn(); await js('__fp.b[8] = 1'); await frames(2, 60); await js('__fp.b[8] = 0'); await frames(2, 60)   // View, a tap (a hold is the skip)
+    check(await until(async () => await waits() === 'shoptab', 3000) && await js('window.__map2d().isOpen()'), `the pad's View did not open the map and turn her card: ${JSON.stringify(await tut())}`)
+    check(await hi('#map-list-head [data-tab="shopping"]'), 'the map card: the Shopping tab is not ringed')
+    await gateShot('11-map-shopping-tab')
+    await padOff(); await tap('n'); await sleep(300)
+    check(!await wpt(), 'N dropped a waypoint before her waypoint card (the gate)')
+    await padOn(); await btn(2)   // the pad's X: the Shopping tab
+    check(await until(async () => await waits() === 'waypoint', 3000) && await js('window.__map2d().tab') === 'shopping', `the pad's X did not switch the list to Shopping: ${JSON.stringify(await tut())}`)
+    const st = await js(`(() => { const L = window.__poi().list().find(q => q.type === 'larrysHouse'), d = q => Math.hypot(q.x - L.x, q.z - L.z)
+      const q = window.__poi().list().filter(q => q.type === 'gasStation').sort((a, b) => d(a) - d(b))[0]; return { id: q.id, x: q.x, z: q.z } })()`)
+    check(await until(() => hi(`#map-list .ml-row[data-key="${st.id}"]`), 2000), "the waypoint card: her station's row is not ringed")
+    check(!await js(`window.__map2d()._onWaypoint({ x: ${st.x + 1000}, z: ${st.z} })`) && !await wpt(), 'a waypoint 1 km off her station was taken (the click / N / Y path)')
+    for (let i = 0; i < 30 && await js('window.__map2d()._listId') !== st.id; i++) await btn(13)   // the D-pad walks the list to it
+    check(await js('window.__map2d()._listId') === st.id, `the pad's D-pad never reached her station's row: ${await js('window.__map2d()._listId')}`)
+    await gateShot('12-map-waypoint-card')
+    await btn(3)   // the pad's Y: the waypoint, on the row's place
+    check(await until(async () => await waits() === 'mapshut', 3000), `the pad's Y on her station's row did not drop the waypoint: ${JSON.stringify({ w: await wpt(), tut: await tut() })}`)
+    check(await hi('#map-legend'), 'the legend card: the legend is not ringed')
+    await gateShot('13-map-legend')
+    await padOff(); await tap('m')   // the keyboard closes it
+    check(await until(async () => !await js('window.__map2d().isOpen()') && !await speaker(), 3000), `M did not close the map and end her map beat: ${JSON.stringify(await tut())}`)
+    check(!said.slice(said.indexOf('Katie: Hey Billy! How you doing? Sorry about yesterday…')).includes('Katie: <click>'), 'Katie hung up at Larry\'s: her call holds the line to the store')
     // The station nearest Larry's: a bag of peanuts at its store, then (mom's card) its pump, filled until broke.
     const gs = await js(`(() => { const L = window.__poi().list().find(q => q.type === 'larrysHouse'), d = q => Math.hypot(q.x - L.x, q.z - L.z)
       const q = window.__poi().list().filter(q => q.type === 'gasStation').sort((a, b) => d(a) - d(b))[0]
@@ -2308,29 +2340,45 @@ const STEPS = [
     const shopUp = () => js('document.getElementById("svc-screen").checkVisibility()')
     if (!await shopUp()) { await simFor(1); await park(true) }
     check(await until(shopUp, 3000), `parked at the gas station for the snack, no shop: ${JSON.stringify(await tut())}`)
-    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
-    const nut = 'Array.from(document.querySelectorAll("#svc-screen [data-act=node][data-slot]")).find(r => /Bag of peanuts/.test(r.textContent))'
-    check(await js(`!!${nut}`), `the gas station sells no peanuts: "${(await js('document.querySelector("#svc-screen").textContent')).slice(0, 200)}"`)
-    // DEC-356: the snack stop's shelf sells the peanuts alone — any other row says why and its buttons are off.
-    { const other = 'Array.from(document.querySelectorAll("#svc-screen [data-act=node][data-slot]")).find(r => !/Bag of peanuts/.test(r.textContent))'
-      await js(`${other}.click()`)
-      const lk = await js('({ why: /Katie asked for the peanuts/.test(document.querySelector("#svc-screen .sv-kids")?.textContent ?? ""), on: [...document.querySelectorAll("#svc-screen .sv-kids [data-act=stow], #svc-screen .sv-kids [data-act=buy], #svc-screen .sv-kids [data-act=eat]")].filter(b => !b.disabled).length })')
-      check(lk.why && lk.on === 0, `at the snack stop another row is for sale (DEC-356): ${JSON.stringify(lk)}`) }
-    await js(`${nut}.click()`)
-    await js('document.querySelector("#svc-screen .sv-kids [data-act=stow]").click()')
-    await js('document.querySelector("#svc-screen [data-act=checkout]").click()')
-    check(await until(async () => (await tut()).stop === 'pump', 3000), `buying the peanuts did not send the day to the pump: ${JSON.stringify(await tut())}`)
-    { await js(`${nut}.click()`)   // a second bag: refused, so the gas money stays (DEC-356)
-      check(await js('/one bag will do/.test(document.querySelector("#svc-screen .sv-kids")?.textContent ?? "") && !!document.querySelector("#svc-screen .sv-kids [data-act=stow]")?.disabled'),
-        'the peanuts bought, the shop sells a second bag (DEC-356)') }
-    check(!await js('window.__worstDay().pumpsShut'), 'the peanuts bought, the pumps stayed shut (DEC-323)')
-    if (await shopUp()) await tap('Escape')
-    check(await until(async () => !await shopUp(), 2000), 'Escape did not close the gas station shop')
-    // DEC-323: pulling away from the store, mom sends you to a pump.
-    check(!await js('/pump/.test(document.getElementById("dlg-text")?.textContent ?? "") && document.getElementById("dialogue-panel").checkVisibility()'), "mom's pump card came before pulling away")
-    if (await js('window.__vs.parked')) await tap(' ')
-    check(await until(() => js('/Ring ring ring|plumb outta gas/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 3000), "pulling away from the store, no call from mom about the gas (DEC-345)")
+    // FEAT-288 P3b, the shop beat (DEC-422: "how to select an item, how to check out"): Katie, still on the line.
+    check(await until(async () => await waits() === 'cart', 3000), `the shop open, Katie's shop card did not come: ${JSON.stringify(await tut())}`)
     await readCards()
+    check(/^Katie: Got it\?/.test(said.at(-1)) && said.at(-2) !== 'Phone: Ring ring ring', `the shop card is not Katie's held call: ${JSON.stringify(said.slice(-3))}`)
+    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
+    const nut = 'document.querySelector("#svc-screen .sv-line[data-item=bagOfPeanuts]")'
+    check(await js(`!!${nut}`), `the gas station sells no peanuts: "${(await js('document.querySelector("#svc-screen").textContent')).slice(0, 200)}"`)
+    // the wrong row: locked (DEC-356's "Katie asked for the peanuts" is the shop's own guard; her card refuses the click outright)
+    { const other = 'document.querySelector("#svc-screen .sv-line[data-item]:not([data-item=bagOfPeanuts])")'
+      if (await js(`!!${other}`)) { await js(`${other}.click()`)
+        check(await js(`${other}.classList.contains("tut-locked") && !${other}.classList.contains("on")`), 'the shop card: another shelf row opened') } }
+    check(await hi('#svc-screen .sv-line[data-item="bagOfPeanuts"]'), 'the shop card: the peanuts row is not ringed')
+    await gateShot('14-shop-peanuts')
+    await padOn()   // the fake pad: the D-pad walks the peanuts row and its add to cart alone, A presses
+    for (let i = 0; i < 12 && await waits() === 'cart'; i++) {
+      const f = await js(`(e => !e ? 'none' : e.dataset.act === 'stow' ? 'stow' : e.matches('.sv-line[data-item=bagOfPeanuts]:not(.on)') ? 'row' : 'other')(document.querySelector('#svc-screen .nav-focus'))`)
+      await btn(f === 'row' || f === 'stow' ? 0 : 13)
+    }
+    await padOff()
+    check(await until(async () => await waits() === 'bought', 3000), `the pad did not put the peanuts in the cart: ${JSON.stringify({ tut: await tut(), f: await navFocus() })}`)
+    check(await hi('#svc-screen [data-act="checkout"]'), 'the check out card: check out is not ringed')
+    await gateShot('15-shop-checkout')
+    await js('document.querySelector("#svc-screen [data-act=discard]").click()')   // the mouse: discard is refused
+    check(await js('!!document.querySelector("#svc-screen [data-act=discard]")') && await waits() === 'bought', 'the check out card: discard emptied the cart')
+    await js('document.querySelector("#svc-screen [data-act=checkout]").click()')
+    check(await until(async () => (await tut()).stop === 'pump' && await waits() === 'shopshut', 3000), `checking out did not buy the peanuts and turn her card: ${JSON.stringify(await tut())}`)
+    check(!await js('window.__worstDay().pumpsShut'), 'the peanuts bought, the pumps stayed shut (DEC-323)')
+    await js(`${nut}.click()`)   // her send-off: leave, and only leave (a second bag: DEC-356's guard; here the row is locked too)
+    check(await js(`${nut}.classList.contains("tut-locked") && !${nut}.classList.contains("on")`) && await hi('#svc-screen [data-act="close"]'), "Katie's send-off: the shelf is not locked, or back is not ringed")
+    await gateShot('16-shop-leave')
+    await readCards()
+    await tap('Escape')
+    check(await until(async () => !await shopUp(), 2000), 'Escape did not close the gas station shop')
+    // DEC-422 (was DEC-345's brake): the shop closed, Katie hangs up and mom calls — the truck still parked at the store.
+    await readCards(800, 'Phone')   // her click; mom's ring is left up to look at
+    check(await until(() => js('/Ring ring ring/.test(document.getElementById("dlg-text")?.textContent ?? "") && window.__vs.parked'), 5000), "the shop closed, no call from mom about the gas while still parked (DEC-422)")
+    await readCards()
+    { const e = said.findIndex(t => /^Katie: You know where to go, I'll see you there!/.test(t))
+      check(e > 0 && said[e + 1] === 'Katie: <click>' && said[e + 2] === 'Phone: Ring ring ring', `Katie's send-off, her click, then mom's ring: ${JSON.stringify(said.slice(e - 1, e + 4))}`) }
     check(saidAny(/^Mom: .*plumb outta gas/) && saidAny(/^Mom: .*pull up at a pump/), `mom's call did not go on to the gas lesson: ${JSON.stringify(said.slice(-3))}`)
     { const g = said.findLastIndex(t => /pull up at a pump/.test(t))
       check(said[g + 1] !== 'Mom: <click>', `mom hung up before the fill-up (DEC-354: she stays on the line): ${JSON.stringify(said.slice(g - 2, g + 2))}`) }
