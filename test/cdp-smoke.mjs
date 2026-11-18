@@ -220,6 +220,41 @@ const skipAndReadLarry = async () => {
   check(!await dlg(), "the skip's cards did not close after 24 presses")
 }
 const car = () => js('window.__car()')
+// BUG-203: the alerts area (#machine-word) shows "Wrong way. Turn around" right now
+const wrongWayUp = () => js('(e => e.style.opacity === "1" && /Wrong way/.test(e.textContent))(document.getElementById("machine-word"))')
+// …and a 10 Hz page-side count of the polls it showed while a dialogue card or the intro's card was up (window.__wwOver),
+// over the opening: it stops itself when the tutorial's line comes on (mom's pedals card, after the opening's cards)
+const watchWrongWay = () => js(`window.__wwOver = 0; clearInterval(window.__wwWatch); window.__wwWatch = setInterval(() => {
+  try { if (window.__gps()) return clearInterval(window.__wwWatch) } catch { return }   // (no GPS yet mid-load)
+  const e = document.getElementById('machine-word'), card = getComputedStyle(document.getElementById('dialogue-panel')).display !== 'none'
+    || document.getElementById('tut-card').style.display === 'flex'
+  if (card && e.style.opacity === '1' && /Wrong way/.test(e.textContent)) window.__wwOver++ }, 100)`)
+// The truck's heading (rad, the seat's convention: forward = (−sin h, −cos h)), and a re-seat on the spot facing h.
+const heading = () => js('(q => Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y)))(window.__vs.quaternion)')
+const faceTo = async (h) => { const v = await car()
+  await js(`window.__seated = false; window.__teleport(${v.x}, ${v.z}, ${h}).then(() => { window.__seated = true })`)
+  check(await until(() => js('window.__seated'), 30000, 250), 'the re-seat on the spot never seated') }
+// FEAT-288 P6: the opening's orbit angle (rad, camera.js orbitTheta's convention) read off the camera round the joint
+const orbitAt = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), c = window.__cam().position
+  return Math.atan2(c.x - (q.modelX ?? q.x), c.z - (q.modelZ ?? q.z)) })()`)
+const dAng = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a))
+// BUG-203: seated on the nearest road along it, then turned round: one of the two faces against any line along that road,
+// so "Wrong way" shows at one of them unless something silences it. Puts the truck back where it stood.
+async function wrongWayEitherWay () {
+  const v = await car(), h0 = await heading()
+  const r = await js(`(v => { const nr = window.__roadSys().queryNearest(v.x, v.z, 200)
+    return nr?.point ? { x: nr.point.x, z: nr.point.z, h: Math.atan2(-nr.tangent.x, -nr.tangent.z) } : null })(window.__vs.position)`)
+  check(r, 'no road near the truck to face along')
+  let shown = false
+  for (const h of [r.h, r.h + Math.PI]) {
+    await js(`window.__seated = false; window.__teleport(${r.x}, ${r.z}, ${h}).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), 'the seat on the road never seated')
+    if ((shown = await until(wrongWayUp, 3000))) break
+  }
+  await js(`window.__seated = false; window.__teleport(${v.x}, ${v.z}, ${h0}).then(() => { window.__seated = true })`)
+  check(await until(() => js('window.__seated'), 30000, 250), 'the seat back never seated')
+  return shown
+}
 // A fake pad: navigator.getGamepads stubbed to one standard-mapping pad whose buttons and sticks are
 // window.__fp.b / .axes (gamepad.js polls it every frame). padOff hands back the real one.
 const padOn = () => js(`window.__realPads ??= navigator.getGamepads.bind(navigator)
@@ -2146,6 +2181,29 @@ const STEPS = [
     check(a.truck < 8, `the truck is ${a.truck.toFixed(1)} m from the burger joint's pad, want < 8`)
     check(b.cam > 9, `the camera is ${b.cam.toFixed(1)} m from the truck — not on the joint's orbit`)
     check(b.h === a.h, `the day clock ran under the firing (${a.h} → ${b.h})`)
+    await watchWrongWay()   // BUG-203: counted from here to the pedals card
+    // FEAT-288 P6 (FIRING_CAM, data/tutorial.js): the orbit turns on its own (0.05 rad/s); the right stick and a RIGHT drag
+    // turn it by hand without turning the card; resumeS (3 s) after the last touch it turns on its own again, from there.
+    { const card = () => js('document.getElementById("dlg-text").textContent')
+      const o0 = await orbitAt(); await sleep(1500); const o1 = await orbitAt()
+      check(dAng(o0, o1) > 0.02, `the firing's orbit did not turn on its own: ${dAng(o0, o1).toFixed(3)} rad in 1.5 s`)
+      const t0 = await card(); await padOn()
+      await js('__fp.axes[2] = 1'); await sleep(600); await js('__fp.axes[2] = 0'); await sleep(1000)   // the camera's 5/s follow settles
+      const o2 = await orbitAt()
+      check(dAng(o1, o2) < -0.3, `the right stick did not turn the firing's orbit: ${dAng(o1, o2).toFixed(3)} rad`)
+      await sleep(1000); const o3 = await orbitAt()
+      check(Math.abs(dAng(o2, o3)) < 0.01, `the orbit turned again under 3 s after the stick let go: ${dAng(o2, o3).toFixed(3)} rad`)
+      await sleep(3000); const o4 = await orbitAt(); await sleep(1000); const o5 = await orbitAt()
+      check(dAng(o4, o5) > 0.02, `the orbit did not resume 3 s after the stick let go: ${dAng(o4, o5).toFixed(3)} rad/s`)
+      await padOff()
+      const mouse = (type, x, y) => client.cmd('Input.dispatchMouseEvent', { type, x, y, button: 'right', buttons: type === 'mouseReleased' ? 0 : 2, clickCount: 1 })
+      await mouse('mouseMoved', 300, 200); await mouse('mousePressed', 300, 200)
+      for (let i = 1; i <= 10; i++) { await mouse('mouseMoved', 300 + 20 * i, 200); await sleep(30) }
+      await mouse('mouseReleased', 500, 200); await sleep(500)
+      const o6 = await orbitAt()
+      check(dAng(o5, o6) < -0.3, `a right drag did not turn the firing's orbit: ${dAng(o5, o6).toFixed(3)} rad`)
+      check(await card() === t0 && await speaker() === 'Katie', `the stick or the right drag turned the firing's card ("${t0}" → "${await card()}")`)
+      check(!await js('window.__gps()'), `BUG-203: the GPS has a line under the firing: ${JSON.stringify(await js('window.__tutorial()'))}`) }
     // DEC-299: about 07:00; FEAT-184 (DEC-159): day −1, so a played tutorial enters free will on day 0
     check(Math.abs(a.h + 17) < 0.1, `the firing is not at 07:00 on day 0 (clockH ${a.h})`)
     // BUG-136: the days before the clock's zero; the HUD read day 0 as "Day 0, -6 am".
@@ -2170,6 +2228,10 @@ const STEPS = [
     check(await until(() => js('window.__autosave()'), 3000) && await js('JSON.parse(localStorage.getItem("autos-run/1")).data.returnSeed') === '6',
       'the tutorial did not save with its way back to seed 6')
     check(await until(async () => await speaker() === 'Phone', 5000), `the tutorial seed did not open on mom's call ringing (speaker "${await speaker()}")`)
+    // BUG-203: the truck turned round under her ring card — no line, so no "Wrong way", whichever way it faces
+    { const h0 = await heading(); await faceTo(h0 + Math.PI); await sleep(1500)
+      check(!await js('window.__gps()') && !await wrongWayUp(), 'BUG-203: a line or "Wrong way" under mom\'s call, the truck turned round')
+      await faceTo(h0) }
     await readCards()   // her call, up to the key card (DEC-359: it waits for the key, the game runs under it)
     check(await js('window.__tutorial().until') === 'engine', `mom's call did not stop at the key card: ${JSON.stringify(await js('window.__tutorial()'))}`)
     await crank(); await readCards()   // the key catches: her <click>, then the driving lesson
@@ -2178,6 +2240,13 @@ const STEPS = [
       check(r === 0 && k > r && said[k + 1] === 'Mom: <click>', `mom's call is not ring, her cards, the key, <click>: ${JSON.stringify(said.slice(0, 7))}`) }
     // (the call closes on <click>; the pedals' card follows at once, so no 'speaker is gone' check here)
     check(await until(async () => (await at()).cam < 9, 3000), 'the camera never came back to the truck')
+    // BUG-203: never "Wrong way" while an opening card was up; from the pedals card on the line is there, and it works:
+    // turned against it, the alert shows (either way round: one of the two points against the line)
+    await readCards()   // her <click> (still up when the key card had not cleared yet), then the pedals card
+    check(!await js('window.__wwOver'), `BUG-203: "Wrong way" showed over the opening's cards (${await js('window.__wwOver')} polls)`)
+    check(await until(() => js('!!window.__gps()'), 5000), `BUG-203: the line never came on with the pedals card: ${JSON.stringify(said.slice(-3))}`)
+    check(await wrongWayEitherWay(), 'BUG-203: no "Wrong way" with the truck turned against the tutorial\'s line')
+    await readCards(); await crank()   // a re-seat leaves the engine off
     // FEAT-229: the FIRING DAY — no job (free will is after the paycheck), the HUD and the GPS to mom's first.
     const eve = () => js(`(() => ({ s: window.__mission().state, tut: window.__tutorial().phase, gps: !!window.__gps(),
       hud: getComputedStyle(document.getElementById('mission-hud')).display !== 'none' && document.getElementById('mission-hud').textContent.trim() }))()`)
@@ -2840,6 +2909,34 @@ const STEPS = [
       }
       if (!clean) clean = got
       else if (!pays) check(got.money === clean.money && Math.abs(got.gal - clean.gal) < 0.01, `${name}: the skip's wallet and tank differ from a clean skip's: ${JSON.stringify(got)} vs ${JSON.stringify(clean)}`)
+    }
+    // FEAT-288 P6 / BUG-203: a skip at three moments of the opening — mid-orbit, the stick just let go; on the intro's card;
+    // under mom's ring — leaves the camera on the truck, nothing locked or ringed, and the GPS on its normal path: a
+    // waypoint's line shows, and turned against it "Wrong way" does (no alert left silenced).
+    for (const at of ['orbit', 'card', 'call']) {
+      await js('document.getElementById("pm-menu").click()')
+      await js('document.getElementById("mm-new").click()')
+      await js(`document.getElementById("su-seed").value = "${TUTORIAL.seed}"; document.getElementById("su-start").click()`)
+      check(await until(() => js(live), 45000, 250), `skip at the ${at}: the tutorial run never went live`)
+      check(await until(async () => await speaker() === 'Katie', 5000), `skip at the ${at}: the run did not open on the firing`)
+      if (at === 'orbit') { await padOn(); await js('__fp.axes[2] = 1'); await sleep(400); await js('__fp.axes[2] = 0'); await padOff() }
+      else {
+        for (let i = 0; i < 12 && !await js('document.getElementById("tut-card").style.display === "flex"'); i++) { await tap('Enter'); await sleep(250) }
+        if (at === 'call') {
+          await js('document.getElementById("tc-play").click()')
+          check(await until(async () => await speaker() === 'Phone', 5000), `skip at the ${at}: "play" did not ring`)
+        }
+      }
+      for (let i = 0; i < 2 && await js('window.__tutorial().phase !== "free"'); i++) { await key('m', true); await sleep(1300); await key('m', false); await sleep(300) }
+      check(await until(skipDone, 8000), `skip at the ${at}: holding M did not skip: ${await skipPeek()}`)
+      await readCards(); await sleep(1000)
+      const v = await car(), c = await js('(p => ({ x: p.x, z: p.z }))(window.__cam().position)')
+      check(Math.hypot(c.x - v.x, c.z - v.z) < 9, `skip at the ${at}: the camera is ${Math.hypot(c.x - v.x, c.z - v.z).toFixed(1)} m off the truck (left on the orbit)`)
+      check(!await js('document.querySelectorAll(".tut-locked, .tut-hi").length'), `skip at the ${at}: the tutorial gate's marks stayed`)
+      const mom = await js('(q => ({ x: q.x, z: q.z }))(window.__poi().list().find(q => q.type === "momsHouse"))')
+      check(await js(`window.__map2d()._onWaypoint({ x: ${mom.x}, z: ${mom.z} })`) && await until(() => js('!!window.__gps()'), 3000), `skip at the ${at}: a waypoint drew no line`)
+      check(await wrongWayEitherWay(), `skip at the ${at}: no "Wrong way" turned against a waypoint's line (left silenced)`)
+      await js('window.__map2d()._onWaypoint(null)')
     }
   }],
   ['newRun', async () => {
