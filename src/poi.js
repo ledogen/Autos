@@ -402,8 +402,9 @@ export function overDropZone (q, x, z, slack = 0, box = q?.drop) {
  * FEAT-275/280: the mailbox flavour for a place. A pure function of (seed, id), drawn from the 'mailbox' pool of
  * data/prop-models.js (ASSET-22's eleven). Not 'lawnFurniture': the yard scatter must not draw eleven of them.
  */
+export const MAILBOX_POOL = 'mailbox'
 export function mailboxKey (seed, id) {
-    const pool = modelsTagged('mailbox')
+    const pool = modelsTagged(MAILBOX_POOL)
     return pool[hash32(`poi-mailbox:${seed}:${id}`) % pool.length]
 }
 
