@@ -1,6 +1,6 @@
 ---
 id: DEC-338
-status: standing
+status: superseded
 decided: 2026-11-16
 area: economy
 governs: FEAT-230, FEAT-121, data/items.js, src/inventory.js, src/inventory-screen.js, src/main.js, spoilage, fresh clock, cooler, Ice King, ice, food

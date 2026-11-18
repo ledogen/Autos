@@ -30,3 +30,4 @@ Known working setup: 8BitDo Ultimate 2C, 2.4 GHz mode, Windows, Chrome, ABS sett
 ## Log
 - 2026-11-17 lane a: built on land/rumble-runlog: src/pad-rumble.js (one mixer, per-source gains, master on the settings page), hooks in main.js/vehicle.js/contact-audio.js; gate pad-rumble. Cargo strikes: no signal. Unverified: any real controller.
 - 2026-11-17: owner (inbox 20261118053713-tte5): on Windows, the 8002 server, the pad rumbles constantly on a plain road. Minted BUG-206.
+- 2026-11-18 BUG-206 (454deaff): `rough` now reads loose ground (gravel, dirt) × speed, asphalt silent; new `jolt` = high-passed strut velocity ÷ speed (kerb, pothole, rock). A smooth cruise commands exactly zero.

@@ -448,12 +448,12 @@ export class ServiceCenter {
         return true
     }
 
-    /** FEAT-232: buy an `eatIn` shelf meal and eat it here: paid, `eatH` on the clock, hunger held `hold` hours. Never stowed. */
+    /** FEAT-232: buy an `eatIn` shelf meal and eat it here: paid, `eatH` on the clock, the counter up its `satiety`. Never stowed. */
     buyAndEat (i) {
         const e = this.stock()[i], it = ITEMS[e?.id]
         if (!it?.eatIn || !this.spend(this.buyQuote(i).price)) return false
         this.advanceHours(it.eatH)
-        this.eat(it.hold)
+        this.eat(it.satiety)
         this.onChange()
         return true
     }

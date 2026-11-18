@@ -268,11 +268,11 @@ const STEPS = [
     if (!under) { console.log('  boreCam: spawn not under the heightfield, skipped'); return }
     const jsa = async (expr) => (await client.cmd('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: expr })).result?.result?.value
     const setMask = (m) => jsa(`(async () => { const { makeBoomProbe } = await import('/src/camera-boom.js'); const { setCameraBoomProbe } = await import('/src/camera.js')
-      setCameraBoomProbe(makeBoomProbe(window.__physicsEngine, (x, z) => window.__terrain().analyticHeight(x, z), ${m})) })()`)
+      setCameraBoomProbe(makeBoomProbe(window.__physicsEngine, (x, z, y) => window.__terrain().analyticHeight(x, z, undefined, y), ${m})) })()`)
     const los = () => js(`(() => { const p = window.__vs.position, c = window.__cam().position, d = c.clone().sub(p), l = d.length()
       return { blocked: !!window.__physicsEngine.castRay(p, d.normalize(), l, { collidesWith: 24n }), boom: +l.toFixed(2) } })()`)
     const probeUs = (m) => jsa(`(async () => { const { makeBoomProbe } = await import('/src/camera-boom.js')
-      const pr = makeBoomProbe(window.__physicsEngine, (x, z) => window.__terrain().analyticHeight(x, z), ${m})
+      const pr = makeBoomProbe(window.__physicsEngine, (x, z, y) => window.__terrain().analyticHeight(x, z, undefined, y), ${m})
       const p = window.__vs.position.clone(), c = window.__cam().position.clone(), t = []
       for (let k = 0; k < 21; k++) { const t0 = performance.now(); for (let i = 0; i < 500; i++) pr(p, c); t.push((performance.now() - t0) / 500) }
       return t.sort((a, b) => a - b)[10] * 1000 })()`)
@@ -442,6 +442,19 @@ const STEPS = [
     if (await js('window.__vs.parked')) await tap(' ')
     const c0 = await car(); await hold('w', 5); const c1 = await car(), off = Math.hypot(c1.x - c0.x, c1.z - c0.z)
     check(off > 10, `the truck did not drive off from Larry's: ${off.toFixed(1)} m in 5 s of throttle`)
+    // BUG-205 follow-up: READOUT_SHOT=1 shoots the top readout with its longest realistic multi-drop line (the format
+    // _renderMissionUI writes), the rank tile up, at both UI sizes, into wip/bugs-gfc/.
+    if (process.env.READOUT_SHOT) {
+      mkdirSync('wip/bugs-gfc', { recursive: true })
+      for (const size of ['small', 'big']) {
+        await js(`(() => { document.documentElement.dataset.uiScale = '${size}'; const h = document.getElementById('mission-hud'); h.style.display = 'block'
+          h.querySelector('.hud-text').textContent = '12.48 km (48.73 km) · stop 2 of 4: Hollis Feed and Seed · due in 6h 30m'
+          document.getElementById('rank-timer').style.display = 'block' })()`)
+        await frames(10, 300)
+        writeFileSync(`wip/bugs-gfc/readout-${size}.png`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+        console.log('  readout: ' + await js(`JSON.stringify(['mission-hud', 'rank-timer'].map(id => { const r = document.getElementById(id).getBoundingClientRect(); return [id, Math.round(r.left), Math.round(r.right), Math.round(r.top), Math.round(r.bottom), getComputedStyle(document.getElementById(id)).display] }))`))
+      }
+    }
   }],
   ['runlog', async () => {
     // FEAT-242 (DEC-358): the run logger, switched on mid-run by its dev handle. The download is intercepted (the anchor
@@ -863,13 +876,18 @@ const STEPS = [
     await js(`window.__inv.grant('potato', 1)`)   // for the relight below (DEC-397)
     if (await js('document.getElementById("resume-card").style.display === "flex"')) await tap('F8')   // a resumed run opens frozen (FEAT-42); any key but a bare modifier lifts it
     const shown = (id) => js(`(b => b && getComputedStyle(b).display !== "none")(document.getElementById("${id}"))`)
-    check(await until(() => shown('cp-sleep'), 3000), 'the camp card offers no sleep')
-    await js('document.getElementById("cp-sleep").click()')
-    await js('document.getElementById("cp-hours").value = "8"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
-    const h0 = await js('window.__day().clockH()')
-    await js('document.getElementById("cp-sleep-go").click()')
-    check(await until(async () => (await js('window.__day().clockH()')) > h0 + 2.5, 8000), 'the 8 h camp sleep did not run')
-    check(await until(async () => (await fire())?.dead === true && !(await fire()).live, 8000), `after an 8 h camp sleep the fire is not the dead model: ${JSON.stringify(await fire())}`)
+    const sleepOut = async () => {
+      check(await until(() => shown('cp-sleep'), 3000), 'the camp card offers no sleep')
+      await js('document.getElementById("cp-sleep").click()')
+      await js('document.getElementById("cp-hours").value = "8"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
+      const h0 = await js('window.__day().clockH()')
+      await js('document.getElementById("cp-sleep-go").click()')
+      check(await until(async () => (await js('window.__day().clockH()')) > h0 + 2.5, 8000), 'the 8 h camp sleep did not run')
+      check(await until(async () => (await fire())?.dead === true && !(await fire()).live, 8000), `after an 8 h camp sleep the fire is not the dead model: ${JSON.stringify(await fire())}`)
+    }
+    const fadeOver = async () => { await until(async () => !(await js('document.getElementById("camp-fade").classList.contains("on") || document.getElementById("midnight-card").classList.contains("on")')), 8000); await sleep(300) }   // the card ignores clicks until then
+    check(!(await shown('cp-light')), 'FEAT-286: a light-the-fire button at a burning fire')
+    await sleepOut()
     // DEC-397: the dead fire smokes — puffs of the shared smoke pool alive within 3 m of it, rising above the heap.
     const puffs = () => js(`(() => { const p = new window.__vs.position.constructor(); window.sky.scene.getObjectByName('campfire').getWorldPosition(p)
       let n = 0, top = -1e9; window.sky.scene.traverse(o => { const a = o.geometry?.attributes?.aPos; if (!a) return
@@ -885,9 +903,18 @@ const STEPS = [
       await toHour(13); await until(() => js('!document.getElementById("midnight-card").classList.contains("on")'), 8000)
       await tap('c', { shift: true })   // back to the camp camera so the card's buttons are live
     }
+    // FEAT-286: the light-the-fire button shows at the dead fire, relights it at once (no clock), and goes.
+    check(await until(() => shown('cp-light'), 3000), 'FEAT-286: no light-the-fire button at the dead fire')
+    await fadeOver()
+    const hL = await js('window.__day().clockH()')
+    await js('document.getElementById("cp-light").click()')
+    check(await until(async () => (await fire())?.live === true && !(await fire()).dead, 2000), `FEAT-286: the light button did not relight the fire: ${JSON.stringify(await fire())}`)
+    check(await until(async () => !(await shown('cp-light')), 2000), 'FEAT-286: the light button stayed on a lit fire')
+    check(Math.abs((await js('window.__day().clockH()')) - hL) < 0.05, 'FEAT-286: lighting the fire passed time')
+    await sleepOut()   // dead again, for the cook's relight
     // DEC-397: the cook buttons show at the dead fire, and a cook relights it at once.
     check(await until(() => shown('cp-cook'), 3000), 'no cook button at the dead fire with a raw potato aboard')
-    await until(async () => !(await js('document.getElementById("camp-fade").classList.contains("on") || document.getElementById("midnight-card").classList.contains("on")')), 8000); await sleep(300)   // the night's fade is over (the card ignores clicks until then)
+    await fadeOver()
     await js('document.getElementById("cp-cook").click()')
     check(await until(async () => (await fire())?.live === true && !(await fire()).dead, 2000), `cooking at the dead fire did not relight it: ${JSON.stringify(await fire())}`)
     await until(async () => !(await js('document.getElementById("camp-fade").classList.contains("on")')), 5000)
@@ -1282,7 +1309,7 @@ const STEPS = [
     await click('#svc-screen [data-act=checkout]')
     await sleep(300)
     const dh = (await day('clockH()')) - h0
-    check(Math.abs(m0 - await money() - 5) < 0.005, `the dinner meal took $${(m0 - await money()).toFixed(2)}, not $5`)
+    check(Math.abs(m0 - await money() - 4) < 0.005, `the dinner meal took $${(m0 - await money()).toFixed(2)}, not $4`)
     check(Math.abs(dh - 0.5) < 0.02, `the dinner meal ran ${(dh * 60).toFixed(1)} min, not 30`)
     check(Math.abs(await held() - 8) < 0.02, `the dinner meal holds hunger ${(await held()).toFixed(2)} h, not 8`)
     check(await js('window.__inv.list().length') === i0, 'the dinner meal was stowed in the inventory')
@@ -1387,6 +1414,9 @@ const STEPS = [
     // FEAT-187: beside the site, a cluster's paper-style halo is lit, and the GPS draws no destination circle in the road.
     check(await until(() => js('window.__site().halos?.some(h => h.ring.visible)'), 2000), 'no cluster halo lit beside the site (FEAT-187)')
     check(await js('window.__gps()?.noRing === true'), `the demolition GPS route still carries a destination circle (FEAT-187): ${await js('JSON.stringify(Object.keys(window.__gps() ?? {}))')}`)
+    // BUG-212: the map draws the GPS's tour from the truck (the guide's re-plan), never the job's planned route.
+    check(await until(() => js('!!window.__site()?.tour && window.__map2d()._getMission()?.poly === window.__site().tour.poly'), 4000),
+      'BUG-212: the demolition map line is not the GPS tour')
     await sleep(2000)
     const awake = await js(`${bodies}.filter(t => window.__physicsEngine.isAwake(t.body)).length`)
     check(awake === 0 && await js('window.__cargo().site.every(t => !t.smashed)'), `untouched targets did not stay asleep and standing: ${awake} awake`)
@@ -2191,7 +2221,7 @@ const STEPS = [
     }
     await readCards()   // the stop can flip to 'pack' a beat before her card shows: then it is read here
     check((heard || saidAny(/^Mom: Take this pack over to your uncle/)) && (await tut()).stop === 'pack', `parked at mom's door, no hand-over in the owner's words: ${JSON.stringify(await tut())}`)
-    check(await js('window.__econ.money') === 6, `mom's hand-over did not put $6 in the wallet: $${await js('window.__econ.money')}`)
+    check(await js('window.__econ.money') === 5, `mom's hand-over did not put $5 in the wallet: $${await js('window.__econ.money')}`)
     check(!await js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"'), "her door offered her bed in the morning (DEC-308)")
     await stamped(8, "mom's hand-over")
     // DEC-305 (DEC-238's errand): the pack lands by her steps; parked beside it, G loads it; parked at Larry's, he gives it you.

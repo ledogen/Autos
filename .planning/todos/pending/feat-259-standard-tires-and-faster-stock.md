@@ -49,3 +49,4 @@ At a 2-min par the window still hands out the old tire (DEC-204 / DEC-226, stand
 
 ## Log
 - 2026-11-17: built edb1f0e9 (land/machine-1117). shop-stock, offer-board green.
+- 2026-11-17 (lane C): owner's answer, DEC-408: standard tire weight 15; LIFE_H 6–68 h (P_FILL 0.074 kept) = 4.50 rotating items measured (≤ 2 items 3.7 % of hours; new items 2.9/shop/day, was 5.8); old tire reward weight 30, REWARD_ONLY. Item-reward shares: standard 9.2 → 6.7 %, old 2.0 → 6.4 %.
