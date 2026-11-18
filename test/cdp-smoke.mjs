@@ -386,10 +386,10 @@ const STEPS = [
     const back = await js('({ on: window.__autoDrive.on, status: window.__autoDrive.status })')
     check(!back.on && /took the wheel/.test(back.status), `a driving key did not hand the truck back: ${JSON.stringify(back)}`)
     console.log(`  autoDrive: ${moved.toFixed(0)} m in 10 sim-s (${st.status}); D handed it back`)
-    // Leave the truck as the teleport step did: at rest, brake latched. Handed back at ~80 km/h it would coast on with
-    // nobody driving through map / freecam / settings and into the lab, and a later seat at mom's went NaN (strut
-    // compression ~3e5 m, the engine's velocity NaN): three `camp` failures, 2026-11-18.
-    await park()
+    // Put the truck back where the teleport step left it (seated, brake latched). Left ~150 m down the road, the lab
+    // step then ends in a later NaN at mom's seat (strut compression ~3e5 m, the engine's velocity NaN): `camp` failed
+    // three times, 2026-11-18. The AI is not the cause: driving the same 150 m with W does the same; a main bug, reported.
+    await seat(c0.x, c0.z, 0)
   }],
   ['map', async () => {
     await tap('m')
