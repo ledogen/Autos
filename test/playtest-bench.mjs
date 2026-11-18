@@ -6,7 +6,7 @@
 // Per seed, ~7 min with the boot:
 //   drive  story mode, seated from Larry's yard onto the road network, a route at play speeds for 300 s, one 60 s leg
 //          riding the road edge (centre 5 m off the line: one side's wheels over the lip on the shoulder — PERF-42's
-//          hot spot, the autopilot otherwise keeps to the middle), one off-road leg. The driver is test/lib/autopilot.mjs (pure: state in, controls out — meant to grow into in-game AI
+//          hot spot, the autopilot otherwise keeps to the middle), one off-road leg. The driver is src/autopilot.js (FEAT-293; pure: state in, controls out — meant to grow into in-game AI
 //          cars); this file is its consumer: controls onto the pad, trouble into re-seats (then crank, then park off)
 //   map    stopped, the map open: zoom right out, a fast pan into undrawn ground, zoom back in, pan on (30 s)
 //   park   stopped, the map shut (30 s) — the GPU-only cost
@@ -132,9 +132,10 @@ for (const b of BUILDS) {
 // ── the page side: the virtual pad, the autopilot, the 1 Hz probe ─────────────────────────────────────────────────────
 // Injected once a story run is live. window.__bench.phase drives it: 'drive' (pursuit), 'home' (re-seat at the drive's start, idle, parked), 'map'
 // (stick pan/zoom), 'idle' (hands off). Everything it records is read back by the harness per phase.
-const AUTOPILOT = readFileSync(join(HERE, 'lib/autopilot.mjs')).toString('base64')
+const AUTOPILOT = readFileSync(join(HERE, '../src/autopilot.js')).toString('base64')
 const PAGE = String.raw`(async () => {
-  // The autopilot is test/lib/autopilot.mjs (pure: state in, controls out). This is its consumer: the controls go onto
+  // The autopilot is src/autopilot.js (pure: state in, controls out), in the bench's old mode: centreline, no recovery
+  // (every trouble is a re-seat), a dead end jumps. This is its consumer: the controls go onto
   // a virtual pad, and its trouble reports become re-seats.
   const { RANGER_PARAMS: P } = await import('/data/ranger.js')
   const { makeRoute, createAutopilot } = await import('data:text/javascript;base64,${AUTOPILOT}')   // the bench's own copy, so an A/B drives both builds the same
@@ -158,9 +159,9 @@ const PAGE = String.raw`(async () => {
   // Story's region is walled (REGION_RADIUS_M); a route out past it drives into the wall for good — keep 150 m clear.
   const reg = window.__story?.()?.region?.()
   const keep = reg ? (x, z) => Math.hypot(x - reg.x, z - reg.z) < reg.r - 150 : undefined
-  const route = makeRoute([...road._network.values()], rng, window.__vs.position, keep)
+  const route = makeRoute([...road._network.values()], rng, window.__vs.position, { keep, deadEnd: 'jump' })
   const inBore = (x, z) => { const nr = road.queryNearest(x, z, 15); return !!nr && !!road.tunnelSpanAt?.(nr.runKey ?? '', nr.arcS ?? 0, -20) }
-  const ap = B.ap = createAutopilot({ car: P, route, inBore })
+  const ap = B.ap = createAutopilot({ car: P, route, inBore, keepRight: false, recover: false })
   const D = window.__damage, cond0 = D?.condition ? { ...D.condition } : null
   const kit0 = D ? Object.fromEntries(['flat', 'toeOffsetDeg', 'camberOffsetDeg'].map(f => [f, D[f] && [...D[f]]])) : {}
   ap.locate(window.__vs.position)

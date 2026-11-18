@@ -4,7 +4,7 @@
 //
 // The real driver (src/pad-rumble.js stepPadRumble + flushPadRumble, with a fake pad that records every playEffect) and the
 // real contact one-shots (contact-audio.js: bump stops, landings) behind the real physics, on the real world (world rig:
-// road trimesh, terrain, props), the autopilot (test/lib/autopilot.mjs) on asphalt at 60 and 80 km/h. Every effect the pad
+// road trimesh, terrain, props), the autopilot (src/autopilot.js, the bench's mode: centreline, a dead end jumps) on asphalt at 60 and 80 km/h. Every effect the pad
 // gets while no kick is ringing, no tyre slides and the truck is on asphalt must be silent (0 / 0 or a reset). Then the
 // events: a handbrake slide on flat ground, and a flat tyre, each command a non-zero effect.
 import * as THREE from 'three'
@@ -18,7 +18,7 @@ const { computeStaticEquilibrium } = await import('../src/suspension.js')
 const { RANGER_PARAMS } = await import('../data/ranger.js')
 const { DamageModel } = await import('../src/damage.js')
 const { buildWorld } = await import('./lib/world-rig.mjs')
-const { makeRoute, createAutopilot } = await import('./lib/autopilot.mjs')
+const { makeRoute, createAutopilot } = await import('../src/autopilot.js')
 const { ackermann } = await import('./lib/physics-replay.mjs')
 const { drive } = await import('./lib/flat-drive.mjs')
 const { stepContactAudio } = await import('../src/contact-audio.js')
@@ -47,8 +47,8 @@ const looseAt = (x, z) => {
 
 for (const kmh of [60, 80]) {
   let s = SEED >>> 0; const rng = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32)
-  const route = makeRoute([...w.road._network.values()], rng, { x: 0, z: 0 })
-  const ap = createAutopilot({ car: P, route, vMax: kmh / 3.6, inBore: (x, z) => { const n = w.road.queryNearest(x, z, 15); return !!n && !!w.road.tunnelSpanAt(n.runKey ?? '', n.arcS ?? 0, -20) } })
+  const route = makeRoute([...w.road._network.values()], rng, { x: 0, z: 0 }, { deadEnd: 'jump' })
+  const ap = createAutopilot({ car: P, route, vMax: kmh / 3.6, keepRight: false, recover: false, inBore: (x, z) => { const n = w.road.queryNearest(x, z, 15); return !!n && !!w.road.tunnelSpanAt(n.runKey ?? '', n.arcS ?? 0, -20) } })
   const seat = (m) => { const r = ap.resume(m); Object.assign(vs, fresh(r.x, (w.road.sampleRoadTopY(r.x, r.z) ?? 0) + 0.9, r.z, r.heading)); w.stream(r.x, r.z) }
   seat(0)
   sent.length = 0

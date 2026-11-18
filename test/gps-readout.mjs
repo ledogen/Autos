@@ -20,14 +20,14 @@ const at = (i) => { car.x = poly[i].x; car.z = poly[i].z }
 
 // A two-drop: stop 1 at vertex 20 (the first corner, 200 m), the last at the end (600 m).
 const multi = { poly, polyCum: polyCumOf(poly), end: poly.at(-1),
-                legs: [{ end: poly[20], polyIdx: 20 }, { end: poly.at(-1), polyIdx: poly.length - 1 }] }
+                legs: [{ end: poly[20], polyIdx: 20, poiId: 'a' }, { end: poly.at(-1), polyIdx: poly.length - 1, poiId: 'b' }] }
 ms.mission = multi; ms.state = 'running'; ms.leg = 0; ms._polyIdx = 0
 at(5)
 check('multi-drop, leg 1: the metres to stop 1, not to the last stop', Math.abs(ms.routeRemaining() - 150) < 1e-6, `${ms.routeRemaining().toFixed(1)} m (job end 550 m)`)
 at(15)
 check('…and it counts down along the leg', Math.abs(ms.routeRemaining() - 50) < 1e-6, `${ms.routeRemaining().toFixed(1)} m`)
 check('…and the total is that leg plus the legs after it (the whole job left)', Math.abs(ms.routeTotalRemaining() - 450) < 1e-6, `${ms.routeTotalRemaining().toFixed(1)} m`)
-ms._polyIdx = multi.legs[0].polyIdx; ms.leg = 1   // acquire() at stop 1
+ms._polyIdx = multi.legs[0].polyIdx; ms.leg = 1; ms._dropped.add('a')   // acquire() at stop 1 (FEAT-291: a multi-drop tracks the stops handed over, not a leg counter)
 at(30)
 check('leg 2: the metres to the last stop', Math.abs(ms.routeRemaining() - 300) < 1e-6, `${ms.routeRemaining().toFixed(1)} m`)
 check('…on the last leg the total IS the leg (one number, no parentheses)', ms.routeTotalRemaining() === ms.routeRemaining())

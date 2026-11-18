@@ -169,13 +169,23 @@ export const TUT = {
     'tut-fillup': [{ speaker: 'Mom', phone: true, answered: true, holds: true, text: `Not yet, honey &mdash; fill it right up. Every last dollar: you won't get far on fumes.` }],
     // FEAT-184 stage 4, the worst day: the flat halfway home, the screen it shows on, the spare that's flat too, the tow,
     // and the shop it lands at (main.js _eveningBeats, _pickSpare, _toggleRecovery, _updateParkTriggers).
+    // FEAT-288 P3a (DEC-422: "force them out of the diagnostics menu and into the inventory, force them to select the correct
+    // item"): V (or the B menu's vehicle condition) and only that; then the screen to look at, its swap locked, until you
+    // back out; then the inventory and the spare only, onto a corner in the picker; then the recovery menu's tow to the shop
+    // (main.js _TUT_TOW). The pad's halves name hold B (kc-pad, FEAT-174).
     'tut-flat': [{ speaker: 'Mom', until: 'damage', allow: ['damage screen'], hi: ['#hud-b-hint', '#dmg-icon'], text: `Was that a bang? That's a flat, honey. Pull over, come to a full stop, set the handbrake, `
-        + `and press <span class="dlg-key">V</span> to look at it.` }],
-    'tut-damage': [{ speaker: 'Mom', until: 'spare', allow: ['damage screen', 'inventory', '#dmg-screen', '.inv-slot[data-id="spareTire"]', '#inv-screen:has(.inv-slot.sel[data-id="spareTire"]) :is([data-act="use"], [data-act="action"])'],
-        hi: ['#hud-b-hint', '#inv-icon', '.inv-slot[data-id="spareTire"]'], text: `That's your truck, part by part, and how worn each one is: green is fine, `
-        + `red is trouble. The front left's flat. Put your spare on: <span class="dlg-key">Tab</span>, then the mounted tire.` }],
-    'tut-spareflat': [{ speaker: 'Mom', until: 'recovery', allow: ['recovery', '#recovery-card'], hi: ['#hud-b-hint', '#recovery-icon'], text: `The spare's flat too? Of course it is. Call a tow: `
-        + `<span class="dlg-key">X</span> is the recovery menu.` }],
+        + `and <span class="kc-kb">press <span class="dlg-key">V</span></span><span class="kc-pad">hold <span class="dlg-key">B</span> and pick vehicle condition</span> to look at it.` }],
+    'tut-damage': [
+        { speaker: 'Mom', until: 'diagback', allow: ['damage screen', '.ds-row', '.ds-part'],
+            hi: ['#dmg-screen .ds-row[data-track="tireFL"]', '#dmg-screen .ds-part[data-track="tireFL"]', '#dmg-screen [data-act="close"]'],
+            text: `That's your truck, part by part, and how worn each one is: green is fine, red is trouble. The front left's flat. `
+            + `Back out with <span class="kc-kb"><span class="dlg-key">Esc</span></span><span class="kc-pad"><span class="dlg-key">B</span></span>.` },
+        { speaker: 'Mom', until: 'spare', allow: ['inventory', '.inv-slot[data-id="spareTire"]', '#inv-screen:has(.inv-slot.sel[data-id="spareTire"]) :is([data-act="use"], [data-act="action"])', '#dmg-screen.picking'],
+            hi: ['#hud-b-hint', '#inv-icon', '.inv-slot[data-id="spareTire"]', '#dmg-screen.picking .ds-pbtn[data-track="tireFL"]'],
+            text: `Now put your spare on: <span class="kc-kb"><span class="dlg-key">Tab</span></span><span class="kc-pad">hold <span class="dlg-key">B</span> and pick the inventory</span>, then the mounted tire.` },
+    ],
+    'tut-spareflat': [{ speaker: 'Mom', until: 'recovery', allow: ['recovery'], hi: ['#hud-b-hint', '#recovery-icon'], text: `The spare's flat too? Of course it is. Call a tow: `
+        + `<span class="kc-kb"><span class="dlg-key">X</span> is</span><span class="kc-pad">hold <span class="dlg-key">B</span> and pick</span> the recovery menu.` }],
     'tut-tow': [{ speaker: 'Mom', text: `The tow takes you to the nearest auto shop. It's on me this time.` }],
     // FEAT-184 (DEC-151): the tire is on mom — one mounted tire and its fitting, paid at the cart's check out (FEAT-212). PLACEHOLDER words.
     'tut-shopfix': [{ speaker: 'Mom', text: `Get a good tire on that corner &mdash; that one's on me. Check out at the counter, then come home, it's late.` }],
@@ -188,7 +198,7 @@ export const TUT = {
     'tut-drive': [{ speaker: 'Mom', text: `Drive safe, honey. <span class="dlg-key">W</span> and <span class="dlg-key">S</span> `
         + `are the gas and the brake; steer with <span class="kc-kb"><span class="dlg-key">A</span> and <span class="dlg-key">D</span></span>`
         + `<span class="kc-pad">the <span class="dlg-key">left stick</span></span>. Follow the line home.` }],   // FEAT-174: kc-kb / kc-pad, one per input
-    'tut-park': [{ speaker: 'Mom', until: 'park', allow: [], hi: ['#poi-prompt'], text: `Pull over and park out front. Come to a full stop, then `
+    'tut-park': [{ speaker: 'Mom', until: 'park', allow: [], hi: ['#poi-prompt'], text: `Pull over and park out front, in the marked spot. Come to a full stop, then `
         + `<span class="kc-kb">tap <span class="dlg-key">Space</span></span><span class="kc-pad">tap <span class="dlg-key">RB</span></span> to set the handbrake.` }],
     // At hers that night, when her sleep card opens: glad you're home safe (DEC-325), then hunger and energy (DEC-315: the
     // owner's words; true of day.js — past the last meal's hold energy drains faster than an hour per hour, and low energy
@@ -199,14 +209,18 @@ export const TUT = {
     'tut-moms': [
         { speaker: 'Mom', text: `You can always rest here. It's better than sleeping in the truck.` },
         { speaker: 'Mom', text: `When you're out late, find flat ground off the road and make camp. A nice spot rests you better than a bad one.` },
-        { speaker: 'Mom', text: `Sleep is how a day ends. Set your alarm clock for {alarm} &mdash; the bar shows how rested you'll wake up.` },   // DEC-357
         { speaker: 'Mom', text: `And first thing tomorrow, go get your last paycheck from work.` },   // DEC-422: mom's, not Katie's
+        // DEC-357 / DEC-426 (Q1): the last card, as it waits for the night: sleep, the slider and its Sleep only (greyed
+        // until the slider reads the alarm, main.js _syncSleepRow); "leave" is locked.
+        { speaker: 'Mom', until: 'slept', allow: ['#cp-sleep', '#cp-hours', '#cp-sleep-go'], hi: ['#cp-sleep', '#cp-hours', '#cp-sleep-go:not(:disabled)'],
+            text: `Sleep is how a day ends. Set your alarm clock for {alarm}: pick sleep and slide it until it reads wake {alarm}, then sleep. The bar shows how rested you'll wake up.` },
     ],
     // The morning: breakfast at hers (it feeds you), then mom's word about the paycheck (DEC-422).
-    // FEAT-184 stage 5: breakfast is yours to eat — one of her packed lunches, from the inventory.
-    'tut-breakfast': [{ speaker: 'Mom', until: 'lunch', allow: ['inventory', '#cp-item', '.inv-slot[data-id="packedLunch"]', '#inv-screen:has(.inv-slot.sel[data-id="packedLunch"]) [data-act="use"]'],
-        hi: ['#hud-b-hint', '#inv-icon', '#cp-item', '.inv-slot[data-id="packedLunch"]'], text: `Morning! Eat something before you go &mdash; you'll run out of steam early on an empty stomach. `
-        + `<span class="dlg-key">Tab</span>, and pick one of the lunches I packed you.` }],
+    // FEAT-184 stage 5: breakfast is yours to eat — one of her packed lunches, from the inventory. DEC-422/426 (Q4): she hands
+    // them over here (main.js grants four as you wake at hers), you eat one and leave with three; nothing else in the bag.
+    'tut-breakfast': [{ speaker: 'Mom', until: 'lunch', allow: ['inventory', '.inv-slot[data-id="packedLunch"]', '#inv-screen:has(.inv-slot.sel[data-id="packedLunch"]) [data-act="use"]'],
+        hi: ['#hud-b-hint', '#inv-icon', '#cp-item', '.inv-slot[data-id="packedLunch"]'], text: `Morning! I packed you some lunches for the road. Eat one before you go &mdash; `
+        + `you'll run out of steam early on an empty stomach. Select <span class="dlg-key">inventory</span>, then a packed lunch.` }],
     // FEAT-184 (DEC-153, DEC-326): after breakfast, mom's reminder (DEC-422: it was Katie's) — the last drive on rails, back to the joint for the check.
     'tut-morning': [{ speaker: 'Mom', text: `Now go get that paycheck, honey. Drive safe.` }],
     // FEAT-229 (DEC-305): parked at her door on the firing day, her hand-over — she tosses Larry's old pack out her front
@@ -214,7 +228,7 @@ export const TUT = {
     // couple bucks" is the peanuts' price plus the gas money she does not mention (DEC-306). The pick-up lesson is a
     // PLACEHOLDER; its keys are the game's (D-pad ↓ / G).
     'tut-handover': [{ speaker: 'Mom', text: `Take this pack over to your uncle. He left it behind. Also, here's a couple bucks for food.` }],
-    'tut-pickup': [{ speaker: 'Mom', until: 'pickup', allow: [], hi: ['#poi-prompt'], text: `Park next to it and `
+    'tut-pickup': [{ speaker: 'Mom', until: 'pickup', allow: [], hi: ['#poi-prompt'], quest: 'pack', text: `Park next to it and `
         + `<span class="kc-kb">press <span class="dlg-key">G</span></span><span class="kc-pad">press <span class="dlg-key">D-pad ↓</span></span> `
         + `to load anything loose nearby. Then run it over to Larry's.` }],
     // FEAT-229 (DEC-346): the tank filled, mom sends you on your way (PLACEHOLDER words); the line already runs to the
@@ -235,7 +249,7 @@ export const TUT = {
             + `Fill the bar as far as you can, then park and make camp.` },
     ],
     // DEC-355: at camp the side menu is not there (B is the card's back), so she names the camp card's own button.
-    'tut-campmade': [{ speaker: KATIE, until: 'snack', allow: ['inventory', '#cp-item', '.inv-slot[data-id="bagOfPeanuts"]', '#inv-screen:has(.inv-slot.sel[data-id="bagOfPeanuts"]) [data-act="use"]'],
+    'tut-campmade': [{ speaker: KATIE, until: 'snack', allow: ['inventory', '.inv-slot[data-id="bagOfPeanuts"]', '#inv-screen:has(.inv-slot.sel[data-id="bagOfPeanuts"]) [data-act="use"]'],
         hi: ['#cp-item', '.inv-slot[data-id="bagOfPeanuts"]'], text: `Nice spot! Go ahead and break out that snack: select <span class="dlg-key">inventory</span> and eat the peanuts.` }],
     // DEC-324 → DEC-347: what now, the expedition camp and its good deeds (DEC-236's cards 2–4 in her voice), and the
     // send-off (DEC-422: the paycheck is mom's) — now said in person, she having pulled over by your truck (no model is drawn). {dir} and

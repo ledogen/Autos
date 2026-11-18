@@ -6,7 +6,7 @@
 //   allow  BINDINGS action names (gamepad.js) it unlocks out of LOCKED, plus CSS selectors of the card / screen
 //          elements it unlocks (an element matches when it or an ancestor does: '#dmg-screen' frees the whole screen).
 //          A step that HAS `allow` locks every other button, slot and row of the in-game cards (ZONES); a step without
-//          one leaves the cards free (a shop, a pump, mom's sleep card the plan has not reached yet).
+//          one leaves the cards free. main.js hands stepFor(): a card's own step, or BETWEEN when no card is up.
 //   hi     CSS selectors drawn with .tut-hi (index.html): the control or menu entry the card is about.
 // The base lock — every tutorial step — refuses LOCKED; driving, the brake, the key, lights, looking, the map, pause,
 // back, the skip hold and the tutorial's reset are never in it, so nothing here can strand the truck.
@@ -25,8 +25,9 @@ import { BINDINGS } from './gamepad.js'
 /** The actions a tutorial step refuses unless its `allow` names them. */
 export const LOCKED = ['inventory', 'damage screen', 'camp', 'recovery', 'abandon job (parked; twice)', 'map: drop / clear the waypoint']
 const KEY_ACT = Object.fromEntries(BINDINGS.filter(b => LOCKED.includes(b.action)).map(b => [b.key.replace(/ \(.*\)$/, '').toLowerCase(), b.action]))
-/** The HUD icons (and the job's abandon button) that ARE those actions: a click or a B-menu pick of one is the action. */
-export const ICON_ACT = { 'inv-icon': 'inventory', 'dmg-icon': 'damage screen', 'camp-icon': 'camp', 'recovery-icon': 'recovery', 'job-cancel': 'abandon job (parked; twice)' }
+/** The HUD icons (and the job's abandon button, and the camp card's inventory button) that ARE those actions: a click or a
+ *  B-menu pick of one is the action. */
+export const ICON_ACT = { 'inv-icon': 'inventory', 'dmg-icon': 'damage screen', 'camp-icon': 'camp', 'recovery-icon': 'recovery', 'job-cancel': 'abandon job (parked; twice)', 'cp-item': 'inventory' }
 /** The in-game cards and the icon column: the only places an element is ever locked (pause, settings, the intro's
  *  play / skip and the run's end are outside them, so they are always live). */
 export const ZONES = '#hud-icons, #inv-screen, #dmg-screen, #svc-screen, #camp-panel, #mission-panel, #recovery-card'
@@ -35,6 +36,15 @@ const BACK = '[data-act="close"]'   // a screen's back button (park-badge.js BAC
 export const isSelector = (q) => /^[#.[]/.test(q)
 
 let stepOf = () => null
+
+/** FEAT-288 P3a: between cards the shop, the camp / mom's card, the job card and the tow stay free (their lessons are their
+ *  own cards'); the inventory and the damage screen do not — left open as a lesson ends, they are not a way to eat the
+ *  food or swap the wheels. */
+export const BETWEEN = { allow: ['#svc-screen', '#camp-panel', '#mission-panel', '#recovery-card'] }
+/** The step for `card` (the dialogue card up, or null): a lesson card is its own step; a press-any-key card locks every
+ *  card element under it (the click that turns it must not also press what lies beneath: break camp under Katie's talk,
+ *  sleep under mom's), and keeps its `hi`; no card, `between`. */
+export const stepFor = (card, between = BETWEEN) => !card ? between : card.allow ? card : { ...card, allow: [] }
 
 /** May the player do `action` (a BINDINGS action name) under step `s`? */
 export const allows = (action, s = stepOf()) => !s || !LOCKED.includes(action) || !!s.allow?.includes(action)

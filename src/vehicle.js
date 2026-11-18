@@ -83,6 +83,13 @@ export function setControlAttenuation (f) { _controlAtten = Math.max(0, Math.min
 // input, it only slows it. main.js drives it from DaySystem.steerRateScale(); default 1 ⇒ inert.
 let _steerRateScale = 1
 export function setSteerRateScale (f) { _steerRateScale = Math.max(0, Math.min(1, Number(f) || 0)) }
+// Driving AI (FEAT-293, DEC-428): while set, the controls come from this object instead of the keys and the pad —
+// { throttle, brake ∈ [0,1], steer (road-wheel rad, + left), hand, key (ignition held), clutch (pedal ∈ [0,1]), shift
+// (−1|0|+1) } — through the SAME path below: the pad's unramped pedals and slewed position steering inside the speed
+// envelope, the ignition, the park latch, the clutch assistant, the doze attenuation. src/auto-drive.js sets it (and
+// takes it away the moment the player touches a driving control). Free-cam does not gate it: you can fly round and watch.
+let _auto = null
+export function setAutoDriver (c) { _auto = c }
 
 /**
  * Update vehicle input state for one fixed physics step.
@@ -111,15 +118,16 @@ export function updateVehicle (vehicleState, params, dt) {
   // throttle: free-cam (you are not in the truck) and the doze attenuation — during a doze the
   // driver's hands go slack, so they cannot reach the key, and the engine stays RUNNING (SM-INV-1:
   // inputs drop, they never invert; a doze must never shut the truck off).
-  stepIgnition(vehicleState, params, dt, !freecamActive && _controlAtten > 0.5 && keys.i)
+  stepIgnition(vehicleState, params, dt, _controlAtten > 0.5 && (_auto ? _auto.key : !freecamActive && keys.i))
 
   // ── 1. Throttle / Brake (M1-05, FEAT-01) ──────────────────────────────────
   // Ramp smoothed accumulators toward raw input; fast release, slow press.
   // _controlAtten is 1 except during a story-mode doze, when it is 0 (see setControlAttenuation).
   // FEAT-125: while the pad drives (gamepad.js, last-moved wins) the triggers ARE the pedals.
-  const padDrives   = !freecamActive && pad.active
-  const rawThrottle = _throttleCut ? 0 : (padDrives ? pad.throttle : (!freecamActive && keys.w) ? 1 : 0) * _controlAtten
-  const rawBrake    = (padDrives ? pad.brake    : (!freecamActive && keys.s) ? 1 : 0) * _controlAtten
+  const ai          = _auto
+  const padDrives   = !ai && !freecamActive && pad.active
+  const rawThrottle = _throttleCut ? 0 : (ai ? ai.throttle : padDrives ? pad.throttle : (!freecamActive && keys.w) ? 1 : 0) * _controlAtten
+  const rawBrake    = (ai ? ai.brake : padDrives ? pad.brake    : (!freecamActive && keys.s) ? 1 : 0) * _controlAtten
   // FEAT-33: asking for throttle on a dead engine raises a one-shot the HUD turns into "hold I to
   // start the truck" (story mode seats you in a dead truck; free roam hands you a running one, so
   // this only ever fires where the ritual applies). Set here because this module owns driver input;
@@ -127,7 +135,7 @@ export function updateVehicle (vehicleState, params, dt) {
   // hinted — the driver is already doing the right thing and just has not held it long enough.
   if (rawThrottle > 0 && vehicleState.ignition && vehicleState.ignition.state === 'off')
     vehicleState.ignitionHint = true
-  if (padDrives) {
+  if (padDrives || ai) {
     // A real pedal is not ramped — the keyboard ramps below are a stand-in for one. Writing the
     // smoothed accumulators too means a switch back to the keyboard ramps on from where the pad left.
     vehicleState.smoothThrottle = rawThrottle
@@ -154,8 +162,8 @@ export function updateVehicle (vehicleState, params, dt) {
   if (params.transmissionType === 'manual') {
     const up = !freecamActive && keys.e, down = !freecamActive && keys.q
     const out = stepClutchAssist(_clutchAssist, {
-      pedal: (!freecamActive && keys.shift) ? 1 : 0,
-      shift: (up && !_prevUp ? 1 : 0) - (down && !_prevDown ? 1 : 0),
+      pedal: ai ? ai.clutch : (!freecamActive && keys.shift) ? 1 : 0,
+      shift: ai ? ai.shift : (up && !_prevUp ? 1 : 0) - (down && !_prevDown ? 1 : 0),
       throttle: vehicleState.throttle,
     }, { rpm: vehicleState.drivetrain?.engineRPM ?? 0, shifting: !!vehicleState.drivetrain?.shifting }, params, dt)
     vehicleState.clutch = out.clutch
@@ -168,7 +176,7 @@ export function updateVehicle (vehicleState, params, dt) {
   // in — see _reseatTruckAtSpawn). Latched, a Space tap, the throttle (W / RT) or — manual — a shift
   // landing in a gear lets it go; the brake pedal never does (FEAT-194). Steering does NOT release it.
   // Held through free-cam so the truck stays put while you fly.
-  const handKey = !freecamActive && keys[' ']
+  const handKey = ai ? ai.hand : !freecamActive && keys[' ']
   const shifting = !!vehicleState.drivetrain?.shifting
   const gearIn = params.transmissionType === 'manual' && _prevShifting && !shifting && (vehicleState.drivetrain?.mGear ?? 0) !== 0
   _prevShifting = shifting
@@ -199,17 +207,17 @@ export function updateVehicle (vehicleState, params, dt) {
   const dynamicMaxSteer = params.maxSteerAngle / (1 + speed / params.speedSteerRef)
   // FEAT-125 steering assist: ON, the pad gets the same speed-scaled envelope as the keyboard; OFF,
   // the full stick is full lock at any speed (the stick IS the wheel). The keyboard always gets the assist.
-  const steerLimit = (padDrives && !PAD_PARAMS.steerAssist) ? params.maxSteerAngle : dynamicMaxSteer
+  const steerLimit = (padDrives && !PAD_PARAMS.steerAssist) ? params.maxSteerAngle : dynamicMaxSteer   // the AI gets the assist's envelope
 
   // ── 3. Steer accumulation (M1-07) ──────────────────────────────────────────
   // Attenuated the same way as throttle/brake: during a doze the steer keys stop feeding the
   // integration, but the decay branch below is deliberately left alone so the wheels drift back to
   // centre on their own rather than freezing at whatever lock they were at.
-  if (padDrives) {
+  if (padDrives || ai) {
     // POSITION steering: the stick deflection is the wheel angle as a fraction of the limit (stick
     // left = −x = positive steerAngle), slewed at steerSlewRate. A doze (attenuation 0) aims at
     // centre, so the wheels return through the same slew rather than snapping.
-    const target = -pad.steer * steerLimit * _controlAtten
+    const target = (ai ? ai.steer : -pad.steer * steerLimit) * _controlAtten
     const slew = PAD_PARAMS.steerSlewRate * _steerRateScale * dt
     vehicleState.steerAngle += Math.max(-slew, Math.min(slew, target - vehicleState.steerAngle))
   } else {
@@ -217,7 +225,7 @@ export function updateVehicle (vehicleState, params, dt) {
     if (!freecamActive && keys.d) vehicleState.steerAngle -= params.steerRate * _steerRateScale * dt * _controlAtten
   }
 
-  if (!padDrives && (freecamActive || (!keys.a && !keys.d))) {
+  if (!padDrives && !ai && (freecamActive || (!keys.a && !keys.d))) {
     // Decay toward zero at steerDecayRate (rad/s)
     const decay = params.steerDecayRate * dt
     if (Math.abs(vehicleState.steerAngle) <= decay) {

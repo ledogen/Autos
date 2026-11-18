@@ -186,8 +186,8 @@ export const POI_PARAMS = {
  *
  * `jobs` is WHETHER PARKING HERE OPENS AN OFFER, and it is DERIVED, not hand-set (FEAT-67): a
  * type posts offers iff it has a row in data/offers.js SOURCES (the mission board's source table).
- * Mom's house has none — she only receives — so she wears no interaction ring and answers no park
- * trigger. A marker that wears the ring but answers
+ * Mom's house has none — she only receives — so she answers no offer's park trigger; she still wears the ring
+ * (FEAT-288, DEC-422), because parking in it knocks on her door (camp.js atMoms, a wider radius). A marker that wears the ring but answers
  * nothing is the same lie as a prompt drawn wider than its trigger, which this module already
  * refuses to tell; deriving the flag from the one table that decides who posts work is what makes
  * that impossible to get out of step.

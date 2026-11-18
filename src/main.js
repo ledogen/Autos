@@ -19,7 +19,7 @@
 import * as THREE from 'three'
 import { LiveExposure } from './exposure.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
-import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, setBedGrip, syncChassisMass, rollBalance } from './physics.js'
+import { stepPhysics, createVehicleChassis, classifyImpactRegion, readRimStrikes, setBodyRestitution, setBodyGrip, setBedGrip, syncChassisMass, rollBalance, resetStepCarry } from './physics.js'
 import { HiLift, basin, rollDeg } from './hilift.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'   // the hero truck's open-bed collider
 import { createPhysicsEngine, GROUP_STATIC, GROUP_ROAD } from './physics-engine.js'
@@ -40,7 +40,7 @@ import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90
 import { updateVehicle, setLaunchHold, setParkLock, setThrottleCut, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { PARK_SPEED } from './park-brake.js'
 import { makeIgnitionState, keyPosition, seized, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'
-import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setCameraViews, setCameraBoomProbe, setAimMode, isAiming, isPadLooking, snapCamera } from './camera.js'
+import { updateCamera, getCameraMode, getFreecamPosition, getFreecamYaw, exitFreecam, placeFreecam, setCameraFocus, setCameraViews, setCameraBoomProbe, setAimMode, isAiming, isPadLooking, snapCamera, getOrbitAngles } from './camera.js'
 // Dev handle (mirrors window.terrain / window.sky): jump the freecam to a spot for visual troubleshooting.
 // window.__view(x, y, z, yaw, pitch) — used by test/screenshot.mjs (headless CDP) and the browser console.
 window.__view = placeFreecam
@@ -76,7 +76,7 @@ import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearb
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
-import { initTutGate } from './tut-gate.js'                // FEAT-288 P2: the tutorial's lock and highlight
+import { initTutGate, stepFor, BETWEEN } from './tut-gate.js'       // FEAT-288 P2: the tutorial's lock and highlight
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -109,11 +109,11 @@ import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + fl
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem } from './dialogue.js'           // FEAT-61: sequential character cards
 import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_CALL, PAYCHECK, LARRY_PACK, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT, PHONE } from '../data/dialogue.js'
-import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149)
+import { TUTORIAL, PACK_TOSS, flatRadius, FIRING_CAM } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149); FEAT-288 P6: the firing's orbit
 import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, planGuideJob, stepJob, tourLeg, accuracyTier } from './paper-route.js'
+         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, TourGuide, accuracyTier } from './paper-route.js'
 import { AlertCycle, pollWords, wordAction, stepOf, wearLevel, engineLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
@@ -151,6 +151,7 @@ import { siteTargets, siteStops, DEMOLITION_PARAMS, TARGET_TYPES } from './demol
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
+import { autoDrive } from './auto-drive.js'                   // FEAT-293 (DEC-428): the debug panel's driving AI
 import { runLog, scalars } from './run-log.js'             // FEAT-242 (DEC-358): the opt-in run log — every call below is behind runLog.on
 
 // World seed — the URL's ?seed= when it names one, else a fresh random world. There is no default
@@ -1029,14 +1030,22 @@ function debouncedRoadRebuild () {
 // SERIALIZED: concurrent calls (e.g. R pressed while a seed-regen's spawn warm is still pumping)
 // queue behind the in-flight seat instead of interleaving two async spawn probes' setRadius/warm
 // state — the R lands right after the current one finishes, on the fully-loaded road.
+// BUG-224: a seat may await a network build (a teleport, a lab exit) for a second or more, and the world can already
+// have changed under the truck's OLD pose (leaving the lab swaps the lab slab for real ground ~200 m above it). Stepping
+// that pose buried the truck and threw it out at 400 m/s. So the sim holds (_heldPause) while ANY seat is pending —
+// counted here, the one door every caller goes through. buildNow never rejects (a failed or stale build resolves
+// false and the seat lands on the analytic terrain), and the count drops in a finally, so a seat that throws still
+// hands the sim back.
+let _seatsPending = 0
 let _reseatChain = Promise.resolve()
 function _reseatTruckAtSpawn () {
+  _seatsPending++
   _closeMenus()   // BUG-183: a seat leaves the place every open menu belongs to (the pump, the shop, the tow's owed answer)
   // BUG-71: a seat is ALWAYS a world arriving at once — cold load, R-reset, or a Path-B reseed —
   // and the band the props scattered against is still filling in behind it. Owe a whole-ring pass
   // here rather than at each of those three call sites, so no future spawn path can forget.
   owePropSweep()
-  const run = () => _reseatTruckAtSpawnInner()
+  const run = () => _reseatTruckAtSpawnInner().finally(() => { _seatsPending-- })
   _reseatChain = _reseatChain.then(run, run)
   return _reseatChain
 }
@@ -1184,6 +1193,7 @@ async function _reseatTruckAtSpawnInner () {
   const { position, quaternion, velocity, angularVelocity, engineHealth, fuel, ...fresh } =
     makeVehicleState(RANGER_PARAMS, _gameMode === 'story' && !_spawnOverride?.running ? IGN_OFF : IGN_RUNNING)   // DEC-362: the tutorial's reset leaves it running
   Object.assign(vehicleState, fresh)
+  resetStepCarry(RANGER_PARAMS)   // BUG-224: and the step-to-step carry physics keeps on params
   // FEAT-50: a story tank survives every seat — a teleport, a tow — the way damage does; anywhere
   // else a seat is a fresh truck with a full tank.
   if (_gameMode !== 'story') vehicleState.fuel = fuel
@@ -1217,6 +1227,7 @@ function _reseatOnRegionGround () {
   vehicleState.quaternion.copy(seat.quat)
   vehicleState.velocity.set(0, 0, 0)
   vehicleState.angularVelocity.set(0, 0, 0)
+  resetStepCarry(RANGER_PARAMS)   // BUG-224
   snapCamera()
   _restrapFreight()
   damageModel.resetTransients()
@@ -1249,7 +1260,7 @@ let _cardHold = false
 // FEAT-62: the paper-route scenario's definition while one runs. It is story mode under a guard: the run is built
 // fresh, never written to the player's save slot, never discards it, and leaves for the main menu (_startPaperScenario).
 let _paperScenario = null
-function _heldPause () { return _resumeHold || _runEndOpen || _tutCardOpen || (_pauseOpen && scenarioSystem.isActive()) || (_cardHold && dialogueSystem.holding) }
+function _heldPause () { return _seatsPending > 0 || _resumeHold || _runEndOpen || _tutCardOpen || (_pauseOpen && scenarioSystem.isActive()) || (_cardHold && dialogueSystem.holding) }
 function isTeleportEnabled () { return _gameMode === 'freeroam' || _gameMode === 'story' }
 window.__setGameMode = (m) => { _gameMode = m }
 
@@ -2136,7 +2147,7 @@ const map2d = new Map2D({
   // FEAT-211: the player's waypoint — { x, z, poly } with poly the line the GPS guides along (null while a job has the
   // guide: the waypoint is then only a pin), or null; and the drop / clear (null) from the map's input, true if it acted.
   getWaypoint: () => _waypoint ? { x: _waypoint.x, z: _waypoint.z, poly: _waypointOn() ? _tutLine(_waypoint.route)?.poly ?? null : null }
-    : (({ x, z } = {}) => x == null ? null : { x, z, poly: null })(_tutRanchPin() ?? undefined),   // DEC-346: the tutorial's own (its line is the GPS's)
+    : _tutMapLeg(),   // DEC-346 / FEAT-288 P4: the tutorial leg's own pin and line
   onWaypoint: (p) => !dialogueSystem.holding && _setWaypoint(p),   // a dialogue over the map keeps its Enter
   // Q / E with no source under the cursor: step the parked offer panel the map is open behind.
   onCycle: (d) => { if (missionSystem?.state === 'offer') missionSystem.cycle(d) },
@@ -3079,6 +3090,11 @@ window.__setBodyGrip = () => setBodyGrip(physicsEngine, vehicleChassis, RANGER_P
 window.__syncChassisMass = () => syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS)   // debug.js Mass slider + vehicle preset
 window.__vs = vehicleState                    // dev handle — read live vehicle state from the console / CDP probes
 window.__roadSys = () => roadSystem           // dev handle — the LIVE RoadSystem instance (getter: play swaps instances on seed regen); __road() below is the stats view
+autoDrive.attach({   // FEAT-293: the driving AI drives the live network from where the truck is
+  road: () => roadSystem, region: () => storySystem?.region() ?? null, params: RANGER_PARAMS, vs: vehicleState, seed: () => worldSeed,
+  flat: () => damageModel.flat.some(Boolean), teleport: (x, z, h) => teleportToGround(x, z, h, 0.5, true),
+})
+window.__autoDrive = autoDrive   // dev handle — the smoke's toggle and hand-back step
 
 // FEAT-33: is the starter motor actually turning? Not the same as state === 'cranking' — the key
 // stays at START while it is held, so an over-crank against an already-running engine still has the
@@ -3365,8 +3381,9 @@ function _rebuildPoiMarkers () {
     }
 
     // The ring means "park here and something happens", so it belongs only to markers where
-    // something does. The services are unbuilt and mom's house has her own doorstep prompt.
-    if (!q.jobs) continue
+    // something does: a job giver, and mom's house (FEAT-288, DEC-422: "Mom's house should have a marked parking spot
+    // just like everyone else" — her door, camp.js atMoms, answers 25 m round her marker, so the 10 m ring sits inside it).
+    if (!q.jobs && q.type !== 'momsHouse') continue
     // FEAT-88: a haul giver's "park here" is its drop zone, not a ring round the pad.
     if (q.drop) { _addDropMark(q); continue }
     const box = q.park ? dropZoneWorld(q, q.park) : null
@@ -3550,11 +3567,14 @@ function _updateMissionRings () {
   const vp = vehicleState.position
   // FEAT-102: a fetch's PICKUP wears its orange ring for the whole outbound leg — the one "park
   // here" on screen while you are on a job, marking the area you park in to acquire the item.
-  const pickId = missionSystem?.pickupPoiId() ?? _approachPoi()?.id ?? null   // FEAT-103: or a line's source
+  // FEAT-291: a multi-drop's every owed stop (any order).
+  const pickIds = missionSystem?.pickupPoiIds() ?? []
+  const appr = _approachPoi()?.id   // FEAT-103: or a line's source
+  if (!pickIds.length && appr) pickIds.push(appr)
   const showR = poiRingShowR()
   for (const [id, ring] of _poiRings) {
     const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= showR
-    ring.visible = id === pickId || (near && id !== activeId && !onMission && !ring.userData.hidden)
+    ring.visible = pickIds.includes(id) || (near && id !== activeId && !onMission && !ring.userData.hidden)
   }
   // FEAT-50: pump zones show on a job too — running low mid-route is exactly when you need them —
   // and drop away while the pump is open (you are already in one).
@@ -4349,6 +4369,7 @@ pad.canThrow = () => {
   return Math.hypot(v.x, v.z) > PAD_THROW_MIN_SPEED || paperRouteSystem.owedWithin(p.x, p.z, PAD_THROW_NEAR_M)
 }
 pad.throwReady = () => pad.active && isPadLooking() && pad.canThrow()
+pad.cardHolds = () => dialogueSystem.holding   // FEAT-288: B turns a press-any-key card (gamepad.js)
 let _padReticle = false   // the pad's aim put the reticle up
 document.addEventListener('keydown', e => {
   if (e.key !== 'f' && e.key !== 'F') return
@@ -4421,6 +4442,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('mousedown', e => {
   if (!dialogueSystem.holding) return
   if (e.target.closest?.('.lil-gui')) return    // the debug panel keeps working during a briefing
+  if (e.button === 2 && _firingCam) return      // FEAT-288 P6: a right drag turns the firing's orbit (camera.js), not the card
   e.preventDefault()
   e.stopPropagation()
   if (_dlgFill()) return
@@ -4661,10 +4683,6 @@ const OPENING_START = { day: 0, hour: 7 }   // FEAT-170: the firing's clock. DEC
 // FEAT-184 (DEC-159, the exact-24h default): free will opens 24 h after the firing — the paycheck's clock and a skip's floor.
 const FREE_WILL = { day: OPENING_START.day + 1, hour: OPENING_START.hour }
 const FREE_WILL_H = (FREE_WILL.day - 1) * 24 + FREE_WILL.hour   // as daySystem.clockH() reads it
-// The slow orbit of the joint's ROAD face: radius (m), the start's angle short of square-on (rad), the
-// turn rate (rad/s ≈ 3°/s — square-on at ~7 s, the far side of it by the end of a slow read), and the
-// aim point's height over the pad (m).
-const FIRING_CAM = { radius: 16, swing: 0.35, rate: 0.05, lift: 2 }
 let _openingRun = false   // onRegionLive → go-live: this new run plays the opening
 // FEAT-184 (DEC-157/158): while a run plays its tutorial on the tutorial seed, the run's own world to load back at the
 // tutorial's end (the run save carries it); null otherwise.
@@ -4672,7 +4690,7 @@ let _returnSeed = null
 // DEC-158 is read as later runs only: the first playthrough ever (on the tutorial seed, DEC-149) stays on it. The switch:
 // true gives a run that plays the tutorial on the tutorial seed a random world back at its end too.
 const TUT_SEED_RETURNS = false
-let _firingCam = null     // { p, theta0, t } while the firing's cards are up
+let _firingCam = null     // { p, theta, phi, idle } while the firing's cards are up (FIRING_CAM, data/tutorial.js)
 let _eveningGuide         // undefined = not planned yet: the line to the tutorial's current stop, planned once per stop (not saved)
 const EVENING_PARK_M = 150   // m from her house: the parking lesson [DEFAULT]
 // FEAT-184 stage 3 (the worst day): a played opening starts on a nearly empty tank, filled at the snack's station (DEC-306).
@@ -4683,6 +4701,7 @@ const TUT_PARAMS = { lowTankFrac: 0.125, gasCash: 3, offRoadS: 4,
   offRoadM: 10,    // FEAT-217 (of3s, DEC-219): m beyond the road's paved side before the countdown starts: the shoulder is safe to park on
   safeNearPoiM: 20,
   sleepyH: 3,      // DEC-357 [DEFAULT]: energy h set once the tire is fixed — mid SLEEPY (day.js tiredAtH 2 < it <= sleepyAtH 4)
+  breakfastLunches: 4,   // DEC-426 (Q4): mom hands over four packed lunches at breakfast; you eat one and leave with three
   alarmH: 6.5 }    // DEC-357: the hour mom has you set the alarm clock for, the next morning (day 0)   // FEAT-217 (DEC-281, owner 2026-11-16; was 75 m): no auto reset this near any place (pump, shop, mom's): lining up on the shoulder
 // FEAT-229 (DEC-304, the dive's "held, with stamps" [DEFAULT]): the clock holds while the tutorial drives; each stop, once
 // reached, lifts it to at least its hour on the firing day. home: Katie's talk at the camping area (the one long jump);
@@ -4690,9 +4709,10 @@ const TUT_PARAMS = { lowTankFrac: 0.125, gasCash: 3, offRoadS: 4,
 const TUT_STAMPS = { pack: 8, larry: 8, snack: 9, pump: 10, camp: 10, home: 17, bed: 21.5, joint: 31 }   // joint: 07:00 next morning (FREE_WILL), DEC-357
 let _waypoint = null  // FEAT-211: { x, z, door, route } while one is set: the road point, its planner stop, the line to it (see _setWaypoint)
 let _evePump = null   // { q, done }: the snack station's pump while its fill-up is due, or null (not saved: a resume skips it)
-// FEAT-184 stage 4: the flat halfway home. _eveHomeFrom is the crow distance to mom's when the drive home began (after the
-// station, if there was one); the flat lands at half of it, once. Not saved: a resume carries the flat in the damage model.
-let _eveHomeFrom = null, _eveFlat = false, _eveTowed = false   // _eveTowed: stage 5 — the tow happened, it's night
+// FEAT-184 stage 4: the flat on the drive home. _eveFlatR is the crow radius round mom's inside which it goes off, once
+// (data/tutorial.js flatRadius: FLAT.alongM along the drive home's line, FEAT-288 P4). Not saved: a resume carries the flat
+// in the damage model.
+let _eveFlatR = null, _eveFlat = false, _eveTowed = false   // _eveTowed: stage 5 — the tow happened, it's night
 // FEAT-184 (DEC-151): the evening's tire is on mom — the part once and its fitting once (ServiceCenter onMom). Not saved:
 // a resume mid-evening owes it again.
 const _momOwes = { part: true, labour: true, patch: true }   // patch: FEAT-217, the first flat patched at the shop
@@ -4706,7 +4726,7 @@ window.__tutorial = () => ({ phase: _tutCardOpen ? 'card' : _firingDay() ? (dial
   camp: _firingDay() && _campDoor() ? { x: _campDoor().x, z: _campDoor().z } : null,   // DEC-304
   until: dialogueSystem.current()?.until ?? null })   // DEC-359: the card up waits for this action: the snack's camping area
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
-window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, pumpsShut: _pumpsShut(), homeFrom: _eveHomeFrom, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
+window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, pumpsShut: _pumpsShut(), flatR: _eveFlatR, flat: _eveFlat, towed: _eveTowed, held: damageModel.held })
 
 /** The burger joint: the region's one foodVendor (poi.js POI_ROSTER), or null. */
 const _joint = () => poiSystem.list().find(q => q.type === 'foodVendor') ?? null
@@ -4824,6 +4844,14 @@ const _atRanch = (door, v) => campSystem.zoneAt(v.x, v.z) === door.zone || Math.
  *  saved, gone on arrival). The player's own pin, when one is set, is shown instead. */
 const _tutRanchPin = () => _tutDrive() && dialogueSystem.has(DLG.played) && _dayStop() === 'camp' && !dialogueSystem.has('tut-ranch')
   && _campUi?.mode !== 'camp' ? _campDoor() : null   // DEC-356: a camp made short of the pin clears it (and the line, _eveTarget)
+/** FEAT-288 P4 (DEC-422: "Tutorial missions should show their destination on the map and the route should be plotted on the
+ *  map"): the leg in play as the map's waypoint — a pin on its door and the GPS's own line (detour and all) — never saved.
+ *  The drive out to the ranch keeps DEC-346/356's rule: gone on arrival, or once camp is made short of it. */
+const _tutMapLeg = () => {
+  if (!_tutDrive() || !dialogueSystem.has(DLG.played) || (_dayStop() === 'camp' && !_tutRanchPin())) return null
+  const leg = _tutLeg()
+  return leg && { x: leg.door.x, z: leg.door.z, poly: _tutLine(leg.base)?.poly ?? null }
+}
 /** Mom's toss: the starting pack on the ground by her steps, falling. Idempotent: only when it is neither on board nor down. */
 function _tossPack () {
   const q = _mom()
@@ -5034,10 +5062,11 @@ function _showResetCountdown (n) {
 function _eveningLessons (q, v, stop) {
   // FEAT-184 stage 3: the pedals once the key has caught.
   if (vehicleState.ignition?.state === 'running') _tut('tut-drive')
-  // Stage 4: halfway home from the camping area (DEC-304), the front left goes flat — once. Then V shows it.
+  // Stage 4: on the drive home from the camping area (DEC-304), FLAT.alongM along its line (FEAT-288 P4: before the
+  // tunnel), the front left goes flat — once. Then V shows it.
   if (stop === 'home') {
-    _eveHomeFrom ??= Math.hypot(q.x - v.x, q.z - v.z)
-    if (!_eveFlat && Math.hypot(q.x - v.x, q.z - v.z) < 0.5 * _eveHomeFrom) {
+    _eveFlatR ??= flatRadius(_homeGuide()?.poly, q)
+    if (!_eveFlat && _eveFlatR != null && Math.hypot(q.x - v.x, q.z - v.z) < _eveFlatR) {
       _eveFlat = true
       if (!damageModel.flat[0]) { damageModel.flat[0] = true; damageModel.popped.push(0) }   // the bang (drained by the game layer)
       _flatSpare()   // …and the spare is flat too
@@ -5045,8 +5074,10 @@ function _eveningLessons (q, v, stop) {
     }
   }
   if (damageScreen.isOpen && damageModel.flat.some(Boolean)) _tut('tut-damage')
-  // Stage 5: towed and back on the road, it's night — the headlights.
-  if (_eveTowed && !serviceScreen.isOpen && !vehicleState.parked) _tut('tut-lights')
+  // Stage 5: towed and the tire bought, it's night — the headlights.
+  // FEAT-288 P4 (DEC-422): as the tire's check-out lands, not on the shift. The cart fits the tire at once and a highlighted
+  // shelf row is fitted for a look, so the flat alone cannot tell; mom's tire (or patch) is spent only at the check-out.
+  if (_eveTowed && _eveFlat && !_flatOwed() && !(_momOwes.part && _momOwes.patch)) _tut('tut-lights')
   // DEC-357 (owner, 2026-11-16): the tire fixed, the driver is SLEEPY — the eye blinks (and day.js's slower hands), no doze —
   // so her energy card makes sense at the door. Idempotent: lands the band once; her door's bed stamp drains on from it.
   if (stop === 'home' && _eveFlat && !_flatOwed() && !dialogueSystem.has('tut-home') && daySystem.stage() !== 'sleepy') daySystem.setEnergy(TUT_PARAMS.sleepyH)
@@ -5156,6 +5187,7 @@ function _skipOpening () {
   _closeMenus()   // BUG-183: her sleep card, the pump, the shop, every menu (after _undoWorstDay: its own pump is undone, not paid)
   _tutQueue.length = 0
   dialogueSystem.restoreSeen([DLG.skipped])   // no first-use cards this run (_tut)
+  _topUpLunches()   // DEC-381: a skipper leaves with mom's three, as the tutorial's breakfast would have
   _eveningGuide = undefined
   _syncTutCard()
   if (!_returnSeed) _seatAt(_joint() ?? _mom())   // on the tutorial seed, the load back seats it (_returnToRunWorld)
@@ -5170,7 +5202,7 @@ function _resetRunLocals () {
   _closeMenus()   // BUG-183: every registered menu, through its own close
   fuelStop.reset(); _pumpReceiptT = 0; _showResetCountdown(0)
   _waypoint = null
-  _evePump = null; _eveHomeFrom = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
+  _evePump = null; _eveFlatR = null; _eveFlat = false; _eveTowed = false; _eveSpare = null; _eveOffAt = null
   _momOwes.part = _momOwes.labour = _momOwes.patch = true; _skipArmedUntil = 0
   exitFreecam()
 }
@@ -5188,7 +5220,11 @@ function _playOpening () {
   // DEC-157: the card's second load — the intro played on the run's own world, so straight to mom's call.
   if (_returnSeed) { dialogueSystem.restoreSeen([DLG.firing]); _playTutorial(); return true }
   const q = _joint()
-  if (q) _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta0: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, t: 0 }
+  if (q) {
+    _firingCam = { p: { x: q.modelX, y: q.baseY + FIRING_CAM.lift, z: q.modelZ }, theta: Math.atan2(-q.nx, -q.nz) - FIRING_CAM.swing, idle: Infinity }
+    setCameraFocus(_firingCam.p, { theta: _firingCam.theta, radius: FIRING_CAM.radius, rightDrag: true })
+    _firingCam.phi = getOrbitAngles().phi
+  }
   _cardHold = true
   dialogueSystem.play(DLG.firing, FIRING, () => {
     _firingCam = null
@@ -5254,11 +5290,17 @@ function _returnToRunWorld () {
   void _startStory(seed, s.world, s.gearbox, s)
 }
 
-/** Per frame, before updateCamera: turn the firing's orbit (camera.js focus seam, as camp and the service screen use). */
+/** Per frame, before updateCamera: turn the firing's orbit (camera.js focus seam, as camp and the service screen use).
+ *  FEAT-288 P6: the orbit's angles moved since the last frame = the player turned it (right stick or right drag, camera.js
+ *  applies both under the focus): the slow turn holds from there, and eases back in FIRING_CAM.resumeS s after the last touch. */
 function _updateFiringCam (dt) {
-  if (!_firingCam) return
-  _firingCam.t += dt
-  setCameraFocus(_firingCam.p, { theta: _firingCam.theta0 + FIRING_CAM.rate * _firingCam.t, radius: FIRING_CAM.radius })
+  const c = _firingCam
+  if (!c) return
+  const { theta, phi } = getOrbitAngles()
+  if (theta !== c.theta || phi !== c.phi) { c.theta = theta; c.phi = phi; c.idle = 0 }
+  else c.idle += dt
+  c.theta += FIRING_CAM.rate * dt * Math.min(1, Math.max(0, (c.idle - FIRING_CAM.resumeS) / FIRING_CAM.easeS))
+  setCameraFocus(c.p, { theta: c.theta, radius: FIRING_CAM.radius, rightDrag: true })
 }
 
 // First-use cards (data/dialogue.js TUT), and Larry's welcome through the same door: queued, then
@@ -5278,13 +5320,15 @@ const _UNTIL = {
   engine: () => vehicleState.ignition?.state === 'running',
   pickup: () => !_packOnGround(),
   damage: () => damageScreen.isOpen,
+  diagback: () => !damageScreen.isOpen,   // FEAT-288 P3a: out of the diagnostics, on to the inventory
   spare: () => dialogueSystem.has('tut-spareflat') || _tutQueue.some(t => t.key === 'tut-spareflat'),   // the swap was tried (the spare is flat, DEC-151)
   recovery: () => _recoveryOpen || dialogueSystem.has('tut-tow') || _tutQueue.some(t => t.key === 'tut-tow'),   // X queues the tow's card behind this one
   lights: () => getHeadlightMode() > 0,
   park: () => vehicleState.parked,
   campmenu: () => _campSeek || _campUi?.mode === 'camp',
   snack: () => !_snackOnBoard(),
-  lunch: () => inventorySystem.list().filter(r => r.id === 'packedLunch').length < 3,
+  lunch: () => _lunches() < TUT_PARAMS.breakfastLunches,
+  slept: () => dialogueSystem.has(DLG.morning),   // DEC-426 (Q1): the night on mom's alarm ends the firing day
 }
 /** On the HUD poll: clear the card on screen if it waits for an action and that action is done. */
 function _untilTick () {
@@ -5303,6 +5347,13 @@ function _pumpTut () {
  *  will's 07:00 on day 0 at the earliest (DEC-159), the last paycheck in the wallet (DEC-150), the run's own world loaded
  *  back from the tutorial seed (DEC-158); then on a skip the manager's check (DEC-152), and Larry's call with RUN_INTRO
  *  (DEC-155). Every step is idempotent or keyed, so a resume between any two of them picks up where it stood. */
+const _lunches = () => inventorySystem.list().filter(r => r.id === 'packedLunch').reduce((k, r) => k + r.n, 0)
+/** BUG-198 / DEC-381 (owner, 2026-11-17: "make sure we get the three free meals when starting a new game"): the run proper
+ *  starts on mom's three packed lunches (FEAT-173, items.md §1d). DEC-422/426: a played tutorial gets them at breakfast
+ *  (four, one eaten there), so a run that opens on the firing has none until then; a skip, the tutorial's end and the
+ *  paper scenario top them up to three. */
+function _topUpLunches () { const n = 3 - _lunches(); if (n > 0) inventorySystem.grant('packedLunch', n) }
+
 function _checkOpeningEnd () {
   if (_paperScenario || !offerBoard || storySystem.isEntering()) return   // FEAT-62: the scenario has no opening to end
   const skipped = dialogueSystem.has(DLG.skipped)
@@ -5312,10 +5363,7 @@ function _checkOpeningEnd () {
   economySystem.payPaycheck()
   if (_returnSeed) { _returnToRunWorld(); return }
   if (skipped && !dialogueSystem.has(DLG.bossCheck)) { _tut(DLG.bossCheck, BOSS_CHECK, null, true); return }
-  // BUG-198 / DEC-381 (owner, 2026-11-17: "make sure we get the three free meals when starting a new game"): the run proper starts
-  // on mom's three packed lunches (FEAT-173, items.md §1d) however many the tutorial's breakfast and night ate.
-  const lunches = inventorySystem.list().filter(r => r.id === 'packedLunch').reduce((k, r) => k + r.n, 0)
-  if (lunches < 3) inventorySystem.grant('packedLunch', 3 - lunches)
+  _topUpLunches()
   _tut(DLG.runIntro, skipped ? _runIntro() : LARRY_CALL, null, true)   // Larry's call: DEC-326's two cards, or DEC-236's four on a skip
   _markPlayed()   // FEAT-184: the tutorial is over
 }
@@ -5395,9 +5443,11 @@ gpsSystem = new GpsSystem(scene, {
     // starts THERE; the map's start pin and the source's lit park spot are the waypoint.
     if (missionSystem?.mission?.approach) return null
     // FEAT-170: the opening's evening has no job, only the way home to mom's (FEAT-184: the morning's, back to the joint).
-    if (_tutDrive()) return _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
+    // BUG-203: no line (so no "Wrong way", gps.js _updateWrongWay) while the opening owns the screen — the firing, the
+    // intro's card, mom's call — until her pedals card ('tut-drive') says to follow it.
+    if (_tutDrive()) return _firingDay() && !dialogueSystem.has('tut-drive') ? null : _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
     // FEAT-267: a demolition job's GPS is the leg to the next cluster on the remaining tour (_updateSite).
-    if (_site?.guide && _site.mission === missionSystem.mission && missionSystem.isOnJob()) return _site.guide
+    if (_site?.guide.leg && _site.mission === missionSystem.mission && missionSystem.isOnJob()) return _site.guide.leg
     if (s === 'countdown' || s === 'staging' || s === 'running') return _tutLine(missionSystem.guideRoute())
     return _waypointOn() ? _tutLine(_waypoint.route) : null   // FEAT-211: last in line — a job's guide always wins
   },
@@ -5823,18 +5873,19 @@ let _fetchHomeMsg = null, _fetchHomeUntil = 0
 const FETCH_HOME_MSG_S = 4
 function _updateFetchPrompt (poiEl, pulled) {
   const now = performance.now()
-  const pickId = missionSystem?.pickupPoiId()
-  if (pickId) {
-    const pq = poiSystem.list().find(q => q.id === pickId)
+  const pickIds = missionSystem?.pickupPoiIds() ?? []
+  if (pickIds.length) {
     const vp = vehicleState.position
     // Same reach as the giver trigger: the interaction radius, and — at a POI with a PARK box (the
     // general store's lot, ASSET-74) — inside the box, whose curtain is the halo you park in.
-    const near = pq && Math.hypot(pq.x - vp.x, pq.z - vp.z) <= POI_PARAMS.poiInteractR
-      && (!pq.park || overDropZone(pq, vp.x, vp.z, PARK_SLACK, pq.park))
+    // FEAT-291: whichever owed stop the truck is at — a multi-drop's are handed over in any order.
+    const pq = poiSystem.list().find(q => pickIds.includes(q.id) && Math.hypot(q.x - vp.x, q.z - vp.z) <= POI_PARAMS.poiInteractR
+      && (!q.park || overDropZone(q, vp.x, vp.z, PARK_SLACK, q.park)))
+    const near = !!pq
     const j = missionSystem.mission, at = j.atPickup
-    if (near && pulled && missionSystem.acquire()) {
+    if (near && pulled && missionSystem.acquire(pq.id)) {
       if (at?.min) daySystem.advanceMinutes(at.min)   // the tire change — on the job's timer too; _planOffer put it in par
-      _fetchHomeMsg = `${at ? `${at.done} — ` : ''}${j.fetch ? 'get back to' : 'next stop:'} ${_legLabel(j, missionSystem.leg)}!`
+      _fetchHomeMsg = `${at ? `${at.done} — ` : ''}${j.fetch ? 'get back to' : 'next stop:'} ${_legLabel(j, missionSystem.curLeg())}!`
       _fetchHomeUntil = now + FETCH_HOME_MSG_S * 1000
     } else if (near) {
       if (poiEl) { poiEl.style.display = 'block'; _hudHtml(poiEl, parkPrompt(at?.park ?? (j.fetch ? 'park to acquire mission item' : 'park to hand it over'))) }
@@ -6548,7 +6599,7 @@ function _updateParkTriggers (zParked = false) {
     } else if (moms) {
       _campUi = { mode: 'moms', site: null, moms: true }
       _renderCampUI()
-      if (_firingDay()) { _tut('tut-home'); _tut('tut-hungry'); _tut('tut-moms', TUT['tut-moms'].map(c => ({ ...c, text: c.text.replace('{alarm}', _alarmText()) }))) }   // DEC-325 home safe; DEC-315 hunger and energy; FEAT-170 stage 4
+      if (_firingDay()) { _tut('tut-home'); _tut('tut-hungry'); _tut('tut-moms', TUT['tut-moms'].map(c => ({ ...c, text: c.text.replaceAll('{alarm}', _alarmText()) }))) }   // DEC-325 home safe; DEC-315 hunger and energy; FEAT-170 stage 4
     } else if (seeking && !camp.fast && !onRoad && !_firingDay()) {   // DEC-308: the truck is no bed on the firing day
       _campUi = { mode: 'truck', site: null, moms: false, truck: true }
       _renderCampUI()
@@ -6883,6 +6934,36 @@ function _updateWorldItems () {
   })
 }
 
+// ── FEAT-288 P5 (§ 5; DEC-422: "it needs to do that thing where it flashes white or maybe it can get a bright aura"):
+// the quest-item mark. The tutorial's step names its target (`quest`, an item id: data/dialogue.js tut-pickup, _TUT_PACK);
+// the world item of that id wears a thin white beam (the rings' curtain and its upward fade, unlit and not tone-mapped so
+// it reads in her shade and at night; it starts above the item, so it never hides it) and a 1 Hz white pulse on its own
+// materials (FEAT-97's blink) while its body is live. Read off the step every frame and nothing kept: no step (a skip,
+// the tutorial's end, a run end, a reload past the pack) or the item picked up → no mark.
+const QUEST_BEAM_R = 0.25, QUEST_BEAM_H = 6, QUEST_BEAM_GAP = 0.4   // m: radius, height, clear air above the item
+const _questBeam = new THREE.Mesh(_ringGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7,
+  side: THREE.DoubleSide, depthWrite: false, alphaMap: _ringAlpha, toneMapped: false }))
+_questBeam.scale.set(QUEST_BEAM_R, QUEST_BEAM_H, QUEST_BEAM_R)
+_questBeam.visible = false
+scene.add(_questBeam)
+const _qmP = new THREE.Vector3(), _qmQ = new THREE.Quaternion()
+let _questLit = null   // the body the pulse lit last, put out when the mark leaves it
+function _questMark () {
+  const id = _tutStep()?.quest
+  const it = id ? runWorldItems.items.find(w => w.entry.id === id) : null
+  const h = it ? _groundItems.get(it) : null, half = h && debrisSystem.halfExtents(h.kind), body = h?.body ?? null
+  if (_questLit != null && _questLit !== body) { debrisSystem.blink(_questLit, 0); _questLit = null }
+  _questBeam.visible = !!half
+  if (!half) return
+  if (body != null) physicsEngine.getTransform(body, _qmP, _qmQ)
+  else _qmP.set(it.x, it.y, it.z)
+  _questBeam.position.set(_qmP.x, _qmP.y + Math.max(half.x, half.y, half.z) + QUEST_BEAM_GAP + QUEST_BEAM_H / 2, _qmP.z)
+  if (body != null) { debrisSystem.blink(body, 0.5 - 0.5 * Math.cos(2 * Math.PI * performance.now() / 1000), [1, 1, 1]); _questLit = body }
+}
+// dev handle — test/cdp-smoke.mjs: null without a mark, else whether the beam's foot is in view and the pulse is on the body
+window.__questMark = () => _questBeam.visible ? { lit: _questLit != null, onScreen: (({ x, y, z }) => Math.abs(x) < 1 && Math.abs(y) < 1 && z < 1)(
+  _qmP.copy(_questBeam.position).setY(_questBeam.position.y - QUEST_BEAM_H / 2).project(camera)) } : null
+
 /** What the inventory lists under "Nearby on the ground": in reach of the parked truck's outline, nearest first. */
 function _groundNearby () {
   const p = vehicleState.position
@@ -6916,7 +6997,7 @@ function _standRow (row) {
 // cancelled, expired) the site goes the moment nothing of it is within offM — never in view.
 const _siteGroup = new THREE.Group()
 scene.add(_siteGroup)
-let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], halos, guide (the GPS leg), rr (a tour in flight), left, planAt } — or null
+let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], halos, guide (paper-route.js TourGuide: the GPS leg, the tour in flight) } — or null
 const _siteP = new THREE.Vector3(), _siteQ = new THREE.Quaternion(), _siteY = new THREE.Vector3(0, 1, 0)
 
 /** Stand mission `m`'s targets as models; `smashed` lists the indices already down (a resume). */
@@ -6930,7 +7011,7 @@ function _placeSite (m, smashed = []) {
     mesh.visible = !smashed.includes(i)
     _siteGroup.add(mesh)
     return { kind: t.kind, pos: mesh.position.clone(), q: mesh.quaternion.clone(), mesh, body: null, smashed: !mesh.visible }
-  }), down: smashed.length }   // DEC-403: `down` = the targets already paid for (a resume's are in the saved wallet)
+  }), down: smashed.length, guide: new TourGuide({ noRing: true }) }   // FEAT-187: noRing, a line to the cluster, no circle in the road. DEC-403: `down` = the targets already paid for (a resume's are in the saved wallet)
   m.siteDown = smashed.length
   // FEAT-187 (owner, 2026-11-07: "a paper delivery style halo on the center of the group of prop targets … on the shoulder
   // where the prop targets are"): one halo a cluster, at its members' centre (they stand on the shoulder), wide enough to
@@ -6955,15 +7036,15 @@ function _placeSite (m, smashed = []) {
 const SITE_HALO_PAD_M = 1.5   // m past a member's centre: room for the thing itself [DEFAULT]
 function _clearSite () {
   if (!_site) return
-  _site.rr?.return?.()   // FEAT-267: hand an unfinished tour's Held-Karp tables back (paper-route.js _leaseHkTables)
+  _site.guide.cancel()   // FEAT-267: hand an unfinished tour's Held-Karp tables back (paper-route.js _leaseHkTables)
   debrisSystem.remove(_site.targets.map(t => t.body).filter(b => b != null))
   _siteGroup.clear()
   _site = null
 }
 /** BUG-212: the map's line for a live demolition job — its markers with the guide's whole tour as the poly — or null. */
 function _siteLine () {
-  if (!missionSystem?.mission?.targets || !missionSystem.isOnJob() || _site?.mission !== missionSystem.mission || !_site.tour) return null   // no job first: _site is declared below the map
-  return { ...missionSystem.markers(), poly: _site.tour.poly }
+  if (!missionSystem?.mission?.targets || !missionSystem.isOnJob() || _site?.mission !== missionSystem.mission || !_site.guide.tour) return null   // no job first: _site is declared below the map
+  return { ...missionSystem.markers(), poly: _site.guide.tour.poly }
 }
 /** { smashed, of } of mission `m`'s site — nothing smashed when its site isn't the one standing. */
 function _siteCount (m) {
@@ -6996,18 +7077,13 @@ function _updateSite () {
     // Slice 2 (owner, 2026-11-03): the last one down settles the job (mission.js reads `cleared`), wherever the truck is.
     // FEAT-267 (DEC-399, the paper round's DEC-398): the GPS follows the shortest tour from the truck through the clusters
     // still standing, re-planned every RR_PARAMS.tourS and on every smash, so a missed one turns the line back exactly when
-    // going back is the shorter tour. The job is pumped in the frame's spare time (_pumpSiteGuide); until the first lands
+    // going back is the shorter tour. The job is pumped in the frame's spare time (TourGuide.pump); until the first lands
     // the GPS shows the job's own route.
     const m = _site.mission, standing = _site.targets.flatMap((t, i) => t.smashed ? [] : [i])
     m.cleared = !standing.length
     const down = _site.targets.length - standing.length
     if (down > _site.down) { _site.down = m.siteDown = down; _paySiteShare(m, down) }   // siteDown: the count once the site is gone
-    const now = performance.now() / 1000
-    if (!_site.rr && standing.length && (standing.length !== _site.left || !(now - _site.planAt < RR_PARAMS.tourS))) {
-      _site.left = standing.length; _site.planAt = now
-      const it = planGuideJob(roadSystem, p, siteStops(m, standing), storySystem.region(), 100, _site.order)   // BUG-212: keepM
-      if (it) _site.rr = it
-    }
+    _site.guide.poll(roadSystem, p, siteStops(m, standing), storySystem.region(), performance.now() / 1000)   // BUG-212: keepM
   }
   // FEAT-187: a cluster's halo is lit while the job is live, any of it stands, and the truck is near (the paper's rule).
   for (const h of _site.halos ?? []) {
@@ -7028,15 +7104,6 @@ function _paySiteShare (m, down) {
   if (!(share > 0)) return
   _showThrowReadout(`<span style="color:var(--money)">${down} / ${m.targets.length} smashed &nbsp;·&nbsp; +$${formatMoney(share)}</span>`)
   playCoin()
-}
-/** FEAT-267: spend this frame's spare time on the site's tour; when it lands, the GPS gets its leg to the next cluster. */
-function _pumpSiteGuide (budgetMs) {
-  const r = stepJob(_site.rr, budgetMs)
-  if (!r.done) return
-  _site.rr = null
-  // FEAT-187: a line to the cluster, never a destination circle in the road (gps.js reads noRing). A plan that reached
-  // nobody keeps the previous line (the paper round's BUG-47 rule).
-  if (r.value?.segments?.length) { _site.guide = { ...tourLeg(r.value), noRing: true }; _site.order = r.value.customers.map(c => c.id); _site.tour = r.value }
 }
 
 /**
@@ -7123,13 +7190,8 @@ const CAMPFIRE_BURN_H = 2   // a camp fire burns two hours unattended (owner 202
 function _sleepAtCamp () {
   if (!_campUi || _campBusy) return
   let hours = parseInt(document.getElementById('cp-hours')?.value ?? '8', 10) || 8
-  // DEC-357 (owner, 2026-11-16): the tutorial's night wakes on mom's alarm, and any other time is refused ("Set this time
-  // instead") — the whole hour that lands on it is taken, and the night runs to the alarm exactly.
-  if (_firingDay() && hours !== Math.round(_eveningSleepH())) {
-    const t = document.getElementById('cp-hours-text')
-    if (t) t.innerHTML = `<span style="color:var(--warn)">Set this time instead: wake ${_alarmText()}</span>`
-    return
-  }
+  // DEC-357 / DEC-426 (Q1): the tutorial's night wakes on mom's alarm — Sleep is greyed until the slider reads it
+  // (_syncSleepRow) — and runs to the alarm exactly.
   if (_firingDay()) hours = _eveningSleepH()
   const vibe = _campVibe(_campUi)
   const back = _campHome(_campUi)
@@ -7139,6 +7201,7 @@ function _sleepAtCamp () {
     daySystem.sleep(hours, vibe, _campRest(_campUi))
     _endEvening()   // FEAT-170: any night ends the opening's evening
     // Stage 4, the morning: breakfast if you slept at hers (the evening's end above has fed you), then her card.
+    if (evening && atMoms && _lunches() < TUT_PARAMS.breakfastLunches) inventorySystem.grant('packedLunch', TUT_PARAMS.breakfastLunches - _lunches())   // DEC-426 (Q4)
     if (evening && atMoms) _tut('tut-breakfast')
     // FEAT-33: you turned the key off to make camp, so you wake to a dead truck and start the
     // morning by starting it. This is the diegetic bookend the ignition exists for (SM-INV-6) —
@@ -7221,6 +7284,9 @@ function _syncSleepRow () {
   const slider = document.getElementById('cp-hours')
   if (slider) slider.style.accentColor = STAGE_COLOR[daySystem.stageFor(wake)]
 
+  // DEC-426 (Q1, owner: "a"): the tutorial's night — Sleep is greyed until the player slides the alarm to mom's 06:30.
+  const go = document.getElementById('cp-sleep-go')
+  if (go) go.disabled = _firingDay() && h !== Math.round(_eveningSleepH())
   const t = document.getElementById('cp-hours-text')
   if (t) t.textContent = `${h} h  ·  wake ${String(Math.floor(wh)).padStart(2, '0')}:${String(Math.floor((wh % 1) * 60)).padStart(2, '0')}`
   const e = document.getElementById('cp-energy-text')
@@ -7374,7 +7440,7 @@ document.getElementById('cp-cancel')?.addEventListener('click', _closeCampUi)
 document.getElementById('cp-break')?.addEventListener('click', _breakCamp)
 document.getElementById('cp-sleep')?.addEventListener('click', () => {
   if (!_campUi) return
-  // DEC-357: the tutorial's night is not preset: the player sets mom's alarm (the sleep refuses any other wake time).
+  // DEC-357 / DEC-426: the tutorial's night is not preset: the player sets mom's alarm (Sleep is greyed until it reads it).
   _campUi = { ..._campUi, mode: 'sleep' }
   _renderCampUI()
 })
@@ -7715,7 +7781,7 @@ function _renderMissionUI () {
       const toGo = () => { const a = km(m.routeRemaining()), t = km(m.routeTotalRemaining()); return a === t ? `${a} to go` : `${a} (${t})` }
       hudText.textContent = beat ?? (site ? `${site.smashed} / ${site.of} smashed` : toGo())
         + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
-          : ` · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
+          : ` · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.curLeg())}`)   // FEAT-89; FEAT-291: the stop the GPS leads to
         + _dueSuffix()
       break
     }
@@ -9729,7 +9795,7 @@ const storySystem = new StorySystem({
     damageModel.setAll(1)
     partsSystem.start()              // SM-3: stock parts, new…
     rollJalopy({ parts: partsSystem, damage: damageModel, inventory: inventorySystem }, (Math.random() * 2 ** 32) >>> 0)   // …then this run's jalopy (SM-INV-7)
-    inventorySystem.grant('packedLunch', 3)   // FEAT-173: mom's snack — every run starts with three packed lunches
+    if (_paperScenario) _topUpLunches()   // FEAT-173: mom's three packed lunches; a run on the firing gets them from her (DEC-422)
     startShelves((Math.random() * 2 ** 32) >>> 0)   // FEAT-137: every auto shop's shelf, this run's rolls
     damageModel.publish(RANGER_PARAMS)
     damageScreen.clearAlert()        // BUG-184: after the roll — the last truck's unread alert is not this one's, nor is its wear
@@ -10160,12 +10226,18 @@ let _boardLog = null          // the live board's history (save.js logBoard) —
 let _restoring = false        // a resume's seat is in flight: the truck is not where the save says yet
 let _runEnded = false         // the run is over: never write it again (_discardRunSave)
 /** FEAT-288 P2 (src/tut-gate.js): the tutorial's step — null outside it (nothing locked), else the card up (its `allow` /
- *  `hi`, data/dialogue.js). Between cards the base lock stands, except while the worst day's flat waits for its tow:
- *  recovery stays open then, or a recovery card closed by mistake would strand the truck. Installed here, below every
- *  name it reads (storySystem, _runEnded), so its poll can never touch one before it exists. */
-const _TUT_BASE = {}, _TUT_TOW = { allow: ['recovery', '#recovery-card'] }
-initTutGate(() => !_tutDrive() || _runEnded || !storySystem.isActive() ? null
-  : dialogueSystem.current() ?? (_eveFlat && !_eveTowed && dialogueSystem.has('tut-spareflat') ? _TUT_TOW : _TUT_BASE))
+ *  `hi`, data/dialogue.js; a press-any-key card locks what lies under it, stepFor). Between cards the base lock stands
+ *  (tut-gate.js BETWEEN), except while the worst day's flat waits for its tow: recovery stays open then, or a recovery
+ *  card closed by mistake would strand the truck — and of its options only the tow to the shop (P3a: the gas station's
+ *  or the tire service's would skip the shop's lesson). Installed here, below every name it reads (storySystem,
+ *  _runEnded), so its poll can never touch one before it exists. */
+const _TUT_TOW = { allow: ['recovery', '#recovery-card [data-act="towShop"]'], hi: ['#recovery-card [data-act="towShop"]'] }
+/** P5: while the pack is the stop (tossed, or fallen off on the way to Larry's) it wears the quest mark between cards too. */
+const _TUT_PACK = { ...BETWEEN, quest: 'pack' }
+const _tutStep = () => !_tutDrive() || _runEnded || !storySystem.isActive() ? null
+  : stepFor(dialogueSystem.current(), _dayStop() === 'pack' ? _TUT_PACK
+    : _eveFlat && !_eveTowed && dialogueSystem.has('tut-spareflat') ? _TUT_TOW : undefined)
+initTutGate(_tutStep)
 
 /**
  * Why the run cannot be saved right now, or null. A board job and Larry's round ride the save
@@ -10884,6 +10956,7 @@ function loop (t) {
   if (serviceScreen.isOpen && !vehicleState.parked && serviceCenter.cart.length) { vehicleState.parked = true; serviceScreen.leave(() => { vehicleState.parked = false }) }
   serviceScreen.update()           // SM-3: closes when the truck drives off
   _fragileBlink(frameTime)   // FEAT-97: the load's red hit blink fading out
+  _questMark()   // FEAT-288 P5: the tutorial's quest item, beam and pulse
   _updateFragileG(frameTime)   // FEAT-139: the fragile load's felt-g bar
 
   // PERF-26: bucket the whole fixed-step block. Without it the catch-up substeps a hitch frame owes
@@ -10906,6 +10979,7 @@ function loop (t) {
     setParkLock(_parkLocked())   // FEAT-194 part 2: a parked menu is up
     setThrottleCut(_flatOwed())   // FEAT-217 (DEC-272): the tutorial's flat stops the truck until the tire is fixed — the tutorial only
 
+    autoDrive.step(vehicleState, PHYSICS_DT)   // FEAT-293: the AI's controls for this step (off: returns at once)
     const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     // S-61: stepIgnition clears ignition.event at the top of EVERY step, so on a 2+ step frame a
     // catch on step 1 is gone by the time the frame reads it. Latch the edge here, per step.
@@ -11724,7 +11798,10 @@ function loop (t) {
     const spentMs = performance.now() - newTime * 1000
     paperRouteSystem.pumpReroute(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - spentMs))
   }
-  if (_site?.rr) _pumpSiteGuide(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - (performance.now() - newTime * 1000)))   // FEAT-267
+  // FEAT-267 / FEAT-291: a demolition site's tour, a multi-drop's (paper-route.js TourGuide), in the frame's spare time.
+  const tourBudget = () => Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - (performance.now() - newTime * 1000))
+  if (_site?.guide.it) _site.guide.pump(tourBudget())
+  if (missionSystem?.drops.it) missionSystem.drops.pump(tourBudget())
 }
 
 // PERF-21 for late arrivals: the boot prewarm compiled every light state's variant of every material

@@ -441,6 +441,10 @@
     }
     /* The camp card is a menu you sit in, not a card you read: lighter, like pause (owner, 2026-10-20). */
     #camp-panel { background: var(--menu-bg); }
+    /* FEAT-288 P3a: a lesson card (one that waits for an action, DEC-359) is read WHILE the camp card under it is used —
+       mom's alarm slider, the camp's inventory button — so the camp card sits above it. ponytail: a fixed lift clears a
+       card of up to ~5 lines (zoom scales both alike); measure the card if a longer lesson ever covers it. */
+    body:has(#dialogue-panel.dlg-waits) #camp-panel { bottom: 216px; }
     /* FEAT-146: the run's end sits in the middle of the screen — nothing behind it is still in play. */
     #run-end { top: 50%; bottom: auto; transform: translate(-50%, -50%); }
     #re-body { line-height: 1.7; }
