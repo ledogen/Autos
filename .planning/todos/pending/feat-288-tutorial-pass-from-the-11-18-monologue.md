@@ -12,7 +12,7 @@ lane: SM (tutorial)
 # FEAT-288: Tutorial pass from the owner's 2026-11-18 monologue
 
 ## Next steps
-P1, P7, P2, P3a on main; P4 built on land/feat-288-p4-world (§ 8 "As built (P4)"). In flight: P3b, P5, P6. Then P8. The owner owes words for the lines listed under Open questions.
+P1, P7, P2, P3a, P5 on main; P4 built on land/feat-288-p4-world (§ 8 "As built (P4)"). In flight: P3b, P6. Then P8. The owner owes words for the lines listed under Open questions.
 
 ## Summary
 A complete, simple tutorial: full dialogue and storytelling, a brief but complete explanation of every system, every control / menu / bar the player must use highlighted and everything else locked out, plus the specific fixes below.
