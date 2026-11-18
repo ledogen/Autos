@@ -1473,8 +1473,10 @@ renderer.shadowMap.enabled = true
 // extent for texel size, so the dissolve has to start later or it eats a visible chunk of the
 // shadowed world. 0.82 of the ±40 m near frustum ⇒ full shadows to ~33 m, gone by 40 m.
 installShadowEdgeFade({ fadeStart: 0.82 })
-// BUG-78: the near map's shadow also gates the far cascade, so the truck can be kept OUT of the
-// far map (see the wrapped shadow pass by sunFar) without its shadow dropping to the near light's 40 % share.
+// BUG-78 + BUG-217: the two sun lights' shadows act as one. The near map's shadow also gates the far
+// cascade, so the truck can be kept OUT of the far map (see the wrapped shadow pass by sunFar) without its
+// shadow dropping to the near light's 40 % share; and ground the far map shades ignores the near map, so
+// the near map's box and its clipped casters never show as a brightness edge (equations in shadow-fade.js).
 installNearShadowCoupling()
 // PERF-16: stop re-rendering the sun's whole shadow pass every frame. Three defaults autoUpdate=true,
 // so the 1536²/2048² shadow map is re-rendered each frame even parked under a static sun (measured
@@ -1925,7 +1927,14 @@ const FAR_SHADOW_HIDE = []
 {
   const shadowPass = renderer.shadowMap.render
   renderer.shadowMap.render = function (lights, sceneArg, camera) {
+    // BUG-217: TERRAIN casts into the far map only. The near map's camera sits 200 m up-sun of the truck
+    // and frames ±40 m, so it sees a hill only partly, and which part moves with the truck; its crisp,
+    // truck-dependent copy of a hill's shadow showed as a second edge sliding along the far map's soft one.
+    // Hill shadow now comes from the far map alone; the near map keeps the truck, props, POIs and grass.
+    const chunks = this.needsUpdate && terrainSystem ? terrainSystem._chunkMap : null
+    if (chunks) for (const c of chunks.values()) c.mesh.castShadow = false
     shadowPass.call(this, lights.filter(l => l !== sunFar), sceneArg, camera)
+    if (chunks) for (const c of chunks.values()) c.mesh.castShadow = true
     // LOAD-BEARING: only the WORLD scene feeds the far map. The prop-impostor re-bake (several
     // small renders of its own scene, on every sky look change) runs BEFORE the world render in the
     // same frame; without this guard a far pass due on such a frame drew the cascade from the bake
