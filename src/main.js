@@ -7248,6 +7248,7 @@ function _renderCampUI () {
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
   show('cp-item',   isHome)   // FEAT-245: mom's too (eat and use things at her table); isHome = camp, truck, mom's
   show('cp-cook',   st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230; at a dead fire too: cooking relights it (DEC-397)
+  show('cp-cook-beans', st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'cannedBeans'))   // DEC-407: heated like the potato, no kit
   show('cp-cook-groceries', st.mode === 'camp' && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
   show('cp-map',    isHome)
   show('cp-spirits', st.mode === 'camp')
@@ -7362,7 +7363,7 @@ document.getElementById('cp-truck')?.addEventListener('click', () => {
 document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
 // FEAT-230: one raw potato (slice 1) or one bag of groceries (slice 3, kit deployed) on the camp fire, 30 min behind the
 // fade like the make-camp chore.
-for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked', false], ['cp-cook-groceries', 'groceries', 'groceriesCooked', true]]) {
+for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked', false], ['cp-cook-beans', 'cannedBeans', 'beansHeated', false], ['cp-cook-groceries', 'groceries', 'groceriesCooked', true]]) {
   document.getElementById(btn)?.addEventListener('click', (e) => {
     e.currentTarget.blur()
     if (!_campUi || _campBusy || _campUi.mode !== 'camp' || (needsKit && !_kitAtCamp())) return

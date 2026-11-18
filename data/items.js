@@ -71,12 +71,27 @@ export const ITEMS = {
     // Masses [DEFAULT]. Stand-in thumbnails (no art yet) and PLACEHOLDER words for the owner's.
     salad:        { name: 'Salad',         kind: 'food',       massKg: 0.4, use: 'eat', satiety: 4, freshH: 12, thumb: 'groceries',
                     desc: 'Leafy and crisp. It will not stay that way long.' },
-    deliSandwich: { name: 'Deli sandwich', kind: 'food',       massKg: 0.3, use: 'eat', satiety: 7, freshH: 24, thumb: 'packedLunch',
+    deliSandwich: { name: 'Deli sandwich', kind: 'food',       massKg: 0.3, use: 'eat', satiety: 5, freshH: 24, thumb: 'packedLunch',
                     desc: 'Wrapped at the counter.' },
     cookies:      { name: 'Cookies',       kind: 'food',       massKg: 0.1, stack: 6, use: 'eat', satiety: 2, freshH: 96, thumb: 'candyBar',
                     desc: 'Store-bought. Keeps a good while.' },
-    bread:        { name: 'Loaf of bread', kind: 'food',       massKg: 0.5, use: 'eat', satiety: 6, freshH: 72, thumb: 'groceries',
+    bread:        { name: 'Loaf of bread', kind: 'food',       massKg: 0.5, use: 'eat', satiety: 5, freshH: 72, thumb: 'groceries',
                     desc: 'Plain, filling, keeps a few days.' },
+    // FEAT-250 / DEC-390 / DEC-407 (owner, 2026-11-17: "Your proposed additions are approved"): the five more foods. Every
+    // number [DEFAULT] bar the ones he gave. Stand-in thumbnails; masses [DEFAULT]; the words are PLACEHOLDERS.
+    beefJerky:    { name: 'Beef jerky',    kind: 'food',       massKg: 0.1, stack: 4, use: 'eat', satiety: 3, thumb: 'candyBar',
+                    desc: 'Tough, salty, lasts forever.' },
+    apple:        { name: 'Apple',         kind: 'food',       massKg: 0.2, stack: 6, use: 'eat', satiety: 1.5, freshH: 72, thumb: 'potato',
+                    desc: 'Crisp enough.' },
+    breakfastBurrito: { name: 'Breakfast burrito', kind: 'food', massKg: 0.3, use: 'eat', satiety: 5, freshH: 8, thumb: 'packedLunch',
+                    desc: 'Foil-wrapped, warm for a little while.' },
+    // Like the potato: raw it is no meal; heated on a camp fire (main.js, 30 min, no kit) it holds 6 h and keeps 24 h.
+    cannedBeans:  { name: 'Can of beans',  kind: 'food',       massKg: 0.5, stack: 4, thumb: 'groceries',
+                    desc: 'Beans. Cold from the can is no meal. Heat it over a campfire.' },
+    beansHeated:  { name: 'Heated beans',  kind: 'food',       massKg: 0.5, stack: 4, use: 'eat', satiety: 6, freshH: 24, thumb: 'groceries',
+                    desc: 'Beans, hot enough.' },
+    friedChicken: { name: 'Fried chicken bucket', kind: 'food', massKg: 0.9, use: 'eat', satiety: 12, freshH: 16, thumb: 'burger',
+                    desc: 'A whole bucket. You will not need lunch.' },
     // P235/75R15 on a steel rim: the standard tire (12 kg) + the steel wheel (9 kg), the realistic
     // figure (owner, 2026-10-23). Not RANGER_PARAMS.wheelMass, which is the suspension's unsprung mass.
     spareTire:    { name: 'Mounted tire',  kind: 'part',       massKg: PARTS.spareTire.massKg, use: 'spare',

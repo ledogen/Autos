@@ -48,13 +48,16 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     coffee: 3, energyDrink: 4, ductTape: 8, emergencyGas: 8,
     // FEAT-231 [DEFAULT]: inside the owner's ranges, the mat $5–10 (the $8 its reward card read), the bedliner $10–30
     rubberBedMat: 8, bedliner: 20,
-    // FEAT-250 / DEC-377 (owner, 2026-11-17, FEAT-69 dive: "cut costs: food to about $0.35 per hour of hold"): a food
-    // costs $0.35 × its satiety (data/items.js; test/inventory.mjs holds the line) — raw groceries and the raw potato by the meal they cook into.
-    // Was: chili dog, burger, dinner meal, groceries $5; potato, gummy worms, candy bar $2; spicy chips $3.
-    // FEAT-260's four [DEFAULT]: ±$0.05 an hour by shelf life (salad $0.30, sandwich $0.35, cookies and bread $0.40).
-    chiliDog: 3.5, burger: 2.8, dinnerMeal: 2.8, groceries: 3.5, potato: 1.4, gummyWorms: 0.7, spicyChips: 1.05, candyBar: 1.05,
-    salad: 1.2, deliSandwich: 2.45, cookies: 0.8, bread: 2.4,
-    bagOfPeanuts: 3,            // DEC-293 (owner, 2026-11-15: "keep $3") stands over the $0.35 line ($1.05): owed on the food card
+    // FEAT-250 / DEC-377 / DEC-407 (owner, 2026-11-17: "allow +100% - 30% on the .35 cost/hr figure" and the order of the
+    // places: groceries cheapest, the food vendor dear, the gas station the worst deal): $ per hour of satiety, by where it is sold.
+    // Cookable groceries (potato, beans, groceries; priced by the meal they cook into) $0.25; grocery-store staples $0.27–0.33;
+    // food vendor $0.50–0.60; gas-station snacks $0.67–0.70. The band is $0.245–0.70; test/inventory.mjs holds it and the order.
+    // Was (DEC-377, $0.35 flat): chili dog 3.5, burger 2.8, dinner meal 2.8, groceries 3.5, potato 1.4, gummy worms 0.7,
+    // spicy chips 1.05, candy bar 1.05, salad 1.2, deli sandwich 2.45 (7 h), cookies 0.8, bread 2.4 (6 h); peanuts 3 (DEC-293).
+    potato: 1, cannedBeans: 1.5, groceries: 2.5,
+    apple: 0.4, cookies: 0.6, salad: 1.1, bread: 1.5, deliSandwich: 1.65,
+    dinnerMeal: 4, burger: 4.4, chiliDog: 5.8, friedChicken: 7.2,
+    gummyWorms: 1.4, spicyChips: 2, bagOfPeanuts: 2, candyBar: 2.1, beefJerky: 2.1, breakfastBurrito: 3.35,
     ice: 5,                     // owner, 2026-10-22
     cooler: 20, iceKing: 65,    // FEAT-230 [DEFAULT]: the middles of the owner's $10–30 and $30–100; the owner sets them
     // FEAT-121 camp gear on the general-store shelf [DEFAULT]: the reward worths (data/offers.js REWARD_VALUE) as the
@@ -78,11 +81,11 @@ export const STOREFRONT = {
     // the Ice King "very rarely", a quarter of the jerry can's rarely [DEFAULT]
     // FEAT-260 (owner, 2026-11-17: "This store needs to carry more than just groceries"): the salad, the deli sandwich,
     // the cookies and the bread.
-    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato', 'groceries', 'salad', 'deliSandwich', 'cookies', 'bread', 'blanket', 'airMattress', 'sleepingPad', 'sleepingBag',
+    generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato', 'cannedBeans', 'groceries', 'apple', 'beefJerky', 'salad', 'deliSandwich', 'cookies', 'bread', 'blanket', 'airMattress', 'sleepingPad', 'sleepingBag',
                              'ice', 'cooler'],
                     weights: { deluxeSleepingPad: 0.25, rucksack: 1, iceKing: 0.25 } },
-    farm:         { always: ['groceries'] },   // FEAT-230 slice 3: a farm sells for the first time (items.md, Groceries)
-    gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar', 'ice'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
-    foodVendor:   { always: ['coffee', 'chiliDog', 'burger', 'dinnerMeal'] },
+    farm:         { always: ['groceries', 'apple'] },   // FEAT-230 slice 3: a farm sells for the first time (items.md, Groceries)
+    gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar', 'beefJerky', 'breakfastBurrito', 'ice'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
+    foodVendor:   { always: ['coffee', 'chiliDog', 'burger', 'dinnerMeal', 'friedChicken'] },
     tackleShop:   { always: ['cooler'], weights: { iceKing: 0.25 } },   // FEAT-230 (items.md §2)
 }
