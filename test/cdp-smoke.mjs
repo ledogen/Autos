@@ -2354,12 +2354,13 @@ const STEPS = [
     check(await hi('#svc-screen .sv-line[data-item="bagOfPeanuts"]'), 'the shop card: the peanuts row is not ringed')
     await gateShot('14-shop-peanuts')
     await padOn()   // the fake pad: the D-pad walks the peanuts row and its add to cart alone, A presses
+    const walk = []
     for (let i = 0; i < 12 && await waits() === 'cart'; i++) {
-      const f = await js(`(e => !e ? 'none' : e.dataset.act === 'stow' ? 'stow' : e.matches('.sv-line[data-item=bagOfPeanuts]:not(.on)') ? 'row' : 'other')(document.querySelector('#svc-screen .nav-focus'))`)
-      await btn(f === 'row' || f === 'stow' ? 0 : 13)
+      const f = await js(`(e => !e ? 'none' : e.dataset.act === 'stow' ? 'stow' : e.matches('.sv-line[data-item=bagOfPeanuts]:not(.on)') ? 'row' : 'other:' + (e.dataset.act ?? e.textContent.trim().slice(0, 20)))(document.querySelector('#svc-screen .nav-focus'))`)
+      walk.push(f); await btn(f === 'row' || f === 'stow' ? 0 : 13)
     }
     await padOff()
-    check(await until(async () => await waits() === 'bought', 3000), `the pad did not put the peanuts in the cart: ${JSON.stringify({ tut: await tut(), f: await navFocus() })}`)
+    check(await until(async () => await waits() === 'bought', 3000), `the pad did not put the peanuts in the cart: ${JSON.stringify({ tut: await tut(), f: await navFocus(), walk })}`)
     check(await hi('#svc-screen [data-act="checkout"]'), 'the check out card: check out is not ringed')
     await gateShot('15-shop-checkout')
     await js('document.querySelector("#svc-screen [data-act=discard]").click()')   // the mouse: discard is refused
@@ -2367,8 +2368,12 @@ const STEPS = [
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')
     check(await until(async () => (await tut()).stop === 'pump' && await waits() === 'shopshut', 3000), `checking out did not buy the peanuts and turn her card: ${JSON.stringify(await tut())}`)
     check(!await js('window.__worstDay().pumpsShut'), 'the peanuts bought, the pumps stayed shut (DEC-323)')
-    await js(`${nut}.click()`)   // her send-off: leave, and only leave (a second bag: DEC-356's guard; here the row is locked too)
-    check(await js(`${nut}.classList.contains("tut-locked") && !${nut}.classList.contains("on")`) && await hi('#svc-screen [data-act="close"]'), "Katie's send-off: the shelf is not locked, or back is not ringed")
+    // her send-off: leave, and only leave (a second bag: DEC-356's guard, checked below; here the row is locked too). The
+    // click is refused at once (tut-gate.js computes it); the marks follow on the gate's 100 ms paint of the re-rendered shelf.
+    await js(`${nut}.click()`)
+    check(!await js(`${nut}.classList.contains("on")`), "Katie's send-off: the peanuts row opened")
+    check(await until(async () => await js(`${nut}.classList.contains("tut-locked")`) && await hi('#svc-screen [data-act="close"]'), 1000),
+      `Katie's send-off: the shelf is not locked, or back is not ringed: ${JSON.stringify(await js(`({ locked: ${nut}.classList.contains("tut-locked"), close: !!document.querySelector('#svc-screen [data-act="close"]'), hi: [...document.querySelectorAll("#svc-screen .tut-hi")].map(e => e.dataset.act ?? e.className) })`))}`)
     await gateShot('16-shop-leave')
     await readCards()
     await tap('Escape')
