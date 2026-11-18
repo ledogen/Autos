@@ -393,8 +393,10 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
   mom's by crow than the drive home's planned line is at 250 m along. No height enters it, so BUG-216's deck moves near the
   tunnel cannot shift it. On 1872706826: 264 m along (the first line vertex past 250), 193 m before the tunnel at 457 m;
   the tow to the same shop 0.66 km (was 0.75). test/tutorial-seed.mjs holds ≥ 150 m before the tunnel.
-- `tut-lights` fires when the flat is fixed and the shop's cart is checked out (`!serviceCenter.pending()`): the card is up
-  in the shop, before the player leaves it (its `allow: []` locks the shop's rows; leave is never locked).
+- `tut-lights` fires when the flat is fixed and mom's tire (or patch) is spent, which ServiceCenter does only at the
+  check-out (`_momOwes`; the cart fits a tire at once and a highlighted row is fitted for a look, so neither the flat nor
+  `pending()` can tell). The card is up in the shop, before the player leaves it (its `allow: []` locks the shop's rows;
+  leave is never locked).
 
 ## Tracker
 - [x] Itemised plan + conflicts + questions written here (no code): § Plan, 44 items, DEC-422

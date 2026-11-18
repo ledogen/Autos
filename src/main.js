@@ -5068,7 +5068,9 @@ function _eveningLessons (q, v, stop) {
   }
   if (damageScreen.isOpen && damageModel.flat.some(Boolean)) _tut('tut-damage')
   // Stage 5: towed and the tire bought, it's night — the headlights.
-  if (_eveTowed && _eveFlat && !_flatOwed() && !serviceCenter.pending()) _tut('tut-lights')   // FEAT-288 P4 (DEC-422): as the tire's check-out lands (the cart fits it, checkout pays), not on the shift
+  // FEAT-288 P4 (DEC-422): as the tire's check-out lands, not on the shift. The cart fits the tire at once and a highlighted
+  // shelf row is fitted for a look, so the flat alone cannot tell; mom's tire (or patch) is spent only at the check-out.
+  if (_eveTowed && _eveFlat && !_flatOwed() && !(_momOwes.part && _momOwes.patch)) _tut('tut-lights')
   // DEC-357 (owner, 2026-11-16): the tire fixed, the driver is SLEEPY — the eye blinks (and day.js's slower hands), no doze —
   // so her energy card makes sense at the door. Idempotent: lands the band once; her door's bed stamp drains on from it.
   if (stop === 'home' && _eveFlat && !_flatOwed() && !dialogueSystem.has('tut-home') && daySystem.stage() !== 'sleepy') daySystem.setEnergy(TUT_PARAMS.sleepyH)
