@@ -90,7 +90,7 @@ import { DaySystem, DAY_PARAMS, STAGE_COLOR, HUNGER_COLOR, clockHeld } from './d
 import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, basePay, payRange, runEconomy, rankTable, fragileLines, expeditionGrade, gradePoints, econDayOf } from './economy.js'  // FEAT-53: payout, wallet, good deeds; FEAT-138 per-type rank thresholds; FEAT-139 fragile lines
 import { InventorySystem, runInventory, entryKg, startingPack } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
-import { ITEMS, foodHoldH } from '../data/items.js'
+import { ITEMS, foodSatietyH } from '../data/items.js'
 import { FAMILY_COLOR, EMPTY_DIAMOND_COLOR } from '../data/map-icons.js'   // FEAT-274: the offer card's job-type diamond
 import { PartsSystem, runParts, modModels } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
@@ -2109,7 +2109,9 @@ const map2d = new Map2D({
   // FEAT-61: the paper route draws as a mission route, because that is what it is — one line, in
   // the order it will be driven. It wins over the mission's when a route is out; the two can never
   // both be live.
-  getMission: () => paperRouteSystem?.markers() ?? missionSystem?.markers() ?? null,
+  // BUG-212: a demolition job's map line is the GPS's tour from the truck (the paper round's rule, DEC-399), not the job's
+  // planned route: after a missed cluster or a U-turn the two disagreed on the order.
+  getMission: () => paperRouteSystem?.markers() ?? _siteLine() ?? missionSystem?.markers() ?? null,
   // FEAT-43: the story-mode region boundary, so the player can see where the wall is rather than
   // finding it by driving into it. Null outside story mode (and until the region center is captured).
   getRegion: () => storySystem?.region() ?? null,
@@ -2821,7 +2823,7 @@ const vehicleChassis = createVehicleChassis(physicsEngine, vehicleState, RANGER_
 const engineCtx = { engine: physicsEngine, chassis: vehicleChassis }
 // FEAT-246: the chase boom stops short of terrain (analytic height, no engine query) and of static solids and the road
 // group's bore lining (ONE ray per frame; camera-boom.js says why the deck under the truck does not shorten it).
-setCameraBoomProbe(makeBoomProbe(physicsEngine, (x, z) => terrainSystem.analyticHeight(x, z), GROUP_STATIC | GROUP_ROAD))
+setCameraBoomProbe(makeBoomProbe(physicsEngine, (x, z, y) => terrainSystem.analyticHeight(x, z, undefined, y), GROUP_STATIC | GROUP_ROAD))
 const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown barrels/rocks
 
 // ── FEAT-96: the strapped load — a freight job's, or the debug "Load Cargo" pick ─────────────
@@ -3808,13 +3810,20 @@ const inventorySystem = new InventorySystem({
   onDrop: (e) => _dropToGround(e),   // FEAT-143: down behind the tailgate, not out of the game
   // The spare and the plug kit open the tire picker and stay put (false): the choice made there spends
   // them. The picker opens once use() has put the unit back, so the inventory's indices hold.
-  effects: { coffee: () => daySystem.drinkCoffee(), eat: (e) => daySystem.eat(foodHoldH(e.id, _kitAtCamp())), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
+  effects: { coffee: () => daySystem.drinkCoffee(), eat: (e) => daySystem.eat(foodSatietyH(e.id, _kitAtCamp())), gas: _pourGasCan, energy: () => daySystem.drinkEnergy(), stopLeak: _pourStopLeak,
     ice: (e) => inventorySystem.iceCooler(e),   // FEAT-230 slice 2 (DEC-338): a bag into the cooler, what it had left; none aboard keeps it
     spare: (e) => { queueMicrotask(() => _pickSpare(e)); return false },
     fieldRepair: (e) => { queueMicrotask(() => _pickFieldRepair(e.id)); return false },
     jerry: (e) => { queueMicrotask(() => _pourJerry(e)); return false },
     plug: () => { queueMicrotask(() => _pickPlug()); return false } },
+  notes: { eat: (e) => _mealNote(foodSatietyH(e.id, _kitAtCamp())) },   // BUG-211: a meal on a full stomach
 })
+/** BUG-211 (owner 11-17: "eating another didn't seem to increase my hunger any further"): the eat hint, by
+ *  daySystem.mealWaste (eat()'s own rule), said before eating. A warning, never a refusal: a scripted beat eats on cue
+ *  (the opening's peanuts at camp, DEC-347, on a stomach the safe drive kept fed). Words only, no hours on screen. */
+const _MEAL_NOTE = { all: 'You are too full. Eating this now would waste it.',
+  some: 'You are nearly full. Some of this would go to waste.' }
+const _mealNote = (holdH) => _MEAL_NOTE[daySystem.mealWaste(holdH)] ?? null
 // Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
 const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isSuppressed: () => menuStage.isActive(),
@@ -5297,6 +5306,10 @@ function _checkOpeningEnd () {
   economySystem.payPaycheck()
   if (_returnSeed) { _returnToRunWorld(); return }
   if (skipped && !dialogueSystem.has(DLG.bossCheck)) { _tut(DLG.bossCheck, BOSS_CHECK, null, true); return }
+  // BUG-198 / DEC-381 (owner, 2026-11-17: "make sure we get the three free meals when starting a new game"): the run proper starts
+  // on mom's three packed lunches (FEAT-173, items.md §1d) however many the tutorial's breakfast and night ate.
+  const lunches = inventorySystem.list().filter(r => r.id === 'packedLunch').reduce((k, r) => k + r.n, 0)
+  if (lunches < 3) inventorySystem.grant('packedLunch', 3 - lunches)
   _tut(DLG.runIntro, skipped ? _runIntro() : LARRY_CALL, null, true)   // Larry's call: DEC-326's two cards, or DEC-236's four on a skip
   _markPlayed()   // FEAT-184: the tutorial is over
 }
@@ -6941,6 +6954,11 @@ function _clearSite () {
   _siteGroup.clear()
   _site = null
 }
+/** BUG-212: the map's line for a live demolition job — its markers with the guide's whole tour as the poly — or null. */
+function _siteLine () {
+  if (!missionSystem?.mission?.targets || !missionSystem.isOnJob() || _site?.mission !== missionSystem.mission || !_site.tour) return null   // no job first: _site is declared below the map
+  return { ...missionSystem.markers(), poly: _site.tour.poly }
+}
 /** { smashed, of } of mission `m`'s site — nothing smashed when its site isn't the one standing. */
 function _siteCount (m) {
   return { smashed: _site?.mission === m ? _site.targets.filter(t => t.smashed).length : m.siteDown ?? 0, of: m.targets?.length ?? 0 }
@@ -6981,7 +6999,7 @@ function _updateSite () {
     const now = performance.now() / 1000
     if (!_site.rr && standing.length && (standing.length !== _site.left || !(now - _site.planAt < RR_PARAMS.tourS))) {
       _site.left = standing.length; _site.planAt = now
-      const it = planGuideJob(roadSystem, p, siteStops(m, standing), storySystem.region())
+      const it = planGuideJob(roadSystem, p, siteStops(m, standing), storySystem.region(), 100, _site.order)   // BUG-212: keepM
       if (it) _site.rr = it
     }
   }
@@ -7012,7 +7030,7 @@ function _pumpSiteGuide (budgetMs) {
   _site.rr = null
   // FEAT-187: a line to the cluster, never a destination circle in the road (gps.js reads noRing). A plan that reached
   // nobody keeps the previous line (the paper round's BUG-47 rule).
-  if (r.value?.segments?.length) _site.guide = { ...tourLeg(r.value), noRing: true }
+  if (r.value?.segments?.length) { _site.guide = { ...tourLeg(r.value), noRing: true }; _site.order = r.value.customers.map(c => c.id); _site.tour = r.value }
 }
 
 /**
@@ -7251,7 +7269,9 @@ function _renderCampUI () {
   show('cp-sleep',  isHome && !noBed)
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
   show('cp-item',   isHome)   // FEAT-245: mom's too (eat and use things at her table); isHome = camp, truck, mom's
+  show('cp-light',  st.mode === 'camp' && !!st.fireOut)   // FEAT-286: woken at a dead fire (DEC-393), relight it (DEC-397's path)
   show('cp-cook',   st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230; at a dead fire too: cooking relights it (DEC-397)
+  show('cp-cook-beans', st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'cannedBeans'))   // DEC-407: heated like the potato, no kit
   show('cp-cook-groceries', st.mode === 'camp' && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
   show('cp-map',    isHome)
   show('cp-spirits', st.mode === 'camp')
@@ -7367,18 +7387,30 @@ document.getElementById('cp-truck')?.addEventListener('click', () => {
 document.getElementById('cp-sleep-go')?.addEventListener('click', _sleepAtCamp)
 // FEAT-230: one raw potato (slice 1) or one bag of groceries (slice 3, kit deployed) on the camp fire, 30 min behind the
 // fade like the make-camp chore.
-for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked', false], ['cp-cook-groceries', 'groceries', 'groceriesCooked', true]]) {
+for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked', false], ['cp-cook-beans', 'cannedBeans', 'beansHeated', false], ['cp-cook-groceries', 'groceries', 'groceriesCooked', true]]) {
   document.getElementById(btn)?.addEventListener('click', (e) => {
     e.currentTarget.blur()
     if (!_campUi || _campBusy || _campUi.mode !== 'camp' || (needsKit && !_kitAtCamp())) return
-    // DEC-397 (owner): "if you cook at a dead fire the fire is instantly relit". The only thing that relights it.
-    if (_campUi.fireOut) { campfire.setDead(false); _campUi = { ..._campUi, fireOut: false } }
+    _relightFire()   // DEC-397 (owner): "if you cook at a dead fire the fire is instantly relit"
     // BUG-209: no room for the result refuses up front, before the fade and the 30 minutes.
     if (!inventorySystem.canConvert(raw, cooked)) { _campUi = { ..._campUi, note: 'inventory full' }; _renderCampUI(); return }
     _campUi = { ..._campUi, note: null }
     _campFade(() => { if (inventorySystem.convert(raw, cooked)) daySystem.advanceMinutes(30); _renderCampUI() })
   })
 }
+/** DEC-397's relight: a dead camp fire burns again (cooking, and FEAT-286's button). No-op on a live one. */
+function _relightFire () {
+  if (!_campUi?.fireOut) return
+  campfire.setDead(false)
+  _campUi = { ..._campUi, fireOut: false }
+}
+// FEAT-286 (owner 11-17: "If you wake up before first light, there's nothing to look at"): free and instant [DEFAULT, owed].
+document.getElementById('cp-light')?.addEventListener('click', (e) => {
+  e.currentTarget.blur()
+  if (!_campUi || _campBusy || _campUi.mode !== 'camp') return
+  _relightFire()
+  _renderCampUI()
+})
 // FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
 document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
 // FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
@@ -7672,9 +7704,12 @@ function _renderMissionUI () {
       hud.classList.toggle('mh-bad', !!beat)
       // FEAT-267: a demolition job's end is no goal — the HUD counts the site, the paper round's "N / M delivered".
       const site = m.mission?.targets ? _siteCount(m.mission) : null
-      hudText.textContent = beat ?? (site ? `${site.smashed} / ${site.of} smashed` : `${km(m.routeRemaining())} to go`)
+      // BUG-205 follow-up (owner 11-18): the whole job's road distance left in parentheses, when it is not the same number
+      // ("1.2 km (7.4 km)", his form: no "to go", which keeps the big-UI line clear of the wallet card).
+      const toGo = () => { const a = km(m.routeRemaining()), t = km(m.routeTotalRemaining()); return a === t ? `${a} to go` : `${a} (${t})` }
+      hudText.textContent = beat ?? (site ? `${site.smashed} / ${site.of} smashed` : toGo())
         + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
-          : `   · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
+          : ` · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
         + _dueSuffix()
       break
     }
@@ -7783,9 +7818,11 @@ function _renderMissionUI () {
             : `${left} to ${q.label ?? _tutWork(q.id) ?? offerBoard.placeLabel(q.id)} · ${what}`   // FEAT-184: PLACEHOLDER words
         }
         // DEC-321: no reset is taught; off the road, the tutorial's own countdown (#reset-countdown) puts the truck back.
-      } else if (_waypointOn()) {   // FEAT-211: the way to the waypoint, crow-flies like the evening's [DEFAULT] words
-        const vp = vehicleState.position
-        hudText.textContent = `${km(Math.hypot(_waypoint.x - vp.x, _waypoint.z - vp.z))} to the waypoint`
+      } else if (_waypointOn()) {   // FEAT-211: the way to the waypoint
+        // BUG-205 (owner 11-17): along the line the GPS shows (its re-plan when the truck strays), DEC-270's rule; it was
+        // crow-flies, so on a winding road it read short and grew while the line was driven correctly.
+        const vp = vehicleState.position, line = _tutLine(_waypoint.route)
+        hudText.textContent = `${km(line?.poly?.length ? routeLeftM(line, vp.x, vp.z) : Math.hypot(_waypoint.x - vp.x, _waypoint.z - vp.z))} to the waypoint`
       }
       break
   }
@@ -8118,7 +8155,7 @@ function _updateEnergyMeter () {
         el.style.width = `${hours[k] * EM_PX_PER_H}px`
         el.style.background = STAGE_COLOR[k]
       }
-      // FEAT-198: the hunger strip, laid out the same way — the hungerWords bands from the longest meal hold
+      // FEAT-198: the hunger strip, laid out the same way — the hungerWords bands from the satiety cap
       // down to 0 h left, then 'hungry' for the hunger ramp (past the ramp the drain is flat, so the bar stops).
       let top = _emEls.hTop = _hmTopH()
       for (const [h, w] of DAY_PARAMS.hungerWords) { _hmSeg(w, top - h); top = h }
@@ -8156,20 +8193,21 @@ function _updateEnergyMeter () {
   }
 }
 /** FEAT-283: hovering "eat" paints the hunger the meal recovers on the hunger bar — a green box from the pointer to the
- *  post-meal level (DaySystem.eat never shortens a hold; clamped at the bar's full end). `id` null clears it. */
+ *  post-meal level (DaySystem.eat: holds ADD up to the cap, FEAT-250; the gain is mealGainH). `id` null clears it. */
 function _previewEat (id) {
   const box = document.getElementById('hm-preview'), it = id && ITEMS[id]
   if (!box) return
-  if (!it || it.kind !== 'food' || it.hold == null) { box.style.display = 'none'; return }
+  if (!it || it.kind !== 'food' || it.satiety == null) { box.style.display = 'none'; return }
   const left = daySystem.fedLeftH(), top = _hmTopH()
-  const dh = Math.min(top, Math.max(left, foodHoldH(id, _kitAtCamp()))) - Math.min(top, left)
+  // post-meal level = what eat() leaves (additive, capped: mealGainH), from the pointer (which sits below 0 when hungry)
+  const dh = Math.max(0, left) + daySystem.mealGainH(foodSatietyH(id, _kitAtCamp())) - Math.min(top, left)
   box.style.display = dh > 0 ? 'block' : 'none'
   box.style.width = `${dh * EM_PX_PER_H}px`
   box.style.left = `${EM_VIEW_W / 2 - dh * EM_PX_PER_H}px`
 }
 let _hmWord, _emX, _hmX   // the strips' last written translateX (PERF-48)
-/** The hunger strip's full end: the longest hold any meal gives (meals never stack past it — DaySystem.eat). */
-const _hmTopH = () => Math.max(DAY_PARAMS.mealHoldH, ...Object.values(ITEMS).map(i => i.hold ?? 0))
+/** The hunger strip's full end: the satiety cap (FEAT-250: foods stack up to it — DaySystem.eat). */
+const _hmTopH = () => DAY_PARAMS.satietyCapH
 function _hmSeg (word, hours) {
   const el = document.getElementById(`hm-seg-${word}`)
   el.style.width = `${hours * EM_PX_PER_H}px`
@@ -8377,7 +8415,7 @@ function _updateJobDue () {
   }
   _jobDueText = Number.isFinite(h) ? formatGameDuration(h - daySystem.clockH()) : ''
 }
-const _dueSuffix = () => _jobDueText ? `   · due in ${_jobDueText}` : ''
+const _dueSuffix = () => _jobDueText ? ` · due in ${_jobDueText}` : ''
 function _updateRankTimer () {
   if (!_rtEls) {
     const root = document.getElementById('rank-timer')
@@ -10956,7 +10994,7 @@ function loop (t) {
     if (damageModel.popped.length) { damageModel.drainPops(); playTireBlowout(); padHit('blowout') }
     // FEAT-120: the contact one-shots read the same per-step peaks the damage step just priced.
     stepContactAudio(vehicleState, RANGER_PARAMS._tireFz, PHYSICS_DT)
-    stepPadRumble(vehicleState, RANGER_PARAMS, damageModel.flat)   // FEAT-247: slip, road texture, a flat, a bent wheel
+    stepPadRumble(vehicleState, RANGER_PARAMS, damageModel.flat, _looseSurfaceFactorAt(vehicleState.position.x, vehicleState.position.z), PHYSICS_DT)   // FEAT-247 / BUG-206: slip, a jolt, loose-surface texture, a flat, a bent wheel
     // FEAT-126: a shift forced with the clutch in grinds, and is a damage event in its own right. Its
     // 2 % wear is under the damage screen's per-sample drop threshold, so it raises the alert here,
     // like a landed impact does below.

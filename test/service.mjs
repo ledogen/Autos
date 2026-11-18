@@ -446,12 +446,12 @@ check('split needs a free slot', si >= 0 && !tight.split(si) && full.list()[si].
     const meal = new ServiceCenter({ ...svc, money: () => w, spend: ($) => { if ($ > w + 1e-9) return false; w -= $; return true }, eat: (x) => { fed += x } })
     stock(['dinnerMeal'])
     const slots = inventory.slotsUsed()
-    check('dinner meal: quote is its price and 30 min', meal.buyQuote(0).price === 5 && meal.buyQuote(0).hours === 0.5)
+    check('dinner meal: quote is its price and 30 min', meal.buyQuote(0).price === 4 && meal.buyQuote(0).hours === 0.5)
     check('dinner meal: cannot be stowed', !meal.buyToInventory(0) && inventory.slotsUsed() === slots)
     check('dinner meal: queued, nothing eaten or paid until checkout', meal.queue('buyAndEat', [0], 'eat') && fed === 0 && w === 100 && inventory.slotsUsed() === slots)
     check('dinner meal: a discard eats nothing', (meal.discard(), fed === 0 && w === 100))
     meal.queue('buyAndEat', [0], 'eat')
-    check('dinner meal: checkout pays $5, runs 30 min, holds hunger 8 h, stows nothing', meal.checkout() && w === 95 && fed === 8 && hours - h0 === 0.5 && inventory.slotsUsed() === slots)
+    check('dinner meal: checkout pays $4, runs 30 min, holds hunger 8 h, stows nothing', meal.checkout() && w === 96 && fed === 8 && hours - h0 === 0.5 && inventory.slotsUsed() === slots)
 }
 
 // FEAT-244: every level of the Maintenance tree wears the worst condition under it — a flat tire (0) reaches its
