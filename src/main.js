@@ -7701,9 +7701,12 @@ function _renderMissionUI () {
       hud.classList.toggle('mh-bad', !!beat)
       // FEAT-267: a demolition job's end is no goal — the HUD counts the site, the paper round's "N / M delivered".
       const site = m.mission?.targets ? _siteCount(m.mission) : null
-      hudText.textContent = beat ?? (site ? `${site.smashed} / ${site.of} smashed` : `${km(m.routeRemaining())} to go`)
+      // BUG-205 follow-up (owner 11-18): the whole job's road distance left in parentheses, when it is not the same number
+      // ("1.2 km (7.4 km)", his form: no "to go", which keeps the big-UI line clear of the wallet card).
+      const toGo = () => { const a = km(m.routeRemaining()), t = km(m.routeTotalRemaining()); return a === t ? `${a} to go` : `${a} (${t})` }
+      hudText.textContent = beat ?? (site ? `${site.smashed} / ${site.of} smashed` : toGo())
         + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
-          : `   · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
+          : ` · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
         + _dueSuffix()
       break
     }
@@ -8409,7 +8412,7 @@ function _updateJobDue () {
   }
   _jobDueText = Number.isFinite(h) ? formatGameDuration(h - daySystem.clockH()) : ''
 }
-const _dueSuffix = () => _jobDueText ? `   · due in ${_jobDueText}` : ''
+const _dueSuffix = () => _jobDueText ? ` · due in ${_jobDueText}` : ''
 function _updateRankTimer () {
   if (!_rtEls) {
     const root = document.getElementById('rank-timer')

@@ -442,6 +442,19 @@ const STEPS = [
     if (await js('window.__vs.parked')) await tap(' ')
     const c0 = await car(); await hold('w', 5); const c1 = await car(), off = Math.hypot(c1.x - c0.x, c1.z - c0.z)
     check(off > 10, `the truck did not drive off from Larry's: ${off.toFixed(1)} m in 5 s of throttle`)
+    // BUG-205 follow-up: READOUT_SHOT=1 shoots the top readout with its longest realistic multi-drop line (the format
+    // _renderMissionUI writes), the rank tile up, at both UI sizes, into wip/bugs-gfc/.
+    if (process.env.READOUT_SHOT) {
+      mkdirSync('wip/bugs-gfc', { recursive: true })
+      for (const size of ['small', 'big']) {
+        await js(`(() => { document.documentElement.dataset.uiScale = '${size}'; const h = document.getElementById('mission-hud'); h.style.display = 'block'
+          h.querySelector('.hud-text').textContent = '12.48 km (48.73 km) · stop 2 of 4: Hollis Feed and Seed · due in 6h 30m'
+          document.getElementById('rank-timer').style.display = 'block' })()`)
+        await frames(10, 300)
+        writeFileSync(`wip/bugs-gfc/readout-${size}.png`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+        console.log('  readout: ' + await js(`JSON.stringify(['mission-hud', 'rank-timer'].map(id => { const r = document.getElementById(id).getBoundingClientRect(); return [id, Math.round(r.left), Math.round(r.right), Math.round(r.top), Math.round(r.bottom), getComputedStyle(document.getElementById(id)).display] }))`))
+      }
+    }
   }],
   ['runlog', async () => {
     // FEAT-242 (DEC-358): the run logger, switched on mid-run by its dev handle. The download is intercepted (the anchor
