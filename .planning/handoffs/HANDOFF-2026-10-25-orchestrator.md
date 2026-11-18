@@ -149,10 +149,23 @@ Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale, play b
 tonight. I have a reset in the pocket." So the two-agent cap is OFF for tonight: one agent per free worktree, grouped by
 code area. A one-shot timer fires at 07:13 with the word "orchestrator" (session-only cron).
 
-**Main:** 53cabcb7, NOT pushed, GREEN: confirming smoke PASS 38 steps on exactly this tree
-(wip/orch/smoke-1117-campfire.log). Holds everything below plus BUG-179 (closed), FEAT-243 (closed), DEC-395, and
-campfire/camera round 2: ASSET-90 model, dead-fire smoke, cooking relights (DEC-397), camera vs tunnel walls. Card
-campfire-camera-r2-look: on his "Good" move FEAT-246 and FEAT-264 to completed/. Play build :8002 = 53cabcb7.
+**Main:** 4a441133 + docs, NOT pushed, GREEN (FEAT-266's branch smoke PASS 38 steps; main had only docs since its
+base). Holds everything below plus BUG-179, FEAT-243, DEC-395, campfire/camera r2 (DEC-397), FEAT-266 paper route =
+its planned houses (DEC-398, card feat266-paper-route-drive). FEAT-249 closed, nothing landed. Play build :8002 = 4a441133.
+**RUNNING 18:30 (four Opus agents; each lands only as stated):**
+- s, CarGame-land-gps, land/feat-267-demolition-deadline: FEAT-267 demolition on the papers' deadline + planner
+  (DEC-399 supersedes DEC-178). Lands when green; card feat267-demolition-drive.
+- u, CarGame-spare-base, land/feat-26-rockslides (:3886): FEAT-26 rock slides for the alpha (DEC-400). Does NOT land
+  without the owner's drive; card feat26-rockslides-drive.
+- p, CarGame-perf, land/feat-265-dead-zones: FEAT-265 investigation → options card feat265-dead-zones-pick. No build.
+- b, CarGame-machine, land/bug-200-hairpin-grade (on top of bug-201): BUG-200 → options card bug200-hairpin-grade-pick.
+**BUILT, WAITING ON THE OWNER'S LOOK:** BUG-201 land/bug-201-deg2-sliver @ 9cf85a9e (card bug201-bend-sliver-look) ·
+BUG-202 land/bug-202-bake-tiles @ 1943437b in CarGame-spare, vite :3885 (card bug202-bake-tiles-look; Ultra GPU A/B
+owed). Each lands via merge of main + gates + smoke.
+**Open owner questions:** generate 16 paper customers and keep the best 11? (today a region places exactly 11) ·
+demolition letter when the deadline hits with targets standing · DEC-028/DEC-340 bed toolbox vs DEC-372 · fire pit
+driven over dead centre · rim strike with negative wheel load (owner: no assumption for now).
+Next free: BUG-203, FEAT-268, DEC-401.
 **HOW LANDINGS WORK TONIGHT:** never merge finished branches into main one by one. An Opus integration agent in
 CarGame-land-gps merges them onto `land/integrate-1117<x>` (cut from main), fixes clashes, runs gates + pad-e2e + ONE full
 smoke there; main is then fast-forwarded (`git merge --ff-only`) and the play build refreshed
