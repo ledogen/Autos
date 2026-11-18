@@ -16,6 +16,16 @@ assert.equal(boomFreeFraction(pivot, pivot, flat), 1)
 assert.equal(boomFreeFraction({ x: 0, y: -5, z: 0 }, { x: 0, y: -5, z: 1 }, flat), 1, 'pivot under the heightfield (a tunnel): terrain not tested, boom free')
 assert(boomFreeFraction({ x: 0, y: -5, z: 0 }, { x: 0, y: -5, z: 10 }, flat, 4) < 0.4, 'pivot in a tunnel: the wall ray still stops it')
 
+// BUG-207: at a tunnel EXIT the truck is out, the camera still in the bore. The analytic surface without a query height is
+// the hill over the bore, so the boom used to bisect back to the portal face and snap the camera onto the truck. With the
+// boom point's own height (terrain.js analyticHeight's queryY: inside a bore, below its crown, the bore floor answers),
+// the camera in the bore is free. A hill face at x = 0 rising to 40 m over a bore along −x, crown 6 m over its floor.
+const hillBore = (x, z, y) => (x < 0 && Math.abs(z) < 5 && y !== undefined && y < 6 ? 0 : x < 0 ? 40 : 0)
+const exitPivot = { x: 2, y: 0.9, z: 0 }, exitCam = { x: -4, y: 3.4, z: 0 }
+assert.equal(boomFreeFraction(exitPivot, exitCam, hillBore), 1, 'tunnel exit: the camera still in the bore is free (BUG-207)')
+assert(boomFreeFraction(exitPivot, { x: -4, y: 8, z: 0 }, hillBore) < 1, 'tunnel exit: a camera up in the hill over the bore is still stopped')
+assert.equal(boomFreeFraction({ x: -6, y: 0.9, z: 0 }, { x: 0, y: 3.4, z: 0 }, hillBore), 1, 'tunnel entry from inside looking out: free')
+
 // The real probe against road colliders (main.js passes GROUP_STATIC | GROUP_ROAD). A bore along x: a flat deck
 // (up-facing, surface only, as RoadPhysics adds ribbons) and a half-tube lining of radius 5 about the deck's centre
 // line, both windings (RoadPhysics' shell rule). The analytic surface is the mountain 100 m above (pivot under it).

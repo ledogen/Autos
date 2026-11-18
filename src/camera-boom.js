@@ -5,10 +5,13 @@
  * Terrain: the boom is sampled at BOOM_STEPS points and the first one below groundAt(x,z)+clearance is bisected
  * back to the edge. Walls: `wallDist` is the caller's one ray cast (distance along the boom to the first solid, or
  * null); the camera stops `margin` short of it. Never returns more than 1 (never further than desired).
- * A pivot already below groundAt+clearance is UNDER the heightfield (a tunnel bore: the analytic surface is the
- * mountain above), so the terrain test is skipped there; collapsing to the pivot put the camera inside the truck.
- * In a bore the wall ray is then the only blocker, so it must see the ROAD group: the bore lining and portal ring are
- * road-tile colliders (terrain-physics.js RoadPhysics). The deck under the truck does not shorten an open-road boom:
+ * groundAt(x, z, y) gets each boom point's own height y (main.js: terrain analyticHeight's queryY): inside a tunnel
+ * bore, below its crown, that answers the bore floor, not the hill overhead. BUG-207: without it, at a tunnel EXIT
+ * (truck out, camera still in the bore) the boom bisected back to the portal face and snapped the camera onto the truck
+ * every time (wip/bugs-pcl/boom-trace.mjs: 6.3–6.5 m in one frame on every portal of seed 717319401).
+ * A pivot already below groundAt+clearance has no free ground to bisect from, so the terrain test is skipped there;
+ * collapsing to the pivot put the camera inside the truck. In a bore the wall ray is the blocker, so it must see the
+ * ROAD group: the bore lining and portal ring are road-tile colliders (terrain-physics.js RoadPhysics). The deck under the truck does not shorten an open-road boom:
  * deck triangles collide from their front (upper) face only and the ray starts at the pivot, above the deck, rising
  * toward a camera that sits above it. A deck the ray does meet (a sag behind the truck) is ground the camera would be under.
  */
@@ -22,7 +25,7 @@ export function boomFreeFraction (pivot, desired, groundAt, wallDist = null, cle
   if (len < 1e-6) return 1
   let t = 1
   if (wallDist !== null) t = Math.max(0, Math.min(1, (wallDist - margin) / len))
-  const blocked = u => pivot.y + dy * u < groundAt(pivot.x + dx * u, pivot.z + dz * u) + clearance
+  const blocked = u => { const y = pivot.y + dy * u; return y < groundAt(pivot.x + dx * u, pivot.z + dz * u, y) + clearance }
   if (blocked(0)) return t
   let lo = 0
   for (let i = 1; i <= BOOM_STEPS; i++) {
