@@ -11,8 +11,8 @@ relates: BUG-90, BUG-97, BUG-200, DEC-065, DEC-260, src/road.js
 # BUG-216: Two road spots bottom the suspension repeatedly on seed 660454599
 
 ## Next steps
-Diagnosis done (2026-11-18). Orchestrator: decide whether to build fix 1 (the bore corner, a plain defect, one line in
-`_v2GradePts` plus the gate); owner: answer owed card `bug216-bottoming-spots` on the junction class (spot B).
+Fix 1 built on `land/bug-216-bottoming-spots` (see § Fix 1 as built); the orchestrator lands it. Owner: card
+`bug216-bottoming-spots` on the junction class (spot B), still open.
 
 ## Summary
 Spot A, the one that ended the run, is a sharp station corner on a bore floor 10 m inside the portal: it bottoms a
@@ -92,6 +92,35 @@ Same class as A, milder: a 7.1 % corner at one sample, 3 m inside a bore, 3.1 %/
   Both are sharper than BUG-90's "unacceptable" dip 2 (0.074 /m).
 - So the bore corner is **the generator, not this seed**: about one per 28 km of road. His seed has more than its share.
 
+### Fix 1 as built (2026-11-18)
+- `_v2GradePts`: the corner rounding is unbounded everywhere (the near-bore ±0.25 m bound and `nearBore` deleted).
+- What BUG-90 kept the bound for, and how it still holds. BUG-90's ticket gives no reason beyond the code comment:
+  "it can never move the deck across a class boundary and invent or destroy a span".
+  - Spans and portals live on the solved stations (`prof.cls` / `prof.segs`, `extendBorePortals`). The rounding writes
+    only the 4 m samples, so it cannot move them. Checked: topology is identical on the six fingerprint windows and the
+    12 seeds (run keys, cells, point XZ, `tunnelSpans`, junction XZ / legs / kind, node heights).
+  - Grade: a [¼ ½ ¼] pass keeps every grade a convex mix of its neighbours, so no grade passes the steepest one in its
+    ~2-station window. Bore max grade per seed is unchanged on 11 of 12 seeds; 633285842 14.6 → 16.0 % (the open
+    approach mixes in at a portal; under gMaxBore 18 %).
+  - The tube, lining, collider, containment test and portal cut all read the deck (`runProfile`), so they move with
+    it: MESH == PHYSICS by construction. Headroom (deck to crown) is the bore radius by construction.
+  - Rock over the crown, 12 seeds / 167 bores: min mid-bore 17.08 → 17.08 m; within 20 m of a portal 5.73 → 5.73 m.
+  - Deck moved ≤ 0.454 m, only within 22 m of a bore span (≈ the old ±2-station zone).
+- `vertical-curvature.mjs` now reads the bore DECK (`analyticHeight` with a query height of grade + 1 m) instead of
+  skipping bores, in a new `bore` zone: line 0.04 /m (4 %/m over one wheelbase: +1 g at 15.7 m/s), ceiling 1.
+  - Gate windows: 10 bore kinks, sharpest 0.097 /m before → 1 (0.032 /m) after. Main fails the new zone; the branch passes.
+  - 12 random seeds + 660454599 (`--seeds=`, report only): 11 → 0, sharpest 0.062 /m → none (spot A 0.054).
+  - Open-road ceiling 19 → 18 (seed 6's BUG-81 portal crest rounds away). Junction unchanged (201).
+- Spot A, new truck at 63 km/h: FL 21.0 kN → no bump stop. Worn springs: 30.9 → 3.6 kN (under the floor, no event).
+- Fingerprint vs main: network, profiles, surface, carve and tiles hashes change on seed 6 / 11 story, seed 6 ponds,
+  seed 6 fork and seed 7. All are deck-y only (topology identical, above). Also seed 11's junctions hash (pad data
+  derived from the leg decks near one node) and seed 6 fork's props (scatter on the moved carve). Seed 3 identical.
+- `tutorial-seed`: green, output byte-identical to main, no constant edited.
+- `drive-soak.mjs` freshState now carries the damage model's per-step inputs (`bumpForce` and four more).
+- Side finding, not this ticket: `--seeds` shows a 1.167 /m junction sag at seed 1380228728 (−62.9, −10.3), track 0
+  (a step at 2.9 m/s). The gate windows do not hold it.
+- Sheets: `wip/bug-216/profiles-after.png` (spot A and the two sharpest census sags, before | after).
+
 ### Fixes, simplest first
 1. **Bore corner (A, C): a plain defect with a small fix.**
    - In `_v2GradePts`, drop the near-bore ±0.25 m bound, so every station corner gets the same rounding (one line).
@@ -115,7 +144,8 @@ Same class as A, milder: a 7.1 % corner at one sample, 3 m inside a bore, 3.1 %/
 - [x] If a defect: cause named, census on random seeds (12 seeds / 165 km, per the orchestrator's brief, not 30)
 - [x] BUG-200 option E re-measured: fixes neither spot (B's foot gets sharper)
 - [ ] Owner: the junction class (card `bug216-bottoming-spots`)
-- [ ] Fix 1 built (orchestrator's call), with vertical-curvature covering bores
+- [x] Fix 1 built, with vertical-curvature covering bores (line 0.04 /m)
+- [ ] Affected gates serial + smoke + pad-e2e green, landed
 
 ## Decisions
 
@@ -141,3 +171,5 @@ src/road.js (`_v2GradePts`, the near-bore BOUND), test/vertical-curvature.mjs, L
 - 2026-11-18 diagnosis (no road change): A = bore corner under BUG-90's near-bore bound (defect, fix 1); B = junction
   recovery sag (BUG-97 class, owner call); E fixes neither. Census 12 seeds / 165 km. Harness note: drive-soak's
   `freshState` has no `bumpForce`, so its soak never sees spring wear.
+- 2026-11-18 fix 1 built (4df08e26, 7b54cb8b, ff64bd61; drive-soak 98df2bfc). road-tunnel, bore-junction-clearance,
+  vertical-curvature and tutorial-seed are green. Structural diff: topology identical. Affected serial run: see below.
