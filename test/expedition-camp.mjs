@@ -345,7 +345,8 @@ if (SEEDS === PINNED) for (const w of MUST_BUILD) {
     const ms = new MissionSystem({ getRoad: () => road, getRegion: () => ({ x: C.x, z: C.z, r: REGION_RADIUS_M, nodes }) })
     const L = camp && requisitionTotal(seed, list, camp, (q, o) => ms.planOffer(q, o))
     console.log(`\nBUG-225 must-build ${w.s} at (${C.x.toFixed(0)}, ${C.z.toFixed(0)}), ${nodes ? 'main piece' : 'no piece filter'}: ${camp?.id ?? 'no camp'}, ${L == null ? '—' : (L / 1000).toFixed(1) + ' km'}`)
-    check('PoiSystem.build does not throw, and sites a camp whose every line plans', !err && !!camp && L > 0, String(err?.stack ?? err))
+    // With no piece filter a source may stand on a stranded piece (BUG-85), so only the main-piece build owes every line.
+    check(`PoiSystem.build does not throw, and sites a camp${nodes ? ' whose every line plans' : ''}`, !err && !!camp && (!nodes || L > 0), String(err?.stack ?? err))
 }
 // expedition-rewards option 2: every line hands a supply back, and every supply item is real.
 check('every requisition line has a supply, and every supply item is an item',
