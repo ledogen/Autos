@@ -27,9 +27,12 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { buildWorld } from './lib/world-rig.mjs'
 import { ackermann } from './lib/physics-replay.mjs'
 import { makeRoute, createAutopilot } from '../src/autopilot.js'
+import { makeClutchAssist, stepClutchAssist } from '../src/clutch-assist.js'
+import { fitTransmission } from '../src/drivetrain.js'
 
 const arg = (k, d) => { const a = process.argv.find(s => s.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d }
 const GATE = process.argv.includes('--gate')
+const BOX = arg('box', null)   // --box=m5odr1: the manual (data/transmissions.js), driven through the clutch assistant as vehicle.js does
 const DT = 1 / 60, SLEW = 4.8   // rad/s — PAD_PARAMS.steerSlewRate
 // The gate's stretch: seed 7301 [DEFAULT], a 600 m drive from the network edge nearest the origin (gentle: < 6 % there).
 const KM = GATE ? 0.6 : +arg('km', 5), RADIUS = GATE ? 800 : +arg('radius', 1500), OUT = arg('out', GATE ? null : 'wip/feat-293/soak.jsonl')
@@ -63,6 +66,7 @@ async function soakSeed (seed) {
   const buildS = (performance.now() - t0) / 1000
   const damage = new DamageModel({ params: P }); damage.setAll(1); damage.publish(P)
   const keep = (x, z) => Math.hypot(x, z) < RADIUS - 150
+  const clutch = makeClutchAssist()
   const route = makeRoute(() => w.road._network.values(), rng, { x: 0, z: 0 }, { keep })
   const inBore = (x, z) => { const nr = w.road.queryNearest(x, z, 15); return !!nr && !!w.road.tunnelSpanAt?.(nr.runKey ?? '', nr.arcS ?? 0, -20) }
   const ap = createAutopilot({ car: P, route, inBore, flat: () => damage.flat.some(Boolean) })
@@ -71,12 +75,13 @@ async function soakSeed (seed) {
     const top = w.road.sampleRoadTopY(a.x, a.z) ?? w.terr.analyticHeight(a.x, a.z)
     const f = freshState(P, a.x, top + 1.0, a.z, Math.atan2(-(b.x - a.x), -(b.z - a.z)))
     for (const k in f) if (vs[k]?.isVector3 || vs[k]?.isQuaternion) vs[k].copy(f[k]); else vs[k] = f[k]   // the rig holds the vectors
+    if (BOX) fitTransmission(P, vs, BOX)
     w.stream(a.x, a.z)
     ap.locate(a)
   }
   seat(0)
   const rec = { seed, km: 0, buildS: +buildS.toFixed(1), bandKm: [0, 0, 0, 0], bandInt: [0, 0, 0, 0], interventions: [], manoeuvres: {}, junctions: 0,
-    topV: 0, vSum: 0, vTSum: 0, n: 0, lat: [], offDeckS: 0, stepUs: [], tireWear: 0, yErr: [] }
+    missShift: 0, stalls: 0, topV: 0, vSum: 0, vTSum: 0, n: 0, lat: [], offDeckS: 0, stepUs: [], tireWear: 0, yErr: [] }
   let t = 0, lastStream = 0, settle = 1.5, prevState = 'drive'
   const simCap = KM * 1000 / 3 + 120
   const halfW = P.roadHalfWidth ?? 5
@@ -103,6 +108,10 @@ async function soakSeed (seed) {
     const lim = P.maxSteerAngle / (1 + v / P.speedSteerRef)
     vs.steerAngle = Math.max(-lim, Math.min(lim, vs.steerAngle + Math.max(-SLEW * DT, Math.min(SLEW * DT, c.steer - vs.steerAngle))))
     vs.wheelSteerAngles = ackermann(vs.steerAngle, P)
+    if (P.transmissionType === 'manual') {
+      const o = stepClutchAssist(clutch, { pedal: c.clutch, shift: c.shift, throttle: c.throttle }, { rpm: vs.drivetrain.engineRPM ?? 0, shifting: !!vs.drivetrain.shifting }, P, DT)
+      vs.clutch = o.clutch; if (o.shiftRequest) vs.shiftRequest = o.shiftRequest
+    }
     const pos = vs.position, vel = vs.velocity
     const f = w.props.bushDragForce(pos.x, pos.y, pos.z, vel.x, vel.y, vel.z, { x: 0, y: 0, z: 0 })
     if (f.x || f.y || f.z) { const k = DT / P.mass; vel.x += f.x * k; vel.y += f.y * k; vel.z += f.z * k }
@@ -111,6 +120,8 @@ async function soakSeed (seed) {
     damage.step(vs, P, DT)
     damage.feedContact(classifyImpactRegion(hit.point, hit.normal), hit.impulse, P.mass, DT, vs.velocity)
     t += DT; settle -= DT
+    if (vs.drivetrain.missShift) rec.missShift++
+    if (vs.drivetrain.stalled) rec.stalls++
     if (!Number.isFinite(vs.position.x + vs.position.y + vs.position.z)) { rec.interventions.push({ why: 'nan', at: null, t }); ap.resume(40); seat(ap.idx); continue }
     if (t - lastStream > 1) { w.stream(vs.position.x, vs.position.z); lastStream = t }
     // book-keeping
@@ -134,7 +145,7 @@ for (const seed of seeds) {
   const r = await soakSeed(seed)
   const lat = r.lat, us = r.stepUs
   const line = { seed, km: r.km, simS: r.simS, buildS: r.buildS, junctions: r.junctions, bandKm: r.bandKm.map(x => +x.toFixed(2)), bandInt: r.bandInt,
-    interventions: r.interventions, manoeuvres: r.manoeuvres, topV: +r.topV.toFixed(1), meanV: +(r.vSum / Math.max(1, r.n)).toFixed(1), meanPlan: +(r.vTSum / Math.max(1, r.n)).toFixed(1),
+    interventions: r.interventions, manoeuvres: r.manoeuvres, missShift: r.missShift, stalls: r.stalls, topV: +r.topV.toFixed(1), meanV: +(r.vSum / Math.max(1, r.n)).toFixed(1), meanPlan: +(r.vTSum / Math.max(1, r.n)).toFixed(1),
     lat: { med: +pct(lat, 0.5).toFixed(2), p99: +pct(lat, 0.99).toFixed(2), worst: +Math.max(0, ...lat).toFixed(2) }, offDeckS: +r.offDeckS.toFixed(1),
     tireWearPctPerKm: r.tireWear, stepUs: { med: +pct(us, 0.5).toFixed(1), p99: +pct(us, 0.99).toFixed(1), worst: +Math.max(...us).toFixed(0) },
     pathYErr: +pct(r.yErr, 0.5).toFixed(2) }
