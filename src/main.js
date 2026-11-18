@@ -91,6 +91,7 @@ import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, ba
 import { InventorySystem, runInventory, entryKg, startingPack } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
 import { ITEMS, foodHoldH } from '../data/items.js'
+import { FAMILY_COLOR, EMPTY_DIAMOND_COLOR } from '../data/map-icons.js'   // FEAT-274: the offer card's job-type diamond
 import { PartsSystem, runParts, modModels } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
@@ -110,7 +111,7 @@ import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'   // FEAT-184: the tut
 import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, planGuideJob, stepJob, tourLeg } from './paper-route.js'
+         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, planGuideJob, stepJob, tourLeg, accuracyTier } from './paper-route.js'
 import { AlertCycle, wordAction, stepOf, wearLevel, engineLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
@@ -3820,6 +3821,7 @@ const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isBlocked: () => damageScreen.blocked || serviceCenter.cart.length > 0,   // FEAT-212: nothing used or dropped behind a cart a discard puts back
   actions: _partActions,
   ground: { list: _groundNearby, pick: _pickUpGround },   // FEAT-143: "Nearby on the ground"
+  eatPreview: _previewEat,
 })
 _menu('inventory', () => inventoryScreen.isOpen, () => inventoryScreen.close())
 window.__inv = inventorySystem   // dev handle — test/cdp-smoke.mjs grants the spare and the plug kit
@@ -4279,8 +4281,9 @@ function _scoreLanding (hit) {
       // read-out quotes the money it just earned rather than a percentage the player has to convert
       // in their head. `scored.pay` is banked money — the fare is not in it, because that depends
       // on when you finish and the route can still take it back.
-      _showThrowReadout(`<span style="color:var(--money)">${scored.dist.toFixed(2)} m`
-        + ` &nbsp;·&nbsp; +$${formatMoney(scored.pay)}</span>`)
+      // FEAT-282: the word and its colour, then the dollars: "great accuracy - $0.12", "bullseye - $0.12".
+      const t = accuracyTier(scored.q, scored.dist)
+      _showThrowReadout(`<span style="color:${t.color}">${t.word}${t.word === 'bullseye' ? '' : ' accuracy'} - $${formatMoney(scored.pay)}</span>`)
     } else if (scored.already) {
       // Not a failure — a paper spent. Saying so is the difference between "that did nothing" and
       // "you already did this one", and only one of those tells you to drive on.
@@ -5446,19 +5449,17 @@ const _boardView = {
   status (poiId) {
     const now = daySystem.clockH()
     // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
-    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, families: [], nextText: null }
+    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, families: [] }
     // Per frame per diamond, so this must not PLAN: it drops only offers already known to have no
     // route (planDistinct memoises null on the offer). The hover card and the prompt do the full
     // _takeableOffers check, so a dead offer greys its diamond the first time it is looked at.
     const live = _jointQuiet(poiId, now) ? [] : offerBoard.offers(poiId, now).filter(o => o.route !== null)
-    const next = offerBoard.nextTurnoverH(poiId, now)
     // FEAT-210: every family on offer, once each, in offer order — the map splits the diamond by them.
     const families = [...new Set(live.map(o => offerBoard.spec(o)?.family).filter(Boolean))]
     return {
       source: true,
       family: families[0] ?? null,
       families,
-      nextText: next != null ? formatGameDuration(next - now) : null,
     }
   },
   view (poiId, idx) {
@@ -7303,6 +7304,7 @@ function _renderCampUI () {
     } else {
       body.innerHTML = 'camp is made.<br>'
         + `<span class="cp-dim">vibe ${(vibe * 100) | 0}%</span>`
+        + (st.note ? `<br><span class="cp-warn">${st.note}</span>` : '')   // BUG-209: why a cook was refused
     }
   }
 
@@ -7371,6 +7373,9 @@ for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked'
     if (!_campUi || _campBusy || _campUi.mode !== 'camp' || (needsKit && !_kitAtCamp())) return
     // DEC-397 (owner): "if you cook at a dead fire the fire is instantly relit". The only thing that relights it.
     if (_campUi.fireOut) { campfire.setDead(false); _campUi = { ..._campUi, fireOut: false } }
+    // BUG-209: no room for the result refuses up front, before the fade and the 30 minutes.
+    if (!inventorySystem.canConvert(raw, cooked)) { _campUi = { ..._campUi, note: 'inventory full' }; _renderCampUI(); return }
+    _campUi = { ..._campUi, note: null }
     _campFade(() => { if (inventorySystem.convert(raw, cooked)) daySystem.advanceMinutes(30); _renderCampUI() })
   })
 }
@@ -7387,10 +7392,14 @@ document.getElementById('mp-count')?.addEventListener('input', () => _renderMiss
  * the alpha shows no bracketed stub (FEAT-148); the portrait slot stays.
  * `flavorHtml` is trusted markup (authored constants or the escaped card flavor), never player input.
  */
-function _panelHead (flavorHtml) {
+function _panelHead (flavorHtml, family = null, badge = null) {
+  // FEAT-274: the job type's map diamond (family colour, its letters inside) tucked behind the portrait's top-left corner.
+  const diamond = family ? `<svg class="mp-diamond" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 1L39 20L20 39L1 20Z" fill="${FAMILY_COLOR[family] ?? EMPTY_DIAMOND_COLOR}" stroke="rgba(0,0,0,0.85)" stroke-width="1.5"/>`
+    + (badge ? `<text x="20" y="21" text-anchor="middle" dominant-baseline="middle">${badge}</text>` : '') + '</svg>' : ''
   return '<div class="mp-head">'
+    + `<div class="mp-pwrap">${diamond}`
     + '<div class="mp-portrait" title="portrait (placeholder)"><svg viewBox="0 0 36 36" aria-hidden="true">'
-    + '<circle cx="18" cy="13.7" r="7.2"/><path d="M5 36 Q5.8 23 18 23 Q30.2 23 31 36 Z"/></svg></div>'
+    + '<circle cx="18" cy="13.7" r="7.2"/><path d="M5 36 Q5.8 23 18 23 Q30.2 23 31 36 Z"/></svg></div></div>'
     + (flavorHtml ? `<div class="mp-flavor">${flavorHtml}</div>` : '')
     + '</div>'
 }
@@ -7601,9 +7610,8 @@ function _renderMissionUI () {
         : null
       const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
       body.innerHTML = (card
-        ? _panelHead(card.flavor != null ? `&ldquo;${esc(card.flavor)}&rdquo;` : null)
+        ? _panelHead(card.flavor != null ? `&ldquo;${esc(card.flavor)}&rdquo;` : null, card.family, card.badge)
           + (m.offers.length > 1 ? `<span class="mp-dim">offer ${m.offerIdx + 1} / ${m.offers.length}</span><br>` : '')
-          + (card.badge ? `<span class="job-badge">${esc(card.badge)}</span>` : '')   // placeholder type badge
           + card.sentence.map(r => r.b ? `<b>${esc(r.t)}</b>` : esc(r.t)).join('') + '<br>'
           + (card.pay ? `<span class="mp-pay">${esc(card.pay)}</span><br>` : '')   // its own line (owner, 2026-10-24: the haul trade line wrapped the terms)
           + `<span class="mp-dim">${[...card.terms, ...card.times].map(esc).join(' &middot; ')}</span><br>`
@@ -7838,7 +7846,7 @@ function _renderPaperUI () {
       // window from accept, beside the board expiry.
       // FEAT-67: Larry's portrait and his line head the panel, like every giver's. His line was
       // already written (the spare-papers aside), so it moves up into the dialogue slot.
-      body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;')
+      body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;', 'papers', 'P')
         + `<span class="mp-big">${r.customers.length}</span> `
         + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'} &mdash; any of them, the GPS shows the shortest</span> `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span><br>`
@@ -8146,6 +8154,18 @@ function _updateEnergyMeter () {
     const hx = Math.round((EM_VIEW_W / 2 - (top - left) * EM_PX_PER_H) * dpr) / dpr
     if (hx !== _hmX) { _hmX = hx; _emEls.hStrip.style.transform = `translateX(${hx}px)` }
   }
+}
+/** FEAT-283: hovering "eat" paints the hunger the meal recovers on the hunger bar — a green box from the pointer to the
+ *  post-meal level (DaySystem.eat never shortens a hold; clamped at the bar's full end). `id` null clears it. */
+function _previewEat (id) {
+  const box = document.getElementById('hm-preview'), it = id && ITEMS[id]
+  if (!box) return
+  if (!it || it.kind !== 'food' || it.hold == null) { box.style.display = 'none'; return }
+  const left = daySystem.fedLeftH(), top = _hmTopH()
+  const dh = Math.min(top, Math.max(left, foodHoldH(id, _kitAtCamp()))) - Math.min(top, left)
+  box.style.display = dh > 0 ? 'block' : 'none'
+  box.style.width = `${dh * EM_PX_PER_H}px`
+  box.style.left = `${EM_VIEW_W / 2 - dh * EM_PX_PER_H}px`
 }
 let _hmWord, _emX, _hmX   // the strips' last written translateX (PERF-48)
 /** The hunger strip's full end: the longest hold any meal gives (meals never stack past it — DaySystem.eat). */
@@ -9218,9 +9238,10 @@ function _syncPauseSave (live = storySystem.isActive() && !storySystem.isEnterin
   saveBtn.disabled = !!why
   const whyEl = document.getElementById('pm-save-why')
   if (whyEl.textContent !== (why ?? '')) whyEl.textContent = why ?? ''
-  // One way out (owner, 2026-10-30): save & exit replaces "main menu" while it can save.
+  // FEAT-270 / DEC-411 (owner, 2026-11-17): a story run has no "main menu" button at all. The way out is save & exit,
+  // which needs the truck parked; a moving truck leaves by "give up" (pm-towel, FEAT-146). Free roam keeps main menu.
   const menuBtn = document.getElementById('pm-menu')
-  if (menuBtn) menuBtn.style.display = live && !why ? 'none' : ''
+  if (menuBtn) menuBtn.style.display = live ? 'none' : ''
   // The ways out of a run to free roam / the lab are dev features (owner, 2026-10-30): in story mode they
   // show only while the debug panel is open (backtick), and follow the toggle live. Free roam keeps them.
   const dev = _gui.domElement.style.display !== 'none'

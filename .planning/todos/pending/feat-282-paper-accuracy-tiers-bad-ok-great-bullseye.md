@@ -24,9 +24,9 @@ Owner's words, verbatim (inbox 20261118054206-85qa):
 > We should break the accuracies up into bad, ok, great, or bullseye. Blue for bullseye, green for great, yellow for ok, red for bad. Bullseye is within half a meter from the center. For bullseye, instead of it reading "bullseye accuracy," it should just say "bullseye - $x.xx"
 
 ## Tracker
-- [ ] Four tiers: bad (red), ok (yellow), great (green), bullseye (blue)
-- [ ] Bullseye is within 0.5 m of the centre
-- [ ] The line reads "good accuracy - $x.xx" style for the first three and "bullseye - $x.xx" for the top tier
+- [x] Four tiers: bad (red), ok (yellow), great (green), bullseye (blue)
+- [x] Bullseye is within 0.5 m of the centre
+- [x] The line reads "good accuracy - $x.xx" style for the first three and "bullseye - $x.xx" for the top tier
 
 ## Decisions
 
@@ -41,3 +41,4 @@ src/paper-route.js · the result line in src/main.js
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118054206-85qa).
+- 2026-11-17 ui-1117b: accuracyTier() in paper-route.js: bullseye <= 0.5 m (blue), great q >= 0.75 (green), ok q >= 0.5 (yellow), bad rest (red); gate paper-route extended. Look pending.

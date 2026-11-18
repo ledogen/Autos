@@ -23,9 +23,9 @@ Owner's words, verbatim (inbox 20261118011206-xuk1):
 > Can I get the colored diamond with letters in it associated with the mission type to show on the POI's offer in person? Tuck it behind the profile picture like you do in the map view.
 
 ## Tracker
-- [ ] The in-person offer shows the mission type's coloured diamond with its letter
-- [ ] It sits behind the profile picture, as on the map
-- [ ] Same colours and letters as the map (data/map-icons.js)
+- [x] The in-person offer shows the mission type's coloured diamond with its letter
+- [x] It sits behind the profile picture, as on the map
+- [x] Same colours and letters as the map (data/map-icons.js)
 
 ## Decisions
 
@@ -39,3 +39,4 @@ the offer card (src/main.js, index.html) · data/map-icons.js
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118011206-xuk1).
+- 2026-11-17 ui-1117b: the offer panel head carries the family diamond (FAMILY_COLOR) with its letter behind the portrait; Larry gets a plain white diamond until FEAT-273 gives papers a letter. Look pending.

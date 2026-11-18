@@ -168,6 +168,24 @@ export function stockForTier (tier = runPaper.tier) {
 }
 
 /**
+ * FEAT-282 (DEC-416, owner 2026-11-17): the per-throw read-out's accuracy word. The owner fixed only the bullseye
+ * (within half a metre of the centre); great / ok / bad are cut on the pay a throw earns, q (throw.js accuracyScore,
+ * linear 1.0 at the centre to 0.30 at the 3 m rim): great pays at least 3/4 of a paper (inside ~1.07 m), ok at least
+ * a half (inside ~2.14 m), bad is the rest [DEFAULT]. `color` is a UI-STYLE token: blue, green, yellow, red.
+ * A per-throw read-out, not a result card, so DEC-118's no-letter rule does not apply.
+ */
+export const BULLSEYE_M = 0.5
+export const ACCURACY_TIERS = [
+    { word: 'great', minQ: 0.75, color: 'var(--money)' },
+    { word: 'ok',    minQ: 0.5,  color: 'var(--key)' },
+    { word: 'bad',   minQ: 0,    color: 'var(--bad)' },
+]
+export function accuracyTier (q, dist) {
+    if (dist <= BULLSEYE_M) return { word: 'bullseye', color: 'var(--accent-story)' }
+    return ACCURACY_TIERS.find(t => q >= t.minQ)
+}
+
+/**
  * What ONE paper is worth at full accuracy — the per-delivery flat rate.
  *
  * Extracted from scoreRoute rather than duplicated, because the HUD now quotes it to the player the

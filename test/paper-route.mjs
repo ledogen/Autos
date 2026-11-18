@@ -20,7 +20,7 @@
 import { accuracyScore, ACC_FLOOR } from '../src/throw.js'
 import {
     PAPER_PARAMS, runPaper, resetPaperRun, customersForTier, stockForTier,
-    scoreRoute, advancesTier,
+    scoreRoute, advancesTier, accuracyTier,
 } from '../src/paper-route.js'
 import { EconomySystem, runEconomy, ECONOMY_PARAMS, pointsFor, payoutFor, splitPayout, basePay } from '../src/economy.js'
 import { DEADLINE_SLACK } from '../data/offers.js'
@@ -238,6 +238,11 @@ check('spares interpolate 100% → 30% down the ladder', (() => {
     return s[0] === 4 && s[3] === Math.ceil(customersForTier(3) * PAPER_PARAMS.sparesFrac[3]) && s.every((v, i) => v >= 0)
         && (s[0] / 4) === 1.0 && PAPER_PARAMS.sparesFrac[3] === 0.30
 })(), JSON.stringify([0, 1, 2, 3].map(t => `${customersForTier(t)}+${stockForTier(t) - customersForTier(t)}`)))
+check('FEAT-282: accuracy words — bullseye within 0.5 m, then great / ok / bad by pay share (3/4, 1/2)', (() => {
+    const w = (d) => accuracyTier(accuracyScore(d, R), d).word
+    return w(0) === 'bullseye' && w(0.5) === 'bullseye' && w(0.51) === 'great' && w(1.06) === 'great' && w(1.1) === 'ok'
+        && w(2.1) === 'ok' && w(2.2) === 'bad' && w(R) === 'bad'
+})())
 check('no paper-route deadline dial — the deadline is the board\'s one rule (FEAT-141)', PAPER_PARAMS.tolerance === undefined)
 
 console.log('\n── 5. nothing degenerate reaches the wallet ───────────────────')
