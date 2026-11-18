@@ -11,7 +11,7 @@ lane: engine & world
 # BUG-224: Drive about 150 m, visit the lab, start a story run: the truck's state goes NaN at mom's seat
 
 ## Next steps
-Build the fix (below, Decisions), rerun `SMOKE_STEPS=boot,teleport,autoDrive,lab,story,camp tools/chrome-slot.sh node test/cdp-smoke.mjs`, then fingerprint, affected gates, full smoke x2, pad-e2e. wip/bug-224/diag2.log (if finished) names the engine state the launch leaves behind.
+Fix built (Decisions, Log). The orchestrator lands `land/bug-224-nan-seat` after its main smoke.
 
 ## Summary
 The truck's state becomes NaN (not-a-number, the result of an undefined calculation): strut compression reads about 3e5 m, then the velocity from the engine is NaN. Parking at mom's then opens no camp panel.
@@ -22,7 +22,8 @@ Found while chasing a smoke failure on the driving-AI branch. It is not the AI: 
 ## Tracker
 - [x] Reproduced without the smoke's re-seat (wip/bug-224/diag1.log)
 - [x] Cause found (the lab exit's seat waits on a network build while the sim steps the truck at the lab pose)
-- [ ] Fix and a gate
+- [x] What survived the launch named (diag3: params._bodyOther torque NaN, not the engine world)
+- [x] Fix and a gate (`step-carry-reset`), physics fingerprint identical
 
 ## Decisions
 - Cause (diag1, 2026-11-18): exitLab swaps the world back at once, but its seat (`_reseatTruckAtSpawn`, override = the
@@ -33,6 +34,15 @@ Found while chasing a smoke failure on the driving-AI branch. It is not the AI: 
 - Fix planned: hold the sim while any seat is in flight (a pending-seat counter in `_reseatTruckAtSpawn`, read by
   `_heldPause`), so no caller can step a pose against a world that does not match it; plus one finite guard at
   physics.js Step 3e (engine read-back: keep the last finite pose, zero the motion, console.error once).
+
+- Survivor (diag2/diag3, 2026-11-18): NOT the engine world (every body finite after the lab and before camp). It is
+  `params._bodyOther`'s torque: NaN after the launch, and self-feeding (the in-step body copy's mounts go NaN, its
+  torque reads NaN·0) while the parked truck looked fine; mom's seat woke it. makeVehicleState renews vehicleState only.
+- Built: (1) `_seatsPending` counts every `_reseatTruckAtSpawn` (all callers go through it) and `_heldPause` holds
+  the sim while it is above 0, decremented in a `finally`; buildNow never rejects (a failed/stale build resolves
+  false, the seat lands on the analytic terrain). (2) `resetStepCarry(params)` (physics.js) clears `_bodyOther` and
+  `_rockGripUp` at both seats (`_reseatTruckAtSpawnInner`, `_reseatOnRegionGround`). (3) Step 3e reads the engine
+  into scratch; non-finite → keep the step-start pose, zero motion, one console.error.
 
 ## Open questions
 
