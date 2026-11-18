@@ -863,13 +863,18 @@ const STEPS = [
     await js(`window.__inv.grant('potato', 1)`)   // for the relight below (DEC-397)
     if (await js('document.getElementById("resume-card").style.display === "flex"')) await tap('F8')   // a resumed run opens frozen (FEAT-42); any key but a bare modifier lifts it
     const shown = (id) => js(`(b => b && getComputedStyle(b).display !== "none")(document.getElementById("${id}"))`)
-    check(await until(() => shown('cp-sleep'), 3000), 'the camp card offers no sleep')
-    await js('document.getElementById("cp-sleep").click()')
-    await js('document.getElementById("cp-hours").value = "8"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
-    const h0 = await js('window.__day().clockH()')
-    await js('document.getElementById("cp-sleep-go").click()')
-    check(await until(async () => (await js('window.__day().clockH()')) > h0 + 2.5, 8000), 'the 8 h camp sleep did not run')
-    check(await until(async () => (await fire())?.dead === true && !(await fire()).live, 8000), `after an 8 h camp sleep the fire is not the dead model: ${JSON.stringify(await fire())}`)
+    const sleepOut = async () => {
+      check(await until(() => shown('cp-sleep'), 3000), 'the camp card offers no sleep')
+      await js('document.getElementById("cp-sleep").click()')
+      await js('document.getElementById("cp-hours").value = "8"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
+      const h0 = await js('window.__day().clockH()')
+      await js('document.getElementById("cp-sleep-go").click()')
+      check(await until(async () => (await js('window.__day().clockH()')) > h0 + 2.5, 8000), 'the 8 h camp sleep did not run')
+      check(await until(async () => (await fire())?.dead === true && !(await fire()).live, 8000), `after an 8 h camp sleep the fire is not the dead model: ${JSON.stringify(await fire())}`)
+    }
+    const fadeOver = async () => { await until(async () => !(await js('document.getElementById("camp-fade").classList.contains("on") || document.getElementById("midnight-card").classList.contains("on")')), 8000); await sleep(300) }   // the card ignores clicks until then
+    check(!(await shown('cp-light')), 'FEAT-286: a light-the-fire button at a burning fire')
+    await sleepOut()
     // DEC-397: the dead fire smokes — puffs of the shared smoke pool alive within 3 m of it, rising above the heap.
     const puffs = () => js(`(() => { const p = new window.__vs.position.constructor(); window.sky.scene.getObjectByName('campfire').getWorldPosition(p)
       let n = 0, top = -1e9; window.sky.scene.traverse(o => { const a = o.geometry?.attributes?.aPos; if (!a) return
@@ -885,9 +890,18 @@ const STEPS = [
       await toHour(13); await until(() => js('!document.getElementById("midnight-card").classList.contains("on")'), 8000)
       await tap('c', { shift: true })   // back to the camp camera so the card's buttons are live
     }
+    // FEAT-286: the light-the-fire button shows at the dead fire, relights it at once (no clock), and goes.
+    check(await until(() => shown('cp-light'), 3000), 'FEAT-286: no light-the-fire button at the dead fire')
+    await fadeOver()
+    const hL = await js('window.__day().clockH()')
+    await js('document.getElementById("cp-light").click()')
+    check(await until(async () => (await fire())?.live === true && !(await fire()).dead, 2000), `FEAT-286: the light button did not relight the fire: ${JSON.stringify(await fire())}`)
+    check(await until(async () => !(await shown('cp-light')), 2000), 'FEAT-286: the light button stayed on a lit fire')
+    check(Math.abs((await js('window.__day().clockH()')) - hL) < 0.05, 'FEAT-286: lighting the fire passed time')
+    await sleepOut()   // dead again, for the cook's relight
     // DEC-397: the cook buttons show at the dead fire, and a cook relights it at once.
     check(await until(() => shown('cp-cook'), 3000), 'no cook button at the dead fire with a raw potato aboard')
-    await until(async () => !(await js('document.getElementById("camp-fade").classList.contains("on") || document.getElementById("midnight-card").classList.contains("on")')), 8000); await sleep(300)   // the night's fade is over (the card ignores clicks until then)
+    await fadeOver()
     await js('document.getElementById("cp-cook").click()')
     check(await until(async () => (await fire())?.live === true && !(await fire()).dead, 2000), `cooking at the dead fire did not relight it: ${JSON.stringify(await fire())}`)
     await until(async () => !(await js('document.getElementById("camp-fade").classList.contains("on")')), 5000)

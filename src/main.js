@@ -7249,6 +7249,7 @@ function _renderCampUI () {
   show('cp-sleep',  isHome && !noBed)
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
   show('cp-item',   isHome)   // FEAT-245: mom's too (eat and use things at her table); isHome = camp, truck, mom's
+  show('cp-light',  st.mode === 'camp' && !!st.fireOut)   // FEAT-286: woken at a dead fire (DEC-393), relight it (DEC-397's path)
   show('cp-cook',   st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230; at a dead fire too: cooking relights it (DEC-397)
   show('cp-cook-groceries', st.mode === 'camp' && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
   show('cp-map',    isHome)
@@ -7368,11 +7369,23 @@ for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked'
   document.getElementById(btn)?.addEventListener('click', (e) => {
     e.currentTarget.blur()
     if (!_campUi || _campBusy || _campUi.mode !== 'camp' || (needsKit && !_kitAtCamp())) return
-    // DEC-397 (owner): "if you cook at a dead fire the fire is instantly relit". The only thing that relights it.
-    if (_campUi.fireOut) { campfire.setDead(false); _campUi = { ..._campUi, fireOut: false } }
+    _relightFire()   // DEC-397 (owner): "if you cook at a dead fire the fire is instantly relit"
     _campFade(() => { if (inventorySystem.convert(raw, cooked)) daySystem.advanceMinutes(30); _renderCampUI() })
   })
 }
+/** DEC-397's relight: a dead camp fire burns again (cooking, and FEAT-286's button). No-op on a live one. */
+function _relightFire () {
+  if (!_campUi?.fireOut) return
+  campfire.setDead(false)
+  _campUi = { ..._campUi, fireOut: false }
+}
+// FEAT-286 (owner 11-17: "If you wake up before first light, there's nothing to look at"): free and instant [DEFAULT, owed].
+document.getElementById('cp-light')?.addEventListener('click', (e) => {
+  e.currentTarget.blur()
+  if (!_campUi || _campBusy || _campUi.mode !== 'camp') return
+  _relightFire()
+  _renderCampUI()
+})
 // FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
 document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
 // FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
