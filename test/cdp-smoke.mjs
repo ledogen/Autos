@@ -1664,7 +1664,12 @@ const STEPS = [
     check(await until(async () => await js('window.__paper.system.stock()') === stock0 - 1, 2000),
       `an RB tap while aiming on a live round threw no paper: stock ${stock0} → ${await js('window.__paper.system.stock()')}`)
     await js('__fp.b[7] = 0; __fp.axes[2] = 0'); await frames(2, 60)
-    console.log(`  papers: a pad RB tap threw a paper on the live round (stock ${stock0} → ${stock0 - 1})`)
+    // FEAT-277: the paper is an engine body now — it must come to rest and be scored (in flight back to 0,
+    // a read-out shown) within maxFlightS of sim time, never hang in the air.
+    check(await untilSim(() => js('window.__paper.system.run.inFlight === 0'), 10),
+      `the thrown paper never came to rest: ${await js('window.__paper.system.run.inFlight')} still in flight after 10 s`)
+    check(await js('document.getElementById("throw-readout").style.display') === 'block', 'a paper came to rest and no throw read-out showed')
+    console.log(`  papers: a pad RB tap threw a paper on the live round (stock ${stock0} → ${stock0 - 1}); it came to rest and scored`)
     // Put the round down: parked, two clicks of the abandon button, then continue off the card.
     await park()
     // The abandon button reads "parked" off the ~10 Hz HUD poll; a click right after the latch can
