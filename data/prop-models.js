@@ -1142,12 +1142,15 @@ export const PROP_MODELS = {
   // eyeballed — mailbox.py's header has the working. mailboxLeaning has NO Flag node on
   // purpose (its flag is snapped off): CHECK FOR THE NODE, do not assume it.
   //
-  // NO POOL TAG, and the same rule as the flamingos and the road signs applies: do not invent
-  // one to make these appear. Road furniture is PLACED FROM ROAD GEOMETRY, not scattered —
-  // that is FEAT-72. And ASSET-22's own warning stands: a populated route wants FEAT-59's
-  // deferred InstancedMesh path first, because cloning one mailbox per driveway at 3–5 draw
-  // calls each is exactly the scatter case the per-mesh path is not for. A handful placed by
-  // hand to prove the asset is fine; a paper route planned around them is not, yet.
+  // POOL 'mailbox' (FEAT-275/280, owner 2026-11-17: "add the mailboxes to Larry's pool", "random mailboxes
+  // around"). Consumed ONLY by src/poi.js (mailboxKey): one per residence pad (Larry's and mom's, a satellite
+  // on the road edge of the pad), one per paper-route house, and a seeded few at unpicked house sites. They
+  // are NOT 'lawnFurniture': the yard scatter must not draw eleven of them. Placement is derived from road
+  // geometry and habitation (a verge a metre past the shoulder, door to the road), never scattered on bare
+  // ground. Knockable (DEC-394): a mailbox is a box on a post, so it breaks away and tumbles with the mass
+  // below (box ~2 kg + a 4x4 post ~6 kg; the pillar is masonry, the planter holds soil); crushN is the post.
+  // CHECK FOR the Flag node: mailboxLeaning has none.
+  //
   // Reachable meanwhile via spawnModel('mailboxClassic') etc.
   //
   // CURATED RECOLOUR POOL on MailBox (owner ruling 2026-08-21, gnome precedent). Five real
@@ -1156,6 +1159,7 @@ export const PROP_MODELS = {
   // shorter pools of their own, and the barn is never recoloured (owner, 2026-10-01).
   mailboxClassic: {
     url: 'assets/models/mailbox-classic.glb',
+    tags: ['mailbox'], knockable: { massKg: 8, crushN: 1500 },
     // 132 tris. 0.223 wide (the flag is the widest part) x 1.235 tall (flag tip; the BOX top
     // is at the ticket's 1.15) x 0.478 deep. Knockable set dressing, not a wall.
     collision: { shape: 'box', size: [0.223, 1.235, 0.478] },
@@ -1163,6 +1167,7 @@ export const PROP_MODELS = {
   },
   mailboxTube: {
     url: 'assets/models/mailbox-tube.glb',
+    tags: ['mailbox'], knockable: { massKg: 8, crushN: 1500 },
     // 212 tris. Same box on a steel pipe post, with a newspaper tube slung under it — the
     // paper-route drop point that reads as one from the road, and the thing news-roll.glb
     // actually goes in. The tube is deliberately oversize (0.145 bore vs a real 0.115) and
@@ -1173,6 +1178,7 @@ export const PROP_MODELS = {
   },
   mailboxLeaning: {
     url: 'assets/models/mailbox-leaning.glb',
+    tags: ['mailbox'], knockable: { massKg: 7, crushN: 1500 },
     // 148 tris. The derelict: post canted on two axes and sitting 54 mm low, box dented and
     // crooked, door hanging open past horizontal over a real recessed cavity, flag snapped to
     // a bracket stub. NO `Flag` NODE.
@@ -1185,6 +1191,7 @@ export const PROP_MODELS = {
   },
   mailboxCluster: {
     url: 'assets/models/mailbox-cluster.glb',
+    tags: ['mailbox'], knockable: { massKg: 18, crushN: 1500 },
     // 204 tris. Three small boxes on a shared rail between two posts — the shared-driveway
     // bank, and the multi-customer drop point ASSET-22's 2026-09-30 note anticipates ("a
     // cluster of mailboxes can serve several customers at one stop"). The one WIDE silhouette
@@ -1199,6 +1206,7 @@ export const PROP_MODELS = {
   },
   mailboxBucket: {
     url: 'assets/models/mailbox-bucket.glb',
+    tags: ['mailbox'], knockable: { massKg: 9, crushN: 1500 },
     // 192 tris. Post set in a 5-gallon pail of concrete — the renter's fix, and
     // the cheapest thing in the kit to read as "nobody owns this place".
     collision: { shape: 'box', size: [0.268, 1.235, 0.478] },
@@ -1206,6 +1214,7 @@ export const PROP_MODELS = {
   },
   mailboxPlanter: {
     url: 'assets/models/mailbox-planter.glb',
+    tags: ['mailbox'], knockable: { massKg: 40, crushN: 1500 },
     // 236 tris. Galvanised wash tub of flowers at the foot, a flat-capped post
     // that runs past the box (the pyramid finial read as a spike — removed
     // 2026-10-01). THE COUNTERWEIGHT TO THE
@@ -1223,6 +1232,7 @@ export const PROP_MODELS = {
   },
   mailboxBarn: {
     url: 'assets/models/mailbox-barn.glb',
+    tags: ['mailbox'], knockable: { massKg: 12, crushN: 1500 },
     // 192 tris. A barn, cut down to the three cues that survive fog: a gable, a
     // dark roof overhanging on all four sides, and white trim on red. The
     // X-braced barn door IS the mailbox door — the gable end is the -Z face,
@@ -1237,6 +1247,7 @@ export const PROP_MODELS = {
   },
   mailboxLimb: {
     url: 'assets/models/mailbox-limb.glb',
+    tags: ['mailbox'], knockable: { massKg: 10, crushN: 1500 },
     // 188 tris. A tree limb for the post, standard box on top — the owner's
     // call: reuse the box, change what it stands on. The limb WANDERS in x and
     // y as it rises and carries a lopped branch stub; a straight tapered
@@ -1246,6 +1257,7 @@ export const PROP_MODELS = {
   },
   mailboxChicken: {
     url: 'assets/models/mailbox-chicken.glb',
+    tags: ['mailbox'], knockable: { massKg: 10, crushN: 1500 },
     // 244 tris, the tightest fit in the kit. Jigsawn chicken cut-outs bolted to
     // a standard box — which is how the real ones are made, so flat plates thin
     // in X are both the cheap way and the honest way.
@@ -1264,6 +1276,7 @@ export const PROP_MODELS = {
   },
   mailboxFancy: {
     url: 'assets/models/mailbox-fancy.glb',
+    tags: ['mailbox'], knockable: { massKg: 14, crushN: 1500 },
     // 248 tris, THREE MATERIALS (white casting, dark knob, flag). Rebuilt
     // 2026-10-01 from the owner's reference photo: a chunky panelled box
     // CANTILEVERED FORWARD (-Z, toward the road) off a square post on a wide
@@ -1280,6 +1293,7 @@ export const PROP_MODELS = {
   },
   mailboxPillar: {
     url: 'assets/models/mailbox-pillar.glb',
+    tags: ['mailbox'], knockable: { massKg: 150, crushN: 1500 },
     // 180 tris. Box on a dry-stacked stone pillar under a cast cap. The only wide dark base in
     // the kit, so it is the only flavour that reads as a PROPERTY rather than as road
     // furniture — use it where a driveway means money, not on a logging spur.

@@ -137,6 +137,9 @@ export const POI_PARAMS = {
                               // have reached lat 7, back onto the shoulder, and that invariant is
                               // the reason the offset exists at all.
     poiHouseTargetR:  5,      // m — the delivery circle (owner: 3 → 5 on 2026-08-07)
+    poiMailboxVerge:  1.2,    // m — FEAT-275/280: a roadside mailbox stands this far past the shoulder edge (door to the road)
+    poiMailboxSpacing: 250,   // m of road per random roadside mailbox (FEAT-280), before the reject tests; ~2-3 stand per km
+    poiMailboxSep:    60,     // m — two roadside mailboxes never stand closer than this
     poiHouseMaxDrop:  1.5,    // m — max height spread across the target circle's rim. A circle
                               // draped over a cliff edge reads as broken, and you could not land a
                               // paper in it anyway. The light stand-in for the pad's earthwork cap.
@@ -390,6 +393,19 @@ export function overDropZone (q, x, z, slack = 0, box = q?.drop) {
  * A class missing here gets no yard at all: nothing spawns without an anchor that reads as owning
  * it (a flamingo on bare dirt is litter, not habitation).
  */
+/**
+ * FEAT-275/280: the mailbox flavour for a place. A pure function of (seed, id), drawn from the 'mailbox' pool of
+ * data/prop-models.js (ASSET-22's eleven). Not 'lawnFurniture': the yard scatter must not draw eleven of them.
+ */
+export function mailboxKey (seed, id) {
+    const pool = modelsTagged('mailbox')
+    return pool[hash32(`poi-mailbox:${seed}:${id}`) % pool.length]
+}
+
+/** A mailbox satellite record (the shape dressYard returns), door to the road. */
+const _mailboxRec = (seed, id, x, y, z, yaw) => ({ key: mailboxKey(seed, id), x, y, z, lift: 0, yaw,
+    variant: hash32(`poi-mailbox-paint:${seed}:${id}`) & 0x7fffffff })
+
 export const YARD_POOLS = { residence: 'lawnFurniture', farm: 'yardClutter' }
 
 const YARD_GAP = 0.05    // m — clearance between two satellites; a cluster stands nearly touching
@@ -508,6 +524,25 @@ export function dressYard (q, seed, yard) {
         return [b.x + (rnd() * 2 - 1) * b.halfX, b.z + (rnd() * 2 - 1) * b.halfZ]
     }
 
+    // FEAT-275: a residence's mailbox stands on the road edge of its pad, door to the road, clear of the
+    // model, the parked van and the yard (placed FIRST, so the yard flows around it). Not counted in `want`.
+    let mailbox = null
+    if (q.tags?.includes('residence') && q.halfLen && q.halfWid) {
+        const key = mailboxKey(seed, q.id), col = PROP_MODELS[key].collision
+        const r = Math.hypot(col.size[0], col.size[2]) * 0.5
+        const a0 = (hash32(`poi-mailbox-at:${seed}:${q.id}`) / 4294967296 * 2 - 1) * (q.halfLen - 2)   // own draw: the yard's stream is untouched
+        for (let i = 0; i < 24 && !mailbox; i++) {
+            const along = Math.max(-(q.halfLen - 2), Math.min(q.halfLen - 2, a0 + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 1.5))
+            const gx = q.x + q.tx * along - q.nx * (q.halfWid - 0.7), gz = q.z + q.tz * along - q.nz * (q.halfWid - 0.7)
+            const dx = gx - ox, dz = gz - oz
+            const mx = cs * dx - sn * dz, mz = sn * dx + cs * dz
+            if (padSd(q, gx - q.x, gz - q.z) + r > 0) continue
+            if (solids.some(b => Math.hypot(Math.max(Math.abs(mx - b.x) - b.hx, 0), Math.max(Math.abs(mz - b.z) - b.hz, 0)) < r + YARD_SOLID_GAP)) continue
+            placed.push({ x: mx, z: mz, r })
+            mailbox = _mailboxRec(seed, q.id, gx, q.y, gz, q.yaw)
+        }
+    }
+
     const out = []
     for (let groupTry = 0; out.length < want && groupTry < 24; groupTry++) {
         const key = pool[Math.floor(rnd() * pool.length)]
@@ -549,7 +584,7 @@ export function dressYard (q, seed, yard) {
             })
         }
     }
-    return out
+    return mailbox ? [mailbox, ...out] : out
 }
 
 /**
@@ -641,6 +676,7 @@ export class PoiSystem {
         this._list = []
         this._pool = []         // every viable pad the last build saw; see pool()
         this._houses = []       // FEAT-61 newspaper customers; see houses()
+        this._mailboxes = []    // FEAT-275/280 roadside mailboxes; see mailboxes()
         this._built = null      // {x,z,r,seed} the current list was built for
     }
 
@@ -682,6 +718,9 @@ export class PoiSystem {
      * `houses().concat(list().filter(hasTag('newsCustomer')))`, which is what customers() returns.
      */
     houses () { return this._houses }
+
+    /** FEAT-275/280: the roadside mailboxes (paper-route houses' and the random ones) — satellite records, built with the houses. */
+    mailboxes () { return this._mailboxes }
 
     /** Every POI or house carrying `tag`. The tag-driven query systems ask instead of type-matching. */
     tagged (tag) {
@@ -858,6 +897,10 @@ export class PoiSystem {
         // pads are: a site's position is a pure function of (seed, edge, step index), and the band
         // below is a POST-FILTER, never a reject test.
         const cands = []
+        const walk = []     // FEAT-280: the random roadside mailbox sites, found in the same edge walk
+        const terr = this._d.getTerrain?.()
+        const groundAt = terr?.analyticHeight ? ((x, z) => terr.analyticHeight(x, z))
+            : terr?.rawHeightWorld ? ((x, z) => terr.rawHeightWorld(x, z)) : null
         const seen = new Set()
         for (const e of canon) {
             const ek = `${e.ka}|${e.kb}`
@@ -866,6 +909,7 @@ export class PoiSystem {
             if (!nodeInside(e.a) || !nodeInside(e.b)) continue
             if (nodes && (!nodes.has(e.ka) || !nodes.has(e.kb))) continue   // BUG-85: main piece only
             this._placeHousesOnEdge(road, e, P, cands)
+            this._placeMailboxesOnEdge(road, e, P, groundAt, this._d.getWater?.(), walk)
         }
 
         // FILL THE LADDER, INNERMOST BAND FIRST — in ROAD metres from Larry's door (owner,
@@ -890,7 +934,7 @@ export class PoiSystem {
         for (const q of roster) delete q.paperTier
         const dist = larry ? roadDistFromLarry(road, larry, [...cands, ...roster],
             { x: center.x, z: center.z, r: radius, nodes }, REGION_MARGIN) : null
-        if (!dist) { this._houses = []; return this._houses }
+        if (!dist) { this._houses = []; this._mailboxes = []; return this._houses }
         let picked = []
         for (const rung of houseRungs()) {
             const inBand = (q) => (dist.get(q.id) ?? Infinity) <= rung.d
@@ -919,7 +963,74 @@ export class PoiSystem {
 
         picked.forEach((q, i) => { q.index = i; q.type = 'house'; q.tags = ['newsCustomer'] })
         this._houses = picked
+        this._mailboxes = this._placeMailboxes(picked, walk, P)
         return picked
+    }
+
+    /**
+     * FEAT-275/280: the roadside mailbox at arc `s` of edge `ed`, on `side` (+1 / -1): a verge a metre past the shoulder edge,
+     * `jit`-shifted along the road, door to the road. Derived from the road alone. Null when that spot is in a bore, on a
+     * junction pad, near another road, in water or a ditch (ground more than 0.7 m off the road top), so a mailbox is
+     * never on the deck, a pad or in a tunnel. Returns { x, y, z, yaw } (yaw: model -Z faces the road).
+     */
+    _mailboxAt (road, ed, s, side, P, groundAt, water, jit) {
+        const cl = ed.centerline, cp = cl.pointAt(s), ct = cl.tangentAt(s)
+        const tl = Math.hypot(ct.x, ct.z) || 1
+        const tx = ct.x / tl, tz = ct.z / tl, nx = tz * side, nz = -tx * side
+        const edgeLat = P.roadHalfWidth + P.roadShoulderWidth
+        const d = edgeLat + P.poiMailboxVerge
+        const mx = cp.x + nx * d + tx * jit, mz = cp.z + nz * d + tz * jit
+        if (road.tunnelSpanAt?.(ed.key, s) || road.tunnelSpanAt?.(ed.key, s + jit)) return null
+        if (road.padReachNodes().some(nd => Math.hypot(nd.x - mx, nd.z - mz) <= nd.reach)) return null
+        if (this._otherRoadNear(road, ed.key, mx, mz, d - 0.5)) return null
+        if (water && (water.isRoadNoGo(mx, mz) || water.streamChannelAt?.(mx, mz)?.inChannel)) return null
+        const top = road.sampleRoadTopY(cp.x + nx * edgeLat + tx * jit, cp.z + nz * edgeLat + tz * jit)
+        const y = groundAt ? groundAt(mx, mz) : top
+        if (top == null || !isFinite(y) || Math.abs(y - top) > 0.7) return null
+        return { x: mx, y, z: mz, yaw: Math.atan2(nx, nz) }
+    }
+
+    /**
+     * FEAT-280: walk one edge at ~poiMailboxSpacing and push every viable random roadside mailbox onto `out`
+     * ({ id, mb }). Keyed to (seed, edge, step), so a site is the same from any window. The hash of the step
+     * decides side and jitter; a step the verge rejects is simply a gap.
+     */
+    _placeMailboxesOnEdge (road, e, P, groundAt, water, out) {
+        const ed = road.edgeParData(e.a, e.b)
+        if (!ed || !ed.centerline) return
+        const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
+        const clear = P.poiEndClearM, seed = this._d.getSeed()
+        if (!(L > 2 * clear + P.poiMailboxSpacing)) return
+        const rnd = mulberry32(hash32(`poi-mailbox-walk:${seed}:${e.ka}|${e.kb}`))
+        const steps = Math.floor((L - 2 * clear) / P.poiMailboxSpacing)
+        for (let k = 0; k < steps; k++) {
+            const s = off + clear + (k + 0.15 + rnd() * 0.7) * P.poiMailboxSpacing
+            const side = rnd() < 0.5 ? 1 : -1, jit = (rnd() * 2 - 1) * 3
+            const mb = this._mailboxAt(road, ed, s, side, P, groundAt, water, jit)
+            if (mb) out.push({ id: `mailbox:${e.ka}|${e.kb}:${k}`, mb })
+        }
+    }
+
+    /**
+     * FEAT-275/280: every roadside mailbox: one at each paper-route house (the target the paper is aimed at) and
+     * the random ones (`walk`, from _placeMailboxesOnEdge: at a roadside, no house, FEAT-280). A random one keeps
+     * poiMailboxSep from every other mailbox, clear of every roster pad and 20 m from any house site
+     * (the route's ring). Pure in (seed, edge, step): sites are window-invariant, the spacing greedy in canonical
+     * order. Records are dressYard's satellite shape plus `id` and `route` (true = a paper-route house).
+     */
+    _placeMailboxes (picked, walk, P) {
+        const seed = this._d.getSeed()
+        const out = []
+        const take = (h, route) => out.push({ ..._mailboxRec(seed, h.id, h.mb.x, h.mb.y, h.mb.z, h.mb.yaw), id: h.id, route })
+        for (const h of picked) if (h.mb) take(h, true)
+        const sep2 = P.poiMailboxSep * P.poiMailboxSep
+        for (const h of walk) {
+            if (out.some(m => (m.x - h.mb.x) ** 2 + (m.z - h.mb.z) ** 2 < sep2)) continue
+            if (picked.some(p => (p.x - h.mb.x) ** 2 + (p.z - h.mb.z) ** 2 < 400)) continue
+            if (this._list.some(q => q.halfLen && padSd(q, h.mb.x - q.x, h.mb.z - q.z) < 1.5)) continue
+            take(h, false)
+        }
+        return out
     }
 
     /**
@@ -1042,7 +1153,8 @@ export class PoiSystem {
 
         // yaw matches the pad convention (model −Z faces the road) so a modelled house can drop
         // straight in when FEAT-60 gets around to one.
-        return { x: cx, y, z: cz, tx, tz, nx, nz, side, yaw: Math.atan2(nx, nz) }
+        const mb = this._mailboxAt(road, ed, s, side, P, groundAt, water, 0)
+        return { x: cx, y, z: cz, tx, tz, nx, nz, side, yaw: Math.atan2(nx, nz), mb }
     }
 
     /**
@@ -1345,6 +1457,7 @@ export class PoiSystem {
         this._list = []
         this._pool = []
         this._houses = []
+        this._mailboxes = []
         this._barricades = []   // FEAT-154
         this._returns = []
         this._built = null
