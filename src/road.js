@@ -9593,6 +9593,12 @@ export class RoadSystem {
                 const arc = this._buildDeg2ArcGeom(node)
                 if (arc) {
                     node.deg2 = arc
+                    // BUG-201: each leg's ribbon ENDS on the connector's mouth, welded there (DEC-068's weld, the
+                    // ribbon's last section exactly on the mouth). It used to stop at the bare cutback, 2.5 m short
+                    // of the mouth and up to 10.5 m with the sharp-kink pullback, so the leg ran on straight past
+                    // the point the connector turns off it and stuck out of the bend's outer edge (up to ~1 m):
+                    // the light sliver. Mesh trim, physics overlay (_ribbonDrawnAt) and collider all read this.
+                    legs.forEach((a, i) => { a.mouth = arc.mouthD[i]; a.weld = true })
                     // junction-flow: the connector's own reach from the node centre, for padReachNodes().
                     // A connector node has no ring (see below) but still OWNS its ground — src/poi.js must
                     // not stack a lay-by on a bend fillet, and the terrain skip guard must not cull its rim.
@@ -11003,6 +11009,7 @@ export class RoadSystem {
             halfWidth,
             markPhase,
             netKeys: [A.runKey, B.runKey],   // the two legs — _connectorCarve blends their grades in WORLD space
+            mouthD: [Math.abs(A.mouthArc - node.legs[0].arc), Math.abs(B.mouthArc - node.legs[1].arc)],   // BUG-201: node.legs order
             totalLen: polyCum[center.length - 1],
         }
     }

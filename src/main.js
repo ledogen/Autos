@@ -82,7 +82,7 @@ import { MissionSystem, REGION_MARGIN, secPerGameH, routeLeftM } from './mission
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, knockMass, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS, LINE_SUPPLY } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
@@ -91,6 +91,7 @@ import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, ba
 import { InventorySystem, runInventory, entryKg, startingPack } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
 import { ITEMS, foodHoldH } from '../data/items.js'
+import { FAMILY_COLOR, EMPTY_DIAMOND_COLOR } from '../data/map-icons.js'   // FEAT-274: the offer card's job-type diamond
 import { PartsSystem, runParts, modModels } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
@@ -110,7 +111,7 @@ import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'   // FEAT-184: the tut
 import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin } from './paper-route.js'
+         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, planGuideJob, stepJob, tourLeg, accuracyTier } from './paper-route.js'
 import { AlertCycle, wordAction, stepOf, wearLevel, engineLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
@@ -143,7 +144,7 @@ import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuni
 import { lampsOn, homeLamps, shopLamps, setGlow } from './poi-night.js'   // FEAT-214: POI night lights
 import { PumpFaces } from './pump-face.js'   // FEAT-233: the pump in use shows the sale on its own face
 import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
-import { siteTargets, nearestTarget, guideTo, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
+import { siteTargets, siteStops, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
@@ -3324,7 +3325,7 @@ function _rebuildPoiMarkers () {
     }
     // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
     // in poi.js (deterministic in the seed); this only dresses them. FEAT-149/251: a knockable one
-    // (every lawn item but the fire pit) becomes a body near the truck (_updateOrnaments); the rest
+    // (every lawn item but the fire pit; the farm's drums and crates, FEAT-268) becomes a body near the truck (_updateOrnaments); the rest
     // are solid in place (poi.js satSolid, synced with the markers).
     for (const sat of q.satellites ?? []) {
       const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
@@ -3334,8 +3335,10 @@ function _rebuildPoiMarkers () {
       const knock = PROP_MODELS[sat.key]?.knockable
       if (knock) {
         const kind = `ornament:${sat.key}`
-        void debrisSystem.load(kind, { model: sat.key, massKg: knock.massKg, friction: 0.6, restitution: knock.restitution ?? 0.3 })
-        _ornaments.push({ kind, mesh: m, lift: sat.lift ?? 0, body: null })
+        // FEAT-268: a drum or crate loads at its empty mass; each one's own load is set at spawn (poi.js knockMass).
+        void debrisSystem.load(kind, { model: sat.key, massKg: knock.massKg ?? knock.emptyKg, friction: 0.6,
+          restitution: knock.restitution ?? 0.3, crushN: knock.crushN })
+        _ornaments.push({ kind, mesh: m, lift: sat.lift ?? 0, body: null, sat })
       }
     }
 
@@ -3817,6 +3820,7 @@ const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isBlocked: () => damageScreen.blocked || serviceCenter.cart.length > 0,   // FEAT-212: nothing used or dropped behind a cart a discard puts back
   actions: _partActions,
   ground: { list: _groundNearby, pick: _pickUpGround },   // FEAT-143: "Nearby on the ground"
+  eatPreview: _previewEat,
 })
 _menu('inventory', () => inventoryScreen.isOpen, () => inventoryScreen.close())
 window.__inv = inventorySystem   // dev handle — test/cdp-smoke.mjs grants the spare and the plug kit
@@ -4274,8 +4278,9 @@ function _scoreLanding (hit) {
       // read-out quotes the money it just earned rather than a percentage the player has to convert
       // in their head. `scored.pay` is banked money — the fare is not in it, because that depends
       // on when you finish and the route can still take it back.
-      _showThrowReadout(`<span style="color:var(--money)">${scored.dist.toFixed(2)} m`
-        + ` &nbsp;·&nbsp; +$${formatMoney(scored.pay)}</span>`)
+      // FEAT-282: the word and its colour, then the dollars: "great accuracy - $0.12", "bullseye - $0.12".
+      const t = accuracyTier(scored.q, scored.dist)
+      _showThrowReadout(`<span style="color:${t.color}">${t.word}${t.word === 'bullseye' ? '' : ' accuracy'} - $${formatMoney(scored.pay)}</span>`)
     } else if (scored.already) {
       // Not a failure — a paper spent. Saying so is the difference between "that did nothing" and
       // "you already did this one", and only one of those tells you to drive on.
@@ -4564,15 +4569,9 @@ missionSystem = new MissionSystem({
       result.health = _freight?.mission === mission && _freight.health ? _freight.health.health : 0
       result.letter = amountGrade(result.health, _fragileLinesOf(mission))
     }
-    // FEAT-65: a demolition job is lettered on the share of its site smashed, and pays the line × that
-    // share (haul's rule) — base and tip alike, so leaving targets standing never pays more.
-    if (mission?.targets) {
-      const k = _siteCount(mission)
-      result.smashed = k.smashed; result.targets = k.of
-      const share = k.of ? k.smashed / k.of : 0
-      result.letter = amountGrade(share, rankTable('demolition', region))
-      mission = { ...mission, payMult: mission.payMult * share }
-    }
+    // FEAT-267 (DEC-399): a demolition job is hurried — lettered on time like courier and the paper round (mission.js
+    // gradeRun), and it settles only with every target down, so it pays the whole line. The count rides to the card.
+    if (mission?.targets) { const k = _siteCount(mission); result.smashed = k.smashed; result.targets = k.of }
     // FEAT-103: a requisition line pays nothing and earns no deed. C or better delivers it; a D (late,
     // or too much of the load lost) puts it back on the list unchanged.
     if (mission?.line) {
@@ -4588,7 +4587,7 @@ missionSystem = new MissionSystem({
       result.line = { delivered, done: lines.filter(l => l.state === 'done').length, of: lines.length, supply: sup?.text ?? null,
                       need: mission.bundles ? `${rankTable('haul', region, 'firewood').C}+ bundles`
                         : mission.fragile ? `${Math.round(_fragileLinesOf(mission).C * 100)}%+ intact`
-                        : mission.targets ? `${Math.round(rankTable('demolition', region).C * 100)}%+ smashed` : 'C or better' }
+                        : 'C or better' }
       return { payout: 0, base: 0, tip: 0, points: 0 }
     }
     const s = economySystem.settle(result, mission)
@@ -5375,8 +5374,8 @@ gpsSystem = new GpsSystem(scene, {
     if (missionSystem?.mission?.approach) return null
     // FEAT-170: the opening's evening has no job, only the way home to mom's (FEAT-184: the morning's, back to the joint).
     if (_tutDrive()) return _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
-    // FEAT-65 slice 2: a demolition job's GPS goes to its nearest target still standing (_updateSite).
-    if (_site?.guide && _site.mission === missionSystem.mission) return _site.guide.route
+    // FEAT-267: a demolition job's GPS is the leg to the next cluster on the remaining tour (_updateSite).
+    if (_site?.guide && _site.mission === missionSystem.mission && missionSystem.isOnJob()) return _site.guide
     if (s === 'countdown' || s === 'staging' || s === 'running') return _tutLine(missionSystem.guideRoute())
     return _waypointOn() ? _tutLine(_waypoint.route) : null   // FEAT-211: last in line — a job's guide always wins
   },
@@ -5447,19 +5446,17 @@ const _boardView = {
   status (poiId) {
     const now = daySystem.clockH()
     // FEAT-101: a budget giver with nothing on offer right now is still a giver — a grey diamond.
-    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, families: [], nextText: null }
+    if (!offerBoard.isGiver(poiId)) return { source: false, family: null, families: [] }
     // Per frame per diamond, so this must not PLAN: it drops only offers already known to have no
     // route (planDistinct memoises null on the offer). The hover card and the prompt do the full
     // _takeableOffers check, so a dead offer greys its diamond the first time it is looked at.
     const live = _jointQuiet(poiId, now) ? [] : offerBoard.offers(poiId, now).filter(o => o.route !== null)
-    const next = offerBoard.nextTurnoverH(poiId, now)
     // FEAT-210: every family on offer, once each, in offer order — the map splits the diamond by them.
     const families = [...new Set(live.map(o => offerBoard.spec(o)?.family).filter(Boolean))]
     return {
       source: true,
       family: families[0] ?? null,
       families,
-      nextText: next != null ? formatGameDuration(next - now) : null,
     }
   },
   view (poiId, idx) {
@@ -5581,12 +5578,11 @@ function _missionDeedNeed (j) {
   if (j.fragile) return `${Math.round(_fragileLinesOf(j).B * 100)}%+ intact`
   if (j.bundles) return `${rankTable('haul', j.terms?.region ?? 1, 'firewood').B}+ bundles`
   if (j.cargoKg) return `a ${rankTable('freight', j.terms?.region ?? 1).B} kg+ load`
-  if (j.targets) return `${Math.round(rankTable('demolition', j.terms?.region ?? 1).B * 100)}%+ smashed`
   return 'B or better'
 }
 /** The job's kind for gateLine / deedLine, and the cargo id those read the tables by. */
 function _missionKind (j) {
-  return j.targets ? 'demolition' : j.fragile ? 'fragile' : j.bundles ? 'haul' : j.cargoKg ? 'freight' : null
+  return j.fragile ? 'fragile' : j.bundles ? 'haul' : j.cargoKg ? 'freight' : null   // FEAT-267: demolition is courier's (DEC-399)
 }
 function _missionGateLine (j) {
   // R-17: the same words the card used — gateLine's grammar, with fragile's lines eased by this route's km.
@@ -6766,6 +6762,8 @@ function _updateOrnaments () {
       const q = o.mesh.quaternion
       o.body = debrisSystem.spawn(o.kind, _ornP.copy(o.mesh.position).add(_ornUp), still,
         { spin: still, quaternion: { x: q.x, y: q.y, z: q.z, w: q.w }, pinned: true })
+      const md = o.body != null && knockMass(o.sat, half)   // FEAT-268: this drum's / crate's own load
+      if (md) physicsEngine.setMassData(o.body, md.massKg, md.inertia, md.center)
       if (o.body != null) { physicsEngine.sleep(o.body); o.mesh.visible = false }
     } else if (o.body != null && d > ORNAMENT_OFF_M) {
       physicsEngine.getTransform(o.body, _ornP, _ornQ)
@@ -6896,7 +6894,7 @@ function _standRow (row) {
 // cancelled, expired) the site goes the moment nothing of it is within offM — never in view.
 const _siteGroup = new THREE.Group()
 scene.add(_siteGroup)
-let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], next, guide } — or null
+let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], halos, guide (the GPS leg), rr (a tour in flight), left, planAt } — or null
 const _siteP = new THREE.Vector3(), _siteQ = new THREE.Quaternion(), _siteY = new THREE.Vector3(0, 1, 0)
 
 /** Stand mission `m`'s targets as models; `smashed` lists the indices already down (a resume). */
@@ -6910,7 +6908,8 @@ function _placeSite (m, smashed = []) {
     mesh.visible = !smashed.includes(i)
     _siteGroup.add(mesh)
     return { kind: t.kind, pos: mesh.position.clone(), q: mesh.quaternion.clone(), mesh, body: null, smashed: !mesh.visible }
-  }) }
+  }), down: smashed.length }   // DEC-403: `down` = the targets already paid for (a resume's are in the saved wallet)
+  m.siteDown = smashed.length
   // FEAT-187 (owner, 2026-11-07: "a paper delivery style halo on the center of the group of prop targets … on the shoulder
   // where the prop targets are"): one halo a cluster, at its members' centre (they stand on the shoulder), wide enough to
   // hold them — never under the paper target's radius. The paper's ring and pip, in its white. Lit by _updateSite.
@@ -6934,19 +6933,21 @@ function _placeSite (m, smashed = []) {
 const SITE_HALO_PAD_M = 1.5   // m past a member's centre: room for the thing itself [DEFAULT]
 function _clearSite () {
   if (!_site) return
+  _site.rr?.return?.()   // FEAT-267: hand an unfinished tour's Held-Karp tables back (paper-route.js _leaseHkTables)
   debrisSystem.remove(_site.targets.map(t => t.body).filter(b => b != null))
   _siteGroup.clear()
   _site = null
 }
 /** { smashed, of } of mission `m`'s site — nothing smashed when its site isn't the one standing. */
 function _siteCount (m) {
-  return { smashed: _site?.mission === m ? _site.targets.filter(t => t.smashed).length : 0, of: m.targets?.length ?? 0 }
+  return { smashed: _site?.mission === m ? _site.targets.filter(t => t.smashed).length : m.siteDown ?? 0, of: m.targets?.length ?? 0 }
 }
 /** The 10 Hz poll (see above). */
 function _updateSite () {
   if (!_site) return
   const D = DEMOLITION_PARAMS, p = vehicleState.position, still = { x: 0, y: 0, z: 0 }
-  const live = missionSystem.mission === _site.mission && missionSystem.isOnJob()
+  // DEC-403: past the deadline the job is over (it waits only to be signed off): nothing more falls or pays.
+  const live = missionSystem.mission === _site.mission && missionSystem.isOnJob() && !_site.mission.expired
   let near = false
   for (const t of _site.targets) {
     const d = Math.hypot(p.x - t.pos.x, p.z - t.pos.z)
@@ -6965,19 +6966,21 @@ function _updateSite () {
     if (d <= D.offM && (t.body != null || t.mesh.visible)) near = true
   }
   if (live) {
-    // Slice 2 (owner, 2026-11-03): the last one down settles the job (mission.js reads `cleared`), and
-    // the GPS goes to the nearest one standing — a new guide object only when that target or its
-    // direction changes, since gps.js re-bakes on identity. 11-05: so does the site window running out —
-    // every smash refills it (D.hitWindowS), so going back for a miss is a race, not a given.
+    // Slice 2 (owner, 2026-11-03): the last one down settles the job (mission.js reads `cleared`), wherever the truck is.
+    // FEAT-267 (DEC-399, the paper round's DEC-398): the GPS follows the shortest tour from the truck through the clusters
+    // still standing, re-planned every RR_PARAMS.tourS and on every smash, so a missed one turns the line back exactly when
+    // going back is the shorter tour. The job is pumped in the frame's spare time (_pumpSiteGuide); until the first lands
+    // the GPS shows the job's own route.
     const m = _site.mission, standing = _site.targets.flatMap((t, i) => t.smashed ? [] : [i])
+    m.cleared = !standing.length
     const down = _site.targets.length - standing.length
-    if (down > (_site.down ?? down)) m.lastHitS = missionSystem.elapsed
-    _site.down = down
-    m.cleared = !standing.length || (m.lastHitS != null && missionSystem.elapsed - m.lastHitS > D.hitWindowS)
-    const n = _site.next = nearestTarget(m, p.x, p.z, standing, missionSystem.routeRemaining())
-    // FEAT-187: the guide is a line to the target, never a destination circle in the road (gps.js reads noRing).
-    if (n && (_site.guide?.i !== n.i || _site.guide.back !== n.back)) _site.guide = { i: n.i, back: n.back, route: { ...guideTo(m, m.targets[n.i].u, n.back), noRing: true, objective: m.targets[n.i] } }
-    else if (!n) _site.guide = null
+    if (down > _site.down) { _site.down = m.siteDown = down; _paySiteShare(m, down) }   // siteDown: the count once the site is gone
+    const now = performance.now() / 1000
+    if (!_site.rr && standing.length && (standing.length !== _site.left || !(now - _site.planAt < RR_PARAMS.tourS))) {
+      _site.left = standing.length; _site.planAt = now
+      const it = planGuideJob(roadSystem, p, siteStops(m, standing), storySystem.region())
+      if (it) _site.rr = it
+    }
   }
   // FEAT-187: a cluster's halo is lit while the job is live, any of it stands, and the truck is near (the paper's rule).
   for (const h of _site.halos ?? []) {
@@ -6985,6 +6988,28 @@ function _updateSite () {
     h.ring.visible = h.pip.visible = on
   }
   if (!live && !near) _clearSite()
+}
+/**
+ * DEC-403 (owner, 2026-11-17: "pay per target … dopamine on hit"): the `down`-th target fell — its share of the base
+ * goes into the wallet now (economy.js payTarget), quoted the way a paper's accuracy money is, with the result card's
+ * coin. The settle then pays only the tip. A requisition line pays nothing (FEAT-103); a Quick Job never pays.
+ */
+function _paySiteShare (m, down) {
+  if (!m.fromPoi || m.line) return
+  const share = economySystem.payTarget(m, down)
+  runLog.on && runLog.event('share', { offerId: m.offerId, down, of: m.targets.length, share, paid: m.sitePaid, wallet: economySystem.money() })   // FEAT-242
+  if (!(share > 0)) return
+  _showThrowReadout(`<span style="color:var(--money)">${down} / ${m.targets.length} smashed &nbsp;·&nbsp; +$${formatMoney(share)}</span>`)
+  playCoin()
+}
+/** FEAT-267: spend this frame's spare time on the site's tour; when it lands, the GPS gets its leg to the next cluster. */
+function _pumpSiteGuide (budgetMs) {
+  const r = stepJob(_site.rr, budgetMs)
+  if (!r.done) return
+  _site.rr = null
+  // FEAT-187: a line to the cluster, never a destination circle in the road (gps.js reads noRing). A plan that reached
+  // nobody keeps the previous line (the paper round's BUG-47 rule).
+  if (r.value?.segments?.length) _site.guide = { ...tourLeg(r.value), noRing: true }
 }
 
 /**
@@ -7276,6 +7301,7 @@ function _renderCampUI () {
     } else {
       body.innerHTML = 'camp is made.<br>'
         + `<span class="cp-dim">vibe ${(vibe * 100) | 0}%</span>`
+        + (st.note ? `<br><span class="cp-warn">${st.note}</span>` : '')   // BUG-209: why a cook was refused
     }
   }
 
@@ -7344,6 +7370,9 @@ for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked'
     if (!_campUi || _campBusy || _campUi.mode !== 'camp' || (needsKit && !_kitAtCamp())) return
     // DEC-397 (owner): "if you cook at a dead fire the fire is instantly relit". The only thing that relights it.
     if (_campUi.fireOut) { campfire.setDead(false); _campUi = { ..._campUi, fireOut: false } }
+    // BUG-209: no room for the result refuses up front, before the fade and the 30 minutes.
+    if (!inventorySystem.canConvert(raw, cooked)) { _campUi = { ..._campUi, note: 'inventory full' }; _renderCampUI(); return }
+    _campUi = { ..._campUi, note: null }
     _campFade(() => { if (inventorySystem.convert(raw, cooked)) daySystem.advanceMinutes(30); _renderCampUI() })
   })
 }
@@ -7360,10 +7389,14 @@ document.getElementById('mp-count')?.addEventListener('input', () => _renderMiss
  * the alpha shows no bracketed stub (FEAT-148); the portrait slot stays.
  * `flavorHtml` is trusted markup (authored constants or the escaped card flavor), never player input.
  */
-function _panelHead (flavorHtml) {
+function _panelHead (flavorHtml, family = null, badge = null) {
+  // FEAT-274: the job type's map diamond (family colour, its letters inside) tucked behind the portrait's top-left corner.
+  const diamond = family ? `<svg class="mp-diamond" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 1L39 20L20 39L1 20Z" fill="${FAMILY_COLOR[family] ?? EMPTY_DIAMOND_COLOR}" stroke="rgba(0,0,0,0.85)" stroke-width="1.5"/>`
+    + (badge ? `<text x="20" y="21" text-anchor="middle" dominant-baseline="middle">${badge}</text>` : '') + '</svg>' : ''
   return '<div class="mp-head">'
+    + `<div class="mp-pwrap">${diamond}`
     + '<div class="mp-portrait" title="portrait (placeholder)"><svg viewBox="0 0 36 36" aria-hidden="true">'
-    + '<circle cx="18" cy="13.7" r="7.2"/><path d="M5 36 Q5.8 23 18 23 Q30.2 23 31 36 Z"/></svg></div>'
+    + '<circle cx="18" cy="13.7" r="7.2"/><path d="M5 36 Q5.8 23 18 23 Q30.2 23 31 36 Z"/></svg></div></div>'
     + (flavorHtml ? `<div class="mp-flavor">${flavorHtml}</div>` : '')
     + '</div>'
 }
@@ -7419,7 +7452,8 @@ function _payRows ({ base, tip, spot = null, points = 0, bonus = null, award = n
     // R-20: the result says where each dollar came from — "Base pay" (docked for damage on fragile), then
     // "Speed tip", then the optional item (FEAT-199).
     + beat(`<br><span class="mp-dim">Base pay</span> <span class="mp-pay">$${formatMoney(base)}</span>`
-        + (condition != null && condition < 1 ? ` <span class="mp-dim">docked for damage</span>` : ''))
+        + (condition != null && condition < 1 ? ` <span class="mp-dim">docked for damage</span>` : '')
+        + (site ? ` <span class="mp-dim">paid per target</span>` : ''))   // DEC-403: already in the wallet, a share a hit
     + row('Speed tip', formatMoney(tip), ` data-countup="${tip}"`)
     // FEAT-199: the optional item — earned (the buttons below pick: the cash, or the cash less its cost
     // with it), or what it needed.
@@ -7488,9 +7522,16 @@ function _revealResult (body, letter = null) {
   }
 }
 
-/** FEAT-113: the result card of a job signed off past its deadline (POI job and paper route alike). */
-function _expiredCard (dueH) {
-  return `<span class="mp-big">Expired</span><br><span class="mp-dim">was due ${formatDue(dueH)} &mdash; no pay</span>`
+/**
+ * FEAT-113: the result card of a job signed off past its deadline (POI job and paper route alike). DEC-403: a demolition
+ * job (`site` = { smashed, of }) keeps the shares its hits paid (`kept`), and gets no tip.
+ */
+function _expiredCard (dueH, site = null, kept = 0) {
+  if (!site) return `<span class="mp-big">Expired</span><br><span class="mp-dim">was due ${formatDue(dueH)} &mdash; no pay</span>`
+  return `<span class="mp-big">Expired</span><br><span class="mp-dim">was due ${formatDue(dueH)} &mdash; no tip</span>`
+    + `<br><span class="mp-dim">Smashed</span> <span class="mp-pay">${site.smashed} / ${site.of}</span>`
+    + `<br><span class="mp-dim">Paid per target</span> <span class="mp-pay${kept > 0 ? '' : ' mp-bad'}">$${formatMoney(kept)}</span>`
+    + ` <span class="mp-dim">yours to keep</span>`
 }
 /**
  * The abandoned job's card (owner, 2026-10-15): the word, the time, what became of the cargo, and $0.
@@ -7512,7 +7553,9 @@ function _abandonedCard (r, extra = '') {
   return `<span class="mp-big mp-bad">Abandoned</span>`
     + ` &nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${formatTime(r.elapsed)}</span>`
     + extra + cargo + bought
-    + `<br><span class="mp-dim">Pay</span> <span class="mp-pay mp-bad">$${formatMoney(0)}</span>`
+    // DEC-403: a demolition job's hits already paid their shares (r.payout), and they stay paid.
+    + (r.payout > 0 ? `<br><span class="mp-dim">Paid per target</span> <span class="mp-pay">$${formatMoney(r.payout)}</span> <span class="mp-dim">yours to keep</span>`
+      : `<br><span class="mp-dim">Pay</span> <span class="mp-pay mp-bad">$${formatMoney(0)}</span>`)
 }
 
 // Story-mode DOM. Two surfaces: the offer/result panel (over the map) and the in-run HUD.
@@ -7564,9 +7607,8 @@ function _renderMissionUI () {
         : null
       const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
       body.innerHTML = (card
-        ? _panelHead(card.flavor != null ? `&ldquo;${esc(card.flavor)}&rdquo;` : null)
+        ? _panelHead(card.flavor != null ? `&ldquo;${esc(card.flavor)}&rdquo;` : null, card.family, card.badge)
           + (m.offers.length > 1 ? `<span class="mp-dim">offer ${m.offerIdx + 1} / ${m.offers.length}</span><br>` : '')
-          + (card.badge ? `<span class="job-badge">${esc(card.badge)}</span>` : '')   // placeholder type badge
           + card.sentence.map(r => r.b ? `<b>${esc(r.t)}</b>` : esc(r.t)).join('') + '<br>'
           + (card.pay ? `<span class="mp-pay">${esc(card.pay)}</span><br>` : '')   // its own line (owner, 2026-10-24: the haul trade line wrapped the terms)
           + `<span class="mp-dim">${[...card.terms, ...card.times].map(esc).join(' &middot; ')}</span><br>`
@@ -7625,10 +7667,9 @@ function _renderMissionUI () {
       // R-23: unless the job has just turned — then the bad news takes the line (_jobBeat).
       const beat = _jobBeat(m)
       hud.classList.toggle('mh-bad', !!beat)
-      // FEAT-65 slice 2: a demolition job's end is no goal — the HUD counts to its next target instead.
-      const next = _site?.mission === m.mission ? _site.next : null
-      const win = next && m.mission.lastHitS != null ? Math.max(0, Math.ceil(DEMOLITION_PARAMS.hitWindowS - (m.elapsed - m.mission.lastHitS))) : null
-      hudText.textContent = beat ?? (next ? `${km(next.dist)} to the next target` + (win != null ? `   · next hit within ${win} s` : '') : `${km(m.routeRemaining())} to go`)
+      // FEAT-267: a demolition job's end is no goal — the HUD counts the site, the paper round's "N / M delivered".
+      const site = m.mission?.targets ? _siteCount(m.mission) : null
+      hudText.textContent = beat ?? (site ? `${site.smashed} / ${site.of} smashed` : `${km(m.routeRemaining())} to go`)
         + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
           : `   · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
         + _dueSuffix()
@@ -7639,7 +7680,9 @@ function _renderMissionUI () {
       panel.dataset.result = ''   // BUG-109: a result card — the pad drives through it (menu-nav.js)
       const r = m.result
       if (r.expired) {   // FEAT-113: signed off past the deadline — no letter, no pay
-        body.innerHTML = _expiredCard(r.dueH)
+        // DEC-403: a board demolition job keeps its shares (a requisition line's pay nothing: plain "no pay").
+        const site = m.mission?.targets && !m.mission.line ? _siteCount(m.mission) : null
+        body.innerHTML = _expiredCard(r.dueH, site, r.payout ?? 0)
         btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', false)
         btn('mp-regen', false); btn('mp-prev', false); btn('mp-next', false)
         unmountExportRow('mission-panel')
@@ -7648,7 +7691,8 @@ function _renderMissionUI () {
         break
       }
       if (r.abandoned) {
-        body.innerHTML = _abandonedCard(r)
+        const site = m.mission?.targets ? _siteCount(m.mission) : null   // DEC-403: the count its shares paid for
+        body.innerHTML = _abandonedCard(r, site ? `<br><span class="mp-dim">Smashed</span> <span class="mp-pay">${site.smashed} / ${site.of}</span>` : '')
         btn('mp-accept', true); btn('mp-decline', false); btn('mp-retry', !m.mission?.fromPoi)
         btn('mp-regen', false)
         btn('mp-prev', false); btn('mp-next', false)
@@ -7799,7 +7843,7 @@ function _renderPaperUI () {
       // window from accept, beside the board expiry.
       // FEAT-67: Larry's portrait and his line head the panel, like every giver's. His line was
       // already written (the spare-papers aside), so it moves up into the dialogue slot.
-      body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;')
+      body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;', 'papers', 'P')
         + `<span class="mp-big">${r.customers.length}</span> `
         + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'} &mdash; any of them, the GPS shows the shortest</span> `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span><br>`
@@ -8108,6 +8152,18 @@ function _updateEnergyMeter () {
     if (hx !== _hmX) { _hmX = hx; _emEls.hStrip.style.transform = `translateX(${hx}px)` }
   }
 }
+/** FEAT-283: hovering "eat" paints the hunger the meal recovers on the hunger bar — a green box from the pointer to the
+ *  post-meal level (DaySystem.eat never shortens a hold; clamped at the bar's full end). `id` null clears it. */
+function _previewEat (id) {
+  const box = document.getElementById('hm-preview'), it = id && ITEMS[id]
+  if (!box) return
+  if (!it || it.kind !== 'food' || it.hold == null) { box.style.display = 'none'; return }
+  const left = daySystem.fedLeftH(), top = _hmTopH()
+  const dh = Math.min(top, Math.max(left, foodHoldH(id, _kitAtCamp()))) - Math.min(top, left)
+  box.style.display = dh > 0 ? 'block' : 'none'
+  box.style.width = `${dh * EM_PX_PER_H}px`
+  box.style.left = `${EM_VIEW_W / 2 - dh * EM_PX_PER_H}px`
+}
 let _hmWord, _emX, _hmX   // the strips' last written translateX (PERF-48)
 /** The hunger strip's full end: the longest hold any meal gives (meals never stack past it — DaySystem.eat). */
 const _hmTopH = () => Math.max(DAY_PARAMS.mealHoldH, ...Object.values(ITEMS).map(i => i.hold ?? 0))
@@ -8163,12 +8219,11 @@ function _rankTimerSource () {
   const m = missionSystem
   if (m && m.mission && (m.state === 'countdown' || m.state === 'staging' || m.state === 'running')) {
     if (m.mission.expired) return null   // FEAT-113: a job that pays nothing has no rank to chase
-    // QUAL-36 (DEC-178/181, owner 2026-11-14): a job is HURRIED or CALM. Courier-family jobs are hurried; fragile,
-    // haul and freight are calm (their letter is condition / count / kg, so a time bar would promise a grade
-    // the job does not give) unless the giver is Impatient — then the bar shows the TIP only. Demolition is
-    // always calm: its clock is the 40 s hit window.
-    const calm = !!(m.mission.fragile || m.mission.bundles || m.mission.cargoKg || m.mission.targets)
-    if (calm && (m.mission.targets || !m.mission.traits?.includes('impatient'))) return null
+    // QUAL-36 (DEC-399, superseding DEC-178; DEC-181): a job is HURRIED or CALM. Courier-family jobs and demolition are
+    // hurried; fragile, haul and freight are calm (their letter is condition / count / kg, so a time bar would promise a
+    // grade the job does not give) unless the giver is Impatient — then the bar shows the TIP only.
+    const calm = !!(m.mission.fragile || m.mission.bundles || m.mission.cargoKg)
+    if (calm && !m.mission.traits?.includes('impatient')) return null
     // R-22 (owner, 2026-10-24): the bar shows only once the goal is NEAR — the last nearFrac of the
     // route (never under nearMinM) — and stays from there. Latched per job, so a GPS re-plan that
     // lengthens the route cannot take it away again.
@@ -8230,12 +8285,6 @@ function _promiseRows (m) {
   } else if (kind === 'freight') {
     const T = rankTable('freight', region)
     value = j.cargoKg; lineOf = (l) => T[l]; below = () => 'upon delivery'; marginTo = () => 1
-  } else if (kind === 'demolition') {
-    // FEAT-65: the share smashed so far — it only climbs, so a rung not yet reached is a GOAL, not lost.
-    const T = rankTable('demolition', region), k = _siteCount(j)
-    value = k.of ? k.smashed / k.of : 0
-    lineOf = (l) => T[l]; below = (x) => `${Math.round(x * 100)}%+ smashed`
-    marginTo = (x) => (value - x) / Math.max(0.01, 1 - x)
   } else {
     // Courier: the rung is the band the clock is in NOW (_rtLive, read every frame whether or not the
     // bar is showing — R-22 hides the bar, not the deed you still hold); the margin is how close the
@@ -8257,8 +8306,6 @@ function _promiseRows (m) {
     if (value == null) return { what: ladder[0].what, next: below(ladder[0].line), tone: _promiseTone(null) }
     const i = ladder.findIndex(r => r.line == null || value >= r.line)
     const held = ladder[i]
-    // FEAT-65: on a climbing axis (demolition) nothing is lost yet — show the first rung as the goal.
-    if (held.line == null && kind === 'demolition') return { what: ladder[i - 1].what, next: below(ladder[i - 1].line), tone: _promiseTone(null) }
     if (held.line == null) return { what: held.what, next: null, tone: 'var(--bad-text)', lost: true }
     return { what: held.what, next: below(held.line), tone: _promiseTone(marginTo(held.line)) }
   }
@@ -8282,7 +8329,6 @@ function _promiseRows (m) {
   // R-29: the load's count lives here too (it was its own bare line, #job-cargo), so the overlay is one box.
   if (kind === 'haul') rows.unshift({ label: 'Cargo', what: `${value} bundle${value === 1 ? '' : 's'} aboard`, tone: 'var(--text)' })
   else if (kind === 'freight') rows.unshift({ label: 'Cargo', what: `${j.cargoKg} kg`, tone: 'var(--text)' })
-  else if (kind === 'demolition') { const k = _siteCount(j); rows.unshift({ label: 'Site', what: `${k.smashed} / ${k.of} smashed`, tone: 'var(--text)' }) }
   return rows
 }
 function _updateJobPromise () {
@@ -9189,9 +9235,10 @@ function _syncPauseSave (live = storySystem.isActive() && !storySystem.isEnterin
   saveBtn.disabled = !!why
   const whyEl = document.getElementById('pm-save-why')
   if (whyEl.textContent !== (why ?? '')) whyEl.textContent = why ?? ''
-  // One way out (owner, 2026-10-30): save & exit replaces "main menu" while it can save.
+  // FEAT-270 / DEC-411 (owner, 2026-11-17): a story run has no "main menu" button at all. The way out is save & exit,
+  // which needs the truck parked; a moving truck leaves by "give up" (pm-towel, FEAT-146). Free roam keeps main menu.
   const menuBtn = document.getElementById('pm-menu')
-  if (menuBtn) menuBtn.style.display = live && !why ? 'none' : ''
+  if (menuBtn) menuBtn.style.display = live ? 'none' : ''
   // The ways out of a run to free roam / the lab are dev features (owner, 2026-10-30): in story mode they
   // show only while the debug panel is open (backtick), and follow the toggle live. Free roam keeps them.
   const dev = _gui.domElement.style.display !== 'none'
@@ -10100,7 +10147,7 @@ function _jobSnapshot () {
   s.offerId = m.offerId
   s.planned = planned
   if (_freight?.mission === m) s.freightHealth = _freight.health?.health ?? null
-  if (_site?.mission === m) { s.smashed = _site.targets.flatMap((t, i) => t.smashed ? [i] : []); s.lastHitS = m.lastHitS ?? null }   // FEAT-65
+  if (_site?.mission === m) { s.smashed = _site.targets.flatMap((t, i) => t.smashed ? [i] : []) }   // FEAT-65
   if (_haul?.mission === m && s.state !== 'loading') {
     s.haul = _haul.handles.flatMap((h, i) => _inBed(h) ? [{ kind: _haul.drops[i].kind, ..._bedLocalPose(h) }] : [])
     s.haulOut = _haul.handles.flatMap((h, i) => _inBed(h) ? [] : [{ kind: _haul.drops[i].kind, ..._worldPose(h) }])
@@ -10158,7 +10205,7 @@ function _reloadCargo (m, sj) {
     _loose.outSince = -Infinity
     m.cargoOut = true
   }
-  if (m.targets) { _placeSite(m, sj.smashed ?? []); m.lastHitS = sj.lastHitS ?? null }   // FEAT-65: the same site, the smashed ones still gone, its window as it was
+  if (m.targets) _placeSite(m, sj.smashed ?? [])   // FEAT-65: the same site, the smashed ones still gone (a pre-FEAT-267 save's lastHitS is ignored)
   if (!sj.haul) return
   // ponytail: a piece whose model has not loaded is dropped — they load at boot, long before a resume.
   _haul = { mission: m, handles: [], drops: [], t0: simTime, zone: null }
@@ -11251,7 +11298,7 @@ function loop (t) {
   // moment the window moves — early-outs unless the stream centre changed chunk.
   if (shadowBake && !_labActive) shadowBake.syncCenter(Math.floor(streamCenter.x / CHUNK_SIZE), Math.floor(streamCenter.z / CHUNK_SIZE))
   if (shadowBake && shadowBake.hasWork() && !_labActive) { perfEvent('shadow.bake'); shadowBake.update(_streamBudget.deadline()) }   // PERF-26 tag
-  if (terrainBake && !_labActive) terrainBake.update(terrainSystem._material, terrainSystem._chunkMap, vehicleState.position)
+  if (terrainBake && !_labActive) terrainBake.update(terrainSystem._material, terrainSystem._chunkMap, vehicleState.position, Math.floor(streamCenter.x / CHUNK_SIZE), Math.floor(streamCenter.z / CHUNK_SIZE))
   perfAdd('frame.shadowBake', performance.now() - _pt)
   // FEAT-17/18: sync pond/stream meshes to the view region (bbox-culled, keyed — no churn when still).
   _pt = performance.now()
@@ -11612,6 +11659,7 @@ function loop (t) {
     const spentMs = performance.now() - newTime * 1000
     paperRouteSystem.pumpReroute(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - spentMs))
   }
+  if (_site?.rr) _pumpSiteGuide(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - (performance.now() - newTime * 1000)))   // FEAT-267
 }
 
 // PERF-21 for late arrivals: the boot prewarm compiled every light state's variant of every material

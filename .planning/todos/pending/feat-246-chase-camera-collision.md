@@ -43,3 +43,4 @@ FEAT-264 (same owner card), DEC-397.
 ## Log
 - 2026-11-17 (lane p, round 2): the wall ray's mask gains GROUP_ROAD (the bore lining and portal ring are road-tile colliders); the probe moved into camera-boom.js (`makeBoomProbe`) so the gate runs the real thing on a synthetic bore, open road and a 10 % crest. The deck under the truck never shortens the boom (front-face only, under the ray's start). Probe 5.0 µs a frame at seed 6's bore (old static-only ray 4.4 µs). Smoke step `boreCam`: a full right-stick swing in the bore never leaves the camera behind the lining.
 
+- 2026-11-17: owner (inbox 20261118061603-gwrm): the camera snaps in close at every tunnel exit. Minted BUG-207.

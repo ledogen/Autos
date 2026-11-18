@@ -23,6 +23,13 @@
  * image: uv = (−x, z) / (CHUNK_SIZE · BAKE_N) with repeat wrapping, so neighbouring chunks are neighbouring
  * tiles and mip filtering blends the real world neighbour, no per-tile clamp. The −x is because the camera is
  * NOT mirrored (a mirrored camera flips the winding and with it gl_FrontFacing, which flips the baked normal).
+ * BUG-202: a slot is shared by every chunk BAKE_N apart, and the High/Ultra chunk rings (ring + warm + keep: 15 / 19
+ * chunks across) are wider than BAKE_N, so two live chunks could both claim one slot and the one baked last showed
+ * on the other: another place's ground (grey scree on grass, the sand line jumping at the tile edge) under hard
+ * straight seams. Only chunks inside the BAKE_N window around the stream centre ([c − N/2, c + N/2 − 1], the
+ * prop-shadow atlas's window) are baked; chunks outside it keep the live shader. The bake state is kept per SLOT
+ * (which chunk's pixels the tile holds), so a chunk returning to the window never trusts a tile someone else
+ * overwrote while it was out.
  *
  * Measured (wip/perf-48/bake-ab.mjs, paired A/B, 2 random seeds): baking every pixel saves 10–24 % of GPU active
  * cycles; the hybrid keeps ~60 % of that (median −12.8 %, chase view −7.5 %). Known ceilings: the top-down bake
@@ -32,7 +39,7 @@
 import * as THREE from 'three'
 import { CHUNK_SIZE } from './terrain-height.js'
 
-const BAKE_N = 12            // tiles per side — exceeds the live ring diameter (≤ 11 at Ultra with the keep margin)
+const BAKE_N = 12            // tiles per side = the baked window (chunks); covers Normal's whole ring (9 across with the keep margin), High/Ultra's inner 12
 const BAKES_PER_FRAME = 4    // chunks baked per frame while streaming; the full ring fills in ~30 frames
 const BAKE_FAR_M = 70        // DEC-207: ground this far (m, horizontal) from the truck and farther is fully baked
 const BAKE_BLEND_M = 15      // cross-fade band just inside BAKE_FAR_M: live at 55 m, baked at 70 m
@@ -80,7 +87,7 @@ export class TerrainBake {
         this._mesh.frustumCulled = false
         this._scene.add(this._mesh)
         this._live = null            // the TerrainSystem material the clones below were made from
-        this._state = new Map()      // chunk key → { mesh, v } of the last bake
+        this._state = new Map()      // atlas slot → { key, mesh, v }: the chunk whose pixels the tile holds, as of its bake
     }
 
     /** Quality tier change: on/off, and every tile re-bakes (the tier may have changed the shader's look). */
@@ -142,20 +149,24 @@ if (bkW < 1.0) {\n`)
      * @param {THREE.Material} liveMat  terrainSystem's shared material (a new TerrainSystem → new clones)
      * @param {Map} chunkMap  terrainSystem's chunk records ({ cx, cz, mesh })
      * @param {THREE.Vector3} truck  the vehicle position
+     * @param {number} ccx  stream-centre chunk x (Math.floor(x / CHUNK_SIZE)): centre of the baked window
+     * @param {number} ccz  stream-centre chunk z
      */
-    update(liveMat, chunkMap, truck) {
+    update(liveMat, chunkMap, truck, ccx, ccz) {
         if (!this.enabled) { for (const c of chunkMap.values()) c.mesh.material = liveMat; return }
         if (liveMat !== this._live) this._makeMaterials(liveMat)
         this._truck.value.set(truck.x, truck.z)
-        const h = CHUNK_SIZE / 2, { x: r0, y: r1 } = this._band.value
+        const h = CHUNK_SIZE / 2, w = BAKE_N >> 1, { x: r0, y: r1 } = this._band.value
         const todo = []
         for (const [key, c] of chunkMap) {
+            if (c.cx < ccx - w || c.cx >= ccx + w || c.cz < ccz - w || c.cz >= ccz + w) { c.mesh.material = this._live; continue }
             const g = c.mesh.geometry
             let v = 0
             for (const a of Object.values(g.attributes)) v += a.version
-            const st = this._state.get(key)
-            const fresh = st && st.mesh === c.mesh && st.v === v
-            if (!fresh && todo.length < BAKES_PER_FRAME) todo.push([key, c, v])
+            const slot = pmod(-c.cx - 1, BAKE_N) * BAKE_N + pmod(c.cz, BAKE_N)
+            const st = this._state.get(slot)
+            const fresh = st && st.key === key && st.mesh === c.mesh && st.v === v
+            if (!fresh && todo.length < BAKES_PER_FRAME) todo.push([key, c, v, slot])
             // nearest and farthest point of the chunk square from the truck (horizontal)
             const ax = Math.abs(truck.x - c.mesh.position.x), az = Math.abs(truck.z - c.mesh.position.z)
             const nx = Math.max(ax - h, 0), nz = Math.max(az - h, 0), fx = ax + h, fz = az + h
@@ -190,6 +201,6 @@ if (bkW < 1.0) {\n`)
             }
         }
         r.setRenderTarget(prevTarget)
-        for (const [key, c, v] of todo) this._state.set(key, { mesh: c.mesh, v })
+        for (const [key, c, v, slot] of todo) this._state.set(slot, { key, mesh: c.mesh, v })
     }
 }

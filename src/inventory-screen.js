@@ -140,9 +140,12 @@ export class InventoryScreen {
    *   for the selected item, each a confirm button (main.js: plugging a tire — by hand or compressor).
    * @param {{list: () => Array<{it: object, row: object}>, pick: (it) => void}} [o.ground] - FEAT-143: the items
    *   lying in reach of the truck ("Nearby on the ground") and picking one up into a free slot.
+   * @param {(id: string|null) => void} [o.eatPreview] - FEAT-283: the food whose "eat" button is hovered or pad-highlighted
+   *   (null when none): main.js draws the hunger it recovers on the hunger bar.
    */
   constructor (inventory, vehicleState, { isSuppressed = () => false, isBlocked = () => false, actions = () => [],
-    ground = { list: () => [], pick: () => {} } } = {}) {
+    ground = { list: () => [], pick: () => {} }, eatPreview = () => {} } = {}) {
+    this.eatPreview = eatPreview
     this.inventory = inventory
     this.vehicleState = vehicleState
     this.isSuppressed = isSuppressed
@@ -209,7 +212,7 @@ export class InventoryScreen {
     this.screen.addEventListener('dragend', () => { this._drag = null; unmark() })
     this.screen.addEventListener('click', (e) => this._onClick(e))
     this.screen.addEventListener('mousemove', (e) => this._onHover(e))
-    this.screen.addEventListener('mouseleave', () => { this.tip.style.display = 'none' })
+    this.screen.addEventListener('mouseleave', () => { this.tip.style.display = 'none'; this.eatPreview(null) })
 
     document.addEventListener('keydown', (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
@@ -247,6 +250,7 @@ export class InventoryScreen {
     this.screen.classList.remove('open')
     this.iconEl.classList.remove('on')
     this.tip.style.display = 'none'
+    this.eatPreview(null)
   }
 
   /** Per frame: the park zone's lock, the icon state, and closing when the truck drives off. */
@@ -301,6 +305,8 @@ export class InventoryScreen {
   }
 
   _onHover (e) {
+    const eat = e.target.closest('.is-btn[data-act="use"]')   // FEAT-283: the pad's highlight sends this same mousemove
+    this.eatPreview(eat && this.sel != null ? this.inventory.list()[this.sel]?.id : null)
     const s = e.target.closest('.inv-slot.full[data-slot]')
     const row = s && this.inventory.list()[+s.dataset.slot]
     if (!row) { this.tip.style.display = 'none'; return }
@@ -379,7 +385,7 @@ export class InventoryScreen {
     return head
       + (acts.length ? `<div class="st-acts">${acts.map((a, i) => btn('action',
         (a.icon ? `<img src="${THUMB(a.icon)}" alt="">` : '') + a.label, a.enabled ?? true, `data-i="${i}"`)).join('')}</div>` : '')
-      + (r.usable && !acts.length ? btn('use', 'use') : '')
+      + (r.usable && !acts.length ? btn('use', r.kind === 'food' ? 'eat' : 'use') : '')
       + (r.kind === 'camp' ? btn('pack', swap ? 'swap into pack' : 'pack', canPack) : '')
       + btn('drop', 'drop')
   }

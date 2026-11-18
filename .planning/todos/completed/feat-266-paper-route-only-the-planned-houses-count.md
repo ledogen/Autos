@@ -1,7 +1,7 @@
 ---
 id: FEAT-266
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-17
 source: owner, 2026-11-17 — "C. To simplify this, let's still generate 16 targets, but let's only ever show 11, whichever makes the shortest route from Larry's. ... let's also only ever show the N targets the player is delivering to in the mission. Never any extra distractions"
@@ -64,3 +64,5 @@ on the map or takes a turn arrow. The five houses outside the 11 are never paper
   only the owed planned houses; off a route a practice throw reads nothing. paper-reroute extended (seed 6 + owner seed,
   fails on main with 35 checks), paper-tour flipped. Sheet: wip/feat-266/sheet.jpg. Headless and in-game house sets
   differ on this seed (game has house 43, headless 41/7): not chased.
+
+- 2026-11-17 CLOSED by the orchestrator on the owner's card answer ("Drove it: good, close it", card feat266-paper-route-drive). On main, in the play build.

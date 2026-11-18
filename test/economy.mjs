@@ -24,7 +24,7 @@
 import {
   ECONOMY_PARAMS, RANK_COLOR, dayTier, regionTier, rankTable, payoutFor, pointsFor,
   runEconomy, EconomySystem, formatDeeds, basePay, payRange, splitPayout, bonusEarned, RANKS,
-  expeditionGrade, gradePoints, EXPEDITION, econDayOf,
+  expeditionGrade, gradePoints, EXPEDITION, econDayOf, sharesPaid,
 } from '../src/economy.js'
 import { gradeRun, RANK_THRESHOLDS_DEFAULT, amountGrade, PAR_SLACK } from '../src/par.js'
 import { runState } from '../src/day.js'
@@ -520,6 +520,69 @@ console.log(fails === 0 ? '\neconomy gate: ALL OK' : `\neconomy gate: ${fails} F
     check(`FEAT-142: Impatient tightens a courier's time thresholds at accept (S ${RANK_THRESHOLDS_DEFAULT.S} → ${(RANK_THRESHOLDS_DEFAULT.S * 0.9).toFixed(4)})`,
       Math.abs(termsAt(0.9).S - RANK_THRESHOLDS_DEFAULT.S * 0.9) < 1e-12)
     check('FEAT-142: …Patient loosens them, and a job with no trait keeps the region\'s own', Math.abs(termsAt(1.1).C - 1.1) < 1e-12 && termsAt(1).B === RANK_THRESHOLDS_DEFAULT.B)
+}
+// DEC-403 (owner 2026-11-17): demolition pays the base a share per target as each falls, and the tip on time alone at the
+// settle. Headless: a MissionSystem job settling through EconomySystem, with main.js's poll stood in by payTarget(m, k).
+{
+    const { MissionSystem, secPerGameH } = await import('../src/mission.js')
+    let exact = true
+    for (const base of [0.01, 0.07, 1, 3.63, 7.27, 12.34, 99.99]) for (let n = 1; n <= 17; n++) {
+        let sum = 0
+        for (let k = 1; k <= n; k++) sum += Math.round((sharesPaid(base, n, k) - sharesPaid(base, n, k - 1)) * 100)
+        if (sum !== Math.round(base * 100) || sharesPaid(base, n, 0) !== 0) exact = false
+    }
+    check('DEC-403: the n shares sum to the base exactly, in whole cents (the remainder on the last)', exact)
+    const eco = new EconomySystem()
+    let clockH = 10
+    const job = (n = 7) => {
+        eco.start()
+        const ms = new MissionSystem({ getRoad: () => null, getCar: () => ({ x: 0, z: 0, heading: 0, speed: 0 }), teleport () {}, setMapOpen () {}, onChange () {},
+                                       getClockH: () => clockH, onSettle: (r, m) => eco.settle(r, m) })
+        ms.state = 'running'; ms._t0H = clockH; ms.elapsed = 0
+        ms.mission = { fromPoi: 'p', offerId: 'o', par: 300, terms: { payTier: 1, thresholds: { ...RANK_THRESHOLDS_DEFAULT } },
+                       payMult: 1, targets: new Array(n).fill(0).map((_, i) => ({ g: i })), dueH: clockH + 3 * 300 / secPerGameH(), end: { x: 0, z: 0 } }
+        return ms
+    }
+    const base = basePay(300, 1), w0 = ECONOMY_PARAMS.startCash
+    {   // paid at the hit: each fall banks its share at once; a re-read of the same count (a resume) pays nothing
+        const ms = job(), m = ms.mission
+        let ok = true
+        for (let k = 1; k <= 3; k++) { const before = runEconomy.money; eco.payTarget(m, k); ok &&= near(runEconomy.money - before, sharesPaid(base, 7, k) - sharesPaid(base, 7, k - 1), 1e-9) }
+        const again = eco.payTarget(m, 3)
+        check('DEC-403: each target pays its share into the wallet as it falls, and re-reading the same count pays nothing', ok && again === 0 && near(runEconomy.money, cents(w0 + sharesPaid(base, 7, 3))))
+        // save/reload mid-job: the snapshot carries what is banked; the resumed job pays only the targets still to fall.
+        const snap = ms.snapshot()
+        const ms2 = job(); runEconomy.money = cents(w0 + sharesPaid(base, 7, 3))
+        ms2.resume({ id: 'o' }, ms2.mission, snap)
+        eco.payTarget(ms2.mission, 3); eco.payTarget(ms2.mission, 5)
+        check('DEC-403: a save/reload mid-job keeps the shares paid and never re-pays them', snap.sitePaid === sharesPaid(base, 7, 3)
+            && near(runEconomy.money, cents(w0 + sharesPaid(base, 7, 5))), `${snap.sitePaid} ${runEconomy.money}`)
+    }
+    {   // full clear inside the deadline: the wallet over the job is base + tip, exactly; the tip reads time alone
+        const ms = job(), m = ms.mission
+        for (let k = 1; k <= 7; k++) eco.payTarget(m, k)
+        m.cleared = true
+        clockH += 0.75 * 300 / secPerGameH(); ms.update(1 / 60)
+        const r = ms.result, line = splitPayout(300, r.ratio, 1)
+        check('DEC-403: a full clear pays base + tip exactly — the base a share a hit, only the tip at the settle',
+            ms.state === 'done' && near(runEconomy.money, cents(w0 + line.base + line.tip)) && r.base === base && r.tip === line.tip && r.tip > 0,
+            JSON.stringify({ w: runEconomy.money, want: w0 + line.base + line.tip, r: { base: r.base, tip: r.tip, ratio: r.ratio } }))
+    }
+    {   // the deadline with targets standing: no settle, no tip; the job keeps the k shares paid (expire()'s payout says so)
+        const ms = job(), m = ms.mission
+        for (let k = 1; k <= 4; k++) eco.payTarget(m, k)
+        clockH = m.dueH + 0.01; ms.update(1 / 60)
+        const off = ms.expire()
+        check('DEC-403: an expiry with 4 of 7 down keeps exactly 4 shares and pays no tip', m.expired && off === 'o' && ms.result.expired
+            && ms.result.payout === sharesPaid(base, 7, 4) && near(runEconomy.money, cents(w0 + sharesPaid(base, 7, 4))) && runEconomy.missions === 0)
+    }
+    {   // abandon mid-job: the shares stay paid, and the result says what the job put in the wallet
+        const ms = job(), m = ms.mission
+        for (let k = 1; k <= 2; k++) eco.payTarget(m, k)
+        ms.cancel(null)
+        check('DEC-403: an abandon keeps the shares already paid', ms.result.abandoned && ms.result.payout === sharesPaid(base, 7, 2)
+            && near(runEconomy.money, cents(w0 + sharesPaid(base, 7, 2))))
+    }
 }
 // expedition-rewards option 4 (owner 2026-11-07): the five lines' mean, ± a quarter grade a day against the 12-day run.
 {

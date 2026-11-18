@@ -41,9 +41,12 @@ const POSTED = [...new Set(THINGS.map(t => t.load).filter(Boolean))]
 {
   const ties = v(STOCK, cargoOf('railwayTies'))
   ok(ties.verdict === 'warning' && texts(ties) === 'overhangs', `railway ties: ${ties.verdict} — ${texts(ties)}`)
-  const odd = POSTED.filter(k => !['concretePallet', 'cinderBlockPallet', 'railwayTies'].includes(k))
+  // DEC-406: the plywood is posted now and rides over the tailgate like the ties.
+  const pw = v(STOCK, cargoOf('plywoodSheets'))
+  ok(pw.verdict === 'warning' && texts(pw) === 'overhangs', `plywood sheets: ${pw.verdict} — ${texts(pw)}`)
+  const odd = POSTED.filter(k => !['concretePallet', 'cinderBlockPallet', 'railwayTies', 'plywoodSheets'].includes(k))
     .filter(k => v(STOCK, cargoOf(k)).verdict !== 'fits')
-  ok(odd.length === 0, `every other posted load fits (${POSTED.length - 3} loads)${odd.length ? ' — not: ' + odd.join(', ') : ''}`)
+  ok(odd.length === 0, `every other posted load fits (${POSTED.length - 4} loads)${odd.length ? ' — not: ' + odd.join(', ') : ''}`)
 }
 
 console.log('§2 length')

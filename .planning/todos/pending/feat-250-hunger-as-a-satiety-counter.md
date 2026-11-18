@@ -32,3 +32,4 @@ Linked owner rulings of the same night are under Decisions. Read DESIGN.md and t
 ## Decisions
 - 2026-11-17, owner (fresh-clock-look card): "Let item stack inside coolers. A stack of items only counts as one slot and the coolers offer four slots. Cooked groceries should also spoil in 24h outside a cooler."
 - 2026-11-17, owner (FEAT-69 dive, cost level): "cut costs: food to about $0.35 per hour of hold, and the oil change $8 → $6" · "We should add a couple more types of food to add some variety"
+- 2026-11-17: owner (inbox 20261118062542-4cas): a second potato after one filled hunger changed nothing. Minted BUG-211; the Eat preview is FEAT-283.

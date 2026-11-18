@@ -146,10 +146,10 @@ function pickWeighted (u, weights) {
 
 /**
  * The job-type badge on a card (owner, 2026-10-10): a PLACEHOLDER letter in a box until the map /
- * card iconography pass. Three types start with F, so those take two letters. Larry's route has none.
+ * card iconography pass. Three types start with F, so those take two letters. Larry's route is P (FEAT-273).
  */
 export function jobBadge (sp) {
-    if (sp.family === 'papers') return null
+    if (sp.family === 'papers') return 'P'   // FEAT-273: Larry's diamond carries a P
     if (sp.family === 'haul') return 'H'
     if (sp.family === 'freight') return 'Fr'
     if (sp.family === 'fragile') return 'Fg'
@@ -160,9 +160,6 @@ export function jobBadge (sp) {
 /** FEAT-97: a fragile thing's tolerance and hit sound, as a spec carries it (src/fragile.js) — null otherwise. */
 const fragileOf = (thing) => thing.family === 'fragile'
     ? { tier: thing.tier, tierName: thing.tierName, shockFloorG: thing.shockFloorG, onePctG: thing.onePctG, breakG: thing.breakG, sound: thing.sound } : null
-
-/** FEAT-65: a demolition gate as a whole percent of the site smashed (economy.js RANK_TABLE.demolition). */
-const smashedPct = (gate, region) => Math.round(rankTable('demolition', region)[gate] * 100)
 
 /** "S only" / "A or better" — how a card states a rank gate. */
 export function gateText (gate) { return gate === 'S' ? 'S only' : `${gate} or better` }
@@ -183,7 +180,6 @@ export function gateLine (gate, kind, region = 1, cargoId = 'firewood', km = 0) 
     if (kind === 'haul') return `if ${rankTable('haul', region, cargoId)[gate]}+ bundles delivered`
     if (kind === 'fragile') return `if ${Math.round(fragileLines(region, cargoId, km)[gate] * 100)}%+ intact`
     if (kind === 'freight') return 'upon delivery'
-    if (kind === 'demolition') return `if ${smashedPct(gate, region)}%+ smashed`   // FEAT-65: the share of the site
     return `if ${gateText(gate)}`
 }
 
@@ -221,7 +217,6 @@ export function deedLine (kind, region = 1, cargoId = 'firewood', km = 0, massKg
         const t = rankTable('freight', region)
         return massKg >= t.B ? 'Deed: 1 upon delivery' : `Deed: 1/2 upon delivery — under ${t.B} kg`
     }
-    if (kind === 'demolition') return `Deed: 1 ${gateLine('B', kind, region)} · 1/2 at ${smashedPct('C', region)}%+`
     return 'Deed: 1 if B or better · 1/2 at C'
 }
 
@@ -737,7 +732,7 @@ export class OfferBoard {
             deadlineSlack: (thing.deadlineSlack ?? DEADLINE_SLACK[thing.family]) * tmul('deadline'),   // FEAT-113; FEAT-142
             // FEAT-142: the traits and the terms they move that the spec does not already carry.
             traits: traits.map(t => t.id), traitNames: traits.map(t => t.name),
-            tipMult: tmul('tip'), thresholdScale: thing.family === 'delivery' ? tmul('thresholds') : 1,
+            tipMult: tmul('tip'), thresholdScale: thing.family === 'delivery' || thing.family === 'demolition' ? tmul('thresholds') : 1,   // FEAT-267: hurried (DEC-399)
             deeds: traits.find(t => t.deeds)?.deeds ?? null,
             shape: fetch ? 'fetch' : stops ? 'multi' : 'courier', from: fetch ? (thing.fetchFrom ?? thing.pools) : null,
             stops, multiPhrase: stops ? thing.multi : null,
@@ -1083,6 +1078,8 @@ export class OfferBoard {
         // in one breath. A haul reads as a trade: "Bundle costs $0.25 · sells for $0.50 – $1.00 by speed".
         const pay = !range ? null
             : sp.stock ? `Bundle costs ${money(stockPrice(par, payTier, sp.payMult))} · sells for ${money(range.base)} – ${money(range.max)} by speed`
+            // DEC-403: a demolition base is paid a share per target as each falls; the tip is time alone. PLACEHOLDER words.
+            : sp.targets ? `Pay ${money(range.base)} – ${money(range.max)}: base per target, tip on time`
             : `Pay ${money(range.base)} – ${money(range.max)} based on speed`
         const terms = []
         if (route?.distance > 0) terms.push(`${(route.distance / 1000).toFixed(1)} km`)
@@ -1103,7 +1100,8 @@ export class OfferBoard {
         // twice. The board clock is how long the offer stays POSTED; the other is the delivery window
         // once taken — so say each in its own words.
         // Reworded again 2026-10-24 (owner): "available for: 10h" and "time limit: 4h 22m".
-        if (isFinite(expiresInH)) times.push(`available for: ${formatGameDuration(expiresInH)}`)
+        // FEAT-272 (DEC-412): the firewood yard's line is shelf stock, always there; the clock is its restock.
+        if (isFinite(expiresInH)) times.push(`${sp.stock ? 'new stock in' : 'available for'}: ${formatGameDuration(expiresInH)}`)
         if (!sp.line && par > 0) times.push(`time limit: ${formatGameDuration(this.deadlineH(offer, par))}`)   // FEAT-113: from accept; never on a job take() gives none
         return {
             family: sp.family,
