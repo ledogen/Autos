@@ -867,8 +867,8 @@ export class PoiSystem {
     /**
      * FEAT-275 (DEC-429): a mailbox on the road SHOULDER beside `site` ({ id, aId, bId, side }), at the first arc of
      * `arcs` that passes. The post stands poiMailboxInset inside the shoulder's outer edge (7.0 m off the centreline;
-     * the lane ends at 5.0), door (-Z) to the road. Rejected: a bore, junction ground (`junctions`), another road
-     * nearer than its own, water. Its height is sampleRoadTopY: inside the road footprint that IS the surface the
+     * the lane ends at 5.0), door (-Z) to the road. Rejected: a bore, junction ground (`junctions`), any road nearer
+     * than this offset (another road, or a hairpin of its own), water. Its height is sampleRoadTopY: inside the road footprint that IS the surface the
      * truck drives on (main.js _groundSampleY), so the base sits on it (`onRoad`: the yard's analyticHeight
      * re-seat, the carved dirt 0.25 m under it, leaves it alone). A knockable satellite like the lawn furniture:
      * knocked, it lies where it fell until the markers are rebuilt (the next run or reload); nothing is saved.
@@ -885,7 +885,10 @@ export class PoiSystem {
             const nx = ct.z / tl * site.side, nz = -ct.x / tl * site.side
             const x = cp.x + nx * lat, z = cp.z + nz * lat
             if (junctions.some(nd => Math.hypot(nd.x - x, nd.z - z) <= nd.reach)) continue
-            if (this._otherRoadNear(road, ed.key, x, z, lat)) continue
+            // The nearest road must be THIS one at THIS offset: another road, or the own run doubling back (a
+            // hairpin shares the run key, so _otherRoadNear passes it), would put the box on that road's lane.
+            const nr = road.queryNearest(x, z, lat + 2.5)
+            if (!nr?.point || Math.abs(Math.hypot(nr.point.x - x, nr.point.z - z) - lat) > 0.5) continue
             if (water && (water.isRoadNoGo(x, z) || water.streamChannelAt?.(x, z)?.inChannel)) continue
             const y = road.sampleRoadTopY(x, z)
             if (y == null || !isFinite(y)) continue
