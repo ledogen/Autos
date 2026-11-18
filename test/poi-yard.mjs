@@ -89,7 +89,7 @@ const yardOf = q => PROP_MODELS[q.modelKey]?.yard ?? POI_ROSTER.find(s => s.type
 const SEEDS = 150
 let dressed = 0, props = 0
 const hist = [0, 0, 0, 0, 0, 0, 0]
-const bad = { bareGround: [], count: [], offPad: [], inModel: [], overlap: [], backYard: [], modelOffPad: [], modelRoadSide: [], vanOffPad: [], vanInHouse: [] }
+const bad = { bareGround: [], count: [], offPad: [], inModel: [], overlap: [], backYard: [], modelOffPad: [], modelRoadSide: [], vanOffPad: [], vanInHouse: [], overMax: [] }
 const keysSeen = new Set()
 const modelsSeen = new Set()
 
@@ -97,6 +97,11 @@ const modelsSeen = new Set()
 function checkYard (seed, q, sats) {
     dressed++; props += sats.length
     hist[Math.min(sats.length, 6)]++
+    // FEAT-290: a yard never holds more of an asset than its `yardMax` (one fire pit per house).
+    for (const k of new Set(sats.map(o => o.key))) {
+        const max = PROP_MODELS[k].yardMax
+        if (max != null && sats.filter(o => o.key === k).length > max) bad.overMax.push(`${seed}:${q.modelKey}/${k}`)
+    }
     const [cMin, cMax] = PROP_MODELS[q.modelKey]?.yardCount ?? [3, 6]
     if (sats.length < cMin || sats.length > cMax) bad.count.push(`${seed}:${q.type}/${q.modelKey}=${sats.length}`)
     const cs = Math.cos(q.modelYaw), sn = Math.sin(q.modelYaw)
@@ -163,6 +168,7 @@ const list = a => `${a.length}: ${a.slice(0, 6).join(', ')}`
 check('every residence and every farm on its farm pad is dressed (9 a region), nothing without a yard is',
     dressed === SEEDS * 9 && bad.bareGround.length === 0, `${dressed} dressed; bare ${list(bad.bareGround)}`)
 check('3–6 props per house yard, 5–9 per farm yard (the model\'s yardCount)', bad.count.length === 0, list(bad.count))
+check('no yard holds more of an asset than its yardMax (one fire pit per house, FEAT-290)', bad.overMax.length === 0, list(bad.overMax))
 check('every prop stands wholly on the carved pad', bad.offPad.length === 0, list(bad.offPad))
 check('no prop overlaps the POI model\'s collision boxes', bad.inModel.length === 0, list(bad.inModel))
 check('no two props overlap', bad.overlap.length === 0, list(bad.overlap))
