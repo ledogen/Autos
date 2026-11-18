@@ -25,10 +25,10 @@ Owner's words, verbatim (inbox 20261118010708-kmdu):
 Part of one owner message (inbox 20261118010708-kmdu) split into three asks: FEAT-271, FEAT-272, FEAT-273.
 
 ## Tracker
-- [ ] Larry's diamond background is yellow and the firewood vendor's purple (which is which: see Open questions)
-- [ ] The P (paper) is on Larry's diamond up top on the mission card
-- [ ] The firewood diamond reads haul
-- [ ] Map, card and list share the one style
+- [x] Larry's diamond background is yellow and the firewood vendor's purple (which is which: see Open questions)
+- [x] The P (paper) is on Larry's diamond up top on the mission card
+- [x] The firewood diamond reads haul
+- [x] Map, card and list share the one style
 
 ## Decisions
 
@@ -45,3 +45,4 @@ data/map-icons.js · the mission card · src/main.js
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118010708-kmdu).
 - 2026-11-17 ui-1117b: STOPPED. Yellow is free (--key / --camp) but the palette has no purple (only the proposed epic #9b5fd1 and the camp-vibe view purple #b98ae0). Choice on the owed card.
+- 2026-11-18 ui-1117b: owner ruled (DEC-421): Larry yellow (--key #ffcf3c), haul purple (new --haul #9b5fd1; was white, as was papers); P in Larry's diamond (jobBadge). Map, legend, list rows, hover card and offer panel read FAMILY_COLOR. Look pending.
