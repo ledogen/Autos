@@ -14,7 +14,8 @@
 //   over    worst overshoot (m): ground pushed past both the bench's design and the no-pad ground (a spike)
 //
 //   node test/pad-wall-census.mjs --seeds=281831,768902 [--camps=12] [--out=file.jsonl] [--keep=dir] [--padToe=m]
-// --padToe: EXPERIMENT — the bench's toe cap (m) in place of roadMaxEmbankmentToe, pads only (mesh check skipped).
+// --padToe / --padCut: EXPERIMENTS — the bench's toe cap (m) in place of roadMaxEmbankmentToe and its cut slope (H:V)
+// in place of roadCutSlope, pads only (the mesh check is skipped under either).
 import * as THREE from 'three'
 import { appendFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { RoadSystem } from '../src/road.js'
@@ -36,7 +37,8 @@ const arg = (k) => (process.argv.find((a) => a.startsWith(`--${k}=`)) || '').spl
 const SEEDS = (arg('seeds') || '281831').split(',')
 const NCAMP = Number(arg('camps') ?? 12)
 const OUT = arg('out'), KEEP = arg('keep')
-const shoulder = P.roadShoulderWidth ?? 2.5, fillS = P.roadFillSlope ?? 3, cutS = P.roadCutSlope ?? 1
+const PAD_CUT = arg('padCut') ? Number(arg('padCut')) : null
+const shoulder = P.roadShoulderWidth ?? 2.5, fillS = P.roadFillSlope ?? 3, cutS = PAD_CUT ?? P.roadCutSlope ?? 1
 const PAD_TOE = arg('padToe') ? Number(arg('padToe')) : null
 const maxToe = PAD_TOE ?? P.roadMaxEmbankmentToe ?? 10, clr = P.roadClearanceMargin ?? 0.25
 const REACH = PAD_RIM_HOLD + shoulder + maxToe
@@ -104,8 +106,8 @@ for (const s of SEEDS) {
         campPads.push({ q: ev.pad, kind: 'camp', type: 'camp' })
     }
     road.setCampPads(campPads.map(c => c.q))
-    if (PAD_TOE != null) {   // the experiment: the same carve with the bench's own toe cap
-        const orig = road._poiPadCarve, alt = Object.create(road, { _params: { value: { ...road._params, roadMaxEmbankmentToe: PAD_TOE } } })
+    if (PAD_TOE != null || PAD_CUT != null) {   // the experiment: the same carve with the bench's own toe cap / cut slope
+        const orig = road._poiPadCarve, alt = Object.create(road, { _params: { value: { ...road._params, roadMaxEmbankmentToe: maxToe, roadCutSlope: cutS } } })
         road._poiPadCarve = (...a) => orig.apply(alt, a)
     }
     const all = [...poiPads, ...campPads]
@@ -187,7 +189,7 @@ for (const s of SEEDS) {
             const cause = otherPad ? 'overlap-pad' : baseMoved > 0.1 ? 'overlap-road/stream'
                 : wOut > wIn + 0.02 ? 'selfref' : ring.capped ? 'cap' : 'ok'
             // Mesh vs analytic over the pad's chunks.
-            let mesh = PAD_TOE != null ? null : 0
+            let mesh = PAD_TOE != null || PAD_CUT != null ? null : 0
             if (mesh != null) {
             const cx0 = Math.floor(G.x0 / S), cx1 = Math.floor((G.x0 + n - 1) / S), cz0 = Math.floor(G.z0 / S), cz1 = Math.floor((G.z0 + n - 1) / S)
             for (let cz = cz0; cz <= cz1; cz++) for (let cx = cx0; cx <= cx1; cx++) {
