@@ -12,7 +12,7 @@ lane: SM (tutorial)
 # FEAT-288: Tutorial pass from the owner's 2026-11-18 monologue
 
 ## Next steps
-Plan written (below, § Plan). Owner: answer card `feat288-tutorial-plan` (sleep form, speaker separation, the end menu, lunches, the flat's spot; every question has a default). Then one build agent per package, SERIALLY, in the order of § 8: P1 (dialogue only) and P7 (phone sounds) can start at once; P2 (the lock) gates P3a/P3b.
+P1, P7, P2 built (P2 on land/feat-288-p2-gate). Next, serially per § 8: P3a, then P3b, on the gate (read § 3's "As built (P2)" first), then P4, P5, P6, P8.
 
 ## Summary
 A complete, simple tutorial: full dialogue and storytelling, a brief but complete explanation of every system, every control / menu / bar the player must use highlighted and everything else locked out, plus the specific fixes below.
@@ -264,6 +264,28 @@ quest-item mark (§ 5) and the rings, not by CSS.
 - `test/pad-e2e.mjs`: a fake-pad B hold at the flat card offers one B-menu entry (diagnostics); A on a locked shop row
   leaves the cart empty.
 
+**As built (P2, 2026-11-18) — what P3a / P3b need.**
+- The step is whatever main.js `initTutGate(() => …)` (just below `let _runEnded`) returns: null outside the tutorial,
+  after a skip, after the run's end (nothing locked, marks wiped on the next 10 Hz paint), else the card up, else
+  `_TUT_TOW` (recovery open while the flat waits for its tow, so a closed recovery card cannot strand the truck), else
+  `_TUT_BASE` (`{}`). A between-cards lesson (break camp locked, eating locked, the shop beat) is one more branch there
+  returning a step object, or `allow` / `hi` on a card.
+- A step: `allow` = action names from `LOCKED` (src/tut-gate.js: inventory, damage screen, camp, recovery, abandon job,
+  the waypoint) plus CSS selectors (element or any ancestor matches; `:has()` works, e.g. the spare's use button is
+  `#inv-screen:has(.inv-slot.sel[data-id="spareTire"]) :is([data-act="use"], [data-act="action"])`). A step WITH `allow`
+  locks every other button / slot / row in `ZONES` (the in-game cards and the icon column); a step without it locks
+  only the actions. Back buttons (`[data-act="close"]`), pause, settings, the intro's card and the run end never lock.
+  `hi` = selectors to ring. Inventory slots carry `data-id` (inventory-screen.js) for this.
+- Not in `LOCKED`, deliberately: G (pick-up — a pack that falls out on the way to Larry's must be reloadable), and every
+  driving control. The sleep slider's value lock (Q1) is P3a: a new `allow` entry kind (a selector + a condition) or the
+  sleep button's own disabled state.
+- Gaps left for P3a/P3b: the damage screen is wholly free under `tut-damage` (`#dmg-screen`, so "Swap two wheels" too);
+  the camp card is free between cards (break camp); the shop / pump / mom's card are free; pad B still opens the B menu
+  over a press-any-key card (refused now, with a nudge, instead of advancing it).
+- Proof: `test/tut-gate.mjs` (data + logic), cdp-smoke `opening` (Tab and a real click refused at the flat, rings on two
+  cards), `skipMenus` (V / Tab / X refused between lessons; nothing marked after each skip; V works after it), pad-e2e
+  (the flat's B menu = one entry).
+
 ### 4. The phone
 
 - **Sounds.** Nothing exists in `src/` and the library has no ring or flip-shut on disk (fact f). Recommend
@@ -343,7 +365,7 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - [ ] Owner answers card `feat288-tutorial-plan` (or the defaults stand)
 - [x] P1 dialogue: draft tags out, mom's parking line, "Anyway,", mom at the shop, the paycheck moves to mom
 - [x] P7 phone sounds: ring and flip-shut, owner's ear
-- [ ] P2 the gate: one lock + highlight for keys, mouse and pad; nothing locked after a skip
+- [x] P2 the gate: one lock + highlight for keys, mouse and pad; nothing locked after a skip
 - [ ] P3a lessons 1: forced diagnostics → inventory → spare, break camp locked, eating locked, the sleep lesson, lunches at breakfast, B advances a card
 - [ ] P3b lessons 2: the map beat, the shop beat, mom's gas call on leaving the shop, the end menu
 - [ ] P4 world fixes: mom's ring (story-wide), legs on the map, the flat before the tunnel, mom's card on the tire's check-out
