@@ -76,14 +76,15 @@ export function paperHull (n = THROW_PARAMS.hullSides, a = 0.045, b = 0.033, hz 
  */
 const _l = { x: 0, y: 0, z: 0 }, _a = { x: 0, y: 0, z: 0 }
 export class PaperThrows {
-    constructor (debris, P = THROW_PARAMS) { this._d = debris; this._P = P; this.live = [] }
+    constructor (debris, P = THROW_PARAMS) { this._d = debris; this._P = P; this.live = []; this._forced = [] }
 
     /**
      * A paper leaves the truck at p0 with velocity v0 (launchVelocity), lying flat. Returns the flight { body, t, contactT, stillS } or null when the
      * model has not loaded yet (the first seconds of a cold boot): then no throw happened.
      */
     throw (p0, v0) {
-        if (this.live.length >= this._P.liveCap) this._settle(0, true)
+        // Past liveCap the OLDEST is settled where it is now, flagged timedOut, and reported by the next step().
+        if (this.live.length >= this._P.liveCap) this._forced.push(this._settle(0, true))
         // BROADSIDE, NO SPIN. Model −Z is the long axis; yaw θ puts it at (−sinθ, 0, −cosθ), across the heading.
         // Measured on a wall: broadside, the plastic hit stops the whole roll at once and it drops 0.1–0.6 m off
         // the wall; flown end-on (a javelin) the end sticks, the roll pivots on it and lands up to 2.4 m out.
@@ -105,7 +106,7 @@ export class PaperThrows {
      * { type: 'rest', f, x, y, z, mesh, timedOut } when one settles — x/z/y is its centre, where it scores.
      */
     step (dt) {
-        const P = this._P, out = []
+        const P = this._P, out = this._forced.splice(0)
         for (let i = 0; i < this.live.length;) {
             const f = this.live[i]
             if (!this._d.velocity(f.body, _l, _a)) { this.live.splice(i, 1); continue }   // reclaimed under us (clear)
@@ -125,8 +126,12 @@ export class PaperThrows {
         return { type: 'rest', f, x: mesh.position.x, y: mesh.position.y, z: mesh.position.z, mesh, timedOut }
     }
 
-    /** Drop every paper still moving, unscored (leaving the region, putting a round down). */
-    clear () { this._d.remove(this.live.map(f => f.body)); this.live.length = 0 }
+    /** Drop every paper still moving, unscored (leaving the region, putting a round down). Returns the meshes of
+     *  papers already settled but not yet reported, which the caller now owns (to take off the lawn). */
+    clear () {
+        this._d.remove(this.live.map(f => f.body)); this.live.length = 0
+        return this._forced.splice(0).map(e => e.mesh)
+    }
 }
 
 /**

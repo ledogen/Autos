@@ -4215,7 +4215,7 @@ function _clearThrownRolls () {
   for (const r of _thrownRolls) scene.remove(r)
   _thrownRolls.length = 0
   // …including the ones still in the air or settling: they leave unscored.
-  paperThrows.clear()
+  for (const r of paperThrows.clear()) scene.remove(r)
 }
 
 // F is hold-to-aim. keydown repeats while held, and setAimMode is idempotent, so the repeat costs
