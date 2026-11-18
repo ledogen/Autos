@@ -2243,7 +2243,7 @@ const STEPS = [
     // BUG-203: never "Wrong way" while an opening card was up; from the pedals card on the line is there, and it works:
     // turned against it, the alert shows (either way round: one of the two points against the line)
     check(!await js('window.__wwOver'), `BUG-203: "Wrong way" showed over the opening's cards (${await js('window.__wwOver')} polls)`)
-    check(await until(() => js('!!window.__gps()'), 10000), 'BUG-203: the line never came on with the pedals card')   // queued: it plays once the <click> is gone
+    check(await until(() => js('!!window.__gps()'), 10000), `BUG-203: the line never came on with the pedals card: ${await js(`JSON.stringify({ t: window.__tutorial(), hud: document.getElementById('mission-hud').textContent.trim(), ign: window.__vs.ignition?.state, dlg: document.getElementById('dialogue-panel').textContent.slice(0, 80) })`)} ${JSON.stringify(said.slice(-4))}`)   // queued: it plays once the <click> is gone
     await readCards()
     check(await wrongWayEitherWay(), 'BUG-203: no "Wrong way" with the truck turned against the tutorial\'s line')
     await readCards(); await crank()   // a re-seat leaves the engine off
