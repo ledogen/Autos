@@ -149,6 +149,7 @@ import { siteTargets, siteStops, DEMOLITION_PARAMS, TARGET_TYPES } from './demol
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
 import { WaterRenderer } from './water-render.js'          // FEAT-17/18: pond discs + stream ribbons
+import { autoDrive } from './auto-drive.js'                   // FEAT-293 (DEC-428): the debug panel's driving AI
 import { runLog, scalars } from './run-log.js'             // FEAT-242 (DEC-358): the opt-in run log — every call below is behind runLog.on
 
 // World seed — the URL's ?seed= when it names one, else a fresh random world. There is no default
@@ -3071,6 +3072,10 @@ window.__setBodyGrip = () => setBodyGrip(physicsEngine, vehicleChassis, RANGER_P
 window.__syncChassisMass = () => syncChassisMass(physicsEngine, vehicleChassis, RANGER_PARAMS)   // debug.js Mass slider + vehicle preset
 window.__vs = vehicleState                    // dev handle — read live vehicle state from the console / CDP probes
 window.__roadSys = () => roadSystem           // dev handle — the LIVE RoadSystem instance (getter: play swaps instances on seed regen); __road() below is the stats view
+autoDrive.attach({   // FEAT-293: the driving AI drives the live network from where the truck is
+  road: () => roadSystem, region: () => storySystem?.region() ?? null, params: RANGER_PARAMS, vs: vehicleState, seed: () => worldSeed,
+  flat: () => damageModel.flat.some(Boolean), teleport: (x, z, h) => teleportToGround(x, z, h, 0.5, true),
+})
 
 // FEAT-33: is the starter motor actually turning? Not the same as state === 'cranking' — the key
 // stays at START while it is held, so an over-crank against an already-running engine still has the
@@ -10851,6 +10856,7 @@ function loop (t) {
     setParkLock(_parkLocked())   // FEAT-194 part 2: a parked menu is up
     setThrottleCut(_flatOwed())   // FEAT-217 (DEC-272): the tutorial's flat stops the truck until the tire is fixed — the tutorial only
 
+    autoDrive.step(vehicleState, PHYSICS_DT)   // FEAT-293: the AI's controls for this step (off: returns at once)
     const resetRequested = updateVehicle(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     // S-61: stepIgnition clears ignition.event at the top of EVERY step, so on a 2+ step frame a
     // catch on step 1 is gone by the time the frame reads it. Latch the edge here, per step.

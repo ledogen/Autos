@@ -137,7 +137,7 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
   const NS = 40, sx = new Float64Array(NS), sz = new Float64Array(NS), sy = new Float64Array(NS), ss = new Float64Array(NS), sv = new Float64Array(NS)
   let idx = 0, dist = 0, clock = 0, ended = false, retryT = 0, detour = null
   let state = 'drive', stateT = 0, trouble = null, leg = 0, legs = 0, tries = [], integ = 0, shiftCool = 0
-  let stuckT = 0, flipT = 0, offT = 0, crankT = 0, revFrom = null, lat = 0, latC = 0, vTlast = 0
+  let offNow = 0, bore = false, boreT = 0, thrLast = 0, stuckT = 0, flipT = 0, offT = 0, crankT = 0, revFrom = null, lat = 0, latC = 0, vTlast = 0
   const out = { steer: 0, throttle: 0, brake: 0, hand: false, key: false, shift: 0, clutch: 0, steerLimit: 0, trouble: null, state: 'drive' }
 
   const ahead = (i, m) => {   // the index `m` metres of route ahead of i, stopping short of a jump
@@ -182,7 +182,15 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
     const e = vT - vF
     if (Math.abs(e) < 2) integ = clamp(integ + 0.15 * e * dt, -0.2, 0.4)   // conditional integration: no wind-up while it accelerates
     const u = 0.3 * e + integ + clamp(0.12 + 3 * gr, -0.6, 0.8)
-    out.throttle = vT < 0.3 ? 0 : clamp(u, 0, 1)
+    // A careful foot on a rear-drive truck: the throttle rises at most 1.5 /s, is held back as the corner uses up the
+    // lateral budget (the friction circle), and lifts when the truck yaws faster than its steering asks — oversteer
+    // (the same test as traction.js's, done by the driver, so the assists' own setting is left as the player set it).
+    const vs = ap._vs, r = vs.angularVelocity?.y ?? 0, rKin = vF * Math.tan(vs.steerAngle ?? 0) / car.wheelbase
+    const aLatNow = Math.abs(r * vF), circle = clamp(1.3 - aLatNow / (kLat * muNow() * G), 0.2, 1)
+    const over = Math.abs(r) > Math.abs(rKin) + 0.1 || (Math.abs(r) > 0.1 && Math.sign(r) !== Math.sign(rKin))
+    const cap = over && vF > 3 ? 0.15 : circle
+    out.throttle = vT < 0.3 ? 0 : Math.min(clamp(u, 0, 1), cap, thrLast + 1.5 * dt)
+    thrLast = out.throttle
     // Below 1 m/s the brake pedal is not used: on the automatic it is the reverse pedal there. The handbrake holds instead.
     if (vF < 1 && vT < 0.3) { out.brake = 0; out.throttle = 0; out.hand = true; integ = 0 }
     else out.brake = u < -0.08 ? clamp(-0.6 * u, 0, 1) : 0
@@ -214,7 +222,7 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
 
   const ap = {
     get idx () { return idx }, get dist () { return dist }, get detouring () { return !!detour },
-    get state () { return state }, get trouble () { return trouble }, get lat () { return lat }, get vT () { return vTlast },
+    get state () { return state }, get trouble () { return trouble }, get lat () { return lat }, get offset () { return offNow }, get vT () { return vTlast },
     dbg: null, _vs: null,
     /** Metres off the route's line to drive, + = right of travel. With keepRight it is a quarter of the deck; the bench
      *  sets it (PERF-42 rides the road edge with it). */
@@ -259,7 +267,7 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
         ended = false
         while (path.length - idx < 150) if (!route.extend()) { ended = true; retryT = 2; break }
       }
-      latC = lateral(p); lat = latC - ap.lane
+      latC = lateral(p); lat = latC - offNow
       if (path[idx + 1]?.jump && hyp(path[idx].x, path[idx].z, p.x, p.z) < 6) return report('route jump')
 
       // ── what a driver cannot drive through ──
@@ -278,7 +286,7 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
       }
       crankT = 0
 
-      const bore = inBore(p.x, p.z)
+      if ((boreT -= dt) <= 0) { boreT = 0.25; bore = inBore(p.x, p.z) }   // a road query: 4 Hz is plenty
       if (state === 'drive' && !detour) driveStep(p, fx / fl, fz / fl, v, vF, bore, dt)
       else if (detour) detourStep(p, fx / fl, fz / fl, v, vF, dt)
       else if (state === 'turn') turnStep(p, fx / fl, fz / fl, vF, dt)
@@ -365,7 +373,8 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
     // Lane: a quarter deck right, tapered to the centre where the bend is tighter than 60 m (it would cut the inside).
     const off = bore ? 0 : ap.lane * clamp((rNear - 20) / 40, 0, 1)
     const L = clamp(0.8 * v + 3, 5, bore ? 10 : 22)
-    const want = pursue(p, hx, hz, Math.min(L, Math.max(4, 0.8 * rNear)), ap.lane && !keepRight ? ap.lane : off)
+    offNow = ap.lane && !keepRight ? ap.lane : off
+    const want = pursue(p, hx, hz, Math.min(L, Math.max(4, 0.8 * rNear)), offNow)
     if (Math.abs(want) > 0.95 * out.steerLimit) vT = Math.min(vT, Math.max(3, 0.7 * v))   // at full lock: ease off, never to a stall
     out.steer = clamp(want, -out.steerLimit, out.steerLimit)
     vTlast = vT
@@ -450,7 +459,7 @@ if (typeof process !== 'undefined' && import.meta.url === `file://${process.argv
       h += v * Math.tan(steer) / car.wheelbase / 60
       x -= Math.sin(h) * v / 60; z -= Math.cos(h) * v / 60
       if (t > 8 && c.state === 'drive') maxLat = Math.max(maxLat, Math.abs(ap.lat))
-      maxDeck = Math.max(maxDeck, Math.abs(ap.lat + ap.lane))
+      maxDeck = Math.max(maxDeck, Math.abs(ap.lat + ap.offset))
       maxV = Math.max(maxV, v)
     }
     return { maxLat, maxV, trouble, states, km: ap.dist / 1000, maxDeck, x, z, ap }
