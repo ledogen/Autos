@@ -9863,6 +9863,7 @@ const storySystem = new StorySystem({
     startShelves((Math.random() * 2 ** 32) >>> 0)   // FEAT-137: every auto shop's shelf, this run's rolls
     damageModel.publish(RANGER_PARAMS)
     damageScreen.clearAlert()        // BUG-184: after the roll — the last truck's unread alert is not this one's, nor is its wear
+    _wordState.levels = null         // …nor its alert baselines: the first live poll takes this truck's in, unspoken (FEAT-288 P8: free roam, then New game, read the jalopy's bent wheels as fresh bends)
     vehicleState.fuel = makeFuelState(RANGER_PARAMS, RANGER_PARAMS.fuelStartFrac)   // FEAT-50: "some gas in it"
     dialogueSystem.start()           // FEAT-61: a new run hears every briefing again
     _resetRunLocals()                // FEAT-217: nothing of the last run's tutorial, pump or camera
