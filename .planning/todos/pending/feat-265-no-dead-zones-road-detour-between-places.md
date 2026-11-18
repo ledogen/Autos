@@ -12,15 +12,10 @@ lane: engine & world
 # FEAT-265: No dead zones — places a long drive apart that are close on the map
 
 ## Next steps
-B2 is built on `land/feat-265-dead-zones` (DEC-401) with the clearance fix (item 6 below); `road-clearance` and
-`urquhart-restore` are green. One owner call before it lands (owed card `feat265-b2-look`): the NEW tutorial seed
-1872706826 (DEC-402). B2 restores 2 roads there and the berth re-routes one of them to a 32 % pitch, so the tutorial
-moves (station, camping area, auto shop) and gets steeper (38 % climb vs 19.1 %). The measured options are in
-§ "Tutorial seed under B2". On his answer: (1) re-census `test/tutorial-seed.mjs` on 1872706826 under B2 (never loosen),
-or (2) re-pin to the seed he names (DEC-402's walk: data/tutorial.js, the gate's census, the smoke's tutorial checks,
-a record superseding DEC-402), or (3) change item 6 to "a restored side that grazes stays dropped" (no berth re-route),
-re-run the affected gates; then the landing request.
-Affected gates with the fix (`--serial --changed=src/road.js`): 77/78 green; red only tutorial-seed (the call above).
+Option 3 is built (DEC-427, superseding DEC-423): a restored road that, as first routed, runs closer than 22 m centre to
+centre to another road leaving one of its two nodes stays dropped; the berth re-route is deleted. The tutorial seed
+1872706826 stays (DEC-402) and its gate passes unchanged. Landing-ready on `land/feat-265-dead-zones` once the affected
+gates and the smoke are read (Log). One owner look before closing: card `feat265-b2-look` (drive his seed 3200351065).
 
 ## Summary
 On seed 3200351065 the drive from the food vendor to Larry's is far longer than the map distance suggests, and the
@@ -147,18 +142,22 @@ whose route is empty on every rung. Degree drops and crossing deletes are not fa
    stays dropped (a condemned road would refuse the seed, DEC-054). Restored roads: steepest 10 m 12-25 %, 0-221 m
    above 20 % per road (in the region: 18.4 % / 0 m and 24 % / 71 m on the owner's seed, 24 % / 123 m on 1979256859,
    21.1 % / 18 m on 2176144795). How many candidates the grade rule kept dropped was not counted.
-6. Clearance (FEAT-77 for a restored side; `_v2RestoreLegs` + `_v2RestoreGrazes`, 2026-11-17): a restored side is
-   outside the plan layer, so FEAT-77's clearance walk never makes it a loser (seed 1247456971 node -3,2,0: 16.6 m from
-   a sibling leg over 28 m). Now: the side routes plain; if it GRAZES one of the other legs at its two nodes (centres
-   under the graze floor 2·halfWidth + clearEdgeM = 22 m, past the geometric throat, bores excluded: the road-clearance
-   random-seed tier), it re-routes with those legs' shipped lines as `occupied` (the router prices metres inside their
-   clearance, node throats exempt, as for a pass-2 loser); if it still grazes, it stays dropped. A side that never
-   grazed routes exactly as before. The legs' lines are their pure per-edge pass-2 routes, so window invariance and
-   worker/sync parity hold by the same argument as item 3. Not covered: a restored side grazing a road that does not
-   share its node, or another restored side (left to the gate).
-   Census (46 seeds, 27 restored sides): 18 unchanged, 7 re-routed with the berth (steepest 10 m moved by -0.2 to
-   +7.5 points; worst 20 -> 27.5 % on 3590618618's warm band), 2 still graze and stay dropped (3590618618 warm band,
-   2176144795 in region). On 1872706826 (not in the 46) its 1061 m in-region side grazed: re-routed to 1006 m, 32.2 %.
+6. Clearance (FEAT-77 for a restored side; `_v2RestoreLegs` + `_v2RestoreGrazes`; option 3, DEC-427, 2026-11-18): a
+   restored side is outside the plan layer, so FEAT-77's clearance walk never makes it a loser (seed 1247456971 node
+   -3,2,0: 16.6 m from a sibling leg over 28 m). Now: the side routes plain; if it GRAZES one of the other legs at its two
+   nodes (centres under the graze floor 2·halfWidth + clearEdgeM = 22 m, past the geometric throat, bores excluded: the
+   road-clearance random-seed tier), it stays dropped. It is never re-routed: the 2026-11-17 berth re-route (the legs as
+   `occupied`, priced per metre) put 1872706826's 1061 m in-region side on a 32.2 % pitch and moved the tutorial, and is
+   deleted. A side that never grazed routes exactly as before. The legs' lines are their pure per-edge pass-2 routes, so
+   window invariance and worker/sync parity hold by the same argument as item 3. Not covered: a restored side grazing a
+   road that does not share its node, or another restored side (left to the gate).
+   Built census (option 3, 2026-11-18; `wip/feat-265/census-o3built.jsonl`, `python3 -I wip/feat-265/o3cmp.py`): of the
+   27 candidate sides 18 kept (as predicted), 9 graze and stay dropped; place stretch median 2.21, max 3.09; seeds at
+   >= 3.0: 1 (3832686841); seeds with a restore 13, 4 in the region; 2176144795 2.05 -> 2.22, 1247456971 2.30 -> 2.54
+   (both against the berth build); his seed unchanged (2.99 km, both roads kept); steepest 10 m on a restored road
+   12.1-25 %, at most 221 m above 20 % per road. 1872706826 keeps one in-region side (-3,0,0 to -4,0,2, 826 m, 14.9 %)
+   that the tutorial never drives: its places, legs and clock are identical to main's (the gate's output matches line for
+   line) while its network gains that one run.
 
 Results (46-seed census on the real build, `wip/feat-265/census-b2built.jsonl`, places re-sited by the real POI build):
 (Re-stated after the clearance fix, 2026-11-17: the numbers below hold except km added, mean 0.61 -> 0.55 km, max
@@ -206,15 +205,17 @@ branch (`wip/tutb2/`); `python3 -I wip/feat-265/tutcmp.py` prints the table; she
 - [ ] A measure agreed with the owner (proposed: place stretch ≥ 3.0), censused on ≥ 30 random seeds (done: 44)
 - [x] Options shown as map sheets (before/after per option, same seeds), with build time and added road length
 - [x] The owner's pick (B2) built; fingerprint-world identical on its six windows; gate `urquhart-restore.mjs`
-- [x] road-clearance graze on 1247456971 fixed: a restored side that grazes re-routes with a berth or stays dropped
+- [x] road-clearance graze on 1247456971 fixed: a restored side that grazes stays dropped (option 3, DEC-427; the berth re-route deleted)
 - [x] The tutorial seed under B2 measured (1872706826 + the round-3 candidates + the old pin), `wip/feat-265/b2-tutorial.jpg`
-- [ ] Owner look at `wip/feat-265/b2-built.jpg` + the tutorial-seed call (card feat265-b2-look)
+- [x] The tutorial-seed call: option 3, the seed stays (DEC-427)
+- [ ] Owner look: drive his seed 3200351065 on the branch (card feat265-b2-look)
 
 ## Decisions
 - DEC-070 (connectivity up; add options, not roads; keep sparse): A, B2, B, C add roads. A/B2 add 1–3 roads on 2–4
   seeds in 46; B (+24 % road km on every seed) and C (+2.6 km on 44 seeds) go against "keep sparse".
 - DEC-064 (cTurn 45 / wGrade 180): no option touches them.
 - DEC-054 (only a condemned road refuses a seed): E would refuse seeds for detours, including a seed the player typed.
+- DEC-427 (option 3, supersedes DEC-423): a grazing restored side stays dropped; tutorial seed 1872706826 stays (DEC-402).
 - DEC-351 / DEC-149 (the tutorial seed): B, C and D change the tutorial seed's world; A and B2 leave it unchanged.
 - DEC-053 (regions), DEC-060 (one off-network generator), DEC-048 (POIs mid-edge): no conflict found.
 
