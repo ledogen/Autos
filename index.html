@@ -537,10 +537,6 @@
     #mp-body, #pp-body, #sp-body { line-height: 1.7; }
     #mp-body .mp-big, #pp-body .mp-big, #sp-body .mp-big { font-size: 22px; color: var(--text-bright); }
     #mp-body .mp-dim, #pp-body .mp-dim, #sp-body .mp-dim { color: var(--text-dim); }
-    /* Job-type badge on the offer card — PLACEHOLDER letter in a box (owner, 2026-10-10) until the
-       card iconography pass. Text from OfferBoard jobBadge: C courier · Fe fetch · Fr freight · Fg fragile · H haul. */
-    #mp-body .job-badge { display: inline-block; border: 1.5px solid currentColor; padding: 0 4px;
-      margin-right: 6px; font-size: 12px; font-weight: 700; line-height: 16px; }
     #mp-actions, #pp-actions, #sp-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
     #pp-sizes { display: none; margin-top: 10px; gap: 6px; justify-content: center; align-items: center; }   /* FEAT-141 */
     #pp-sizes .mp-dim { color: var(--text-dim); margin-right: 4px; }
@@ -1518,7 +1514,11 @@
     .cp-water { color: #4aa8d8; }
       /* FEAT-67: parked-panel head — the giver's portrait (placeholder) beside their line. */
     .mp-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; text-align: left; }
-    .mp-portrait { flex: 0 0 64px; width: 64px; height: 64px; background: #d9d3c1;
+    /* FEAT-274: the portrait's wrapper carries the job-type diamond, behind the portrait and poking out its top-left. */
+    .mp-pwrap { position: relative; flex: 0 0 64px; }
+    .mp-pwrap .mp-diamond { position: absolute; left: -16px; top: -16px; width: 40px; height: 40px; }
+    .mp-diamond text { font: 700 12px var(--font); fill: rgba(0, 0, 0, 0.85); }
+    .mp-portrait { position: relative; flex: 0 0 64px; width: 64px; height: 64px; background: #d9d3c1;
                    border: 1px solid var(--line-hover); }
     .mp-portrait svg { display: block; width: 100%; height: 100%; fill: #8a8272; }
     .mp-flavor { font-style: italic; line-height: 1.45; }

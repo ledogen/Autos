@@ -7379,10 +7379,14 @@ document.getElementById('mp-count')?.addEventListener('input', () => _renderMiss
  * the alpha shows no bracketed stub (FEAT-148); the portrait slot stays.
  * `flavorHtml` is trusted markup (authored constants or the escaped card flavor), never player input.
  */
-function _panelHead (flavorHtml) {
+function _panelHead (flavorHtml, family = null, badge = null) {
+  // FEAT-274: the job type's map diamond (family colour, its letters inside) tucked behind the portrait's top-left corner.
+  const diamond = family ? `<svg class="mp-diamond" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 1L39 20L20 39L1 20Z" fill="${FAMILY_COLOR[family] ?? EMPTY_DIAMOND_COLOR}" stroke="rgba(0,0,0,0.85)" stroke-width="1.5"/>`
+    + (badge ? `<text x="20" y="21" text-anchor="middle" dominant-baseline="middle">${badge}</text>` : '') + '</svg>' : ''
   return '<div class="mp-head">'
+    + `<div class="mp-pwrap">${diamond}`
     + '<div class="mp-portrait" title="portrait (placeholder)"><svg viewBox="0 0 36 36" aria-hidden="true">'
-    + '<circle cx="18" cy="13.7" r="7.2"/><path d="M5 36 Q5.8 23 18 23 Q30.2 23 31 36 Z"/></svg></div>'
+    + '<circle cx="18" cy="13.7" r="7.2"/><path d="M5 36 Q5.8 23 18 23 Q30.2 23 31 36 Z"/></svg></div></div>'
     + (flavorHtml ? `<div class="mp-flavor">${flavorHtml}</div>` : '')
     + '</div>'
 }
@@ -7593,9 +7597,8 @@ function _renderMissionUI () {
         : null
       const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
       body.innerHTML = (card
-        ? _panelHead(card.flavor != null ? `&ldquo;${esc(card.flavor)}&rdquo;` : null)
+        ? _panelHead(card.flavor != null ? `&ldquo;${esc(card.flavor)}&rdquo;` : null, card.family, card.badge)
           + (m.offers.length > 1 ? `<span class="mp-dim">offer ${m.offerIdx + 1} / ${m.offers.length}</span><br>` : '')
-          + (card.badge ? `<span class="job-badge">${esc(card.badge)}</span>` : '')   // placeholder type badge
           + card.sentence.map(r => r.b ? `<b>${esc(r.t)}</b>` : esc(r.t)).join('') + '<br>'
           + (card.pay ? `<span class="mp-pay">${esc(card.pay)}</span><br>` : '')   // its own line (owner, 2026-10-24: the haul trade line wrapped the terms)
           + `<span class="mp-dim">${[...card.terms, ...card.times].map(esc).join(' &middot; ')}</span><br>`
@@ -7830,7 +7833,7 @@ function _renderPaperUI () {
       // window from accept, beside the board expiry.
       // FEAT-67: Larry's portrait and his line head the panel, like every giver's. His line was
       // already written (the spare-papers aside), so it moves up into the dialogue slot.
-      body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;')
+      body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;', 'papers')
         + `<span class="mp-big">${r.customers.length}</span> `
         + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'} &mdash; any of them, the GPS shows the shortest</span> `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span><br>`
