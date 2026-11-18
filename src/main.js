@@ -7297,6 +7297,7 @@ function _renderCampUI () {
     } else {
       body.innerHTML = 'camp is made.<br>'
         + `<span class="cp-dim">vibe ${(vibe * 100) | 0}%</span>`
+        + (st.note ? `<br><span class="cp-warn">${st.note}</span>` : '')   // BUG-209: why a cook was refused
     }
   }
 
@@ -7365,6 +7366,9 @@ for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked'
     if (!_campUi || _campBusy || _campUi.mode !== 'camp' || (needsKit && !_kitAtCamp())) return
     // DEC-397 (owner): "if you cook at a dead fire the fire is instantly relit". The only thing that relights it.
     if (_campUi.fireOut) { campfire.setDead(false); _campUi = { ..._campUi, fireOut: false } }
+    // BUG-209: no room for the result refuses up front, before the fade and the 30 minutes.
+    if (!inventorySystem.canConvert(raw, cooked)) { _campUi = { ..._campUi, note: 'inventory full' }; _renderCampUI(); return }
+    _campUi = { ..._campUi, note: null }
     _campFade(() => { if (inventorySystem.convert(raw, cooked)) daySystem.advanceMinutes(30); _renderCampUI() })
   })
 }
