@@ -12,7 +12,7 @@ lane: engine & world
 # BUG-225: The camp's crossing chooser throws on seed 6666666
 
 ## Next steps
-Landed on main (9c686f2e). Orchestrator: move this ticket to completed once the smoke and the ticket commit are on main.
+Landed on main (9c686f2e). Orchestrator: merge this branch's ticket commits and move the ticket to completed.
 
 ## Summary
 FEAT-292's `_evenRequisition` threw inside `PoiSystem.build` on seed 6666666 built at (0,0) with no main-piece filter
@@ -57,7 +57,7 @@ ordinary offers, every crossing's total) are identical between the fix and its p
 - [x] 400-seed sweep: zero throws; FEAT-292's 60 census seeds unchanged
 - [x] Gate: `test/expedition-camp.mjs` MUST_BUILD (6666666 at its spawn with the main piece, and at (0,0) with none)
 - [x] Affected gates 36/36, tutorial-seed, fingerprint-world identical to pre-fix main (b839ef1c)
-- [ ] Smoke
+- [x] Smoke (re-run PASS; run 1 the known DEC-357 flake)
 
 ## Links
 FEAT-292 ticket; sweep logs `wip/bug-225/` in the CarGame-land-gps worktree (`sweep.mjs`, `sweep-{a,b}.log`,
@@ -68,4 +68,5 @@ FEAT-292 ticket; sweep logs `wip/bug-225/` in the CarGame-land-gps worktree (`sw
 
 ## Log
 - 2026-11-18: fix 677b5613, gate 4b054044 (must-build 6666666 ×2 ok). Affected gates 36/36 serial; tutorial-seed PASS;
-  fingerprint-world ALL IDENTICAL vs b839ef1c; sweep above. Smoke: SMOKE_TBD
+  fingerprint-world ALL IDENTICAL vs b839ef1c; sweep above. Smoke (load 7–8): run 1 failed only "DEC-357: no blink on the sleepy night drive" (known load flake);
+  re-run PASS, 40 steps, zero console errors.
