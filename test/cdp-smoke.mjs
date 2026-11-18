@@ -2362,7 +2362,8 @@ const STEPS = [
     // DEC-357: the tire fixed, the driver is SLEEPY, and blinks on the held clock's drive (day.js blinkOnly).
     check(await js('window.__day().stage()') === 'sleepy', `the tire fixed, the driver is not sleepy (DEC-357): ${await js('window.__day().energyH()')} h`)
     { const h1 = await clock(); await js('window.__day()._nextBlinkH = 1e-4')
-      check(await until(() => js('!!window.__day()._blink'), 2000) && await clock() === h1, 'DEC-357: no blink on the sleepy night drive, or the clock ran') }
+      const ok = await until(() => js('!!window.__day()._blink'), 2000) && await clock() === h1
+      check(ok, ok || `DEC-357: no blink on the sleepy night drive, or the clock ran: clock ${h1} → ${await clock()} ${await js('JSON.stringify({ parked: window.__vs.parked, stage: window.__day().stage(), next: window.__day()._nextBlinkH, tut: window.__tutorial(), dlg: document.getElementById("dlg-text")?.textContent })')}`) }
     // Parked at hers: home safe (DEC-325), her hunger line, her sleep card, the timer preset to wake at 07:00 on
     // day 0 — and sleeping ends the firing day.
     // Not seat(): its settle waits on the sim, and the lessons that land on arrival hold it — read them first.
