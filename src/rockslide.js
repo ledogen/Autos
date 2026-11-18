@@ -8,20 +8,23 @@
  *   • CANDIDACY — walk a run's centreline, sample the ground across it, and keep a station whose side
  *     slope rises steeply from the road (SLIDE.minDeg over at least SLIDE.minDropM) with a clear sight
  *     line from the approach. Computed from road + height queries near the truck; nothing is saved.
- *   • DIRECTOR — a memoryless (Poisson) draw per metre driven arms a slide; the next candidate ahead is
- *     picked, and the rocks are released when the truck is `arrival time × speed` from the impact point.
+ *   • DIRECTOR — free roam: a memoryless (Poisson) draw per metre driven arms a slide (DEC-400). Story mode
+ *     (DEC-425): only a flagged requisition line arms it, once (storySlideLines). Armed, the next candidate ahead
+ *     is picked, and the rocks are released when the truck is `arrival time × speed` from the impact point.
  *
  * Built against handles: rock bodies go through DebrisSystem (debris.js owns every engine call), the road
  * and ground through the callbacks main.js hands in. No engine types here (CLAUDE.md § Import seams).
  *
  * SM-INV-12: this is a runtime EVENT, not placement — it reads the world, it never writes it. A slide is
- * never saved: a reload drops the rocks in flight and the armed draw (save.js carries neither).
+ * never saved: a reload drops the rocks in flight and the armed draw (save.js carries neither). The one thing a
+ * story run saves is `fired`, the lines that have had their slide: run progress, so a reload or an abandon and
+ * retake neither fires a line twice nor dodges it. Which lines are flagged is derived from the seed, never saved.
  */
 
 import * as THREE from 'three'
 import { makeBlob, fillColor } from './props/prop-geometry.js'
 import { FLORA_PARAMS } from '../data/flora.js'
-import { mulberry32 } from './seed.js'
+import { mulberry32, djb2 } from './seed.js'
 
 // ── Numbers (FEAT-26 study, test/rockslide-study.mjs; the table is in the ticket) ─────────────────────
 export const SLIDE = {
@@ -58,6 +61,35 @@ export const SLIDE = {
   // chunk ring sooner, they are frozen (no collider under them) and wake when it streams back. Never in view.
   keepH: 1.5,
   maxSlides: 4,           // past this the oldest slide whose ground is unloaded goes (a long free-roam drive)
+}
+
+/**
+ * DEC-425 (owner, 2026-11-18): in story mode "we only want rockslides during the expedition camp missions. ~3 slides in
+ * the whole run". `lines` of the requisition are flagged per run, picked by the seed; a flagged line arms once its truck
+ * is `armFrac` of the way along the mission's route (drawn per line in [armFrom, armTo]), and never past `endM` to go.
+ */
+export const STORY_SLIDES = { lines: 3, armFrom: 0.15, armTo: 0.6, endM: 100 }
+
+/**
+ * The flagged lines of a run: Map line id → armFrac. Deterministic in (seed, ids): a seeded shuffle of `ids` (pass them
+ * in data/offers.js REQUISITION order), the first `lines` taken.
+ */
+export function storySlideLines (seed, ids, P = STORY_SLIDES) {
+  const rng = mulberry32(djb2(`slides:${seed}`)), a = [...ids]
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]] }
+  return new Map(a.slice(0, P.lines).map(id => [id, P.armFrom + rng() * (P.armTo - P.armFrom)]))
+}
+
+/**
+ * The director's story gate for one frame: { line, arm }. `line` = the requisition line of the mission being driven
+ * (null when none is running), `distance` its route length, `remaining()` the route still to go (called only for a
+ * flagged line not yet fired). Armed from armFrac of the way along until endM before the destination.
+ */
+export function storySlideGate (lines, fired, line, distance, remaining, P = STORY_SLIDES) {
+  const u = line && lines.get(line)
+  if (!u || fired.has(line) || !(distance > 0)) return { line: null, arm: false }
+  const left = remaining()
+  return { line, arm: left <= (1 - u) * distance && left > P.endM }
 }
 
 /**
@@ -278,6 +310,7 @@ export class RockslideDirector {
       return kind
     })
     this.events = 0
+    this.fired = new Set()    // DEC-425: requisition lines that have had their slide (the run save carries it)
   }
 
   /** Debug / smoke: arm now (the rate is skipped). A parked truck gets its slide at the nearest candidate at once. */
@@ -325,17 +358,25 @@ export class RockslideDirector {
 
   /**
    * One frame. `truck` = { x, y, z, vx, vz } (world, m and m/s); `enabled` false (menu, tutorial, lab) holds the
-   * odometer and the pick but keeps cleaning up.
+   * odometer and the pick but keeps cleaning up. `story` null = free roam (DEC-400's rate); in story mode
+   * { line, arm } (DEC-425): armed only while `arm` (main.js: a flagged line, not yet fired, far enough along its
+   * route), and a release marks `line` fired. The debug trigger arms either way and marks nothing.
    */
-  update (dt, truck, enabled = true) {
+  update (dt, truck, enabled = true, story = null) {
     for (const sl of this.slides) {
       sl.age += dt
       if (sl.mat.opacity < 1) sl.mat.opacity = Math.min(1, sl.age / this.P.fadeS)
     }
     this._cleanup()
     if (!enabled) return
-    this._odo += Math.hypot(truck.vx, truck.vz) * dt
-    if (!this.armed && this._odo >= this._armAt) { this.armed = true; this._scan = null }
+    this._line = story?.line ?? null
+    if (story) {
+      if (!story.arm && !this._forced) { this.armed = false; this.pick = null; return }
+      if (!this.armed) { this.armed = true; this._scan = null }
+    } else {
+      this._odo += Math.hypot(truck.vx, truck.vz) * dt
+      if (!this.armed && this._odo >= this._armAt) { this.armed = true; this._scan = null }
+    }
     if (!this.armed) return
     const on = this._onRoad(truck)
     if (!on) return
@@ -382,6 +423,7 @@ export class RockslideDirector {
   fadeMaterial () { return new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, alphaHash: true, opacity: 0 }) }
 
   _release (p) {
+    const line = !this._forced && this._line
     this.pick = null; this.armed = false; this._forced = false
     this._armAt = this._odo + nextArmM(this._rng, this.P.perKm)
     if (!this._hasGround(p.face.rel.x, p.face.rel.z)) return
@@ -392,6 +434,7 @@ export class RockslideDirector {
       if (h) bodies.push(h)
     }
     if (!bodies.length) { mat.dispose(); return }
+    if (line) this.fired.add(line)
     this.slides.push({ bodies, mat, age: 0, x: p.face.rel.x, z: p.face.rel.z, h0: this._clockH(), frozen: false })
     this.events++
     this.last = { at: { x: p.face.rel.x, z: p.face.rel.z }, imp: p.imp, rocks: bodies.length, dropM: p.face.dropM, T: p.T }

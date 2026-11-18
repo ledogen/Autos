@@ -4,11 +4,12 @@
 // go), candidacy on synthetic ground (a cut that qualifies; too shallow, too low, a terrace, a fall line along the road,
 // a blind crest, a tunnel, a run end that do not), the batch layout, and the director end to end on a straight run with
 // a fake road and debris: it releases on time, holds while the truck is stopped, drops its pick when the truck turns
-// round, and a forced trigger on a parked truck releases at the nearest candidate. Seeded RNG throughout.
+// round, and a forced trigger on a parked truck releases at the nearest candidate. §7 story mode (DEC-425): no slide
+// outside a flagged requisition line, three lines flagged by the seed, one slide a line at most. Seeded RNG throughout.
 //
 // Run: node test/rockslide-director.mjs
 
-import { SLIDE, ARRIVAL, nextArmM, releaseDue, arrivalS, faceAt, lineClear, candidateAt, batchBodies, runAt, RockslideDirector } from '../src/rockslide.js'
+import { SLIDE, ARRIVAL, STORY_SLIDES, storySlideLines, storySlideGate, nextArmM, releaseDue, arrivalS, faceAt, lineClear, candidateAt, batchBodies, runAt, RockslideDirector } from '../src/rockslide.js'
 import { mulberry32 } from '../src/seed.js'
 
 let fail = 0
@@ -147,6 +148,47 @@ console.log('§6 cleanup — the owner\'s rule: ground unloaded AND keepH game h
   ok(d.slides.length === 1 && frozen.at(-1) === false, '…and woken when it streams back')
   groundOn = false; clock = 5 + SLIDE.keepH; tick()
   ok(d.slides.length === 0 && removed > 0, `ground unloaded and ${SLIDE.keepH} h on: gone`)
+}
+
+console.log('§7 story mode (DEC-425): only flagged requisition lines, once each, chosen by the seed')
+{
+  const IDS = ['reqFirewood', 'reqCrew', 'reqSigns', 'reqFuel', 'reqGear']
+  const a = storySlideLines(1234, IDS), b = storySlideLines(1234, IDS)
+  ok(a.size === STORY_SLIDES.lines && JSON.stringify([...a]) === JSON.stringify([...b]), `${a.size} of 5 lines flagged, the same on every call for a seed (${[...a.keys()].join(', ')})`)
+  const per = Object.fromEntries(IDS.map(id => [id, 0])), sets = new Set()
+  let fracOk = true
+  for (let seed = 0; seed < 2000; seed++) {
+    const m = storySlideLines(seed, IDS); sets.add([...m.keys()].sort().join())
+    for (const [id, u] of m) { per[id]++; fracOk &&= u >= STORY_SLIDES.armFrom && u <= STORY_SLIDES.armTo }
+  }
+  ok(sets.size === 10 && IDS.every(id => Math.abs(per[id] / 2000 - 0.6) < 0.05), `over 2000 seeds all 10 choices of 3 occur, each line flagged ${IDS.map(id => (per[id] / 20).toFixed(0)).join('/')} % (want 60)`)
+  ok(fracOk, `arm point between ${STORY_SLIDES.armFrom} and ${STORY_SLIDES.armTo} of the route`)
+  ok(storySlideLines(7, IDS.slice(0, 2)).size === 2, 'a board with two lines flags both')
+  const L = new Map([['reqFuel', 0.3]]), none = new Set(), D = 4000, at = (left) => () => left
+  ok(!storySlideGate(L, none, null, D, at(1000)).arm, 'no mission running: not armed')
+  ok(!storySlideGate(L, none, 'reqGear', D, at(1000)).arm, 'an unflagged line: not armed')
+  ok(!storySlideGate(L, none, 'reqFuel', D, at(D * 0.71)).arm && storySlideGate(L, none, 'reqFuel', D, at(D * 0.69)).arm, 'a flagged line arms 30 % of the way along, not before')
+  ok(!storySlideGate(L, none, 'reqFuel', D, at(STORY_SLIDES.endM - 1)).arm, `not within ${STORY_SLIDES.endM} m of the destination`)
+  ok(!storySlideGate(L, new Set(['reqFuel']), 'reqFuel', D, at(1000)).arm, 'a line that has had its slide: not armed (a reload, an abandon and retake)')
+
+  const H = ground(), e = RUN()
+  const road = { _network: new Map([['r', e]]), queryNearest: (x) => ({ runKey: 'r', arcS: x }), poiPadBlocked: () => false, junctionPadBlocked: () => false }
+  const debris = { load () {}, spawn () { return {} }, remove () {} }
+  const drive = (d, story, laps = 40) => {
+    let x = 100
+    for (let k = 0; k < laps * 60 * 52; k++) { d.update(1 / 60, { x, y: 0, z: 2.5, vx: 25, vz: 0 }, true, story(d)); x += 25 / 60; if (x > 1400) x = 100 }
+  }
+  const quiet = new RockslideDirector({ debris, road: () => road, heightAt: H, rng: mulberry32(11) })
+  quiet._armAt = 0
+  drive(quiet, () => ({ line: null, arm: false }))
+  ok(quiet.events === 0, `story, ${(40 * 1.3).toFixed(0)} km on all-candidate road with no flagged line running (the rate due at once): ${quiet.events} slides`)
+  const one = new RockslideDirector({ debris, road: () => road, heightAt: H, rng: mulberry32(11) })
+  drive(one, (d) => storySlideGate(L, d.fired, 'reqFuel', 1e6, at(5e5)))
+  ok(one.events === 1 && one.fired.has('reqFuel') && one.fired.size === 1, `a flagged line driven ${(40 * 1.3).toFixed(0)} km on all-candidate road: ${one.events} slide, and the line is marked fired`)
+  const forced = new RockslideDirector({ debris, road: () => road, heightAt: H, rng: mulberry32(11) })
+  forced.trigger()
+  for (let k = 0; k < 120 && !forced.events; k++) forced.update(1 / 60, { x: 600, y: 0, z: 2.5, vx: 0, vz: 0 }, true, storySlideGate(L, forced.fired, 'reqFuel', 1e6, at(5e5)))
+  ok(forced.events === 1 && forced.fired.size === 0, 'the debug trigger fires in story too, and marks no line')
 }
 
 console.log(fail ? '\nFAIL — the rock slide director drifted' : '\nPASS — rate, timing, candidacy and the director hold')
