@@ -2081,9 +2081,11 @@ const STEPS = [
     // rolling resistance, so a truck with the brake off stays put), clear of hard props within 6 m, and 90 m from every
     // place. The old pick (the first ±9 m point beside the joint) sat on a 13–35 % cross-slope 2.3 m from a trunk: the
     // truck perched or rolled, by frame timing. The old tutorial seed 822480141 had no such point within 250 m along the joint's road.
-    // The check below is unchanged.
-    const sh = await js(`(() => { const v = window.__vs.position, H = window.terrain; let best = null
-      for (let dx = -300; dx <= 300; dx += 4) for (let dz = -300; dz <= 300; dz += 4) { const x = v.x + dx, z = v.z + dz
+    // The check below is unchanged. FEAT-229 (DEC-402): on 1872706826 the only such spot within 400 m is one ~10 m patch
+    // 264 m north of the joint, so the search centres on the joint (not wherever R left the truck) on a 2 m grid (the 4 m
+    // one stepped over the 3 m band; ~1 s).
+    const sh = await js(`(() => { const v = window.__poi().list().find(p => p.type === 'foodVendor'), H = window.terrain; let best = null
+      for (let dx = -300; dx <= 300; dx += 2) for (let dz = -300; dz <= 300; dz += 2) { const x = v.x + dx, z = v.z + dz
         const g = Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
         if (g >= 0.015 || g < 1e-9 || (best && g >= best.g)) continue   // g === 0: height not streamed in yet (3590618618 read a flat 0 at a 35 % slope), not a flat spot
         const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
