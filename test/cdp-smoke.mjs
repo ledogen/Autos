@@ -2275,6 +2275,7 @@ const STEPS = [
       return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
     await js(`window.__seated = false; window.__teleport(${mom.x}, ${mom.z}, ${mom.h}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), "the teleport to mom's never seated")
+    await gateShot('p4-1-mom-ring')   // FEAT-288 P4: her parking ring (the look sheet)
     // The parking lesson lands near hers; read up to her hand-over, parking when no card is up.
     const handover = () => js('/Take this pack over to your uncle/.test(document.getElementById("dlg-text")?.textContent ?? "")')
     let heard = false
@@ -2380,7 +2381,8 @@ const STEPS = [
     { const f = said.findLastIndex(t => /have fun with Katie/.test(t))
       check(f >= 0 && said[f + 1] === 'Mom: <click>', `mom's send-off did not hang up her gas call (DEC-354): ${JSON.stringify(said.slice(-3))}`) }
     const ranch = await js('({ w: window.__map2d()._getWaypoint(), d: window.__tutorial().camp })')
-    check(ranch.w && ranch.d && Math.hypot(ranch.w.x - ranch.d.x, ranch.w.z - ranch.d.z) < 1, `the tank filled, no waypoint on the camping area: ${JSON.stringify(ranch)}`)
+    check(ranch.w && ranch.d && Math.hypot(ranch.w.x - ranch.d.x, ranch.w.z - ranch.d.z) < 1 && ranch.w.poly?.length > 1,   // FEAT-288 P4: and its line
+      `the tank filled, no waypoint or no line on the camping area: ${JSON.stringify({ ...ranch, w: ranch.w && { ...ranch.w, poly: ranch.w.poly?.length } })}`)
     check(/^drive out to the old McGill ranch · /.test((await eve()).hud), `the drive to the camping area does not read "drive out to the old McGill ranch" ("${(await eve()).hud}")`)
     const door = await js(`(() => { const d = window.__tutorial().camp, nr = window.__roadSys().queryNearest(d.x, d.z, 30)
       return { x: nr.point.x, z: nr.point.z, h: Math.atan2(-nr.tangent.x, -nr.tangent.z) } })()`)
@@ -2473,6 +2475,11 @@ const STEPS = [
     console.log('  worst day: halfway')
     // Halfway home: a road point at 40 % of the crow distance from mom's, once the home leg is measured.
     await simFor(0.5)
+    // FEAT-288 P4 (DEC-422): the leg home is on the map, a pin on her door and the GPS's line to it.
+    { const w = await js(`(() => { const w = window.__map2d()._getWaypoint(), q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
+        return w && { d: Math.hypot(w.x - q.x, w.z - q.z), n: w.poly?.length ?? 0 } })()`)
+      check(w && w.d < 60 && w.n > 1, `FEAT-288: the drive home shows no pin by mom's or no line on the map: ${JSON.stringify(w)}`) }
+    if (process.env.GATE_SHOTS) { await tap('m'); await sleep(2500); await gateShot('p4-2-map-home'); await tap('m'); await sleep(500) }
     const half = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse'), v = window.__vs.position
       const x = q.x + (v.x - q.x) * 0.4, z = q.z + (v.z - q.z) * 0.4, nr = window.__roadSys().queryNearest(x, z, 400)
       return nr?.point ? { x: nr.point.x, z: nr.point.z, h: Math.atan2(-nr.tangent.x, -nr.tangent.z) } : null })()`)
@@ -2574,11 +2581,15 @@ const STEPS = [
     const m0 = await js('window.__econ.money')
     await js(`${fit}.click()`)
     check(await until(() => js('!window.__damage.flat[0]'), 2000), 'buying a tire for the flat corner did not fix it')
+    const lightsUp = () => js('/headlights/.test(document.getElementById("dlg-text")?.textContent ?? "") && document.getElementById("dialogue-panel").checkVisibility()')
+    await sleep(300)
+    check(!await lightsUp(), "FEAT-288 P4: the headlights card came up with the tire still in the cart (it waits for the check-out)")
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')   // FEAT-212: the cart
+    check(await until(async () => await lightsUp() && await js('document.getElementById("svc-screen").checkVisibility()'), 3000),
+      `FEAT-288 P4 (DEC-422): the tire's check-out put no headlights card up in the shop (it waited for the shift): ${await js('JSON.stringify({ tut: window.__tutorial(), dlg: document.getElementById("dlg-text")?.textContent.slice(0, 60), shop: document.getElementById("svc-screen").checkVisibility(), flat: window.__damage.flat, wd: window.__worstDay() })')}`)
     check(await js('window.__econ.money') === m0, `the tire was not on mom (FEAT-184): $${m0} → $${await js('window.__econ.money')}`)
     console.log(`  the fix: energy ${(await js('window.__day().energyH()')).toFixed(2)} h before (${await js('window.__day().stage()')})`)
-    await tap('Escape'); await tap(' ')   // off the brake: the night drive, whose card holds the sim
-    check(await until(async () => /headlights/.test(await js('document.getElementById("dlg-text")?.textContent ?? ""')), 3000), 'no headlights card on the night drive')
+    await tap('Escape'); await tap(' ')   // out of the shop, off the brake: the night drive, under the lights' card
     await readCards()   // up to the lights' card, which waits for L (DEC-359)
     check(await js('window.__tutorial().until') === 'lights', `the headlights card does not wait for L: ${JSON.stringify(await js('window.__tutorial()'))}`)
     await tap('l'); await readCards()   // it clears on the lights; her slow-down card follows
