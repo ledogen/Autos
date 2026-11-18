@@ -146,10 +146,10 @@ function pickWeighted (u, weights) {
 
 /**
  * The job-type badge on a card (owner, 2026-10-10): a PLACEHOLDER letter in a box until the map /
- * card iconography pass. Three types start with F, so those take two letters. Larry's route has none.
+ * card iconography pass. Three types start with F, so those take two letters. Larry's route is P (FEAT-273).
  */
 export function jobBadge (sp) {
-    if (sp.family === 'papers') return null
+    if (sp.family === 'papers') return 'P'   // FEAT-273: Larry's diamond carries a P
     if (sp.family === 'haul') return 'H'
     if (sp.family === 'freight') return 'Fr'
     if (sp.family === 'fragile') return 'Fg'

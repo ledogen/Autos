@@ -7843,7 +7843,7 @@ function _renderPaperUI () {
       // window from accept, beside the board expiry.
       // FEAT-67: Larry's portrait and his line head the panel, like every giver's. His line was
       // already written (the spare-papers aside), so it moves up into the dialogue slot.
-      body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;', 'papers')
+      body.innerHTML = _panelHead('&ldquo;i gave you a couple extra, feel free to keep what you don&rsquo;t deliver&rdquo;', 'papers', 'P')
         + `<span class="mp-big">${r.customers.length}</span> `
         + `<span class="mp-dim">customer${r.customers.length === 1 ? '' : 's'} &mdash; any of them, the GPS shows the shortest</span> `
         + `&nbsp;<span class="mp-dim">·</span>&nbsp; <span class="mp-big">${km(r.distance)}</span><br>`
