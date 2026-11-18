@@ -418,8 +418,8 @@ const YARD_SOLID_GAP = 0.15   // m — clearance from the POI model's own collis
  * Null for a knockable ornament (data/prop-models.js `knockable` — main.js makes it a body near the
  * truck) and for a model with no collision. "Others should have collision but not budge (brick
  * firepit)" — owner, 2026-10-25; before this a satellite was a mesh only and the truck drove through.
- * FEAT-251 (owner, 2026-11-17): of the lawn furniture only the fire pit is solid now; the farm's yard
- * clutter (drums, crates, pallets) still is.
+ * FEAT-251 (owner, 2026-11-17): of the lawn furniture only the fire pit is solid now. FEAT-268 (DEC-405): the
+ * farm's drums and crates are knockable too; its pallets are still solid.
  */
 export function satSolid (sat) {
     if (sat._solid !== undefined) return sat._solid
@@ -427,6 +427,44 @@ export function satSolid (sat) {
     return (sat._solid = !col?.size || col.shape === 'none' || spec.knockable ? null
         : { id: `sat:${sat.key}@${sat.x.toFixed(2)},${sat.z.toFixed(2)}`, modelX: sat.x, modelZ: sat.z,
             baseY: sat.y - (sat.lift ?? 0), modelYaw: sat.yaw, collision: { size: col.size } })
+}
+
+/**
+ * FEAT-268 (DEC-405): the load of a knockable whose row gives a range (`emptyKg`..`fullKg`, the farm's drums and
+ * crates), drawn per placement and deterministic in the seed: the satellite's own position and variant come from
+ * (seed, POI id), so nothing is saved and a revisit finds the same drum as heavy. The fill fraction is u³: most
+ * nearly empty, a few full (median 12.5 %, 21 % past half, 3.5 % past 90 %).
+ *
+ * Mass properties as a SHELL of the empty mass (thin-walled cylinder or box over the collider's extents) plus
+ * the CONTENTS as a solid filling the bottom of it to the fill fraction, so a full drum is heavier, lower-centred
+ * and differently stiff in roll than an empty one, not a light one with a number changed. Inertia is about the
+ * combined centre of mass, body frame (the collider's bbox centre, y up). `half` = debris.js halfExtents.
+ * Null for a fixed-mass knockable (the lawn furniture: density over its hull, as before).
+ * @returns {{massKg:number, fill:number, inertia:{x,y,z}, center:{x,y,z}}|null}
+ */
+export function knockMass (sat, half) {
+    const k = PROP_MODELS[sat.key]?.knockable
+    if (!k?.fullKg) return null
+    const u = mulberry32(hash32(`yard-mass:${sat.key}@${sat.x.toFixed(2)},${sat.z.toFixed(2)}:${sat.variant}`))()
+    const fill = u * u * u, ms = k.emptyKg, mc = fill * (k.fullKg - k.emptyKg)
+    const hx = half.x, h = 2 * half.y, hz = half.z, hc = fill * h
+    const yc = -half.y + hc / 2, yStar = mc * yc / (ms + mc)
+    let Ixx, Iyy, Izz
+    if (k.shell === 'cylinder') {
+        const r = (hx + hz) / 2, mSide = ms * h / (h + r), mCaps = ms - mSide
+        Iyy = mSide * r * r + mCaps * r * r / 2 + mc * r * r / 2
+        Ixx = Izz = mSide * (r * r / 2 + h * h / 12) + mCaps * (r * r / 4 + h * h / 4) + ms * yStar * yStar
+            + mc * (r * r / 4 + hc * hc / 12) + mc * (yc - yStar) ** 2
+    } else {
+        const a = 2 * hx, b = h, c = 2 * hz, A = b * c + a * c + a * b
+        const mx = ms * b * c / A, my = ms * a * c / A, mz = ms * a * b / A   // each pair of faces
+        Ixx = mx * (b * b + c * c) / 12 + my * (c * c / 12 + b * b / 4) + mz * (b * b / 12 + c * c / 4) + ms * yStar * yStar
+            + mc * (hc * hc + c * c) / 12 + mc * (yc - yStar) ** 2
+        Iyy = mx * (c * c / 12 + a * a / 4) + my * (a * a + c * c) / 12 + mz * (a * a / 12 + c * c / 4) + mc * (a * a + c * c) / 12
+        Izz = mx * (b * b / 12 + a * a / 4) + my * (a * a / 12 + b * b / 4) + mz * (a * a + b * b) / 12 + ms * yStar * yStar
+            + mc * (a * a + hc * hc) / 12 + mc * (yc - yStar) ** 2
+    }
+    return { massKg: ms + mc, fill, inertia: { x: Ixx, y: Iyy, z: Izz }, center: { x: 0, y: yStar, z: 0 } }
 }
 
 export function dressYard (q, seed, yard) {
