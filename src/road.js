@@ -2549,6 +2549,8 @@ export class RoadSystem {
                 id: r.id, x: r.pos.x, y: r.pos.y, z: r.pos.z, gx: r.gx, gz: r.gz,
             }]),
             promotedAway: [...this._promotedAway],
+            // FEAT-265: restored Urquhart sides, which _graphDegreeOf adds (absent when none, so such a world exports as before)
+            ...(this._v2Restored?.size ? { restored: [...this._v2Restored] } : {}),
             tallies: {
                 shoves: this._v2Shoves || 0, reroutes: this._v2Reroutes || 0,
                 infeasible: this._v2Infeasible || 0, condemned: this._v2Condemned || 0,
@@ -2623,6 +2625,7 @@ export class RoadSystem {
             id: r.id, pos: new THREE.Vector3(r.x, r.y, r.z), gx: r.gx, gz: r.gz,
         }]))
         this._promotedAway = new Set(data.promotedAway || [])
+        this._v2Restored = new Set(data.restored || [])
         if (data.tallies) {
             this._v2Shoves = data.tallies.shoves; this._v2Reroutes = data.tallies.reroutes
             this._v2Infeasible = data.tallies.infeasible; this._v2Condemned = data.tallies.condemned
@@ -2643,7 +2646,7 @@ export class RoadSystem {
             for (const [ka, kb] of data.graph.dropped || []) {
                 adj.get(ka)?.delete(kb); adj.get(kb)?.delete(ka)
             }
-            this._proto.graph = { sig: data.graph.sig, edges: data.graph.edges, adj, key: _idKey }
+            this._proto.graph = { sig: data.graph.sig, edges: data.graph.edges, adj, key: _idKey }   // no urqDropped: never reused to build
         }
         // Node incidence (site-key → [runKey,…]) — _graphNodeStrands/_graphJunctionGradeY read it
         // for the pad plane, and only _assembleGraphEdges fills it. Registration pushed each run to
@@ -2980,7 +2983,7 @@ export class RoadSystem {
         const scx0 = Math.floor(wx0 / S) - M, scx1 = Math.floor((wx1 - 1e-6) / S) + M
         const scz0 = Math.floor(wz0 / S) - M, scz1 = Math.floor((wz1 - 1e-6) / S) + M
         const sig = `${S}:${scx0},${scx1},${scz0},${scz1}`
-        if (persist && this._proto.graph && this._proto.graph.sig === sig) return this._proto.graph
+        if (persist && this._proto.graph && this._proto.graph.sig === sig && this._proto.graph.urqDropped) return this._proto.graph   // FEAT-265: an adopted graph carries no urqDropped
         // PERF-26: the persist=false path was the ONLY one without a memo, and it is the hot one —
         // the warm scans re-derive the graph per call while `sig` is quantised to roadSiteSpacing
         // (256 m by default), so most calls rebuilt a byte-identical graph: delaunay() +
@@ -3001,17 +3004,24 @@ export class RoadSystem {
                 for (const s of this._aliveSitesIn(cx, cz)) { ids.push(s.id); pts.push([s.pos.x, s.pos.z]) }
         const adj = new Map()
         const edges = []
+        // FEAT-265: the Delaunay edges Urquhart removed, each with the apex of every triangle that
+        // removed it — [idA, idB, [apexId…]], idA/idB in the same index order as `edges`, sorted by key
+        // so every window lists them alike. Read only by _v2RestoreDropped.
+        const urqDropped = []
         if (pts.length >= 3) {
             const tris = delaunay(pts)
-            for (const [i, j] of urquhartEdges(pts, tris)) {
+            const dropped = new Map()
+            for (const [i, j] of urquhartEdges(pts, tris, dropped)) {
                 const a = ids[i], b = ids[j], ka = _idKey(a), kb = _idKey(b)
                 if (!adj.has(ka)) adj.set(ka, new Set())
                 if (!adj.has(kb)) adj.set(kb, new Set())
                 adj.get(ka).add(kb); adj.get(kb).add(ka)
                 edges.push([a, b])
             }
+            for (const { i, j, apex } of dropped.values()) urqDropped.push([ids[i], ids[j], apex.map((k) => ids[k])])
+            urqDropped.sort((x, y) => { const kx = _idKey(x[0]) + '|' + _idKey(x[1]), ky = _idKey(y[0]) + '|' + _idKey(y[1]); return kx < ky ? -1 : kx > ky ? 1 : 0 })
         }
-        const g = { sig, edges, adj, key: _idKey }
+        const g = { sig, edges, adj, key: _idKey, urqDropped }
         if (persist) this._proto.graph = g
         else {
             // Bounded: warm / stream / spawn / map windows alternate between a handful of sigs, the
@@ -3038,8 +3048,11 @@ export class RoadSystem {
         // trim's bend (2).
         if (_isPromotedId(id)) return this._proto.nodeInc.get(nk)?.length ?? 3
         if (_isBendId(id)) return this._proto.nodeInc.get(nk)?.length ?? 2
+        // FEAT-265: a restored Urquhart edge (_v2RestoreDropped) is a built leg the band graph never lists.
+        let plus = 0
+        if (this._v2Restored?.size) for (const pr of this._v2Restored) if (pr.startsWith(nk + '|')) plus++
         const nbrs = g.adj.get(nk)
-        if (!nbrs) return 0
+        if (!nbrs) return plus
         const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen.del : null
         // FEAT-76: subtract edges that were PROMOTED AWAY from this node — the side road of a T no
         // longer starts here, it starts out on the trunk. Same shape as the R4 frozen delete set
@@ -3049,8 +3062,8 @@ export class RoadSystem {
         // still fit a three-way pad plane and flatten its camber. Directed on purpose: the edge is
         // gone from THIS end only — its far end still has the road arriving.
         const promAway = this._promotedAway
-        if ((!delF || !delF.size) && (!promAway || !promAway.size)) return nbrs.size
-        let n = 0
+        if ((!delF || !delF.size) && (!promAway || !promAway.size)) return nbrs.size + plus
+        let n = plus
         for (const o of nbrs) {
             if (delF && delF.has(nk + '|' + o)) continue
             if (promAway && promAway.has(nk + '|' + o)) continue
@@ -6974,6 +6987,8 @@ export class RoadSystem {
         this._proto.nodeInc.clear()
         this._promoted = new Map()
         this._promotedAway = new Set()
+        this._v2Restored = new Set()
+        const failedReg = new Set()   // FEAT-265: registration routes that came back empty
         this._promotedRoleMemo = null
         this._v2LoopTrims = new Map()
         const addInc = (idKey, runKey) => { const a = this._proto.nodeInc.get(idKey) || this._proto.nodeInc.set(idKey, []).get(idKey); a.push(runKey) }
@@ -7007,7 +7022,11 @@ export class RoadSystem {
             if (this._v2DeleteFor(g, drop, wide, c1, c2)) continue
             const key = `g:${g.key(c1)}:${g.key(c2)}`
             const cl = this._edgeCenterline(c1, c2, this._v2EdgeDirs(g, drop, g.key(c1), g.key(c2)))
-            if (!cl || cl.length < 1e-6) continue
+            if (!cl || cl.length < 1e-6) {   // no path on any rung: the Urquhart side it vouched for returns below
+                const ka = g.key(c1), kb = g.key(c2)
+                failedReg.add(ka < kb ? ka + '|' + kb : kb + '|' + ka)
+                continue
+            }
             // BUG-105 loop trim: a leg of a trimmed site registers from its far end to the bend, and has no other role
             // (_v2LoopTrim declines a leg the plan uses). The edge leaves the site's end only — directed, like a T's.
             const t1 = this._v2LoopTrim(g, drop, wide, g.key(c1)), t2 = this._v2LoopTrim(g, drop, wide, g.key(c2))
@@ -7059,6 +7078,8 @@ export class RoadSystem {
                 }
             }
         }
+        // FEAT-265 (DEC-401): a failed route puts back the side Urquhart dropped on its account.
+        this._v2RestoreDropped(g, drop, wide, inBand, failedReg)
         // FEAT-76: promote every planned wye to a T. Assembly-layer only — see _v2PromoteTs.
         this._v2PromoteTs(g, drop, promos)
         // BUG-105: two shipped roads the plan never paired that lie on each other's pavement join with two Ts.
@@ -7070,6 +7091,105 @@ export class RoadSystem {
             if (!e.cellA || !e.cellB) continue
             addInc(g.key(e.cellA), runKey); addInc(g.key(e.cellB), runKey)
         }
+    }
+
+    // FEAT-265 (DEC-401): Urquhart drops each Delaunay triangle's longest side on the promise that the triangle's two
+    // shorter sides are roads. A side that fails to route (no path on any rung: a pond's no-go disc walling a node
+    // off) breaks that promise, and the dropped side comes back:
+    //   - A dropped side d returns iff EVERY triangle that dropped it (≤ 2) has a short side that failed. A triangle
+    //     whose two short sides both built still gives d its two-road detour, so d stays dropped.
+    //   - "Failed" = a settled-graph edge (not degree-dropped, not a merge-band stub) whose route is empty. Degree
+    //     drops and crossing deletes are not failures: each keeps its own detour rule.
+    //   - One round: a restored side that fails to route stays dropped and restores nothing in turn.
+    //   - A restored side whose profile cannot solve even on the hard-grade rungs stays dropped (a condemned road
+    //     refuses the seed, DEC-054), as does one ending at a loop-trimmed site (BUG-105: no road meets there).
+    //   - ASSEMBLY ONLY. Restored sides never enter g.adj, so no pin, plan verdict or degree-cap decision moves: a
+    //     world with no failed route builds byte-identical to before. They route on CHORD pins at both ends (a pure
+    //     fn of the two node positions), sit outside the degree cap (a node may reach 4: connectivity wins, as in the
+    //     cap's own detour rule), and _graphDegreeOf counts them (pads, leaf tapers).
+    // Window invariance: d is decided wherever it has an in-band endpoint, i.e. wherever it registers. Its triangles
+    // are interior to the band graph, and an empty route is a reachability fact about the corridor (every rung's
+    // costs are finite and the last rung is unpinned and uncapped), so it does not depend on the pins a window
+    // derives. A short side this window does not register is routed here on its base pins: a cache hit when the
+    // settle pass routed it, an extra route otherwise. Pure per (seed, site set, routes): the sync path, the network
+    // worker and its route workers agree by construction.
+    _v2RestoreDropped(g, drop, wide, inBand, failedReg) {
+        const key = g.key
+        const _mband = this._params?.roadMergeBand ?? 24, _mband2 = _mband * _mband
+        const known = new Map()
+        const failed = (x, y) => {
+            const kx = key(x), ky = key(y), pk = kx < ky ? kx + '|' + ky : ky + '|' + kx
+            if (failedReg.has(pk)) return true
+            if (!g.adj.get(kx)?.has(ky)) return false            // not a planned road (Urquhart-dropped or degree-capped)
+            if (inBand(x) || inBand(y)) return false             // registered here: failedReg holds the answer
+            const A = this._nodePos(x), B = this._nodePos(y)
+            if ((A.x - B.x) ** 2 + (A.z - B.z) ** 2 <= _mband2) return false
+            let f = known.get(pk)
+            if (f === undefined) {
+                const cl = this._edgeCenterline(x, y, this._v2EdgeDirsBase(g, drop, kx, ky))
+                f = !cl || !(cl.length > 1e-6)
+                known.set(pk, f)
+            }
+            return f
+        }
+        for (const [a, c, apex] of g.urqDropped ?? []) {
+            if (!inBand(a) && !inBand(c)) continue
+            if (!apex.length || !apex.every((b) => failed(a, b) || failed(b, c))) continue
+            if (this._v2LoopTrim(g, drop, wide, key(a)) || this._v2LoopTrim(g, drop, wide, key(c))) continue
+            const pa = this._nodePos(a), pc = this._nodePos(c)
+            const l = Math.hypot(pc.x - pa.x, pc.z - pa.z)
+            const chord = { x: (pc.x - pa.x) / l, z: (pc.z - pa.z) / l }
+            const legsInf = this._v2Infeasible || 0
+            const legs = this._v2RestoreLegs(g, drop, a, c)
+            this._v2Infeasible = legsInf   // the legs' samples replay their own tallies; this side's verdict is its own
+            const inf0 = this._v2Infeasible || 0
+            const smp = this._v2SampleEdge(a, c, { startDir: chord, goalDir: chord })
+            if (!smp || (this._v2Infeasible || 0) > inf0) { this._v2Infeasible = inf0; continue }
+            // FEAT-77 for a restored side (DEC-427, option 3): one that grazes a leg of its nodes stays dropped.
+            if (this._v2RestoreGrazes(smp, legs, key(a), key(c))) continue
+            this._registerRun(`g:${key(a)}:${key(c)}`, smp.cl, a, c)
+            this._v2Restored.add(key(a) + '|' + key(c)); this._v2Restored.add(key(c) + '|' + key(a))
+        }
+    }
+
+    // FEAT-265 clearance (FEAT-77 for a restored side; DEC-427): a restored side is outside the plan layer, so the
+    // clearance walk never makes it a loser. Instead a restored side that GRAZES one of the other legs at its two nodes
+    // (centres under the graze floor past the geometric throat, the road-clearance random-seed tier: _v2RestoreGrazes)
+    // stays dropped; it is never re-routed (a berth re-route put seed 1872706826's 1061 m side on a 32 % pitch and moved
+    // the tutorial). The legs are their shipped pass-2 lines (_v2RunSample: pure per edge, so window-invariant).
+    // ponytail: legs of the two nodes only — a restored side grazing a non-adjacent road or another restored side is
+    // left to the gate; add _v2ClearPartners' chord partners if one shows.
+    _v2RestoreLegs(g, drop, a, c) {
+        const key = g.key, kA = key(a), kC = key(c)
+        const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen.del : null
+        const dropped = (x, y) => (drop && drop.has(x + '|' + y)) || (delF && delF.size && delF.has(x + '|' + y))
+        const samples = []
+        for (const [nk, n, other] of [[kA, a, kC], [kC, c, kA]]) {
+            for (const o of [...(g.adj.get(nk) || [])].sort()) {
+                if (o === other || dropped(nk, o)) continue
+                const Q = this._v2RunSample(g, drop, n, o.split(',').map(Number))
+                if (Q && Q.pts.length) samples.push({ Q, nk })
+            }
+        }
+        return samples
+    }
+
+    // Does restored route S (spelled kA → kC) come under the graze floor of a leg past the geometric throat at the node
+    // they share? The same walk the clearance pass's graze test makes (bores excluded).
+    _v2RestoreGrazes(S, samples, kA, kC) {
+        const FLOOR = this._v2ClearPrm().floor
+        for (const { Q, nk } of samples) {
+            const atA = nk === kA
+            const t = this._v2ThroatLen(S, atA, Q)
+            for (let i = 0; i < S.pts.length; i++) {
+                const s = S.polyCum[i]
+                if (atA ? s < t : s > S.L - t) continue
+                if ((S.spans || []).some((sp) => s >= sp.s0 - 80 && s <= sp.s1 + 80)) continue
+                const h = _nearestWithinXZ(S.pts[i].x, S.pts[i].z, Q.pts, Q.polyCum, 60)
+                if (h && h.d < FLOOR) return true
+            }
+        }
+        return false
     }
 
     /**
