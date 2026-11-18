@@ -12,7 +12,7 @@ lane: SM (tutorial)
 # FEAT-288: Tutorial pass from the owner's 2026-11-18 monologue
 
 ## Next steps
-P1, P7, P2 on main; P3a built on land/feat-288-p3a-lessons. Next, serially per § 8: P3b on the gate (read § 3's "As built (P2)" and "As built (P3a)" first), then P4, P5, P6, P8. The owner owes words for the lines listed under Open questions.
+P1, P7, P2, P3a on main; P4 built on land/feat-288-p4-world (§ 8 "As built (P4)"). In flight: P3b, P5, P6. Then P8. The owner owes words for the lines listed under Open questions.
 
 ## Summary
 A complete, simple tutorial: full dialogue and storytelling, a brief but complete explanation of every system, every control / menu / bar the player must use highlighted and everything else locked out, plus the specific fixes below.
@@ -380,6 +380,22 @@ does not touch.
 Order: P1 → P7 → P2 → P3a → P3b → P4 → P5 → P6 → P8. P1 and P7 can start now; P4, P5, P6 need no answer and may slot
 anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is not answered.
 
+**As built (P4, 2026-11-18) — what P3b / P5 need.**
+- Mom's ring: main.js `_rebuildPoiMarkers` draws the orange ring round `momsHouse` too (poiInteractR 10 m, inside her 25 m
+  door, camp.js `atMoms`), in every story run; it hides on a job like every ring. poi.js's `jobs` comment rewritten.
+  `tut-park` now says "park out front, in the marked spot" (§ 2 beat 7's draft; on the wording list).
+- The map: `getWaypoint` falls back to main.js `_tutMapLeg()`: while the tutorial drives (after "play"), the leg in play
+  (`_tutLeg`) as the map's Waypoint pin on its door plus the GPS's own line (`_tutLine`, detours included). The drive to
+  the ranch keeps DEC-346/356's rule (gone on arrival or a camp made short). A player's own waypoint still wins (pin only,
+  `_waypointOn` is false in the tutorial): **P3b's map beat** must decide what the line shows once Katie has the player
+  drop one on the station.
+- The flat: data/tutorial.js `FLAT.alongM` (250) and `flatRadius(poly, home)`: it goes off once the truck is closer to
+  mom's by crow than the drive home's planned line is at 250 m along. No height enters it, so BUG-216's deck moves near the
+  tunnel cannot shift it. On 1872706826: 264 m along (the first line vertex past 250), 193 m before the tunnel at 457 m;
+  the tow to the same shop 0.66 km (was 0.75). test/tutorial-seed.mjs holds ≥ 150 m before the tunnel.
+- `tut-lights` fires when the flat is fixed and the shop's cart is checked out (`!serviceCenter.pending()`): the card is up
+  in the shop, before the player leaves it (its `allow: []` locks the shop's rows; leave is never locked).
+
 ## Tracker
 - [x] Itemised plan + conflicts + questions written here (no code): § Plan, 44 items, DEC-422
 - [ ] Owner answers card `feat288-tutorial-plan` (or the defaults stand)
@@ -388,7 +404,7 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - [x] P2 the gate: one lock + highlight for keys, mouse and pad; nothing locked after a skip
 - [x] P3a lessons 1: forced diagnostics → inventory → spare, break camp locked, eating locked, the sleep lesson, lunches at breakfast, B advances a card
 - [ ] P3b lessons 2: the map beat, the shop beat, mom's gas call on leaving the shop, the end menu
-- [ ] P4 world fixes: mom's ring (story-wide), legs on the map, the flat before the tunnel, mom's card on the tire's check-out
+- [x] P4 world fixes: mom's ring (story-wide), legs on the map, the flat before the tunnel, mom's card on the tire's check-out
 - [ ] P5 quest-item mark on the pack
 - [ ] P6 opening camera: free rotation, resumes; BUG-203
 - [ ] P8 speaker separation (after Q2)
@@ -406,6 +422,7 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - `tut-damage` card 2: "Now put your spare on: Tab / hold B and pick the inventory, then the mounted tire."
 - `tut-spareflat`, the pad's half: "hold B and pick the recovery menu."
 - `tut-moms` last card (now after the paycheck line): "Sleep is how a day ends. Set your alarm clock for 06:30: pick sleep and slide it until it reads wake 06:30, then sleep. The bar shows how rested you'll wake up."
+- `tut-park` (P4): "Pull over and park out front, in the marked spot. Come to a full stop, then tap Space / RB to set the handbrake."
 - `tut-breakfast`: "Morning! I packed you some lunches for the road. Eat one before you go — you'll run out of steam early on an empty stomach. Select inventory, then a packed lunch."
 
 ANSWERED 2026-11-18 (DEC-426): Q1 = A. Q2 = a speaker's card slides out of frame when they finish and the next speaker's slides in from the opposite side; cards from the same speaker cycle in place. Q3 = the end stays as built (manager, one press, tutorial over, Larry's call in the truck): P3b's end-menu item is DROPPED. Q4 = default (four lunches, leave with three). Q5 = default, depending on the seed. The original questions, for the record:
