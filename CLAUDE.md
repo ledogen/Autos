@@ -204,7 +204,7 @@ not pick is random too (owner, 2026-11-06): free roam, the world built behind th
   on this Mac follows the core clock macOS picks (2–5× on the same work). A drive that did not stream
   (≥ 3 km, new chunks) is INVALID, never a number. `--b` alternates A-B-A-B to cancel heat drift; `--record` appends to
   `.planning/perf/history.jsonl` (the health check). About 7 min a session; wants a quiet machine. Not in `npm test`.
-  The driver is `test/lib/autopilot.mjs`: pure, state in → controls out, meant to grow into in-game AI cars.
+  The driver is `src/autopilot.js` (FEAT-293, also the debug panel's Driving AI): pure, state in → controls out, meant to grow into in-game AI cars.
 - **Run logger (FEAT-242, DEC-358 — the one diagnostic that ships in `src/`, opt-in, off by default):** debug panel
   (backtick) → *Run logging (FEAT-242)* → tick *Run logging*. `src/run-log.js` then records the run's events (missions,
   every damage event with its measured force/speed and the threshold it was read against, wear by cause, purchases,
