@@ -1125,7 +1125,7 @@ export class RoadMeshSystem {
         let fcol = new Float32Array(rings * vpr * 3)   // BUG-112: the floor's colour — the cut bench's, shaded
         let uv  = new Float32Array(rings * vpr * 2)
         const CUT = _hexLin(params.terrainCutoutColor ?? 0x757066)   // terrain.js's cut-face colour, same convention
-        const prof = { gradeY: 0, tx: 1, tz: 0 }
+        const prof = { gradeY: 0, tx: 1, tz: 0 }, lipProf = { gradeY: 0, tx: 1, tz: 0 }
         let vi = 0, ui = 0
         for (let r = 0; r < rings; r++) {
             const ir = Math.min(inner - 1, Math.max(0, r - (extA ? 1 : 0)))
@@ -1143,21 +1143,27 @@ export class RoadMeshSystem {
             const shade = road.boreShade(runKey, s)
             // Dirt-apron Y (relative to gradeY) — the _carveDirtY fold at lateral L, minus the drop.
             // Camber from camberProfile, the SAME source the ribbon and the carve read.
-            const sinCam = Math.sin(road.camberProfile(s, runKey))
+            // BUG-221: the lip ring's FLOOR stands on the deck where it lies, the run's profile at s + ext. It took the
+            // end ring's gradeY, so on a steep approach it ran out LEVEL over the climbing road: 1.5 m out of a 37 %
+            // mouth (seed 1830183820) a gravel shelf stood 0.44 m above the asphalt, invisible to the tires (they ride
+            // the deck) and a collider the hull wedged under. The arch keeps the end frame: it meets the level
+            // masonry ring (buildPortalRing), and at lateral ±R it is off the road.
+            const sF = s + ext, floorY = ext ? road.runProfile(sF, runKey, lipProf).gradeY : prof.gradeY
+            const sinCam = Math.sin(road.camberProfile(sF, runKey))
             const drop = ext ? -LIP_RISE : APRON_DROP
             const dirtH = (L) => crownProfile(L, halfWidth, crownH) + L * sinCam - clearance - drop
             for (let k = 0; k < vpr; k++) {
-                let lat, h
+                let lat, h, y0 = floorY
                 if (k === 0)            { lat =  APRON_IN; h = dirtH(lat) }
                 else if (k === 1)       { lat =  R;        h = dirtH(lat) }
                 else if (k === vpr - 2) { lat = -R;        h = dirtH(lat) }
                 else if (k === vpr - 1) { lat = -APRON_IN; h = dirtH(lat) }
                 else {
                     const th = Math.PI * (k - 2) / SEG
-                    lat = R * Math.cos(th); h = R * Math.sin(th)
+                    lat = R * Math.cos(th); h = R * Math.sin(th); y0 = prof.gradeY
                 }
                 pos[vi]     = c.x + rx * lat
-                pos[vi + 1] = prof.gradeY + h
+                pos[vi + 1] = y0 + h
                 pos[vi + 2] = c.z + rz * lat
                 // Apron verts tint dirt-brown (vertex color × concrete base ≈ shoulder dirt) — on the lining
                 // that is now only the foot of the wall's step down to the floor.
