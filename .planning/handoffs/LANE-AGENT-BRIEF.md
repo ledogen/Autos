@@ -29,7 +29,7 @@ The owner does not talk to you. The orchestrator does. CLAUDE.md applies in full
   Never kill another lane's process. **No cdp-smoke on a branch**: the orchestrator smokes main after each merge.
 - **A job over ~10 min** (a gate run, a soak, a census): start it detached, `nohup <cmd> > <log> 2>&1 &`, and wait
   on the log (a Monitor until-loop on its last line). It then outlives you if you stop, and the next agent reads the log.
-  **Every wait loop carries a time limit** (`timeout 900 bash -c 'until …; do sleep 20; done'`, or a counter): on 2026-11-17
+  **Every wait loop carries a time limit** (a counter: `for i in $(seq 45); do <check> && break; sleep 20; done`; macOS has no `timeout` binary): on 2026-11-17
   the orchestrator found 51 loops up to 4.6 days old, each waiting on a log line or a `pgrep` that could never come true.
   Wait on YOUR job's pid or YOUR log, never on "no run-all anywhere on the machine" (another lane's run keeps it alive).
 - **Need the orchestrator mid-task** (another lane's file, merge order, a landing slot)? `SendMessage` to `main`,
