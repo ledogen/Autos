@@ -1457,7 +1457,7 @@ const STEPS = [
     check(await until(() => js('window.__site().halos?.some(h => h.ring.visible)'), 2000), 'no cluster halo lit beside the site (FEAT-187)')
     check(await js('window.__gps()?.noRing === true'), `the demolition GPS route still carries a destination circle (FEAT-187): ${await js('JSON.stringify(Object.keys(window.__gps() ?? {}))')}`)
     // BUG-212: the map draws the GPS's tour from the truck (the guide's re-plan), never the job's planned route.
-    check(await until(() => js('!!window.__site()?.tour && window.__map2d()._getMission()?.poly === window.__site().tour.poly'), 4000),
+    check(await until(() => js('!!window.__site()?.guide.tour && window.__map2d()._getMission()?.poly === window.__site().guide.tour.poly'), 4000),
       'BUG-212: the demolition map line is not the GPS tour')
     await sleep(2000)
     const awake = await js(`${bodies}.filter(t => window.__physicsEngine.isAwake(t.body)).length`)
@@ -1475,9 +1475,9 @@ const STEPS = [
     // cluster still standing — the remaining tour from the truck (paper-route.js planGuideJob, re-planned every tourS).
     const end = await js('(() => { const m = window.__mission().mission, a = m.poly.at(-2), b = m.poly.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)), fx: b.x - a.x, fz: b.z - a.z } })()')
     await seat(end.x, end.z, end.h)
-    const legEnd = '(s => s.guide?.customers?.[0])(window.__site())'
+    const legEnd = '(s => s.guide?.leg?.customers?.[0])(window.__site())'
     const behind = `(c => c && (c.x - ${end.x}) * ${end.fx} + (c.z - ${end.z}) * ${end.fz} < 0 && c.members.some(i => !window.__site().targets[i].smashed))(${legEnd})`
-    check(await until(() => js(`${behind} && window.__site().gps === window.__site().guide`), 4000),
+    check(await until(() => js(`${behind} && window.__site().gps === window.__site().guide.leg`), 4000),
       `past the end the GPS leg does not turn back to a standing cluster: ${await js(`JSON.stringify(${legEnd} && { x: ${legEnd}.x, z: ${legEnd}.z, members: ${legEnd}.members })`)}`)
     check(await js('window.__site().gps?.noRing === true'), 'the demolition GPS leg carries a destination circle (FEAT-187)')
     check(await js('window.__mission().state') === 'running', `arriving with targets standing settled the line: ${await js('window.__mission().state')}`)

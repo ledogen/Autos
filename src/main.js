@@ -113,7 +113,7 @@ import { TUTORIAL, PACK_TOSS } from '../data/tutorial.js'   // FEAT-184: the tut
 import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, planGuideJob, stepJob, tourLeg, accuracyTier } from './paper-route.js'
+         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, TourGuide, accuracyTier } from './paper-route.js'
 import { AlertCycle, pollWords, wordAction, stepOf, wearLevel, engineLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
@@ -3550,11 +3550,14 @@ function _updateMissionRings () {
   const vp = vehicleState.position
   // FEAT-102: a fetch's PICKUP wears its orange ring for the whole outbound leg — the one "park
   // here" on screen while you are on a job, marking the area you park in to acquire the item.
-  const pickId = missionSystem?.pickupPoiId() ?? _approachPoi()?.id ?? null   // FEAT-103: or a line's source
+  // FEAT-291: a multi-drop's every owed stop (any order).
+  const pickIds = missionSystem?.pickupPoiIds() ?? []
+  const appr = _approachPoi()?.id   // FEAT-103: or a line's source
+  if (!pickIds.length && appr) pickIds.push(appr)
   const showR = poiRingShowR()
   for (const [id, ring] of _poiRings) {
     const near = Math.hypot(ring.position.x - vp.x, ring.position.z - vp.z) <= showR
-    ring.visible = id === pickId || (near && id !== activeId && !onMission && !ring.userData.hidden)
+    ring.visible = pickIds.includes(id) || (near && id !== activeId && !onMission && !ring.userData.hidden)
   }
   // FEAT-50: pump zones show on a job too — running low mid-route is exactly when you need them —
   // and drop away while the pump is open (you are already in one).
@@ -5406,7 +5409,7 @@ gpsSystem = new GpsSystem(scene, {
     // FEAT-170: the opening's evening has no job, only the way home to mom's (FEAT-184: the morning's, back to the joint).
     if (_tutDrive()) return _tutLine(_homeGuide())   // BUG-118: re-planned from the truck when it strays
     // FEAT-267: a demolition job's GPS is the leg to the next cluster on the remaining tour (_updateSite).
-    if (_site?.guide && _site.mission === missionSystem.mission && missionSystem.isOnJob()) return _site.guide
+    if (_site?.guide.leg && _site.mission === missionSystem.mission && missionSystem.isOnJob()) return _site.guide.leg
     if (s === 'countdown' || s === 'staging' || s === 'running') return _tutLine(missionSystem.guideRoute())
     return _waypointOn() ? _tutLine(_waypoint.route) : null   // FEAT-211: last in line — a job's guide always wins
   },
@@ -5832,18 +5835,19 @@ let _fetchHomeMsg = null, _fetchHomeUntil = 0
 const FETCH_HOME_MSG_S = 4
 function _updateFetchPrompt (poiEl, pulled) {
   const now = performance.now()
-  const pickId = missionSystem?.pickupPoiId()
-  if (pickId) {
-    const pq = poiSystem.list().find(q => q.id === pickId)
+  const pickIds = missionSystem?.pickupPoiIds() ?? []
+  if (pickIds.length) {
     const vp = vehicleState.position
     // Same reach as the giver trigger: the interaction radius, and — at a POI with a PARK box (the
     // general store's lot, ASSET-74) — inside the box, whose curtain is the halo you park in.
-    const near = pq && Math.hypot(pq.x - vp.x, pq.z - vp.z) <= POI_PARAMS.poiInteractR
-      && (!pq.park || overDropZone(pq, vp.x, vp.z, PARK_SLACK, pq.park))
+    // FEAT-291: whichever owed stop the truck is at — a multi-drop's are handed over in any order.
+    const pq = poiSystem.list().find(q => pickIds.includes(q.id) && Math.hypot(q.x - vp.x, q.z - vp.z) <= POI_PARAMS.poiInteractR
+      && (!q.park || overDropZone(q, vp.x, vp.z, PARK_SLACK, q.park)))
+    const near = !!pq
     const j = missionSystem.mission, at = j.atPickup
-    if (near && pulled && missionSystem.acquire()) {
+    if (near && pulled && missionSystem.acquire(pq.id)) {
       if (at?.min) daySystem.advanceMinutes(at.min)   // the tire change — on the job's timer too; _planOffer put it in par
-      _fetchHomeMsg = `${at ? `${at.done} — ` : ''}${j.fetch ? 'get back to' : 'next stop:'} ${_legLabel(j, missionSystem.leg)}!`
+      _fetchHomeMsg = `${at ? `${at.done} — ` : ''}${j.fetch ? 'get back to' : 'next stop:'} ${_legLabel(j, missionSystem.curLeg())}!`
       _fetchHomeUntil = now + FETCH_HOME_MSG_S * 1000
     } else if (near) {
       if (poiEl) { poiEl.style.display = 'block'; _hudHtml(poiEl, parkPrompt(at?.park ?? (j.fetch ? 'park to acquire mission item' : 'park to hand it over'))) }
@@ -6925,7 +6929,7 @@ function _standRow (row) {
 // cancelled, expired) the site goes the moment nothing of it is within offM — never in view.
 const _siteGroup = new THREE.Group()
 scene.add(_siteGroup)
-let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], halos, guide (the GPS leg), rr (a tour in flight), left, planAt } — or null
+let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], halos, guide (paper-route.js TourGuide: the GPS leg, the tour in flight) } — or null
 const _siteP = new THREE.Vector3(), _siteQ = new THREE.Quaternion(), _siteY = new THREE.Vector3(0, 1, 0)
 
 /** Stand mission `m`'s targets as models; `smashed` lists the indices already down (a resume). */
@@ -6939,7 +6943,7 @@ function _placeSite (m, smashed = []) {
     mesh.visible = !smashed.includes(i)
     _siteGroup.add(mesh)
     return { kind: t.kind, pos: mesh.position.clone(), q: mesh.quaternion.clone(), mesh, body: null, smashed: !mesh.visible }
-  }), down: smashed.length }   // DEC-403: `down` = the targets already paid for (a resume's are in the saved wallet)
+  }), down: smashed.length, guide: new TourGuide({ noRing: true }) }   // FEAT-187: noRing, a line to the cluster, no circle in the road. DEC-403: `down` = the targets already paid for (a resume's are in the saved wallet)
   m.siteDown = smashed.length
   // FEAT-187 (owner, 2026-11-07: "a paper delivery style halo on the center of the group of prop targets … on the shoulder
   // where the prop targets are"): one halo a cluster, at its members' centre (they stand on the shoulder), wide enough to
@@ -6964,15 +6968,15 @@ function _placeSite (m, smashed = []) {
 const SITE_HALO_PAD_M = 1.5   // m past a member's centre: room for the thing itself [DEFAULT]
 function _clearSite () {
   if (!_site) return
-  _site.rr?.return?.()   // FEAT-267: hand an unfinished tour's Held-Karp tables back (paper-route.js _leaseHkTables)
+  _site.guide.cancel()   // FEAT-267: hand an unfinished tour's Held-Karp tables back (paper-route.js _leaseHkTables)
   debrisSystem.remove(_site.targets.map(t => t.body).filter(b => b != null))
   _siteGroup.clear()
   _site = null
 }
 /** BUG-212: the map's line for a live demolition job — its markers with the guide's whole tour as the poly — or null. */
 function _siteLine () {
-  if (!missionSystem?.mission?.targets || !missionSystem.isOnJob() || _site?.mission !== missionSystem.mission || !_site.tour) return null   // no job first: _site is declared below the map
-  return { ...missionSystem.markers(), poly: _site.tour.poly }
+  if (!missionSystem?.mission?.targets || !missionSystem.isOnJob() || _site?.mission !== missionSystem.mission || !_site.guide.tour) return null   // no job first: _site is declared below the map
+  return { ...missionSystem.markers(), poly: _site.guide.tour.poly }
 }
 /** { smashed, of } of mission `m`'s site — nothing smashed when its site isn't the one standing. */
 function _siteCount (m) {
@@ -7005,18 +7009,13 @@ function _updateSite () {
     // Slice 2 (owner, 2026-11-03): the last one down settles the job (mission.js reads `cleared`), wherever the truck is.
     // FEAT-267 (DEC-399, the paper round's DEC-398): the GPS follows the shortest tour from the truck through the clusters
     // still standing, re-planned every RR_PARAMS.tourS and on every smash, so a missed one turns the line back exactly when
-    // going back is the shorter tour. The job is pumped in the frame's spare time (_pumpSiteGuide); until the first lands
+    // going back is the shorter tour. The job is pumped in the frame's spare time (TourGuide.pump); until the first lands
     // the GPS shows the job's own route.
     const m = _site.mission, standing = _site.targets.flatMap((t, i) => t.smashed ? [] : [i])
     m.cleared = !standing.length
     const down = _site.targets.length - standing.length
     if (down > _site.down) { _site.down = m.siteDown = down; _paySiteShare(m, down) }   // siteDown: the count once the site is gone
-    const now = performance.now() / 1000
-    if (!_site.rr && standing.length && (standing.length !== _site.left || !(now - _site.planAt < RR_PARAMS.tourS))) {
-      _site.left = standing.length; _site.planAt = now
-      const it = planGuideJob(roadSystem, p, siteStops(m, standing), storySystem.region(), 100, _site.order)   // BUG-212: keepM
-      if (it) _site.rr = it
-    }
+    _site.guide.poll(roadSystem, p, siteStops(m, standing), storySystem.region(), performance.now() / 1000)   // BUG-212: keepM
   }
   // FEAT-187: a cluster's halo is lit while the job is live, any of it stands, and the truck is near (the paper's rule).
   for (const h of _site.halos ?? []) {
@@ -7037,15 +7036,6 @@ function _paySiteShare (m, down) {
   if (!(share > 0)) return
   _showThrowReadout(`<span style="color:var(--money)">${down} / ${m.targets.length} smashed &nbsp;·&nbsp; +$${formatMoney(share)}</span>`)
   playCoin()
-}
-/** FEAT-267: spend this frame's spare time on the site's tour; when it lands, the GPS gets its leg to the next cluster. */
-function _pumpSiteGuide (budgetMs) {
-  const r = stepJob(_site.rr, budgetMs)
-  if (!r.done) return
-  _site.rr = null
-  // FEAT-187: a line to the cluster, never a destination circle in the road (gps.js reads noRing). A plan that reached
-  // nobody keeps the previous line (the paper round's BUG-47 rule).
-  if (r.value?.segments?.length) { _site.guide = { ...tourLeg(r.value), noRing: true }; _site.order = r.value.customers.map(c => c.id); _site.tour = r.value }
 }
 
 /**
@@ -7723,7 +7713,7 @@ function _renderMissionUI () {
       const toGo = () => { const a = km(m.routeRemaining()), t = km(m.routeTotalRemaining()); return a === t ? `${a} to go` : `${a} (${t})` }
       hudText.textContent = beat ?? (site ? `${site.smashed} / ${site.of} smashed` : toGo())
         + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
-          : ` · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.leg)}`)   // FEAT-89
+          : ` · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.curLeg())}`)   // FEAT-89; FEAT-291: the stop the GPS leads to
         + _dueSuffix()
       break
     }
@@ -11734,7 +11724,10 @@ function loop (t) {
     const spentMs = performance.now() - newTime * 1000
     paperRouteSystem.pumpReroute(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - spentMs))
   }
-  if (_site?.rr) _pumpSiteGuide(Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - (performance.now() - newTime * 1000)))   // FEAT-267
+  // FEAT-267 / FEAT-291: a demolition site's tour, a multi-drop's (paper-route.js TourGuide), in the frame's spare time.
+  const tourBudget = () => Math.max(PUMP_FLOOR_MS, FRAME_BUDGET_MS - PUMP_MARGIN_MS - (performance.now() - newTime * 1000))
+  if (_site?.guide.it) _site.guide.pump(tourBudget())
+  if (missionSystem?.drops.it) missionSystem.drops.pump(tourBudget())
 }
 
 // PERF-21 for late arrivals: the boot prewarm compiled every light state's variant of every material
