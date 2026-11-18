@@ -626,6 +626,8 @@ export class MissionSystem {
         this.drops.cancel()
         this.drops = new TourGuide()
         this._dropped = new Set(ids)
+        // BUG-212: the guide keeps the planned order (the shortest from the giver) unless a re-plan beats it by keepM.
+        this.drops.order = this.mission?.stopIds?.filter(id => !this._dropped.has(id)) ?? null
     }
 
     /** FEAT-291: re-plan the guide's tour (TourGuide.poll) through the multi-drop's stops still owed, from the truck. */
@@ -668,7 +670,8 @@ export class MissionSystem {
         this.leg++
         // FEAT-291: a multi-drop's stop, in any order. The tour through the rest is planned at once (a few ms at ≤ 4 stops), so
         // the GPS never leads for a frame to the stop just handed over.
-        if (this._anyOrder()) { this._dropped.add(poiId); this._pollDrops(); if (this.drops.it) this.drops.pump(Infinity) }
+        // A plan still in flight went through this stop: dropped for the new one.
+        if (this._anyOrder()) { this._dropped.add(poiId); this.drops.cancel(); this._pollDrops(); this.drops.pump(Infinity) }
         this._onChange()
         return true
     }
@@ -998,12 +1001,14 @@ export class MissionSystem {
         if (region && t.poly.some(p => Math.hypot(p.x - region.x, p.z - region.z) > region.r - REGION_MARGIN)) return null
         const byId = new Map(legs.map(l => [l.endPoiId, l]))
         const out = t.stopsAt.map(({ n, p, c }) => ({ end: byId.get(c.id).end, poiId: c.id, polyIdx: p, segIdx: n, objective: byId.get(c.id).objective, pt: c }))
-        const fin = byId.get(out.at(-1).poiId), g0 = t.segments[0]
+        // The last stop arrives by driving up, like any job's end (joinLegs' shape); par ends at rest either way.
+        const segments = t.segments.map((g, i, a) => (i === a.length - 1 && g.stop ? { ...g, stop: false } : g))
+        const pr = computePar(segments), fin = byId.get(out.at(-1).poiId), g0 = segments[0]
         const sp = g0.centerline.pointAt(g0.s0), st = g0.centerline.tangentAt(g0.s0), dir = g0.s1 >= g0.s0 ? 1 : -1
         return {
             ...legs[0], start: { x: sp.x, z: sp.z, heading: headingToFace(st.x * dir, st.z * dir) },
-            end: fin.end, endPoiId: fin.endPoiId, objective: fin.objective, par: t.par, distance: t.distance,
-            poly: t.poly, polyCum: t.polyCum, segments: t.segments, edges: t.edges, legs: out, stopIds: out.map(l => l.poiId),
+            end: fin.end, endPoiId: fin.endPoiId, objective: fin.objective, par: pr.time, distance: pr.distance,
+            poly: t.poly, polyCum: t.polyCum, segments, edges: segments.length, legs: out, stopIds: out.map(l => l.poiId),
         }
     }
 

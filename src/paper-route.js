@@ -339,6 +339,7 @@ export class TourGuide {
         this.it = planGuideJob(road, car, stops, region, 100, this.order)
     }
     pump (budgetMs) {
+        if (!this.it) return
         const r = stepJob(this.it, budgetMs)
         if (!r.done) return
         this.it = null
