@@ -83,6 +83,8 @@ export const GATES = [
     desc: 'curated recolour pools bind to the GLB by SUBSTRING on material name, which fails silently on re-export: assert every palette key still matches exactly one material, arrays are equal-length (one variant index drives the whole model), and index 0 equals the authored baseColorFactor (variant 0 reuses that material)' },
   { file: 'antenna-teleport.mjs', subsystem: 'infra', cost: 'fast', extraDeps: ['data/vehicle-models.js'],
     desc: 'BUG-190: the whip antenna snaps to rest when its mount jumps more than a few mast lengths (spawn, load, reset, tow) instead of differencing the jump into a huge velocity; jumps the base 1 km and asserts the tip stays within its length and settles' },
+  { file: 'headlamp-near-field.mjs', subsystem: 'infra', cost: 'fast', extraDeps: [],
+    desc: 'BUG-210 no hard bright edge on the ground by the bumper: ground illuminance on each headlamp\'s centreline by three.js\'s spot formula with the real beam patterns (vehicle-model.js lowBeam/highBeam, HEAD_TUNE), lamp 0.55–0.75 m up: within 4 m neither beam rises faster than 1.6 of its near-field max per metre (the low beam 1.1–1.5); control: the old round high beam (highCoreDownDeg = 28) fails at 2.6 per m, 0.54 m ahead' },
   { file: 'vehicle-lamps.mjs', subsystem: 'infra', cost: 'fast', extraDeps: ['assets/models/ranger.glb'],
     desc: 'BUG-143: vehicle-model.js lights every face of a model\'s `reverse.material` behind `rearZ` in reverse (substring match), so nothing but the reverse lamps may wear it at the tail: every such face sits outboard of the ±0.3 m centre band where the licence plate hangs (the Ranger\'s plate wore RangerLens and lit with the lamps)' },
   { file: 'model-variant.mjs', subsystem: 'infra', cost: 'fast',
