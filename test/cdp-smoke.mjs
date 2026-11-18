@@ -2293,8 +2293,9 @@ const STEPS = [
     // FEAT-288 P5: the pick-up lesson's step names the pack, so the tossed pack wears the quest mark (beam + white pulse).
     check(await until(() => js('!!window.__questMark()'), 3000), `the tossed pack wears no quest mark (card up: ${JSON.stringify(await tut())})`)
     const pk = (await tut()).pack, mq = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'momsHouse'); return { x: q.roadX, z: q.roadZ } })()`)
-    const toRoad = Math.atan2(mq.x - pk.x, mq.z - pk.z)   // the truck 3 m out from the pack, nose to the road
-    await js(`window.__seated = false; window.__teleport(${pk.x + 3 * Math.sin(toRoad)}, ${pk.z + 3 * Math.cos(toRoad)}, ${toRoad + Math.PI}).then(() => { window.__seated = true })`)
+    // the truck 3 m out from the pack toward the road, nose on the pack (FEAT-288 P5: its mark in the chase view)
+    const toRoad = Math.atan2(mq.x - pk.x, mq.z - pk.z)
+    await js(`window.__seated = false; window.__teleport(${pk.x + 3 * Math.sin(toRoad)}, ${pk.z + 3 * Math.cos(toRoad)}, ${toRoad}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the pack never seated')
     await simFor(2); await park(true)
     check(await until(async () => (m => m?.onScreen && m.lit)(await js('window.__questMark()')), 3000), `beside the pack its quest mark is not in view and pulsing: ${JSON.stringify(await js('window.__questMark()'))}`)
