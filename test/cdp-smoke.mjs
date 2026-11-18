@@ -421,10 +421,7 @@ const STEPS = [
     const back = await js('({ on: window.__autoDrive.on, status: window.__autoDrive.status })')
     check(!back.on && /took the wheel/.test(back.status), `a driving key did not hand the truck back: ${JSON.stringify(back)}`)
     console.log(`  autoDrive: ${moved.toFixed(0)} m in 10 sim-s (${st.status}); D handed it back`)
-    // Put the truck back where the teleport step left it (seated, brake latched). Left ~150 m down the road, the lab
-    // step then ends in a later NaN at mom's seat (strut compression ~3e5 m, the engine's velocity NaN): `camp` failed
-    // three times, 2026-11-18. The AI is not the cause: driving the same 150 m with W does the same; a main bug, reported.
-    await seat(c0.x, c0.z, 0)
+    await park()   // BUG-224: the truck stays ~150 m down the road; the lab and the story run that follow must cope
   }],
   ['map', async () => {
     await tap('m')
@@ -482,9 +479,20 @@ const STEPS = [
     check(await js('document.getElementById("pm-lab").textContent') === 'exit testing lab', 'lab did not enter')
     const a = await car(); await simFor(1); const b = await car()
     check(Math.abs(b.y - a.y) < 0.05 && b.y > -1 && b.y < 3, `truck not resting on the lab slab: y ${a.y.toFixed(2)} → ${b.y.toFixed(2)}`)
+    // BUG-224: autoDrive left the truck ~150 m from its last seat, so leaving the lab re-seats it behind a network build.
+    // While that build ran the sim used to step the truck at the LAB's pose against the real ground (~200 m above it):
+    // launched at ~400 m/s, 142 km up, and the engine world it left behind sent the next seat (mom's, in `camp`) NaN.
+    // Every frame from the click on, the truck must stay finite and at rest.
+    await js(`(() => { window.__b224 = { n: 0, vMax: 0, bad: false }; const t0 = performance.now()
+      const f = () => { const v = window.__vs, s = v.velocity.length(), b = window.__b224
+        b.n++; b.vMax = Math.max(b.vMax, s); if (![s, v.position.x, v.position.y, v.position.z, ...v.strutComp].every(Number.isFinite)) b.bad = true
+        if (performance.now() - t0 < 3000) requestAnimationFrame(f) }
+      requestAnimationFrame(f) })()`)
     await js('document.getElementById("pm-lab").click()')
     check(await js('document.getElementById("pm-lab").textContent') === 'testing lab', 'lab did not exit')
     await sleep(3000)
+    const b224 = await js('window.__b224')
+    check(b224.n > 10 && !b224.bad && b224.vMax < 5, `leaving the lab threw the truck (BUG-224): ${JSON.stringify(b224)}`)
     const c = await car()
     check(c.y > await js(`window.terrain(${c.x}, ${c.z})`) - 1, `truck under the world after leaving the lab: y ${c.y.toFixed(1)}`)
   }],
