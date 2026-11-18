@@ -362,6 +362,8 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const massCtl = debrisFolder.add(cargo, 'massKg', 5, 1500, 5).name('Cargo Mass (kg)')
     .onFinishChange(v => { if (cargo.load) callbacks.loadFreight?.(cargo.load, v) })
   debrisFolder.add({ clear: () => window.__debris?.clear() }, 'clear').name('Clear Debris')
+  // FEAT-26: a rock slide at the next candidate cut ahead (the rate draw skipped); parked, at the nearest one in 80 m.
+  debrisFolder.add({ slide: () => callbacks.rockslideNow?.() }, 'slide').name('Rock Slide Now (FEAT-26)')
   // Collider wireframes (physics-debug.js) — same toggle the backtick key drives. The checkbox
   // won't visually follow a key toggle (one-way onChange), which is fine for a debug control.
   debrisFolder.add({ wireframes: false }, 'wireframes').name('Collider Wireframes (`)')

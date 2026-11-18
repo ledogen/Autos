@@ -104,7 +104,7 @@ const life = (LIFE_H[0] + LIFE_H[1]) / 2 + 0.5, wait = (1 - P_FILL) / P_FILL
 const est = SHELF_SLOTS * life / (life + wait)
 console.log(`       mean occupancy ${occ.toFixed(2)} of ${SHELF_SLOTS} slots (estimate ${est.toFixed(2)})`)
 check('mean occupancy as the numbers imply', Math.abs(occ - est) < 0.15)
-check('FEAT-168: a shelf carries ~3 rotating items on average (owner, 2026-11-05)', Math.abs(occ - 3) < 0.25)
+check('DEC-408: a shelf carries 4.5 rotating items on average (owner, 2026-11-17; was ~3, FEAT-168)', Math.abs(occ - 4.5) < 0.25)
 
 // ── 5. Determinism ────────────────────────────────────────────────────────────────────────────
 const snap = (seed) => { startShelves(seed); return JSON.stringify([100, 130, 175.5].map(t => shelf('shopA', t))) }
@@ -139,7 +139,9 @@ for (const seed of [1, 2, 3, 4, 5]) {
 }
 check(`every shop, every half hour of 12 days × 5 seeds, has ${ALWAYS.join(' and ')}, new`, always)
 check('the old tire and the air filter are always stocked; the standard tire rotates',
-  ALWAYS.includes('tireOld') && ALWAYS.includes('airFilterStock') && !ALWAYS.includes('tireStandard') && STOCK_WEIGHT.tireStandard === 20)   // FEAT-259: Often × 2
+  ALWAYS.includes('tireOld') && ALWAYS.includes('airFilterStock') && !ALWAYS.includes('tireStandard') && STOCK_WEIGHT.tireStandard === 15)   // DEC-408 (owner: 15)
+check('DEC-408: the old tire is a reward weight only (it is always on the shelf); its reward share about equals the standard tire\'s',
+  REWARD_ONLY.has('tireOld') && STOCK_WEIGHT.tireOld === 30)
 startShelves(3)
 const at = shelf('autoShop:a', 50).length - 1
 take('autoShop:a', at)
@@ -199,7 +201,7 @@ for (const type of ['tackleShop']) for (let h = 0; h < 20000; h++) {
 check('FEAT-230: the tackle shop rolls nothing but the Ice King; it and the general store a quarter as often as the jerry can',
   junk === 0 && kings > 0 && STOREFRONT.tackleShop.weights.iceKing === STOREFRONT.gasStation.weights.jerryCan / 4
   && STOREFRONT.generalStore.weights.iceKing === STOREFRONT.gasStation.weights.jerryCan / 4)
-const before = { coffee: 3, energyDrink: 4, chiliDog: 5, ductTape: 8, emergencyGas: 8 }   // data/offers.js REWARD_VALUE before FEAT-104
+const before = { coffee: 3, energyDrink: 4, chiliDog: 5.8, ductTape: 8, emergencyGas: 8 }   // data/offers.js REWARD_VALUE before FEAT-104; the chili dog re-priced by DEC-377 ($5 → $3.50), then DEC-407 ($5.80)
 check('a reward card reads the same price as before FEAT-104', Object.entries(before).every(([id, v]) => rewardValue(id) === v),
   JSON.stringify(Object.keys(before).map(id => [id, rewardValue(id)])))
 

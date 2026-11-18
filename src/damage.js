@@ -195,7 +195,8 @@ export const DAMAGE_PARAMS = {
   // DOUBLED again on 2026-08-20: five minutes of peel was a touch too quick in play, so ten.
   // 1.5x FASTER on 2026-10-03 (owner): ten minutes of peel became ~6.7 — 16100 / 1.5.
   // 50% LONGER on 2026-11-03 (owner, "tires should last 50% longer"): 10700 × 1.5, ~10 min of peel again.
-  durTire:        16050,     // m of accumulated sliding to destroy a tire
+  // 20% LONGER on 2026-11-18 (owner, FEAT-284 / DEC-418): 16050 × 1.2. The slip wear rate and the shelf (shop-stock LIFE_H, a different thing) agree: one constant.
+  durTire:        19260,     // m of accumulated sliding to destroy a tire
   tireWCorner:    2.0e-4,    // N·s → m-equivalent. At 5 kN cornering that is 1 m/s of "slip".
   tireSlipFloor:  0.15,      // m/s — no-harm floor. Rolling slip is not abrasion.
 
@@ -1431,6 +1432,8 @@ export class DamageModel {
     // that slider stays usable on its own as a test tool with damage off.
     const ro = params._wheelRunout || (params._wheelRunout = [0, 0, 0, 0])
     for (let i = 0; i < 4; i++) ro[i] = this.wheelRunout(i, params)
+    const wc = params._wheelCondition || (params._wheelCondition = [1, 1, 1, 1])   // FEAT-287: 0..1, what the controller's bent-wheel vibration keys on (src/pad-rumble.js)
+    for (let i = 0; i < 4; i++) wc[i] = this.get(WHEEL_IDS[i])
     // Headlight flicker, left then right: 0 = steady, 1 = worst. Visual only; physics never reads it.
     const hf = params._headlightFlicker || (params._headlightFlicker = [0, 0])
     hf[0] = this.headlightFlicker('headlightL')

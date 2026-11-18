@@ -66,7 +66,7 @@ stepped by `physics.js`) · `fuel.js` (FEAT-50 engine fuel map — rpm × pedal
 table off `data/engines.js` by the Willans line — and the tank's per-step drain; pure) · `ignition.js` (key/starter state machine,
 FEAT-33 — pure, no DOM) · `vehicle.js` (Ackermann, input) · `park-brake.js` (FEAT-194 parking-brake latch rules — what sets and releases it, the parked-menu lock; pure, fed by `vehicle.js`) · `vehicle-state.js` (THE canonical
 vehicleState shape — one factory, so the world truck and the FEAT-41 menu-stage truck cannot drift) ·
-`debris.js` (FEAT-36 dynamic props) · `physics-debug.js` (collider wireframes) · `damage.js` (SM-3
+`debris.js` (FEAT-36 dynamic props) · `rockslide.js` (FEAT-26 rock slides: candidacy, batch, director; rocks via debris.js) · `physics-debug.js` (collider wireframes) · `damage.js` (SM-3
 component condition model — reads vehicleState signals, writes `params._*Scale` multipliers; the
 physics stack never imports it) · `fragile.js` (FEAT-97 fragile cargo condition — pure; main.js feeds
 it the strap's felt g each step).
