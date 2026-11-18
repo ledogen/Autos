@@ -2117,6 +2117,9 @@ const STEPS = [
       }
       throw new Error('cards never stopped coming')
     }
+    // GATE_SHOTS=<dir>: a screenshot of each FEAT-288 lesson's ringed state (the P3a look sheet)
+    const gateShot = async (name) => { if (!process.env.GATE_SHOTS) return; mkdirSync(process.env.GATE_SHOTS, { recursive: true }); await sleep(400)
+      writeFileSync(join(process.env.GATE_SHOTS, `${name}.png`), Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
     // DEC-320: the firing opens on Katie's call, wrapping up as Billy arrives; then the manager.
     check(await until(async () => await speaker() === 'Katie', 3000), `the run did not open on the firing's call (speaker "${await speaker()}")`)
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
@@ -2405,7 +2408,21 @@ const STEPS = [
     check(await until(() => js('/now that you don.t have a job/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), `eating in camp brought no call from Katie: ${JSON.stringify(await tut())}`)
     await stamped(17, "Katie's call")
     check(await js('!/\\{dir\\}|\\{deeds\\}/.test(document.getElementById("dialogue-panel").textContent)'), "Katie's call left a fill unfilled")
-    check(await readCards() >= 6, "Katie's call is not her six cards")
+    // FEAT-288 P3a: under Katie's talk the camp card is locked (break camp refused: a press-any-key card locks what lies under
+    // it), and the pad's B turns a press-any-key card without opening the B menu (DEC-422: "press any key should override
+    // holding B for the B menu"). Her first card is read here (recorded as readCards would), then turned by B.
+    await sleep(1500)   // typed out (a press on a card still streaming in only fills it), and the gate's 10 Hz paint
+    await js('document.getElementById("cp-break").click()'); await sleep(300)
+    check(await campPanel() && await shown('cp-break') && await js('document.getElementById("cp-break").classList.contains("tut-locked")'),
+      `FEAT-288: break camp was not locked under Katie's talk (camp ${await campPanel()}, locked ${await js('document.getElementById("cp-break").classList.contains("tut-locked")')})`)
+    await gateShot('5-katie-talk')
+    { const card = () => js('document.getElementById("dlg-text").textContent'), t0 = await card()
+      said.push(`${await speaker()}: ${t0}`)
+      await padOn(); await js('__fp.b[1] = 1'); await frames(4, 80)
+      const menu = await js('document.body.classList.contains("hud-menu-on")')
+      await js('__fp.b[1] = 0'); await frames(3, 80); await padOff(); await sleep(300)
+      check(!menu && await card() !== t0, `FEAT-288: the pad's B did not turn Katie's card (menu opened ${menu}, card "${(await card()).slice(0, 40)}")`) }
+    check(await readCards() >= 5, "Katie's call is not her six cards")
     { const w = said.findLastIndex(t => /now that you don.t have a job/.test(t))
       check(said[w] === "Katie: So what are you gonna do now that you don't have a job?" && said[w - 1] !== 'Phone: Ring ring ring' && !said.slice(w).includes('Katie: <click>'),
         `Katie's talk at the camp is not in person (no "Hey, it's me.", no ring, no click, DEC-355): ${JSON.stringify(said.slice(w - 1, w + 1))}`) }
@@ -2463,14 +2480,37 @@ const STEPS = [
       const g = JSON.parse(await gateMarks())
       check(!g.inv, `FEAT-288: at the flat, Tab or a click on the inventory icon opened the inventory (locked): ${JSON.stringify(g)}`)
       check(g.hi.includes('dmg-icon') && g.locked.includes('inv-icon'), `FEAT-288: at the flat the V icon is not ringed on screen, or the inventory icon not dimmed: ${JSON.stringify(g)}`) }
-    await tap('v'); await readCards()   // the damage screen's card: it waits for the spare to be tried
+    await tap('v'); await readCards()   // the damage screen's first card: look, then back out (FEAT-288 P3a)
+    check(await js('window.__tutorial().until') === 'diagback', `the damage card does not wait for the back: ${JSON.stringify(await js('window.__tutorial()'))}`)
+    await sleep(300)
+    // FEAT-288 P3a (DEC-422: "force them out of the diagnostics menu and into the inventory"): on the diagnostics a real
+    // click on "Swap two wheels" opens no picker, Tab opens no inventory, and the flat corner's row and the back are ringed.
+    { const r = await js('(() => { const b = document.querySelector("#dmg-screen .ds-swap").getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 } })()')
+      for (const type of ['mousePressed', 'mouseReleased']) await client.cmd('Input.dispatchMouseEvent', { type, x: r.x, y: r.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 })
+      await tap('Tab'); await sleep(300)
+      const g = await js(`({ picking: document.getElementById("dmg-screen").classList.contains("picking"), open: document.getElementById("dmg-screen").classList.contains("open"),
+        inv: document.getElementById("inv-screen").classList.contains("open"), swapLocked: document.querySelector("#dmg-screen .ds-swap").classList.contains("tut-locked"),
+        hi: [...document.querySelectorAll("#dmg-screen .tut-hi")].map(e => e.dataset.track ?? e.dataset.act) })`)
+      check(!g.picking && g.open && !g.inv && g.swapLocked && g.hi.includes('tireFL') && g.hi.includes('close'),
+        `FEAT-288: the diagnostics are not locked to the lesson (swap refused, Tab refused, the front left and back ringed): ${JSON.stringify(g)}`) }
+    await gateShot('1-diagnostics')
+    await tap('Escape'); await readCards()   // backed out: the spare's card
     check(await js('window.__tutorial().until') === 'spare', `the damage card does not wait for the spare: ${JSON.stringify(await js('window.__tutorial()'))}`)
     await sleep(300)
     { const g = JSON.parse(await gateMarks())   // FEAT-288: the second card's ring is on its own control, the inventory icon
-      check(g.hi.includes('inv-icon') && !g.hi.includes('dmg-icon') && !g.locked.includes('inv-icon'), `FEAT-288: at the damage card the inventory icon is not ringed and live: ${JSON.stringify(g)}`) }
+      check(g.hi.includes('inv-icon') && !g.hi.includes('dmg-icon') && !g.locked.includes('inv-icon') && g.locked.includes('dmg-icon'),
+        `FEAT-288: at the spare's card the inventory icon is not ringed and live, or V not locked: ${JSON.stringify(g)}`) }
+    // …and the inventory, opened by Tab, has the spare's slot live and ringed, the rest locked
+    await tap('Tab')
+    check(await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 1000), "FEAT-288: Tab opened no inventory under the spare's card")
+    await sleep(300)
+    { const g = await js(`[...document.querySelectorAll("#inv-screen .inv-slot[data-id]")].map(e => e.dataset.id + (e.classList.contains("tut-locked") ? ":locked" : "") + (e.classList.contains("tut-hi") ? ":hi" : ""))`)
+      check(g.length && g.every(a => a.startsWith('spareTire') ? a === 'spareTire:hi' : a.endsWith(':locked')), `FEAT-288: the inventory under the spare's card is not the spare alone: ${JSON.stringify(g)}`) }
+    await gateShot('2-inventory-spare')
     await tap('Escape')
     await js('window.__inv.use("spareTire")')
     check(await until(() => js('document.getElementById("dmg-screen").classList.contains("picking")'), 1000), 'the spare opened no tire picker')
+    await gateShot('3-spare-picker')
     await js('document.querySelector("#dmg-screen .ds-pbtn[data-track=tireFL]").click()')
     await js('document.querySelector("#dmg-screen [data-act=pick-do]").click()'); await readCards()   // the spare: flat too (waits for X)
     check(await js('window.__tutorial().until') === 'recovery', `the spare's card does not wait for the recovery menu: ${JSON.stringify(await js('window.__tutorial()'))}`)
@@ -2483,6 +2523,10 @@ const STEPS = [
       `X did not put the tow card up ahead of the recovery menu: ${await js('JSON.stringify({ card: document.getElementById("dlg-text").textContent, menu: document.getElementById("recovery-card").checkVisibility() })')}`)
     await readCards()   // the recovery menu's card
     check(await until(() => js('!!document.querySelector("#recovery-card button[data-act=towShop]:not([disabled])")'), 2000), 'the recovery menu offers no tow to a shop')
+    await sleep(300)   // FEAT-288 P3a: of the recovery menu only the tow to the shop is live (and ringed)
+    { const g = await js(`[...document.querySelectorAll("#recovery-card button[data-act]")].map(b => b.dataset.act + (b.classList.contains("tut-locked") ? ":locked" : "") + (b.classList.contains("tut-hi") ? ":hi" : ""))`)
+      check(g.every(a => a.startsWith('towShop') ? a === 'towShop:hi' : a.endsWith(':locked')), `FEAT-288: the tow menu is not the shop's tow alone: ${JSON.stringify(g)}`) }
+    await gateShot('4-tow')
     // BUG-178: a 4 s state trace (20 Hz) from the click, printed only if the shop never opens.
     await js(`window.__towTrace = []; (() => { const t0 = performance.now(), id = setInterval(() => { const p = window.__vs.position, q = window.__poi().nearest(p.x, p.z), pe = document.getElementById("poi-prompt")
       window.__towTrace.push([Math.round(performance.now() - t0), window.__vs.parked, +p.x.toFixed(1), +p.z.toFixed(1), q && q.type, q && +Math.hypot(q.x - p.x, q.z - p.z).toFixed(1), window.__mission()?.state, window.__story?.()?.isEntering(),
@@ -2535,14 +2579,25 @@ const STEPS = [
     check(lessons >= 5, `no welcome, hunger and sleep lessons at hers (${lessons} read, want her welcome, her hunger card and her three sleep cards)`)
     check(await clock() >= -2.51, `her door that night did not stamp 21:30 (clockH ${await clock()})`)
     check(saidAny(/^Mom: .*Set your alarm clock for 06:30/), `mom's sleep card does not say to set the alarm clock (DEC-357): ${JSON.stringify(said.slice(-3))}`)
+    // FEAT-288 P3a (DEC-422/426 Q4): no packed lunch before breakfast; under her sleep card (it waits for the night) "leave" is
+    // locked and sleep is ringed.
+    check(await js('window.__inv.list().filter(e => e.id === "packedLunch").length') === 0, `FEAT-288: packed lunches in the bag before breakfast: ${await js('JSON.stringify(window.__inv.list().map(e => e.id))')}`)
+    check(await js('window.__tutorial().until') === 'slept', `mom's sleep card does not wait for the night: ${JSON.stringify(await js('window.__tutorial()'))}`)
+    await sleep(300)
+    check(await js('document.getElementById("cp-break").classList.contains("tut-locked") && document.getElementById("cp-sleep").classList.contains("tut-hi")'),
+      `FEAT-288: under mom's sleep card "leave" is not locked or sleep not ringed: ${await js('JSON.stringify(["cp-break", "cp-sleep"].map(id => document.getElementById(id).className))')}`)
+    await gateShot('6-mom-sleep-card')
     await js('document.getElementById("cp-sleep").click()')
     const want = await js('Math.round(6.5 - window.__day().clockH())')   // 06:30 on day 1 is clockH 6.5 (DEC-357's alarm)
-    { const bed = await clock()   // DEC-357: another wake time is refused, "Set this time instead"
+    { const bed = await clock()   // DEC-426 (Q1): Sleep is greyed until the slider reads the alarm; a click on it then sleeps nothing
       await js(`document.getElementById("cp-hours").value = "${want + 1}"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))`)
       await js('document.getElementById("cp-sleep-go").click()'); await sleep(800)
-      check(await clock() === bed && /Set this time instead: wake 06:30/.test(await js('document.getElementById("cp-hours-text").textContent')),
-        `the tutorial's night took another wake time than the alarm (DEC-357): clockH ${await clock()}, "${await js('document.getElementById("cp-hours-text").textContent')}"`) }
+      await gateShot('7-sleep-greyed')
+      check(await clock() === bed && await js('document.getElementById("cp-sleep-go").disabled'),
+        `the tutorial's night took another wake time than the alarm, or Sleep is not greyed (DEC-426): clockH ${await clock()}, disabled ${await js('document.getElementById("cp-sleep-go").disabled')}`) }
     await js(`document.getElementById("cp-hours").value = "${want}"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))`)
+    check(!await js('document.getElementById("cp-sleep-go").disabled'), 'DEC-426: Sleep stays greyed with the slider on 06:30')
+    await gateShot('8-sleep-0630')
     await js('document.getElementById("cp-sleep-go").click()')
     check(await until(() => js('window.__day().clockH() >= 6.49'), 6000), `the night did not reach 06:30 (clockH ${await js('window.__day().clockH()')})`)
     check(Math.abs(await js('window.__day().clockH()') - 6.5) < 0.02, `the evening's night did not wake at 06:30 sharp on day 1 (clockH ${await js('window.__day().clockH()')})`)
@@ -2554,8 +2609,18 @@ const STEPS = [
     // pay for them), so the driver may wake hungry; the lunch she asks for feeds him.
     const stage = () => js('document.getElementById("hm-stage").textContent')   // FEAT-198: hunger's own line
     let morn = await readCards()   // up to her breakfast card, which waits for a lunch eaten (DEC-359)
-    // (her breakfast card clears itself the moment a lunch is gone; this run ate two at night, so it may already be down: DEC-359)
+    // (her breakfast card clears itself the moment a lunch is gone: DEC-359). DEC-426 (Q4): she hands over four, you leave with three.
+    check(await js('window.__inv.list().filter(e => e.id === "packedLunch").reduce((k, e) => k + e.n, 0)') === 4, `FEAT-288: mom did not hand over four lunches at breakfast: ${await js('JSON.stringify(window.__inv.list().filter(e => e.id === "packedLunch"))')}`)
+    // FEAT-288 P3a: mom's card's inventory button opens the bag; of it only a packed lunch is live and ringed
+    await js('document.getElementById("cp-item").click()')
+    check(await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 1000), "FEAT-288: the inventory button on mom's card opened nothing at breakfast")
+    await sleep(300)
+    { const g = await js(`[...document.querySelectorAll("#inv-screen .inv-slot[data-id]")].map(e => e.dataset.id + (e.classList.contains("tut-locked") ? ":locked" : "") + (e.classList.contains("tut-hi") ? ":hi" : ""))`)
+      check(g.length && g.every(a => a.startsWith('packedLunch') ? a === 'packedLunch:hi' : a.endsWith(':locked')), `FEAT-288: the bag at breakfast is not the lunches alone: ${JSON.stringify(g)}`) }
+    await gateShot('9-breakfast')
+    await tap('Escape')
     check(await js('window.__inv.use("packedLunch")'), 'no packed lunch for breakfast')
+    check(await js('window.__inv.list().filter(e => e.id === "packedLunch").reduce((k, e) => k + e.n, 0)') === 3, 'FEAT-288: breakfast did not leave three packed lunches')
     morn += await readCards()   // mom's reminder (DEC-422)
     // her card is recorded by whichever read meets it: readCards' wait branch records the card on screen after 1.5 s, and
     // the breakfast card (until: lunch) can clear itself inside that wait, so the morning card is the one recorded, uncounted

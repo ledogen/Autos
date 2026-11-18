@@ -12,7 +12,7 @@ lane: SM (tutorial)
 # FEAT-288: Tutorial pass from the owner's 2026-11-18 monologue
 
 ## Next steps
-P1, P7, P2 built (P2 on land/feat-288-p2-gate). Next, serially per § 8: P3a, then P3b, on the gate (read § 3's "As built (P2)" first), then P4, P5, P6, P8.
+P1, P7, P2 on main; P3a built on land/feat-288-p3a-lessons. Next, serially per § 8: P3b on the gate (read § 3's "As built (P2)" and "As built (P3a)" first), then P4, P5, P6, P8. The owner owes words for the lines listed under Open questions.
 
 ## Summary
 A complete, simple tutorial: full dialogue and storytelling, a brief but complete explanation of every system, every control / menu / bar the player must use highlighted and everything else locked out, plus the specific fixes below.
@@ -286,6 +286,26 @@ quest-item mark (§ 5) and the rings, not by CSS.
   cards), `skipMenus` (V / Tab / X refused between lessons; nothing marked after each skip; V works after it), pad-e2e
   (the flat's B menu = one entry).
 
+**As built (P3a, 2026-11-18) — what P3b needs.**
+- The step is now `stepFor(card, between)` (src/tut-gate.js): a lesson card (`allow`) is its own step; a press-any-key
+  card is `{ ...card, allow: [] }` (every card element under it locked: the click that turns a card lands on the next
+  card's step, so a click-through can no longer press what lies beneath; its `hi` is kept); no card is `BETWEEN`
+  (the shop, the camp / mom's card, the job card and the tow free; the inventory and the damage screen locked) or main.js
+  `_TUT_TOW` (the tow to the shop only, ringed). The camp card's inventory button is the 'inventory' action (ICON_ACT).
+- Lessons: `tut-damage` is two cards (until `diagback`: rows and diagram live, swap locked; until `spare`: the inventory,
+  the spare's slot and use, the picker `#dmg-screen.picking`); `tut-moms`'s last card waits for `slept` (sleep, the
+  slider, Sleep; the paycheck line moved before it); Sleep is `disabled` while `_firingDay()` and the slider is off the
+  alarm (main.js `_syncSleepRow`; the old refusal text is gone); `tut-breakfast` grants `TUT_PARAMS.breakfastLunches`
+  (4) as you wake at hers and waits for one eaten; a run on the firing starts with no lunches, `_topUpLunches()` gives
+  three on a skip, at the tutorial's end and in the paper scenario; pad B over a press-any-key card sends Escape
+  (`pad.cardHolds`, gamepad.js) and opens no B menu — in every story run, not only the tutorial.
+- A lesson card (`.dlg-waits`) lifts the camp card above it (index.html, a fixed 216 px): the sheet showed mom's alarm
+  slider hidden under her card. The shop and the inventory are centred and clear of it.
+- Left for P3b: the shop (`#svc-screen`) and the pump are still free between cards (BETWEEN lists the shop): the shop
+  beat's cards lock them; the vibe's "make camp" (beat 24) is free between cards (BETWEEN lists the camp card: tut-vibe
+  has no `until` yet); R while camped still breaks camp (it is the reset, never locked). The deeds counter ring (beat 26)
+  and the cook mention (26b) are not built.
+
 ### 4. The phone
 
 - **Sounds.** Nothing exists in `src/` and the library has no ring or flip-shut on disk (fact f). Recommend
@@ -366,7 +386,7 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - [x] P1 dialogue: draft tags out, mom's parking line, "Anyway,", mom at the shop, the paycheck moves to mom
 - [x] P7 phone sounds: ring and flip-shut, owner's ear
 - [x] P2 the gate: one lock + highlight for keys, mouse and pad; nothing locked after a skip
-- [ ] P3a lessons 1: forced diagnostics → inventory → spare, break camp locked, eating locked, the sleep lesson, lunches at breakfast, B advances a card
+- [x] P3a lessons 1: forced diagnostics → inventory → spare, break camp locked, eating locked, the sleep lesson, lunches at breakfast, B advances a card
 - [ ] P3b lessons 2: the map beat, the shop beat, mom's gas call on leaving the shop, the end menu
 - [ ] P4 world fixes: mom's ring (story-wide), legs on the map, the flat before the tunnel, mom's card on the tire's check-out
 - [ ] P5 quest-item mark on the pack
@@ -380,6 +400,14 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - 2026-11-18, owner (via the orchestrator, chat): on the sleep lesson, "I think it might always make you wake up at 630 but doesn't make the player choose 630. Or maybe it doesn't … I didn't actually try it, I just saw that it let me choose any time."
 
 ## Open questions
+**Lines awaiting the owner's wording** (P3a's plainest functional lines; the owner's script review replaces them):
+- `tut-flat`, the pad's half: "hold B and pick vehicle condition" (the B menu's label for the damage screen; the monologue says "Vehicle Diagnostics").
+- `tut-damage` card 1, new last sentence: "Back out with Esc / B."
+- `tut-damage` card 2: "Now put your spare on: Tab / hold B and pick the inventory, then the mounted tire."
+- `tut-spareflat`, the pad's half: "hold B and pick the recovery menu."
+- `tut-moms` last card (now after the paycheck line): "Sleep is how a day ends. Set your alarm clock for 06:30: pick sleep and slide it until it reads wake 06:30, then sleep. The bar shows how rested you'll wake up."
+- `tut-breakfast`: "Morning! I packed you some lunches for the road. Eat one before you go — you'll run out of steam early on an empty stomach. Select inventory, then a packed lunch."
+
 ANSWERED 2026-11-18 (DEC-426): Q1 = A. Q2 = a speaker's card slides out of frame when they finish and the next speaker's slides in from the opposite side; cards from the same speaker cycle in place. Q3 = the end stays as built (manager, one press, tutorial over, Larry's call in the truck): P3b's end-menu item is DROPPED. Q4 = default (four lunches, leave with three). Q5 = default, depending on the seed. The original questions, for the record:
 - Q1 The sleep lesson's control. (A) the slider is highlighted and the player slides it to 06:30 themselves; Sleep is greyed and refuses until it reads 06:30 — **default**, it still teaches the alarm. (B) preset to 06:30 and locked, one button: shorter, teaches less.
 - Q2 Separating two speakers back to back: **default** keep the ring card (now with sound) for an incoming call and the `<click>` card (with the flip sound); on any change of speaker, the name in that character's own colour and a 0.2 s slide. Alternatives: portraits that swap sides; a "call ended" system line instead of the `<click>` card.
@@ -399,3 +427,4 @@ data/tutorial.js, data/dialogue.js, src/main.js, src/menu-nav.js, src/hud-menu.j
 - 2026-11-18 lane s: plan written (§ Plan, 44 items, 8 packages), DEC-422, card feat288-tutorial-plan. Facts (a)–(f) measured on main (e42a56ff) in the browser and on the headless tutorial-seed build; no code changed.
 - 2026-11-18 P7 built on land/feat-288-p7-phone: `src/phone-audio.js` (ring + flip-shut, synthesized), `call` marker on the frame cards in dialogue.js `_frame`, one hook in main.js `_renderDialogue`; Sounds-tab entries in FEAT-120. Owner's ear owed (card feat288-phone-sounds-ear); nobody has heard it.
 - 2026-11-18 P1 dialogue built on land/feat-288-p1-dialogue (words and speakers only; 6 data/dialogue.js cards re-worded, 7 draft tags out, mom's two paycheck lines in). run-all affected gates green; smoke boot,opening PASS (38 steps). Left for P3/P4: mom's "marked spot" in tut-park waits on her ring (P4); tut-gas / tut-pickup keep their current words (§ 2's versions tie to P2/P3b flow).
+- 2026-11-18 P3a built on land/feat-288-p3a-lessons (§ 3 "As built (P3a)"): flat → diagnostics (swap locked, back out) → inventory (the spare only) → picker → the shop's tow only; press-any-key cards lock what lies under them (break camp under Katie, leave/sleep under mom); no eating between cards; Sleep greyed until 06:30 (DEC-426 Q1); four lunches at breakfast, none before (Q4); pad B turns a press-any-key card. Affected gates 55/55 green; smoke PASS 39 steps (load ~9.6); pad-e2e ALL OK (load ~8.9). The pad B check rides the smoke's real tutorial (Katie's talk, fake pad), not pad-e2e. Six lines await the owner's words (Open questions). Unverified: a human play on a real pad.
