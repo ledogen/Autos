@@ -91,6 +91,7 @@ import { EconomySystem, ECONOMY_PARAMS, RANK_COLOR, formatDeeds, formatMoney, ba
 import { InventorySystem, runInventory, entryKg, startingPack } from './inventory.js'   // FEAT-122: what the player owns this run
 import { runWorldItems, place, rest, near, planGap, take as takeWorldItem, restoreWorldItems, REACH_M } from './world-items.js'   // FEAT-143: dropped on the ground
 import { ITEMS, foodHoldH } from '../data/items.js'
+import { FAMILY_COLOR, EMPTY_DIAMOND_COLOR } from '../data/map-icons.js'   // FEAT-274: the offer card's job-type diamond
 import { PartsSystem, runParts, modModels } from './parts.js'       // SM-3: what is bolted onto the truck this run
 import { ServiceCenter } from './service.js'              // SM-3: repairs and part swaps at an auto shop
 import { ServiceScreen } from './service-screen.js'
