@@ -65,8 +65,10 @@ body:has(#dmg-screen.open) #svc-screen { visibility: hidden; }   /* FEAT-212: Ve
 body:has(#svc-screen.open) #quickjob-btn, body:has(#svc-screen.open) #cluster,
 body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
 #svc-screen .sv-card { pointer-events: auto; background: var(--card-bg); border: 1px solid var(--line-card);
-  padding: 12px 16px 14px; width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 64px); box-sizing: border-box;
+  padding: 12px 16px 14px; width: min(520px, calc(100vw - 32px)); max-height: calc(100% - 64px); box-sizing: border-box;
   display: flex; flex-direction: column; }
+/* FEAT-288 P3b: max-height in %, not vh — under Big's zoom (FEAT-248) a vh is zoomed with the card, so 100vh ran 1.5 screens
+   tall and the wallet, the cart's check out and back fell off a short screen; % of the full-height screen box stays one. */
 /* FEAT-212: the card's body scrolls; the cart's subtotal and the back button stay on its foot, below it */
 /* BUG-170: the rows bleed 6 px each side (margin 0 -6px) so their hover bar reaches past the text; the scrolling body
    carries that 6 px as padding (and gives it back as margin), else the row's right edge overhung it and scrolled sideways. */

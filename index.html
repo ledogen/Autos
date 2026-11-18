@@ -446,8 +446,10 @@
        card of up to ~5 lines (zoom scales both alike); measure the card if a longer lesson ever covers it. */
     body:has(#dialogue-panel.dlg-waits) #camp-panel { bottom: 216px; }
     /* FEAT-288 P3b: Katie's map lesson is read over the open map and points at its list column and legend (the right
-       300 px), so over the map a card centres on the sheet instead, clear of that column. */
-    body:has(#map-window[style*="flex"]) #dialogue-panel { left: calc(50% - 150px); width: min(680px, 90vw - 348px); }
+       300 px), so over the map a card centres on the sheet instead, clear of that column. Under Big's zoom (FEAT-248) px
+       and vw scale with the card but % stays the screen's, so the sheet's width is 100% − the map's 2 × 5vw inset − the
+       300 px column (− 48 px margin): at Small that is 90vw − 348px, at Big it keeps the card off the legend. */
+    body:has(#map-window[style*="flex"]) #dialogue-panel { left: calc(50% - 150px); width: min(680px, 100% - 10vw - 348px); }
     /* FEAT-146: the run's end sits in the middle of the screen — nothing behind it is still in play. */
     #run-end { top: 50%; bottom: auto; transform: translate(-50%, -50%); }
     #re-body { line-height: 1.7; }
