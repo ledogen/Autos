@@ -65,7 +65,31 @@ module in its old mode (`keepRight: false, recover: false, deadEnd: 'jump'`).
 wants it, a run that used it could carry an "assisted" mark on its result. Not built.
 
 ### Numbers (headless soak, `node test/drive-ai-soak.mjs`, real physics + world, 4R44E automatic)
-SOAK_TABLE
+13 random seeds (`wip/feat-293/seeds*.txt`, never seed 6), 40.1 km, 68 junctions, 3–4 km a seed, radius 1500 m.
+Grade band = the road grade under the truck at that moment.
+
+| Grade band | km driven | Interventions | km between interventions |
+|---|---|---|---|
+| under 8 % | 18.2 | 0 | none in 18.2 km |
+| 8–15 % | 12.2 | 0 | none in 12.2 km |
+| 15–24 % | 8.7 | 1 | 8.7 |
+| over 24 % | 1.0 | 0 | none in 1.0 km |
+
+- Speed: top 88 km/h (vMax 24 m/s); mean 51 km/h against a planned 60 km/h (the gap is the careful throttle out of
+  bends and up climbs).
+- Lateral error from its own lane: the per-seed median is 0.09–0.30 m; the per-seed p99 is 1.6–6.4 m (near-hairpin
+  junction turns at full lock run wide). Worst 15.8 m (seed 1170310009 at (182, −505), 6.7 m/s, a 42 m radius
+  junction turn: it left the deck and drove itself back on, a `rejoin`).
+- Time off the deck: 25.8 s in 40 km (a few junction turns). Manoeuvres: 4 three-point turns, 2 reverse-outs, 2 rejoins.
+- Tire wear: 0.11 % a km (no human baseline measured to compare with).
+- Cost: the median per physics step is 16–30 µs (one seed 2.5 µs: it sat wedged); the p99 is 60–300 µs (the bore query,
+  polled at 4 Hz). The worst single steps are 3–35 ms, in plain `drive`, not at junctions; garbage collection or JIT is
+  suspected, not traced.
+- **The one intervention**: seed 1830183820 at (125, −42), on a 21 % stretch climbing into a tunnel portal (the
+  road reaches ~37 % at the mouth). The truck goes from 8.5 m/s to 0 in about 1 s, wedged, and reversing does not
+  move it. Physics runs at ~0.1× realtime there. A 1 m ray along the road at the mouth hits nothing. Likely a
+  world / collider finding at a steep portal, not the driver: a follow-up.
+- Gate (`test/drive-ai.mjs`, seed 909892992, 0.6 km, radius 800 m): green, 133 s.
 
 ### What an ML driver would need later (and what V1 gives it for free)
 - **A rig that steps the real physics headlessly**: `test/drive-ai-soak.mjs` already does, at about 0.5× realtime per
@@ -105,4 +129,7 @@ step), test/drive-ai-soak.mjs, test/drive-ai.mjs (gate), test/playtest-bench.mjs
 
 ## Log
 - 2026-11-18 minted by the orchestrator from the owner's chat message.
-LOG_LINE
+- 2026-11-18 V1 built on `land/feat-293-driving-ai` (worktree CarGame-land-feat34): src/autopilot.js promoted from
+  test/lib/autopilot.mjs, src/auto-drive.js + the debug folder, the soak and the gate. Soak 40 km / 13 seeds, one
+  intervention (the portal wedge). Affected gates green; fingerprint-physics identical to main; smoke `autoDrive` passes
+  (W and D hand back). App look on seed 909892992: three junctions in 100 s, then W handed back.
