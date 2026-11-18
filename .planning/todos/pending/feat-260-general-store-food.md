@@ -67,3 +67,4 @@ DEC-380 (draft). Card `owed/food-1117-numbers.json`.
 
 ## Log
 - 2026-11-17: built on land/food-1117 (lane C) with FEAT-250. inventory, shop-stock gates green.
+- 2026-11-17 (lane C): DEC-407 rebalanced the four: salad $1.10, deli sandwich 5 h $1.65, cookies $0.60, bread 5 h $1.50 ($0.275–0.33 an hour, grocery staples).

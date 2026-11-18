@@ -61,3 +61,4 @@ Records DEC-376 (the counter), DEC-377 (the price line), DEC-379 (cooler slots, 
 
 ## Log
 - 2026-11-17: built on land/food-1117 (lane C). Gates: day-clock, inventory, shop-stock, economy green; affected run in the log line below.
+- 2026-11-17 (lane C): owner's card answered: DEC-407 — $/h by place of sale (cookable $0.25, staples $0.27–0.33, vendor $0.50–0.60, gas $0.67–0.70; band $0.245–0.70), peanuts $2, five more foods built (jerky, apple, burrito, beans heated at camp, fried chicken). test/inventory.mjs holds the band and four ordering rules. Gates/smoke: see the report; look card food-shop-1117-look.
