@@ -4,12 +4,15 @@
 //    selector whose #ids and data-ids exist (index.html / src, data/items.js).
 // 2. The base lock refuses exactly LOCKED — never driving, the brake, the key, lights, the map, pause, back, the reset.
 // 3. Elements: a step with `allow` locks the in-game cards' other elements; back always works; pause / settings never lock.
+// 3b. P3a's lessons (FEAT-288 P3a): the flat → diagnostics → inventory → spare → tow path, break camp under Katie's talk,
+//     eating only the lesson's item, the sleep card's slider, and between cards (BETWEEN) the inventory / damage screen
+//     locked while the shop, the camp card, the job card and the tow stay free.
 // 4. Release (BUG-183): no step → everything allowed, and main.js hands the gate null outside the tutorial and after a
 //    run's end (the browser half — nothing marked after a skip — is test/cdp-smoke.mjs's opening step).
 
 import { readFileSync, readdirSync } from 'node:fs'
 import { BINDINGS } from '../src/gamepad.js'
-import { LOCKED, ICON_ACT, ZONES, isSelector, allows, allowsEl } from '../src/tut-gate.js'
+import { LOCKED, ICON_ACT, ZONES, BETWEEN, isSelector, allows, allowsEl, stepFor } from '../src/tut-gate.js'
 import * as DLG from '../data/dialogue.js'
 import { ITEMS } from '../data/items.js'
 
@@ -69,12 +72,47 @@ ok(!allowsEl(el('dmg-icon', ['#hud-icons']), BASE) && allowsEl(el('dmg-icon', ['
 ok(!allowsEl(el('camp-icon', ['#hud-icons']), flat) && !allowsEl(el('inv-icon', ['#hud-icons']), flat), 'the flat card: the other B-menu entries are refused')
 ok(allowsEl(el('', ['#svc-screen'], ['button']), BASE), 'a step without allow leaves the cards free (the shop)')
 
+// ── 3b. P3a's lessons ──
+const [diag, spare] = DLG.TUT['tut-damage']
+const swap = el('', ['#dmg-screen'], ['button', '.ds-swap'])
+ok(allows('damage screen', diag) && !allows('inventory', diag), 'diagnostics card: V (to close it) only, the inventory locked')
+ok(allowsEl(el('', ['#dmg-screen'], ['.ds-row']), diag) && allowsEl(el('', ['#dmg-screen'], ['.ds-part']), diag), 'diagnostics card: the rows and the diagram stay live (hover)')
+ok(!allowsEl(swap, diag), 'diagnostics card: "Swap two wheels" is locked')
+ok(allowsEl(el('', ['#dmg-screen'], ['[data-act="close"]']), diag), 'diagnostics card: back is live')
+ok(diag.until === 'diagback' && spare.until === 'spare', 'the damage cards wait for the back, then the spare')
+ok(allows('inventory', spare) && !allows('damage screen', spare) && !allows('recovery', spare), 'spare card: the inventory only (no V back into the diagnostics)')
+ok(allowsEl(el('', ['#inv-screen'], ['.inv-slot[data-id="spareTire"]']), spare) && !allowsEl(el('', ['#inv-screen'], ['.inv-slot[data-id="packedLunch"]']), spare),
+  'spare card: the spare\'s slot is live, the food is not')
+ok(allowsEl(el('', ['#dmg-screen', '#dmg-screen.picking'], ['button']), spare) && !allowsEl(swap, spare), 'spare card: the tire picker is live, the plain damage screen is not')
+const sleep = DLG.TUT['tut-moms'].at(-1)
+ok(sleep.until === 'slept' && /\{alarm\}/.test(sleep.text), "mom's last card waits for the night on the alarm")
+for (const id of ['cp-sleep', 'cp-hours', 'cp-sleep-go']) ok(allowsEl(el(id, ['#camp-panel']), sleep), `sleep card: #${id} is live`)
+ok(!allowsEl(el('cp-break', ['#camp-panel']), sleep) && !allowsEl(el('cp-item', ['#camp-panel']), sleep), "sleep card: leave and the inventory are locked")
+const bfast = DLG.TUT['tut-breakfast'][0]
+ok(allowsEl(el('cp-item', ['#camp-panel']), bfast) && allowsEl(el('', ['#inv-screen'], ['.inv-slot[data-id="packedLunch"]']), bfast)
+  && !allowsEl(el('', ['#inv-screen'], ['.inv-slot[data-id="bagOfPeanuts"]']), bfast), 'breakfast card: the inventory and a packed lunch only')
+// a press-any-key card locks what lies beneath it; a lesson card is its own step; no card is BETWEEN
+const talk = stepFor(DLG.TUT['tut-katie'][0])
+ok(Array.isArray(talk.allow) && !talk.allow.length && !allowsEl(el('cp-break', ['#camp-panel']), talk), "Katie's talk: break camp is locked under her cards")
+ok(!allowsEl(el('cp-sleep', ['#camp-panel']), stepFor(DLG.TUT['tut-moms'][0])), "mom's first cards: sleep is locked under them")
+ok(stepFor(camp) === camp && stepFor(null) === BETWEEN, 'stepFor: a lesson card is its own step; no card is BETWEEN')
+ok(stepFor({ text: '', hi: ['#x'] }).hi?.[0] === '#x', 'stepFor: a press-any-key card keeps its rings')
+ok(!allowsEl(el('cp-item', ['#camp-panel']), BETWEEN) && !allowsEl(el('', ['#inv-screen'], ['.inv-slot[data-id="packedLunch"]']), BETWEEN),
+  'between cards: no eating (the camp card\'s inventory button and a slot left open are locked)')
+ok(!allowsEl(swap, BETWEEN) && allowsEl(el('', ['#inv-screen'], ['[data-act="close"]']), BETWEEN), 'between cards: the damage screen\'s swap is locked; back is live')
+for (const [z, id] of [['#svc-screen', ''], ['#camp-panel', 'cp-break'], ['#camp-panel', 'cp-make'], ['#mission-panel', ''], ['#recovery-card', '']])
+  ok(allowsEl(el(id, [z], ['button']), BETWEEN), `between cards: ${z} ${id} stays free`)
+ok(!BETWEEN.allow.some(q => !isSelector(q)), 'BETWEEN unlocks no locked action')
+
 // ── 4. release ──
 for (const a of actions) ok(allows(a, null), `no step: '${a}' allowed`)
 ok(allowsEl(el('cp-break', ['#camp-panel']), null) && allowsEl(el('dmg-icon', ['#hud-icons']), null), 'no step: every element allowed')
 const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
-ok(/initTutGate\(\(\) => !_tutDrive\(\) \|\| _runEnded \|\| !storySystem\.isActive\(\) \? null/.test(main),
-  'main.js: the step is null outside the tutorial (skip, end), after the run\'s end and outside a story run')
+ok(/initTutGate\(\(\) => !_tutDrive\(\) \|\| _runEnded \|\| !storySystem\.isActive\(\) \? null\s*: stepFor\(/.test(main),
+  'main.js: the step is null outside the tutorial (skip, end), after the run\'s end and outside a story run; else stepFor')
+// The sleep card's value lock is the button's own disabled state, recomputed from the tutorial's state on every sync — so a
+// skip, the night's end or a reload (fresh DOM, _firingDay() read off the save) leaves Sleep live.
+ok(/go\.disabled = _firingDay\(\) && /.test(main) && !/cp-sleep-go[^\n]*disabled = true/.test(main), 'main.js: Sleep is greyed only while _firingDay() (DEC-426 Q1)')
 
 console.log(fails ? `tut-gate: ${fails} FAIL` : `tut-gate: PASS (${steps} steps)`)
 process.exit(fails ? 1 : 0)

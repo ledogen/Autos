@@ -76,7 +76,7 @@ import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearb
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
-import { initTutGate } from './tut-gate.js'                // FEAT-288 P2: the tutorial's lock and highlight
+import { initTutGate, stepFor } from './tut-gate.js'       // FEAT-288 P2: the tutorial's lock and highlight
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -4360,6 +4360,7 @@ pad.canThrow = () => {
   return Math.hypot(v.x, v.z) > PAD_THROW_MIN_SPEED || paperRouteSystem.owedWithin(p.x, p.z, PAD_THROW_NEAR_M)
 }
 pad.throwReady = () => pad.active && isPadLooking() && pad.canThrow()
+pad.cardHolds = () => dialogueSystem.holding   // FEAT-288: B turns a press-any-key card (gamepad.js)
 let _padReticle = false   // the pad's aim put the reticle up
 document.addEventListener('keydown', e => {
   if (e.key !== 'f' && e.key !== 'F') return
@@ -4694,6 +4695,7 @@ const TUT_PARAMS = { lowTankFrac: 0.125, gasCash: 3, offRoadS: 4,
   offRoadM: 10,    // FEAT-217 (of3s, DEC-219): m beyond the road's paved side before the countdown starts: the shoulder is safe to park on
   safeNearPoiM: 20,
   sleepyH: 3,      // DEC-357 [DEFAULT]: energy h set once the tire is fixed — mid SLEEPY (day.js tiredAtH 2 < it <= sleepyAtH 4)
+  breakfastLunches: 4,   // DEC-426 (Q4): mom hands over four packed lunches at breakfast; you eat one and leave with three
   alarmH: 6.5 }    // DEC-357: the hour mom has you set the alarm clock for, the next morning (day 0)   // FEAT-217 (DEC-281, owner 2026-11-16; was 75 m): no auto reset this near any place (pump, shop, mom's): lining up on the shoulder
 // FEAT-229 (DEC-304, the dive's "held, with stamps" [DEFAULT]): the clock holds while the tutorial drives; each stop, once
 // reached, lifts it to at least its hour on the firing day. home: Katie's talk at the camping area (the one long jump);
@@ -5167,6 +5169,7 @@ function _skipOpening () {
   _closeMenus()   // BUG-183: her sleep card, the pump, the shop, every menu (after _undoWorstDay: its own pump is undone, not paid)
   _tutQueue.length = 0
   dialogueSystem.restoreSeen([DLG.skipped])   // no first-use cards this run (_tut)
+  _topUpLunches()   // DEC-381: a skipper leaves with mom's three, as the tutorial's breakfast would have
   _eveningGuide = undefined
   _syncTutCard()
   if (!_returnSeed) _seatAt(_joint() ?? _mom())   // on the tutorial seed, the load back seats it (_returnToRunWorld)
@@ -5289,13 +5292,15 @@ const _UNTIL = {
   engine: () => vehicleState.ignition?.state === 'running',
   pickup: () => !_packOnGround(),
   damage: () => damageScreen.isOpen,
+  diagback: () => !damageScreen.isOpen,   // FEAT-288 P3a: out of the diagnostics, on to the inventory
   spare: () => dialogueSystem.has('tut-spareflat') || _tutQueue.some(t => t.key === 'tut-spareflat'),   // the swap was tried (the spare is flat, DEC-151)
   recovery: () => _recoveryOpen || dialogueSystem.has('tut-tow') || _tutQueue.some(t => t.key === 'tut-tow'),   // X queues the tow's card behind this one
   lights: () => getHeadlightMode() > 0,
   park: () => vehicleState.parked,
   campmenu: () => _campSeek || _campUi?.mode === 'camp',
   snack: () => !_snackOnBoard(),
-  lunch: () => inventorySystem.list().filter(r => r.id === 'packedLunch').length < 3,
+  lunch: () => _lunches() < TUT_PARAMS.breakfastLunches,
+  slept: () => dialogueSystem.has(DLG.morning),   // DEC-426 (Q1): the night on mom's alarm ends the firing day
 }
 /** On the HUD poll: clear the card on screen if it waits for an action and that action is done. */
 function _untilTick () {
@@ -5314,6 +5319,13 @@ function _pumpTut () {
  *  will's 07:00 on day 0 at the earliest (DEC-159), the last paycheck in the wallet (DEC-150), the run's own world loaded
  *  back from the tutorial seed (DEC-158); then on a skip the manager's check (DEC-152), and Larry's call with RUN_INTRO
  *  (DEC-155). Every step is idempotent or keyed, so a resume between any two of them picks up where it stood. */
+const _lunches = () => inventorySystem.list().filter(r => r.id === 'packedLunch').reduce((k, r) => k + r.n, 0)
+/** BUG-198 / DEC-381 (owner, 2026-11-17: "make sure we get the three free meals when starting a new game"): the run proper
+ *  starts on mom's three packed lunches (FEAT-173, items.md §1d). DEC-422/426: a played tutorial gets them at breakfast
+ *  (four, one eaten there), so a run that opens on the firing has none until then; a skip, the tutorial's end and the
+ *  paper scenario top them up to three. */
+function _topUpLunches () { const n = 3 - _lunches(); if (n > 0) inventorySystem.grant('packedLunch', n) }
+
 function _checkOpeningEnd () {
   if (_paperScenario || !offerBoard || storySystem.isEntering()) return   // FEAT-62: the scenario has no opening to end
   const skipped = dialogueSystem.has(DLG.skipped)
@@ -5323,10 +5335,7 @@ function _checkOpeningEnd () {
   economySystem.payPaycheck()
   if (_returnSeed) { _returnToRunWorld(); return }
   if (skipped && !dialogueSystem.has(DLG.bossCheck)) { _tut(DLG.bossCheck, BOSS_CHECK, null, true); return }
-  // BUG-198 / DEC-381 (owner, 2026-11-17: "make sure we get the three free meals when starting a new game"): the run proper starts
-  // on mom's three packed lunches (FEAT-173, items.md §1d) however many the tutorial's breakfast and night ate.
-  const lunches = inventorySystem.list().filter(r => r.id === 'packedLunch').reduce((k, r) => k + r.n, 0)
-  if (lunches < 3) inventorySystem.grant('packedLunch', 3 - lunches)
+  _topUpLunches()
   _tut(DLG.runIntro, skipped ? _runIntro() : LARRY_CALL, null, true)   // Larry's call: DEC-326's two cards, or DEC-236's four on a skip
   _markPlayed()   // FEAT-184: the tutorial is over
 }
@@ -6559,7 +6568,7 @@ function _updateParkTriggers (zParked = false) {
     } else if (moms) {
       _campUi = { mode: 'moms', site: null, moms: true }
       _renderCampUI()
-      if (_firingDay()) { _tut('tut-home'); _tut('tut-hungry'); _tut('tut-moms', TUT['tut-moms'].map(c => ({ ...c, text: c.text.replace('{alarm}', _alarmText()) }))) }   // DEC-325 home safe; DEC-315 hunger and energy; FEAT-170 stage 4
+      if (_firingDay()) { _tut('tut-home'); _tut('tut-hungry'); _tut('tut-moms', TUT['tut-moms'].map(c => ({ ...c, text: c.text.replaceAll('{alarm}', _alarmText()) }))) }   // DEC-325 home safe; DEC-315 hunger and energy; FEAT-170 stage 4
     } else if (seeking && !camp.fast && !onRoad && !_firingDay()) {   // DEC-308: the truck is no bed on the firing day
       _campUi = { mode: 'truck', site: null, moms: false, truck: true }
       _renderCampUI()
@@ -7134,13 +7143,8 @@ const CAMPFIRE_BURN_H = 2   // a camp fire burns two hours unattended (owner 202
 function _sleepAtCamp () {
   if (!_campUi || _campBusy) return
   let hours = parseInt(document.getElementById('cp-hours')?.value ?? '8', 10) || 8
-  // DEC-357 (owner, 2026-11-16): the tutorial's night wakes on mom's alarm, and any other time is refused ("Set this time
-  // instead") — the whole hour that lands on it is taken, and the night runs to the alarm exactly.
-  if (_firingDay() && hours !== Math.round(_eveningSleepH())) {
-    const t = document.getElementById('cp-hours-text')
-    if (t) t.innerHTML = `<span style="color:var(--warn)">Set this time instead: wake ${_alarmText()}</span>`
-    return
-  }
+  // DEC-357 / DEC-426 (Q1): the tutorial's night wakes on mom's alarm — Sleep is greyed until the slider reads it
+  // (_syncSleepRow) — and runs to the alarm exactly.
   if (_firingDay()) hours = _eveningSleepH()
   const vibe = _campVibe(_campUi)
   const back = _campHome(_campUi)
@@ -7150,6 +7154,7 @@ function _sleepAtCamp () {
     daySystem.sleep(hours, vibe, _campRest(_campUi))
     _endEvening()   // FEAT-170: any night ends the opening's evening
     // Stage 4, the morning: breakfast if you slept at hers (the evening's end above has fed you), then her card.
+    if (evening && atMoms && _lunches() < TUT_PARAMS.breakfastLunches) inventorySystem.grant('packedLunch', TUT_PARAMS.breakfastLunches - _lunches())   // DEC-426 (Q4)
     if (evening && atMoms) _tut('tut-breakfast')
     // FEAT-33: you turned the key off to make camp, so you wake to a dead truck and start the
     // morning by starting it. This is the diegetic bookend the ignition exists for (SM-INV-6) —
@@ -7232,6 +7237,9 @@ function _syncSleepRow () {
   const slider = document.getElementById('cp-hours')
   if (slider) slider.style.accentColor = STAGE_COLOR[daySystem.stageFor(wake)]
 
+  // DEC-426 (Q1, owner: "a"): the tutorial's night — Sleep is greyed until the player slides the alarm to mom's 06:30.
+  const go = document.getElementById('cp-sleep-go')
+  if (go) go.disabled = _firingDay() && h !== Math.round(_eveningSleepH())
   const t = document.getElementById('cp-hours-text')
   if (t) t.textContent = `${h} h  ·  wake ${String(Math.floor(wh)).padStart(2, '0')}:${String(Math.floor((wh % 1) * 60)).padStart(2, '0')}`
   const e = document.getElementById('cp-energy-text')
@@ -7385,7 +7393,7 @@ document.getElementById('cp-cancel')?.addEventListener('click', _closeCampUi)
 document.getElementById('cp-break')?.addEventListener('click', _breakCamp)
 document.getElementById('cp-sleep')?.addEventListener('click', () => {
   if (!_campUi) return
-  // DEC-357: the tutorial's night is not preset: the player sets mom's alarm (the sleep refuses any other wake time).
+  // DEC-357 / DEC-426: the tutorial's night is not preset: the player sets mom's alarm (Sleep is greyed until it reads it).
   _campUi = { ..._campUi, mode: 'sleep' }
   _renderCampUI()
 })
@@ -9740,7 +9748,7 @@ const storySystem = new StorySystem({
     damageModel.setAll(1)
     partsSystem.start()              // SM-3: stock parts, new…
     rollJalopy({ parts: partsSystem, damage: damageModel, inventory: inventorySystem }, (Math.random() * 2 ** 32) >>> 0)   // …then this run's jalopy (SM-INV-7)
-    inventorySystem.grant('packedLunch', 3)   // FEAT-173: mom's snack — every run starts with three packed lunches
+    if (_paperScenario) _topUpLunches()   // FEAT-173: mom's three packed lunches; a run on the firing gets them from her (DEC-422)
     startShelves((Math.random() * 2 ** 32) >>> 0)   // FEAT-137: every auto shop's shelf, this run's rolls
     damageModel.publish(RANGER_PARAMS)
     damageScreen.clearAlert()        // BUG-184: after the roll — the last truck's unread alert is not this one's, nor is its wear
@@ -10171,12 +10179,14 @@ let _boardLog = null          // the live board's history (save.js logBoard) —
 let _restoring = false        // a resume's seat is in flight: the truck is not where the save says yet
 let _runEnded = false         // the run is over: never write it again (_discardRunSave)
 /** FEAT-288 P2 (src/tut-gate.js): the tutorial's step — null outside it (nothing locked), else the card up (its `allow` /
- *  `hi`, data/dialogue.js). Between cards the base lock stands, except while the worst day's flat waits for its tow:
- *  recovery stays open then, or a recovery card closed by mistake would strand the truck. Installed here, below every
- *  name it reads (storySystem, _runEnded), so its poll can never touch one before it exists. */
-const _TUT_BASE = {}, _TUT_TOW = { allow: ['recovery', '#recovery-card'] }
+ *  `hi`, data/dialogue.js; a press-any-key card locks what lies under it, stepFor). Between cards the base lock stands
+ *  (tut-gate.js BETWEEN), except while the worst day's flat waits for its tow: recovery stays open then, or a recovery
+ *  card closed by mistake would strand the truck — and of its options only the tow to the shop (P3a: the gas station's
+ *  or the tire service's would skip the shop's lesson). Installed here, below every name it reads (storySystem,
+ *  _runEnded), so its poll can never touch one before it exists. */
+const _TUT_TOW = { allow: ['recovery', '#recovery-card [data-act="towShop"]'], hi: ['#recovery-card [data-act="towShop"]'] }
 initTutGate(() => !_tutDrive() || _runEnded || !storySystem.isActive() ? null
-  : dialogueSystem.current() ?? (_eveFlat && !_eveTowed && dialogueSystem.has('tut-spareflat') ? _TUT_TOW : _TUT_BASE))
+  : stepFor(dialogueSystem.current(), _eveFlat && !_eveTowed && dialogueSystem.has('tut-spareflat') ? _TUT_TOW : undefined))
 
 /**
  * Why the run cannot be saved right now, or null. A board job and Larry's round ride the save

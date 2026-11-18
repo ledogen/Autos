@@ -59,13 +59,14 @@ export const PAD_PARAMS = {
 // the reticle is up as well (RB tap throws). pumpActive: set by main.js — the pump is open, so A
 // pumps. hudMenu: set by src/hud-menu.js — the B-hold icon menu ({ open, move, select, cancel }).
 // skipHold: set by main.js — the opening can be skipped, so View is held M (FEAT-170).
+// cardHolds: set by main.js — a press-any-key dialogue card is up, so B advances it instead of opening the B menu.
 // mouseLive (FEAT-255): false from any pad button / stick input until the mouse actually MOVES (or a real key is
 // pressed). While false, hover is ignored — menu-nav.js's pointer highlight, map2d.js's list rows and its mouse cursor —
 // so a mouse left resting on the UI cannot hold a highlight or the map's centre while the pad drives.
 export const pad = { active: false, mouseLive: true, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0, panX: 0, panY: 0, zoom: 0,
   menuActive: () => false, cardActive: () => false, cardTabs: () => false, cardDrive: () => false,
   mapActive: () => false, canThrow: () => false, throwReady: () => false,
-  pumpActive: () => false, skipHold: () => false, hudMenu: null }
+  pumpActive: () => false, skipHold: () => false, cardHolds: () => false, hudMenu: null }
 
 // THE BINDING TABLE (Forza-style layout, owner 2026-10-19 — the FEAT-125 ticket). Rows with a
 // `button` (standard-layout index) replay `key` while held; the rest are analog or tap-vs-hold, read
@@ -292,6 +293,9 @@ function poll () {
     if (rbBrake) sendKey('keyup', ' ')
     rbAt = -1; rbBrake = false
   }
+  // FEAT-288 (DEC-422, owner: "press any key should override holding B for the B menu"): over a press-any-key card B is
+  // that key — one press, one card — and the B menu stays shut until B is let go.
+  if (drive && bDown && !bSpent && !bMenu && pad.cardHolds()) { sendKey('keydown', 'Escape'); sendKey('keyup', 'Escape'); bSpent = true }
   if (drive && bDown && !bSpent) {
     if (!bMenu) { bMenu = true; pad.active = true; pad.hudMenu?.open() }
     if (dpad & 1 & ~dPrev) pad.hudMenu?.move(-1)
