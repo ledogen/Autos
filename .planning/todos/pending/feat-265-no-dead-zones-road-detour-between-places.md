@@ -17,6 +17,12 @@ B2 is built on `land/feat-265-dead-zones` (DEC-401). Two things are the owner's 
 NEW tutorial seed 1872706826 (DEC-402): B2 restores two roads there, which moves its east auto shop, so
 `test/tutorial-seed.mjs` fails 3 census checks (green on main). Per that gate a failure means re-pick or re-census the
 seed, never loosen it: his call.
+Also open (lane): `road-clearance` fails on random seed 1247456971: legs g:-2,0,1:-3,2,0 and g:-3,2,0:-2,2,1 run
+16.6 m apart over 28 m at node -3,2,0 (limit 22 m). A restored side is not in the plan layer, so the FEAT-77 clearance
+pass never gives it a berth. Proposed fix: route a restored side with the other legs at its two nodes as `occupied`
+lines (the same input `_v2EdgeDirs` gives a clearance loser). Not yet built.
+Affected gates (81, serial): 77/79 green; red: tutorial-seed (above) and road-clearance (this).
+
 
 ## Summary
 On seed 3200351065 the drive from the food vendor to Larry's is far longer than the map distance suggests, and the
