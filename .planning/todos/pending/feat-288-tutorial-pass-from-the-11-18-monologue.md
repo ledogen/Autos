@@ -12,7 +12,7 @@ lane: SM (tutorial)
 # FEAT-288: Tutorial pass from the owner's 2026-11-18 monologue
 
 ## Next steps
-P1, P7, P2, P3a, P4, P5 on main; P3b on land/feat-288-p3b-map-shop (browser-proven, § 3 "As built (P3b)"), P6 in flight. Then P8. The owner owes words for the lines listed under Open questions.
+P1–P7 on main; P8 (speaker slide) on land/feat-288-p8-speakers, owner look owed (card feat288-speakers-look). Then the owner's play and his words for the lines under Open questions.
 
 ## Summary
 A complete, simple tutorial: full dialogue and storytelling, a brief but complete explanation of every system, every control / menu / bar the player must use highlighted and everything else locked out, plus the specific fixes below.
@@ -446,6 +446,26 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
   `pending()` can tell). The card is up in the shop, before the player leaves it (its `allow: []` locks the shop's rows;
   leave is never locked).
 
+**As built (P8, 2026-11-18): speaker separation (DEC-426 Q2).**
+- One mechanism for every dialogue card: `#dialogue-panel` (calls, the ring and `<click>` cards, in person, the paper
+  briefing, the run intro). The camp, pump, shop, job and recovery cards are other components and do not slide. The ring
+  card is the speaker "Phone", so ring → caller is a change of speaker; the caller's `<click>` is the caller's, so it cycles.
+- The rule is src/dialogue.js `cardSlide(prev, next, side)`: the same speaker cycles in place; on a change the card up leaves
+  by the side it came in from and the next enters from the other, so sides alternate per change (A, B, A enter left, right,
+  left). The first card of a showing enters from the left; the last leaves by its own side.
+- main.js `_dlgSlide`: the card leaving is a copy of the panel (`.dlg-ghost`: no ids, no pointer, the panel's CSS rules
+  name it beside `#dialogue-panel`, so it keeps the shop-left and map-sheet placements at Small and Big); the live panel is
+  already the new card, so the gate's `hi` / lock paint, menu-nav and `cardOwnsKeys` always read the card that is up. Web
+  Animations on `translate` (composited, no per-frame JS): out 150 ms `cubic-bezier(.5,0,1,1)` (accelerating), then in
+  200 ms `cubic-bezier(0,0,.2,1)` (decelerating) = 350 ms on a change; a first card 200 ms; the text streams as it arrives.
+- A press (key, click, pad) mid-slide lands the card at once, filled, and is spent; the next press turns it. Presses per
+  card are unchanged (fill, turn); no card can turn unread. `prefers-reduced-motion` (the browser's "avoid motion"
+  setting): an instant swap.
+- Not UI-STYLE's pop-in overshoot curve: on a full-screen slide it would swing the card ~130 px past its place.
+- Proof: test/tut-gate.mjs § 5 (the rule over every framed script); cdp-smoke `opening` (Katie's `<click>` cycles, the
+  manager slides in from the right as Katie leaves left and leaves right, a click mid-slide lands him whole, rapid keys and
+  clicks show the framed script's 3 cards, reduced motion swaps mom's call with no slide). Sheet wip/feat-288-p8/sheet.jpg.
+
 ## Tracker
 - [x] Itemised plan + conflicts + questions written here (no code): § Plan, 44 items, DEC-422
 - [ ] Owner answers card `feat288-tutorial-plan` (or the defaults stand)
@@ -457,7 +477,7 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - [x] P4 world fixes: mom's ring (story-wide), legs on the map, the flat before the tunnel, mom's card on the tire's check-out
 - [x] P5 quest-item mark on the pack (the step names it; beam + white pulse; owner look owed: card feat288-marker-look)
 - [x] P6 opening camera: free rotation, resumes; BUG-203
-- [ ] P8 speaker separation (after Q2)
+- [x] P8 speaker separation: a change of speaker slides out / in from the other side, the same speaker cycles (DEC-426 Q2; owner look owed: card feat288-speakers-look)
 - [ ] Owner has played it
 
 ## Decisions
