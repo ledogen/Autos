@@ -85,10 +85,21 @@ Grade band = the road grade under the truck at that moment.
 - Cost: the median per physics step is 16–30 µs (one seed 2.5 µs: it sat wedged); the p99 is 60–300 µs (the bore query,
   polled at 4 Hz). The worst single steps are 3–35 ms, in plain `drive`, not at junctions; garbage collection or JIT is
   suspected, not traced.
-- **The one intervention**: seed 1830183820 at (125, −42), on a 21 % stretch climbing into a tunnel portal (the
-  road reaches ~37 % at the mouth). The truck goes from 8.5 m/s to 0 in about 1 s, wedged, and reversing does not
-  move it. Physics runs at ~0.1× realtime there. A 1 m ray along the road at the mouth hits nothing. Likely a
-  world / collider finding at a steep portal, not the driver: a follow-up.
+- **The one intervention is a world defect (for a new ticket; measured 2026-11-18)**: seed 1830183820, run
+  `g:0,-1,0:0,0,2`, bore span s 60.27–279.55. The road deck climbs at ~37 % (0.38 m/m) into the portal. From arcS
+  ~58.8 to ~59.8, 0.5–1.5 m BEFORE the span starts, a road-mesh surface in road tile `1,-1` sits nearly LEVEL
+  (y 81.75 on the centreline, 81.37 at −2.5 m, 82.05 at +2.5 m) while the deck rises under it: a 1 m shelf whose
+  downhill edge stands 0.38–0.40 m above the deck (at arcS 58.9: 81.76 over 81.38), merging into the deck at ~59.8.
+  The tires never see it (`sampleRoadTopY` and the analytic ground both give the continuous deck), so MESH ≠ PHYSICS
+  for the wheels; only the chassis hull meets it. At t 7.70 s, heading 135°, 8.3 m/s, pitch 21°, the truck is at
+  (125.3, 82.2, −42.0). The hull's belly catches the shelf's edge and the engine resolves the overlap along the
+  shelf's face normal (≈ straight DOWN): the hull ends up pinned under it. Contact impulse 4.8e5 N·s per step, rear
+  right tire load 95 kN (×30), front wheels off the ground, pitch 29°. Throttle and reverse then cannot move it.
+  **A human driver hits it too**: on the centreline at 9 m/s the hull scrapes it (1.5e3 N·s) and is thrown, rear
+  wheels in the air, then drives on. 2.65 m right of centre the hull misses it. The AI wedges because the bore entry
+  tapers its lane to the centreline. Reproduce: `SOAK_LOG=1 SOAK_T0=6 SOAK_T1=10 node test/drive-ai-soak.mjs
+  --seed=1830183820 --km=0.2` (stops at t ≈ 7.7 s). Probes (git-invisible): `wip/feat-293/wedge.mjs`
+  (per-step contacts, `--lane=0` / `--cap=0`) and `wip/feat-293/column2.mjs` (every collider surface in a column).
 - Gate (`test/drive-ai.mjs`, seed 909892992, 0.6 km, radius 800 m): green, 133 s.
 
 ### What an ML driver would need later (and what V1 gives it for free)
