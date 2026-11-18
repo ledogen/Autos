@@ -341,7 +341,7 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 ## Tracker
 - [x] Itemised plan + conflicts + questions written here (no code): § Plan, 44 items, DEC-422
 - [ ] Owner answers card `feat288-tutorial-plan` (or the defaults stand)
-- [ ] P1 dialogue: draft tags out, mom's parking line, "Anyway,", mom at the shop, the paycheck moves to mom
+- [x] P1 dialogue: draft tags out, mom's parking line, "Anyway,", mom at the shop, the paycheck moves to mom
 - [x] P7 phone sounds: ring and flip-shut, owner's ear
 - [ ] P2 the gate: one lock + highlight for keys, mouse and pad; nothing locked after a skip
 - [ ] P3a lessons 1: forced diagnostics → inventory → spare, break camp locked, eating locked, the sleep lesson, lunches at breakfast, B advances a card
@@ -376,3 +376,4 @@ data/tutorial.js, data/dialogue.js, src/main.js, src/menu-nav.js, src/hud-menu.j
 - 2026-11-18 the sleep note was not lost: it is DEC-357 ("a wake time other than 06:30 is refused with 'Set this time instead: wake 06:30'"). The plan must check in the browser whether that still works on main.
 - 2026-11-18 lane s: plan written (§ Plan, 44 items, 8 packages), DEC-422, card feat288-tutorial-plan. Facts (a)–(f) measured on main (e42a56ff) in the browser and on the headless tutorial-seed build; no code changed.
 - 2026-11-18 P7 built on land/feat-288-p7-phone: `src/phone-audio.js` (ring + flip-shut, synthesized), `call` marker on the frame cards in dialogue.js `_frame`, one hook in main.js `_renderDialogue`; Sounds-tab entries in FEAT-120. Owner's ear owed (card feat288-phone-sounds-ear); nobody has heard it.
+- 2026-11-18 P1 dialogue built on land/feat-288-p1-dialogue (words and speakers only; 6 data/dialogue.js cards re-worded, 7 draft tags out, mom's two paycheck lines in). run-all affected gates green; smoke boot,opening PASS (38 steps). Left for P3/P4: mom's "marked spot" in tut-park waits on her ring (P4); tut-gas / tut-pickup keep their current words (§ 2's versions tie to P2/P3b flow).
