@@ -12,17 +12,14 @@ lane: engine & world
 # FEAT-265: No dead zones — places a long drive apart that are close on the map
 
 ## Next steps
-B2 is built on `land/feat-265-dead-zones` (DEC-401). Two things are the owner's before it lands (owed card
-`feat265-b2-look`): his look at `wip/feat-265/b2-built.jpg` and seed 3200351065 in story mode, and the conflict with the
-NEW tutorial seed 1872706826 (DEC-402): B2 restores two roads there, which moves its east auto shop, so
-`test/tutorial-seed.mjs` fails 3 census checks (green on main). Per that gate a failure means re-pick or re-census the
-seed, never loosen it: his call.
-Also open (lane): `road-clearance` fails on random seed 1247456971: legs g:-2,0,1:-3,2,0 and g:-3,2,0:-2,2,1 run
-16.6 m apart over 28 m at node -3,2,0 (limit 22 m). A restored side is not in the plan layer, so the FEAT-77 clearance
-pass never gives it a berth. Proposed fix: route a restored side with the other legs at its two nodes as `occupied`
-lines (the same input `_v2EdgeDirs` gives a clearance loser). Not yet built.
-Affected gates (81, serial): 77/79 green; red: tutorial-seed (above) and road-clearance (this).
-
+B2 is built on `land/feat-265-dead-zones` (DEC-401) with the clearance fix (item 6 below); `road-clearance` and
+`urquhart-restore` are green. One owner call before it lands (owed card `feat265-b2-look`): the NEW tutorial seed
+1872706826 (DEC-402). B2 restores 2 roads there and the berth re-routes one of them to a 32 % pitch, so the tutorial
+moves (station, camping area, auto shop) and gets steeper (38 % climb vs 19.1 %). The measured options are in
+§ "Tutorial seed under B2". On his answer: (1) re-census `test/tutorial-seed.mjs` on 1872706826 under B2 (never loosen),
+or (2) re-pin to the seed he names (DEC-402's walk: data/tutorial.js, the gate's census, the smoke's tutorial checks,
+a record superseding DEC-402), or (3) change item 6 to "a restored side that grazes stays dropped" (no berth re-route),
+re-run the affected gates; then the landing request.
 
 ## Summary
 On seed 3200351065 the drive from the food vendor to Larry's is far longer than the map distance suggests, and the
@@ -162,6 +159,28 @@ whose route is empty on every rung. Degree drops and crossing deletes are not fa
    +7.5 points; worst 20 -> 27.5 % on 3590618618's warm band), 2 still graze and stay dropped (3590618618 warm band,
    2176144795 in region). On 1872706826 (not in the 46) its 1061 m in-region side grazed: re-routed to 1006 m, 32.2 %.
 
+### Tutorial seed under B2 (world-gen lane, 2026-11-17; round 3's own tools, `hard.mjs` / `census.mjs` / `gate-at.mjs`
+from CarGame-land-211d `wip/tut-seed-search-r3/`, run on main (`wip/feat-265/mainroot/`, an export of main) and on this
+branch (`wip/tutb2/`); `python3 -I wip/feat-265/tutcmp.py` prints the table; sheet `wip/feat-265/b2-tutorial.jpg`)
+- 1872706826 gains two in-region roads: -3,0,0 to -4,0,2 (826 m, 14.9 %) and -2,1,1 to -3,1,1. The second grazed its
+  node's leg as first built (1061 m, 14.8 %); the berth re-routes it to 1006 m with a 32.2 % pitch. POIs re-site.
+- Places: joint, mom's, Larry's stay. Station (-377, -446) -> (-1767, 676); camping area (-130, 387) -> (-2008, 944);
+  flat (-41, 92) -> (-801, 638); auto shop (620, 456) -> (-376, 321).
+- Legs (km): Larry->station 2.63 -> 1.84, station->camp 1.26 -> 0.37, camp->flat 0.43 -> 1.53, shop->mom 2.22 -> 1.14,
+  tow 0.75 -> 0.53; joint->mom 0.82, mom->Larry 2.15, mom->joint 0.82 unchanged. Day 10.33 -> 8.67 km, longest leg
+  2.63 -> 2.15 km: DEC-344's distances (longest <= 3.5 km, day <= 16 km) still hold.
+- Hard metres 838 -> 738 (81 -> 85 per km). Steepest climb 19.1 -> 38.0 %, descent 29.4 -> 38.1 %; above 20 %: 0 up +
+  95 down -> 65 up + 50 down. Worst spot: shop->mom -15.1 % in a 12 m bend (627, -369) -> Larry->station -38.1 % at
+  R 23 m (-970, 814), on the re-routed restored road, which Larry->station and camp->flat both drive.
+- gate-at.mjs with constants re-derived on the B2 world: PASS (every stop, leg, and the clock).
+- The other candidates and the old pin: B2 leaves the tutorial identical on all five (places, legs, index).
+  1464815701 665, 3615534968 927, 3881445155 995, 3270310529 1055, 3590618618 2528 hard metres. The first four
+  restore no road anywhere in the region build (identical worlds); 3590618618 restores 2 roads in the warm band only.
+- Option 3 measured (`wip/feat-265/opt3root/`, item 6 with the berth re-route removed: a grazing side stays dropped):
+  1872706826's tutorial and census line identical to main and `test/tutorial-seed.mjs` passes unchanged; the owner's
+  seed unchanged (2.99 km); census 18 of 27 restored sides kept (vs 25), median / max place stretch 2.21 / 3.09
+  unchanged, seeds with an in-region restore 5 -> 4; 2176144795 place stretch 2.05 -> 2.22, 1247456971 2.30 -> 2.54.
+
 Results (46-seed census on the real build, `wip/feat-265/census-b2built.jsonl`, places re-sited by the real POI build):
 (Re-stated after the clearance fix, 2026-11-17: the numbers below hold except km added, mean 0.61 -> 0.55 km, max
 4.14 -> 3.02 km, and restored grades, steepest 10 m 12-27.5 %; seeds with a restore still 13, 5 in the region; max
@@ -186,7 +205,9 @@ place stretch 3.09, median 2.21; the owner's seed unchanged.)
 - [ ] A measure agreed with the owner (proposed: place stretch ≥ 3.0), censused on ≥ 30 random seeds (done: 44)
 - [x] Options shown as map sheets (before/after per option, same seeds), with build time and added road length
 - [x] The owner's pick (B2) built; fingerprint-world identical on its six windows; gate `urquhart-restore.mjs`
-- [ ] Owner look at `wip/feat-265/b2-built.jpg` + the tutorial-seed conflict (card feat265-b2-look)
+- [x] road-clearance graze on 1247456971 fixed: a restored side that grazes re-routes with a berth or stays dropped
+- [x] The tutorial seed under B2 measured (1872706826 + the round-3 candidates + the old pin), `wip/feat-265/b2-tutorial.jpg`
+- [ ] Owner look at `wip/feat-265/b2-built.jpg` + the tutorial-seed call (card feat265-b2-look)
 
 ## Decisions
 - DEC-070 (connectivity up; add options, not roads; keep sparse): A, B2, B, C add roads. A/B2 add 1–3 roads on 2–4
@@ -211,6 +232,9 @@ place stretch 3.09, median 2.21; the owner's seed unchanged.)
 `src/road-graph.js` · `src/road.js` · `src/poi.js`
 
 ## Log
+- 2026-11-17: clearance fix (`_v2RestoreLegs`/`_v2RestoreGrazes`): road-clearance PASS, urquhart-restore 6/6,
+  fingerprint-world identical to main; census 7 re-routed + 2 dropped of 27. Tutorial under B2 measured (838 -> 738
+  hard m, 19.1 -> 38 % climb); option 3 checked in a copy. Card feat265-b2-look rewritten.
 - 2026-11-17: B2 built (`_v2RestoreDropped`, `urquhartEdges` dropped-side records); gate urquhart-restore 6/6;
   fingerprint-world identical; census 46 seeds; tutorial-seed FAILS on 1872706826 (shop moves): owner call. Card feat265-b2-look.
 - 2026-11-17: minted by the orchestrator from the owner's capture and note.
