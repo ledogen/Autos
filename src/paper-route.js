@@ -325,6 +325,31 @@ export const RR_PARAMS = {
 const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
 /**
+ * FEAT-291: THE GUIDE'S STATE for a job with several stops, done in any order — a demolition site's clusters (DEC-399)
+ * and a multi-drop's owed stops. poll() re-plans the shortest tour from the truck through the stops still owed (planGuideJob)
+ * whenever their count changes and every RR_PARAMS.tourS, keeping the order being followed (BUG-212); pump() spends a
+ * frame's spare time on it. `tour` is the last plan that reached anybody (BUG-47: one that reached nobody keeps it); `leg`
+ * is its tourLeg, the line the GPS draws, one object per plan (gps.js re-bakes on a new object). `extra` rides on the leg.
+ */
+export class TourGuide {
+    constructor (extra = null) { this.extra = extra; this.it = null; this.tour = null; this.leg = null; this.order = null; this.left = -1; this.at = -Infinity }
+    poll (road, car, stops, region, nowS) {
+        if (this.it || !stops.length || (stops.length === this.left && nowS - this.at < RR_PARAMS.tourS)) return
+        this.left = stops.length; this.at = nowS
+        this.it = planGuideJob(road, car, stops, region, 100, this.order)
+    }
+    pump (budgetMs) {
+        if (!this.it) return
+        const r = stepJob(this.it, budgetMs)
+        if (!r.done) return
+        this.it = null
+        if (r.value?.segments?.length) { this.tour = r.value; this.leg = { ...tourLeg(r.value), ...this.extra }; this.order = r.value.customers.map(c => c.id) }
+    }
+    /** Hand an unfinished plan's Held-Karp tables back (FEAT-267, _leaseHkTables). */
+    cancel () { this.it?.return?.(); this.it = null }
+}
+
+/**
  * FEAT-266/267: THE GUIDE — the shortest tour from the truck through `stops`, as a resumable planTourJob, or null when the
  * truck is off the network or nothing is left. Every stop is wanted: the job's own N, never a subset. The paper round's
  * re-plan (PaperRouteSystem._startReplan) and a demolition site's (main.js _updateSite, DEC-399) both plan through here.
@@ -748,7 +773,9 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
     // FEAT-266: the first porch the drive reaches, and how many segments get there — the GPS draws only that leg
     // (gpsLine), so each owed house in turn carries the FEAT-218 turn arrow (DEC-371's arrow, kept by DEC-398).
     const custAt = new Map(order.map(c => [ptKeyOf.get(c.id), c]))
-    let first = null
+    // FEAT-291: every porch in the order the drive reaches it — `n` segments and `p` poly points get there (a multi-drop
+    // job cuts its legs at these). `first` is the head of it.
+    const stopsAt = []
 
     const segments = [], poly = []
     const pushPoly = (cl, s0, s1) => {
@@ -794,8 +821,8 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
             // not. The two flags say different things about the same point on purpose.
             stop: custKeys.delete(vk),
         })
-        if (!first && segments.at(-1).stop) first = { n: segments.length, c: custAt.get(vk) }
         pushPoly(ed.centerline, s0, s1)
+        if (segments.at(-1).stop) stopsAt.push({ n: segments.length, p: poly.length - 1, c: custAt.get(vk) })
     }
     if (!segments.length) return null
 
@@ -807,7 +834,7 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
     const { time, distance } = computePar(segments)
     if (!(time > 0)) return null
 
-    return { customers: order, segments, poly, polyCum: polyCumOf(poly), par: time, distance, edges: segments.length, first }
+    return { customers: order, segments, poly, polyCum: polyCumOf(poly), par: time, distance, edges: segments.length, first: stopsAt[0] ?? null, stopsAt }
 }
 
 // ── the mission ─────────────────────────────────────────────────────────────────────────────────
