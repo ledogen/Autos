@@ -674,7 +674,7 @@ export class MissionSystem {
     }
 
     /**
-     * Metres remaining ALONG THE ROUTE — the honest HUD number. Crow-flies distance INCREASES
+     * Metres remaining ALONG THE ROUTE to the current leg's end (BUG-205) — the honest HUD number. Crow-flies distance INCREASES
      * while you drive a winding route correctly, which reads as "going the wrong way" (and once
      * broke a verification run). Projects the car onto the mission polyline (windowed around the
      * last match, full re-scan when the window loses the car) and reports the arc left from there.
@@ -697,10 +697,13 @@ export class MissionSystem {
         // back onto the outbound half — the number would read the whole job again. (FEAT-89: any
         // leg past the first floors at the stop it left.)
         const floor = m.legs && this.leg ? m.legs[this.leg - 1].polyIdx : 0
-        scan(Math.max(floor, last - 20), Math.min(poly.length - 1, last + 40))
-        if (bd > 200 * 200) scan(floor, poly.length - 1)     // off the window (teleport, big shortcut)
+        // BUG-205 (owner 11-17: "the waypoint distance measure at top of screen is wrong"): a multi-stop job reads to the
+        // stop the GPS leads to (guideRoute's leg), never to the job's end; and the projection stays on that leg.
+        const ceil = m.legs?.[this.leg ?? 0]?.polyIdx ?? poly.length - 1
+        scan(Math.max(floor, last - 20), Math.min(ceil, last + 40))
+        if (bd > 200 * 200) scan(floor, ceil)     // off the window (teleport, big shortcut)
         this._polyIdx = bi
-        return Math.max(this.distanceToGo(), cum[cum.length - 1] - cum[bi])
+        return Math.max(this.distanceToGo(), cum[ceil] - cum[bi])
     }
 
     // ── per-frame ───────────────────────────────────────────────────────────────────────────

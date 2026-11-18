@@ -2107,7 +2107,9 @@ const map2d = new Map2D({
   // FEAT-61: the paper route draws as a mission route, because that is what it is — one line, in
   // the order it will be driven. It wins over the mission's when a route is out; the two can never
   // both be live.
-  getMission: () => paperRouteSystem?.markers() ?? missionSystem?.markers() ?? null,
+  // BUG-212: a demolition job's map line is the GPS's tour from the truck (the paper round's rule, DEC-399), not the job's
+  // planned route: after a missed cluster or a U-turn the two disagreed on the order.
+  getMission: () => paperRouteSystem?.markers() ?? _siteLine() ?? missionSystem?.markers() ?? null,
   // FEAT-43: the story-mode region boundary, so the player can see where the wall is rather than
   // finding it by driving into it. Null outside story mode (and until the region center is captured).
   getRegion: () => storySystem?.region() ?? null,
@@ -3812,7 +3814,14 @@ const inventorySystem = new InventorySystem({
     fieldRepair: (e) => { queueMicrotask(() => _pickFieldRepair(e.id)); return false },
     jerry: (e) => { queueMicrotask(() => _pourJerry(e)); return false },
     plug: () => { queueMicrotask(() => _pickPlug()); return false } },
+  notes: { eat: (e) => _mealNote(foodSatietyH(e.id, _kitAtCamp())) },   // BUG-211: a meal on a full stomach
 })
+/** BUG-211 (owner 11-17: "eating another didn't seem to increase my hunger any further"): the eat hint, by
+ *  daySystem.mealWaste (eat()'s own rule), said before eating. A warning, never a refusal: a scripted beat eats on cue
+ *  (the opening's peanuts at camp, DEC-347, on a stomach the safe drive kept fed). Words only, no hours on screen. */
+const _MEAL_NOTE = { all: 'You are too full. Eating this now would waste it.',
+  some: 'You are nearly full. Some of this would go to waste.' }
+const _mealNote = (holdH) => _MEAL_NOTE[daySystem.mealWaste(holdH)] ?? null
 // Parked only, like V; a POI that owns the brake here blocks it the same way (_updateParkTriggers).
 const inventoryScreen = new InventoryScreen(inventorySystem, vehicleState, {
   isSuppressed: () => menuStage.isActive(),
@@ -6941,6 +6950,11 @@ function _clearSite () {
   _siteGroup.clear()
   _site = null
 }
+/** BUG-212: the map's line for a live demolition job — its markers with the guide's whole tour as the poly — or null. */
+function _siteLine () {
+  if (!missionSystem?.mission?.targets || !missionSystem.isOnJob() || _site?.mission !== missionSystem.mission || !_site.tour) return null   // no job first: _site is declared below the map
+  return { ...missionSystem.markers(), poly: _site.tour.poly }
+}
 /** { smashed, of } of mission `m`'s site — nothing smashed when its site isn't the one standing. */
 function _siteCount (m) {
   return { smashed: _site?.mission === m ? _site.targets.filter(t => t.smashed).length : m.siteDown ?? 0, of: m.targets?.length ?? 0 }
@@ -6981,7 +6995,7 @@ function _updateSite () {
     const now = performance.now() / 1000
     if (!_site.rr && standing.length && (standing.length !== _site.left || !(now - _site.planAt < RR_PARAMS.tourS))) {
       _site.left = standing.length; _site.planAt = now
-      const it = planGuideJob(roadSystem, p, siteStops(m, standing), storySystem.region())
+      const it = planGuideJob(roadSystem, p, siteStops(m, standing), storySystem.region(), 100, _site.order)   // BUG-212: keepM
       if (it) _site.rr = it
     }
   }
@@ -7012,7 +7026,7 @@ function _pumpSiteGuide (budgetMs) {
   _site.rr = null
   // FEAT-187: a line to the cluster, never a destination circle in the road (gps.js reads noRing). A plan that reached
   // nobody keeps the previous line (the paper round's BUG-47 rule).
-  if (r.value?.segments?.length) _site.guide = { ...tourLeg(r.value), noRing: true }
+  if (r.value?.segments?.length) { _site.guide = { ...tourLeg(r.value), noRing: true }; _site.order = r.value.customers.map(c => c.id); _site.tour = r.value }
 }
 
 /**
@@ -7251,6 +7265,7 @@ function _renderCampUI () {
   show('cp-sleep',  isHome && !noBed)
   show('cp-fish',   st.mode === 'camp' && !!st.site?.waterFound)
   show('cp-item',   isHome)   // FEAT-245: mom's too (eat and use things at her table); isHome = camp, truck, mom's
+  show('cp-light',  st.mode === 'camp' && !!st.fireOut)   // FEAT-286: woken at a dead fire (DEC-393), relight it (DEC-397's path)
   show('cp-cook',   st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'potato'))   // FEAT-230; at a dead fire too: cooking relights it (DEC-397)
   show('cp-cook-beans', st.mode === 'camp' && inventorySystem.list().some(r => r.id === 'cannedBeans'))   // DEC-407: heated like the potato, no kit
   show('cp-cook-groceries', st.mode === 'camp' && _kitAtCamp() && inventorySystem.list().some(r => r.id === 'groceries'))   // FEAT-230 slice 3: only with the cooking kit deployed
@@ -7371,11 +7386,23 @@ for (const [btn, raw, cooked, needsKit] of [['cp-cook', 'potato', 'potatoCooked'
   document.getElementById(btn)?.addEventListener('click', (e) => {
     e.currentTarget.blur()
     if (!_campUi || _campBusy || _campUi.mode !== 'camp' || (needsKit && !_kitAtCamp())) return
-    // DEC-397 (owner): "if you cook at a dead fire the fire is instantly relit". The only thing that relights it.
-    if (_campUi.fireOut) { campfire.setDead(false); _campUi = { ..._campUi, fireOut: false } }
+    _relightFire()   // DEC-397 (owner): "if you cook at a dead fire the fire is instantly relit"
     _campFade(() => { if (inventorySystem.convert(raw, cooked)) daySystem.advanceMinutes(30); _renderCampUI() })
   })
 }
+/** DEC-397's relight: a dead camp fire burns again (cooking, and FEAT-286's button). No-op on a live one. */
+function _relightFire () {
+  if (!_campUi?.fireOut) return
+  campfire.setDead(false)
+  _campUi = { ..._campUi, fireOut: false }
+}
+// FEAT-286 (owner 11-17: "If you wake up before first light, there's nothing to look at"): free and instant [DEFAULT, owed].
+document.getElementById('cp-light')?.addEventListener('click', (e) => {
+  e.currentTarget.blur()
+  if (!_campUi || _campBusy || _campUi.mode !== 'camp') return
+  _relightFire()
+  _renderCampUI()
+})
 // FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
 document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
 // FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
@@ -7777,9 +7804,11 @@ function _renderMissionUI () {
             : `${left} to ${q.label ?? _tutWork(q.id) ?? offerBoard.placeLabel(q.id)} · ${what}`   // FEAT-184: PLACEHOLDER words
         }
         // DEC-321: no reset is taught; off the road, the tutorial's own countdown (#reset-countdown) puts the truck back.
-      } else if (_waypointOn()) {   // FEAT-211: the way to the waypoint, crow-flies like the evening's [DEFAULT] words
-        const vp = vehicleState.position
-        hudText.textContent = `${km(Math.hypot(_waypoint.x - vp.x, _waypoint.z - vp.z))} to the waypoint`
+      } else if (_waypointOn()) {   // FEAT-211: the way to the waypoint
+        // BUG-205 (owner 11-17): along the line the GPS shows (its re-plan when the truck strays), DEC-270's rule; it was
+        // crow-flies, so on a winding road it read short and grew while the line was driven correctly.
+        const vp = vehicleState.position, line = _tutLine(_waypoint.route)
+        hudText.textContent = `${km(line?.poly?.length ? routeLeftM(line, vp.x, vp.z) : Math.hypot(_waypoint.x - vp.x, _waypoint.z - vp.z))} to the waypoint`
       }
       break
   }

@@ -158,6 +158,9 @@ export const runState = {
     day: 1,   // 1-based day index of the current run; increments at each midnight crossed
 }
 
+/** BUG-211: a meal adding under this many hours is wholly wasted; one losing over MEAL_WASTE_H is partly. [DEFAULT] */
+export const MEAL_NONE_H = 0.05, MEAL_WASTE_H = 0.25
+
 export class DaySystem {
     /**
      * @param {object} deps - adapter into main.js (keeps this module free of engine imports):
@@ -338,8 +341,25 @@ export class DaySystem {
      */
     eat (satietyH) {
         runLog.on && runLog.event('eat', { satietyH, fedLeftH0: this.fedLeftH(), hungry: this.hungry() })
-        const now = this.clockH()
-        this._fedUntilH = Math.max(this._fedUntilH, Math.min(Math.max(this._fedUntilH, now) + satietyH, now + DAY_PARAMS.satietyCapH))
+        this._fedUntilH = Math.max(this._fedUntilH, this.clockH() + Math.max(0, this.fedLeftH()) + this.mealGainH(satietyH))
+    }
+
+    /**
+     * BUG-211: the hours a meal of `satietyH` would add to fedLeftH() — eat()'s own rule (FEAT-250, DEC-376: holds ADD,
+     * capped at satietyCapH), so the eat refusal (main.js, a meal wholly wasted stays in the bag) and the eat preview
+     * can never disagree with it: min(cap − current, the meal), 0 at or over the cap.
+     */
+    mealGainH (satietyH) {
+        const left = Math.max(0, this.fedLeftH())
+        return Math.max(0, Math.min(DAY_PARAMS.satietyCapH - left, satietyH))
+    }
+
+    /** BUG-211: what a meal of `satietyH` would waste now: 'all' (adds under MEAL_NONE_H), 'some' (loses over MEAL_WASTE_H)
+     *  or null — the inventory's warning before eating. Null with hunger off. */
+    mealWaste (satietyH) {
+        if (!DAY_PARAMS.hungerOn) return null
+        const gain = this.mealGainH(satietyH)
+        return gain < MEAL_NONE_H ? 'all' : satietyH - gain > MEAL_WASTE_H ? 'some' : null
     }
 
     /** Past the last meal's hold. The energy box says so in its hunger word and bar (FEAT-198), never a number. */
