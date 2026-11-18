@@ -439,14 +439,15 @@ export function satSolid (sat) {
  * the CONTENTS as a solid filling the bottom of it to the fill fraction, so a full drum is heavier, lower-centred
  * and differently stiff in roll than an empty one, not a light one with a number changed. Inertia is about the
  * combined centre of mass, body frame (the collider's bbox centre, y up). `half` = debris.js halfExtents.
- * Null for a fixed-mass knockable (the lawn furniture: density over its hull, as before).
+ * Null for a fixed-mass knockable (the lawn furniture: density over its hull, as before). `fill` overrides the draw
+ * (test/lawn-knock.mjs's empty / median / full rows).
  * @returns {{massKg:number, fill:number, inertia:{x,y,z}, center:{x,y,z}}|null}
  */
-export function knockMass (sat, half) {
+export function knockMass (sat, half, fill = null) {
     const k = PROP_MODELS[sat.key]?.knockable
     if (!k?.fullKg) return null
-    const u = mulberry32(hash32(`yard-mass:${sat.key}@${sat.x.toFixed(2)},${sat.z.toFixed(2)}:${sat.variant}`))()
-    const fill = u * u * u, ms = k.emptyKg, mc = fill * (k.fullKg - k.emptyKg)
+    fill ??= mulberry32(hash32(`yard-mass:${sat.key}@${sat.x.toFixed(2)},${sat.z.toFixed(2)}:${sat.variant}`))() ** 3
+    const ms = k.emptyKg, mc = fill * (k.fullKg - k.emptyKg)
     const hx = half.x, h = 2 * half.y, hz = half.z, hc = fill * h
     const yc = -half.y + hc / 2, yStar = mc * yc / (ms + mc)
     let Ixx, Iyy, Izz
