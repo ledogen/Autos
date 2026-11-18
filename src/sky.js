@@ -642,6 +642,7 @@ void main () {
   }
   gl_FragColor = vec4(skyGrade(L), 1.0);
   #include <colorspace_fragment>
+  #include <dithering_fragment>
 }`
 
 /**

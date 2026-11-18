@@ -1476,6 +1476,18 @@ installShadowEdgeFade({ fadeStart: 0.82 })
 // BUG-78: the near map's shadow also gates the far cascade, so the truck can be kept OUT of the
 // far map (see the wrapped shadow pass by sunFar) without its shadow dropping to the near light's 40 % share.
 installNearShadowCoupling()
+// BUG-228: dither at the output. The canvas holds 8 bits per channel, so a smooth, dark ramp (the menu floor, a
+// dusk sky, distance fog) shows as visible steps, and the exposure meter slides them across the scene. This is
+// three's dithering (±0.5 of an 8-bit level of static screen-space noise, three's own `rand` and shift), added just
+// before the 8-bit write (after tone mapping, the sRGB encode and fog), so each step dissolves into a grain the eye
+// averages. Installed here, unconditionally, instead of `material.dithering = true` at ~40 creation sites plus every
+// GLB and clone: every built-in lit/basic material includes the chunk; the custom output shaders (sky, moon, dust,
+// impostors, lab floor) include it by hand, last. Self-contained, so a ShaderMaterial without <common> can use it.
+// The bake shaders return before it (terrain-bake.js); depth/shadow materials never include it.
+THREE.ShaderChunk.dithering_fragment = /* glsl */`{
+  highp float ditherR = fract(sin(mod(dot(gl_FragCoord.xy, vec2(12.9898, 78.233)), 3.141592653589793)) * 43758.5453);
+  gl_FragColor.rgb += mix(vec3(0.5, -0.5, 0.5), vec3(-0.5, 0.5, -0.5), ditherR) / 255.0;
+}`
 // PERF-16: stop re-rendering the sun's whole shadow pass every frame. Three defaults autoUpdate=true,
 // so the 1536²/2048² shadow map is re-rendered each frame even parked under a static sun (measured
 // ~9 pp renderer-main, ~3 pp GPU). We drive needsUpdate on-demand from the shadow-follow block in
@@ -9090,6 +9102,7 @@ const _labFloorMaterial = new THREE.ShaderMaterial({
       gl_FragColor = vec4(col, 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
+      #include <dithering_fragment>
     }`,
 })
 const _gridGroundPlane = new THREE.Mesh(
