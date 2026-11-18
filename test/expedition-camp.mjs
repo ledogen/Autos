@@ -192,7 +192,10 @@ for (const s of SEEDS) {
             || road.sampleRoadTopY(back.x, back.z) == null || (C.x - back.x) * fx + (C.z - back.z) * fz < 0
     })
     check(`from past every row the fade returns to a road inside ${rIn} m, near the row (40 m, or 100 m on its own road), facing in (${exempt} rows on unconnected roads exempt)`,
-        !badBack.length, `${badBack.length} rows`)
+        !badBack.length, `${badBack.length} rows: ` + badBack.map((row) => {
+            const c = mid(row), f = face(c), b = poi.returnPoint(c.x - 20 * f.x, c.z - 20 * f.z)
+            return `row (${c.x.toFixed(0)}, ${c.z.toFixed(0)}) r ${r(c).toFixed(0)} on ${road.queryNearest(c.x, c.z, 15)?.runKey} → ${b ? `(${b.x.toFixed(0)}, ${b.z.toFixed(0)}) r ${r(b).toFixed(0)}, ${Math.hypot(b.x - c.x, b.z - c.z).toFixed(0)} m on ${road.queryNearest(b.x, b.z, 15)?.runKey}` : 'none'}`
+        }).join('; '))
     const late = rows.slice(1).filter((row) => r(mid(row)) > wall + POI_PARAMS.poiEdgeFadeM).length
     console.log(`       rows past the fade line (a junction just inside the wall): ${late}`)
 
