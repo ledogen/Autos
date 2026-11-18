@@ -15,6 +15,13 @@
 // 25.0 m trench (right at cutMax, so classed CUT), walled 10–13 m in by both trunk tubes, drawn and collider. At every
 // node of degree ≥ 3, each leg's lane (lat −4/0/+4, 1 m over its deck, 1–30 m out) where it is NOT in its own bore
 // is tested against the other legs' driving envelopes. Main before: 1 node on that seed; 0 on 8 random seeds.
+//
+// BUG-221, MESH == PHYSICS at the mouth: the tunnel's own geometry (lining, floor, portal ring — every one a collider)
+// never stands above the deck the tires ride (sampleRoadTopY) on the lane band (|lat| <= halfWidth, < 2 m up), at any
+// vertex or triangle centroid within 30 m of a portal, tolerance 2 cm (BUG-153's ribbon tolerance). The floor's lip
+// ring 1.5 m out of the mouth took the end ring's height and ran out LEVEL over a climbing approach: seed 1830183820's
+// 37 % mouth stood a 0.44 m gravel shelf over the asphalt that the hull wedged under (the tires never see a collider).
+// Main before: 13 of 22 portals on that seed over 2 cm; a 13-seed census in the ticket.
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RoadMeshSystem } from '../src/road-mesh.js'
@@ -22,9 +29,10 @@ import { RANGER_PARAMS as P } from '../data/ranger.js'
 import { parseWorldSeed } from '../src/seed.js'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
-const SEEDS = ['717319401', '4076238903']
+const SEEDS = ['717319401', '4076238903', '1830183820']
 const R = P.tunnelBoreRadius ?? 8, ENV = R - 0.25
-let rings = 0, fails = 0, lanes = 0, laneFails = 0
+let rings = 0, fails = 0, lanes = 0, laneFails = 0, mouths = 0, shelfFails = 0, shelfWorst = -Infinity
+const HW = P.roadHalfWidth ?? 5, NEAR = 30, TOL = 0.02
 for (const S of SEEDS) {
   const ws = parseWorldSeed(S), road = new RoadSystem(ws, P)
   wirePondNoGo(road, ws, P); road.setRadius(1300); road.update(new THREE.Vector3(0, 0, 0))
@@ -67,6 +75,33 @@ for (const S of SEEDS) {
     }
     if (hit) { fails++; console.log(`  FAIL ${S} ${own.k}'s portal at arcS ${pArc.toFixed(1)} stands in ${hit.b.k}'s bore at (${hit.x.toFixed(1)}, ${hit.y.toFixed(1)}, ${hit.z.toFixed(1)})`) }
   }
+  // BUG-221: the bore's own geometry never stands above the deck near a mouth
+  for (const own of bores) {
+    const ends = [own.sp.s0, own.sp.s1].filter(s => !road.isMouth || road.isMouth(own.k, s)).map(s => road.runPointAt(own.k, s))
+    if (!ends.length) continue
+    const t = rm.buildTunnelTube(own.k, own.sp.s0, own.sp.s1, own.sp, P)
+    const geos = [t?.tube, t?.floor, ...[[own.sp.s0, -1], [own.sp.s1, +1]].map(([a, sg]) => rm.buildPortalRing(own.k, a, sg, P))].filter(Boolean)
+    let worst = -Infinity, at = ''
+    const test = (x, y, z) => {
+      if (!ends.some(c => Math.hypot(c.x - x, c.z - z) <= NEAR)) return
+      const nr = road.queryNearest(x, z, 20)
+      if (!nr || Math.abs((x - nr.point.x) * nr.tangent.z - (z - nr.point.z) * nr.tangent.x) > HW) return
+      const top = road.sampleRoadTopY(x, z), d = top == null ? -Infinity : y - top
+      if (d < 2 && d > worst) { worst = d; at = `(${x.toFixed(1)}, ${y.toFixed(2)}, ${z.toFixed(1)})` }
+    }
+    for (const g of geos) {
+      const pos = g.attributes.position.array, ix = g.index.array
+      // triangle corners and centroids only: the tube and floor share one vertex buffer, and the BUG-67 miter leaves
+      // the corners of the triangles it dropped (inside a sibling's tube) in it, unreferenced
+      for (let i = 0; i < ix.length; i += 3) {
+        const [a, b, c] = [3 * ix[i], 3 * ix[i + 1], 3 * ix[i + 2]]
+        for (const v of [a, b, c]) test(pos[v], pos[v + 1], pos[v + 2])
+        test((pos[a] + pos[b] + pos[c]) / 3, (pos[a + 1] + pos[b + 1] + pos[c + 1]) / 3, (pos[a + 2] + pos[b + 2] + pos[c + 2]) / 3)
+      }
+    }
+    mouths += ends.length; shelfWorst = Math.max(shelfWorst, worst)
+    if (worst > TOL) { shelfFails++; console.log(`  FAIL ${S} ${own.k}'s bore [${own.sp.s0.toFixed(1)}, ${own.sp.s1.toFixed(1)}] stands ${worst.toFixed(3)} m above the deck at ${at}`) }
+  }
   // BUG-147: open lanes at a node inside a sibling's bore
   const byNode = new Map()
   for (const [k, e] of road._network) for (const [c, atStart] of [[e.cellA, true], [e.cellB, false]]) {
@@ -94,6 +129,7 @@ for (const S of SEEDS) {
 }
 console.log(`${rings} portal rings on ${SEEDS.join(', ')}: ${fails} stand inside another bore`)
 console.log(`${lanes} legs at bored junctions: ${laneFails} run in the open inside a sibling's bore`)
-fails += laneFails
-console.log(fails ? `FAIL: ${fails}` : 'PASS — no portal stands inside another bore, and no open lane runs inside one')
+console.log(`${mouths} mouths: ${shelfFails} bore(s) with lining/floor/ring above the deck near a mouth (> ${TOL * 100} cm), worst ${shelfWorst.toFixed(3)} m`)
+fails += laneFails + shelfFails
+console.log(fails ? `FAIL: ${fails}` : 'PASS — no portal stands inside another bore, no open lane runs inside one, and no bore stands above its deck at a mouth')
 process.exit(fails ? 1 : 0)
