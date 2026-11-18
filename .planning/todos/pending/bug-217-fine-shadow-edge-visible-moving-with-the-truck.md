@@ -88,3 +88,4 @@ src/shadow-fade.js, src/main.js
   re-run (first run: the known DEC-357 sleepy-blink flake); pad-e2e ALL OK; gpu-reset PASS on the re-run (first: 8 impostor
   tiles unbaked at measure time under load 9–11). Sheet regenerated. Unverified: other tiers, the owner's eyes.
 - 2026-11-18 Owner on card `bug217-shadow-seam-look`: "Good: land it" — likes the performance of hills in the coarse map only, shadow definition "totally good enough". Follow-on seam ticketed as BUG-229. Landing in progress.
+- 2026-11-18 merged main (81aecc24, ticket Log the only conflict, both lines kept; src merged clean). Re-measured at capture 2: edge-band swing 2.0 luma (was 2.2; 9.6 before). run-all affected: 57/57 green (59 selected); cdp-smoke PASS 40 steps (load 10.6); pad-e2e ALL OK (load 10.2). Logs wip/bug-217/*-land.log. Ready to land.
