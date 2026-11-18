@@ -138,7 +138,7 @@ export const POI_PARAMS = {
                               // the reason the offset exists at all.
     poiHouseTargetR:  5,      // m — the delivery circle (owner: 3 → 5 on 2026-08-07)
     poiMailboxVerge:  1.2,    // m — FEAT-275/280: a roadside mailbox stands this far past the shoulder edge (door to the road)
-    poiMailboxSpacing: 250,   // m of road per random roadside mailbox (FEAT-280), before the reject tests; ~2-3 stand per km
+    poiMailboxSpacing: 150,   // m of road per random roadside mailbox (FEAT-280), before the reject tests (~1-2 stand per km)
     poiMailboxSep:    60,     // m — two roadside mailboxes never stand closer than this
     poiHouseMaxDrop:  1.5,    // m — max height spread across the target circle's rim. A circle
                               // draped over a cliff edge reads as broken, and you could not land a
