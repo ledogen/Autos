@@ -22,13 +22,17 @@ Owner: "the glitch where I can see the shadow loading in the edge of the coarse 
 
 Owner, second capture (`wip/bug-217/capture-2.json`, same tutorial world): "Then around this spot in particular, it looks like there's two different shadow edges. They don't run at the same angle, but they do cross in approximately this point, and one of them moves a lot when I drive the truck by. The time in the tutorial is frozen, so it shouldn't really be moving at all, but it moves purely dependent on the position of the truck, so there seems like something wrong going there."
 
+Owner, after driving round 1 (chat, 2026-11-18): "Basically totally fixed. The only caveat is the weird double shadow near the specific capture I took is still kind of there. The shadow darkness changes right at the edge as you drive by that spot and I'm not sure why."
+
 ## Tracker
 - [x] Reproduced at the capture's place, before screenshots kept (`wip/bug-217/before/`)
 - [x] The brightness step across the near edge measured (ground in far shadow, inside vs outside the near map): 18.9 luma, 35 % darker
 - [x] Cause named (below, Decisions)
 - [x] After screenshots at the same place and sun: no visible edge; step −0.04 luma (`wip/bug-217/after/`, `sheet.jpg`)
 - [x] Capture 2: the sliding hill-shadow edge reproduced (673 m² of ground changed brightness when the truck moved 20 m under a frozen sun) and gone (155 m², the truck's own shadow and grass shadows)
-- [ ] Owner has looked
+- [x] Owner drove round 1 (2026-11-18): "basically totally fixed", a residual at capture 2
+- [x] Round 2: the residual second edge at capture 2 measured (edge-band swing 9.6 luma) and gone (2.2, still-truck noise 2.8)
+- [ ] Owner has looked at round 2
 
 ## Decisions
 - **Cause.** Two sun lights split the key light K: near `sun` 40 %, far `sunFar` 60 %. BUG-78's coupling gave, per pixel,
@@ -47,6 +51,23 @@ Owner, second capture (`wip/bug-217/capture-2.json`, same tutorial world): "Then
   texels), not the near map's crisp one. The truck throws no visible shadow while it stands in a hill's shadow (no
   direct sun reaches there; before it threw one at the near light's share). Hill shadows stay at the authored 60 %
   strength everywhere; making them full strength (physically, a hill blocks all the sun) is one constant, the owner's call.
+
+- **Round 2 cause (the residual at capture 2).** Terrain still cast into the near map. Wherever the far map says lit or
+  partly lit (its soft edge, s_f between 0 and 1), the round-1 blend still lets the near verdict in:
+  K·(0.4·mix(1, s_n, s_f) + 0.6·s_f·s_n) is 0.4 + 0.6·s_f with s_n = 1 but 0.4·(1 − s_f) with s_n = 0 (0.7 vs 0.2 at
+  s_f = 0.5). The near map's own copy of the hill's shadow is crisp, lies a little apart from the far map's soft edge
+  (2 cm vs 0.25 m texels, different bias) and exists only where the near map sees the hill, which depends on the truck.
+  So a second, straight, crisp edge ran beside the soft one and changed as the truck drove past. Measured at capture 2,
+  fixed camera, truck at five positions 10 m apart: the near map darkened a strip 17 luma below the far-only value,
+  and a 1.8 m patch of the edge swung up to 9.6 luma between truck positions (noise floor with a still truck: 2.8–3.5).
+- **Round 2 fix (src/main.js shadow-pass wrapper).** Terrain chunks switch castShadow off around the NEAR pass only, so
+  terrain casts into the far map alone. s_n now holds only non-terrain casters (truck, props, POIs, grass), so on
+  ground with no such caster s_n = 1 and the light is K·(0.4 + 0.6·s_f) everywhere, its soft edge included. Shader
+  unchanged (0 instructions); the CPU flips ~300 flags twice per near pass, and the near pass draws fewer triangles.
+  Lost: terrain's crisp near-truck self-shadow (cut banks, berms) is now the far map's 0.25 m texels. Measured after:
+  edge-band swing max 2.2 luma, the near-only dip is gone, noon and low-sun unchanged or better.
+  Rejected: gating s_n with a smoothstep near s_f = 1 keeps the near map's crisp terrain edge wherever it lies
+  just outside the far penumbra (the bias offset), still truck-dependent; terrain out of the near map is the principle itself.
 
 ## Open questions
 
