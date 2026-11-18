@@ -70,7 +70,11 @@ const JN_KMAX = 0.11     // 1/m — hard line in junction zones
 // 0.032 /m at seed 6 (−1036, −913), was 0.077. On 12 random seeds + 660454599 (--seeds): 11 → 0, sharpest 0.062 → none
 // (spot A 0.054). Open: seed 6's portal crest at (1618, 1673) (0.031, the BUG-81 item 4 one) rounds away; seed 11's at
 // (959, −162) 0.050 → 0.034. Junction unchanged (201).
-const CEIL = { open: 18, junction: 169, bore: 1 }
+// bore 1 → 3 (2026-11-18, BUG-200 x BUG-216): E's longer recovery reached 26 m into a tube on seed 11 (981, −171) and
+// left a 0.041 /m sag on its floor, over the line. The recovery now stops at the first bore sample (the floor stays the
+// solver's rounded deck); its handoff at the portal adds two kinks under the line: seed 3 (−992, −464) crest 0.036 and
+// seed 20 (316, −1302) sag 0.035. Driven fresh (wip/bug-200/drive216.mjs, both ways): no bump-stop event at 60 or 80 km/h.
+const CEIL = { open: 18, junction: 169, bore: 3 }
 const JN_ZONE = 40       // m from a run end
 const WB = 2.85          // m — Ranger wheelbase: the span the chassis bridges
 const DS = 0.5

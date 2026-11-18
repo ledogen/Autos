@@ -12513,15 +12513,17 @@ export class RoadSystem {
                 // tangent where no held sample lies past the node (BUG-200)
                 const deck = (j, i0, i1) => { const d1 = Math.abs(arcPos[i1] - arcPos[i0]) || 1; return (target(j, i1, d1) - target(j, i0, 0)) / d1 }
                 const part = (j, h, keep) => j.part && h > 0 ? Math.max(h, Math.min(j.part(), span * 0.45, span - keep)) : h
-                if (ej.jStart.is) this._recoverFromHold(arcPos, gradeY, pts, true, hS, RgS, reachCap, crestHold, ej.jStart.vNode2, own, deck(ej.jStart, 0, 1), part(ej.jStart, hS, keepE))
-                if (ej.jEnd.is) this._recoverFromHold(arcPos, gradeY, pts, false, hE, RgE, reachCap, crestHold, ej.jEnd.vNode2, own, deck(ej.jEnd, N - 1, N - 2), part(ej.jEnd, hE, keepS))
+                const spans = this._network?.get(runKey)?.tunnelSpans
+                const bore = spans ? (a) => spans.some((sp) => a >= sp.s0 && a <= sp.s1) : null
+                if (ej.jStart.is) this._recoverFromHold(arcPos, gradeY, pts, true, hS, RgS, reachCap, crestHold, ej.jStart.vNode2, own, deck(ej.jStart, 0, 1), part(ej.jStart, hS, keepE), bore)
+                if (ej.jEnd.is) this._recoverFromHold(arcPos, gradeY, pts, false, hE, RgE, reachCap, crestHold, ej.jEnd.vNode2, own, deck(ej.jEnd, N - 1, N - 2), part(ej.jEnd, hE, keepS), bore)
             }
         }
     }
 
     // FEAT-82: bend the handoff past a deck hold into a vertical curve that satisfies the crest/sag
     // rule at the junction-approach design speed. See _applyJunctionBlend.
-    _recoverFromHold(arcPos, gradeY, pts, fromStart, hold, reach0, reachCap, crestHold, vNode2, own, deckSlope, part = hold) {
+    _recoverFromHold(arcPos, gradeY, pts, fromStart, hold, reach0, reachCap, crestHold, vNode2, own, deckSlope, part = hold, bore = null) {
         const N = arcPos.length
         if (N < 4) return
         const g = PAR_REF.g
@@ -12584,6 +12586,8 @@ export class RoadSystem {
                 let res = 0
                 for (let i = Math.max(1, i0); i < Math.min(M - 1, i1 + 1); i++) {
                     const d = dAt(i); if (d < hold - 8 || d > hold + r + 8) continue
+                    // a bore's pinned floor (see `open` below): no window can change it, so it says nothing about the fit
+                    if (over && !interior(i - 1) && !interior(i) && !interior(i + 1)) continue
                     const d2 = y[i - 1] - 2 * y[i] + y[i + 1]
                     res = Math.max(res, -d2 - cC[i], d2 - cS[i])
                     if (over && (fr(i) || fr(i + 1))) res = Math.max(res, Math.abs(y[i + 1] - y[i]) - capAt(i) * (s[i + 1] - s[i]))
@@ -12628,7 +12632,14 @@ export class RoadSystem {
         // A leg whose pavement still overlaps a sibling's past the plane's 30 m hold cap (a merge shape) keeps its start
         // values out to where they part: climbing out at the design maximum there tore 0.48 m across shared pavement
         // (BUG-179 site #13, seed 209215080), where the old pass's late ceiling climb happened to stay on the deck.
-        let ext = { ...base, edge: EDGE, hold: Math.max(hold, part) }
+        // BUG-216 x BUG-200: the design-maximum recovery never reshapes a bore's floor (the solver's deck, corner-rounded):
+        // its long window reached 26 m into a tube on seed 11 (981, −171) and left a 0.041 /m sag on the floor (the bore
+        // line is 0.04). Bore samples stay pinned; where that leaves no fit, the old ceiling pass runs as before.
+        // The window stops at the first bore sample from the node: it never frees road on a tube's far side either.
+        let dBore = Infinity
+        if (bore) for (let i = 0; i < N; i++) if (bore(arcPos[i])) dBore = Math.min(dBore, dOf(i))
+        const open = (k) => dOf(k) < dBore
+        let ext = { ...base, edge: EDGE, hold: Math.max(hold, part), interior: (i) => i > 0 && i < N - 1 && open(i) }
         if (ghost) {
             const h = Math.abs(arcPos[iA] - arcPos[iN]), yG = gradeY[iN] - deckSlope * h
             const vN2 = Math.max(1, vAt(iN)) ** 2
@@ -12639,7 +12650,7 @@ export class RoadSystem {
             const iG = pre ? 0 : N, iNx = iN + off
             s[iG] = pre ? arcPos[0] - h : arcPos[N - 1] + h; y0[iG] = yG
             cC[iNx] = cG; cS[iNx] = sG
-            ext = { s, y0, cC, cS, off, edge: EDGE, hold: ext.hold, dAt: (i) => i === iG ? -h : dOf(i - off), interior: (i) => i - off > 0 && i - off < N - 1 }
+            ext = { s, y0, cC, cS, off, edge: EDGE, hold: ext.hold, dAt: (i) => i === iG ? -h : dOf(i - off), interior: (i) => i - off > 0 && i - off < N - 1 && open(i - off) }
         }
         const segG = (i) => { const k = i - ext.off; return k < 0 || k >= N - 1 ? 0 : Math.abs(own[k + 1] - own[k]) / ((arcPos[k + 1] - arcPos[k]) || 1) }
         const rung = (gc) => solve(ext, (i) => (i - ext.off < 0 || i - ext.off >= N - 1) ? Infinity : Math.min(capG, Math.max(gc, segG(i))), true)
