@@ -1,6 +1,6 @@
 ---
 id: DEC-371
-status: standing
+status: superseded
 decided: 2026-11-17
 area: story
 governs: BUG-194, FEAT-257, FEAT-63, src/paper-route.js, paper route, GPS

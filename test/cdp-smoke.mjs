@@ -23,6 +23,7 @@ import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
 import { ECONOMY_PARAMS } from '../src/economy.js'
 import { DAY_PARAMS } from '../src/day.js'
 import { summarize, parseLines, report } from '../tools/run-log-summary.mjs'   // the runlog step reads its real log back
+import { TUTORIAL } from '../data/tutorial.js'   // FEAT-184: the tutorial seed's world (DEC-402)
 import { SHOP_TYPES } from '../src/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -1357,8 +1358,9 @@ const STEPS = [
   // FEAT-65: the camp's own demolition line (the requisition is open from the step above). Taken at the
   // camp it starts there (no approach); its targets stand as models along the route's last km; near
   // the truck they are bodies, ASLEEP until touched; a kicked one counts smashed on the HUD. Slice 2:
-  // arriving at the site's end with targets standing settles nothing and the GPS turns back to the
-  // nearest one; it moves on as each falls, and the last one down settles the line wherever the truck is.
+  // arriving at the site's end with targets standing settles nothing; FEAT-267: the rank bar shows, the GPS
+  // leg turns back to a standing cluster and moves on as each falls, and the last one down settles the
+  // line wherever the truck is, lettered on time.
   ['demolition', async () => {
     const pois = 'window.__map2d()._getPois()'
     const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
@@ -1388,35 +1390,100 @@ const STEPS = [
     await sleep(2000)
     const awake = await js(`${bodies}.filter(t => window.__physicsEngine.isAwake(t.body)).length`)
     check(awake === 0 && await js('window.__cargo().site.every(t => !t.smashed)'), `untouched targets did not stay asleep and standing: ${awake} awake`)
+    const w0 = await js('window.__econ.money')   // DEC-403: a requisition line's hits pay nothing (FEAT-103)
     // Kick one: the engine wakes it, it moves, the poll latches it smashed.
     await js(`(() => { const t = ${bodies}[0], p = new (window.__vs.position.constructor)(), q = new (window.__vs.quaternion.constructor)()
       window.__physicsEngine.getTransform(t.body, p, q); window.__physicsEngine.applyImpulse(t.body, { x: 200, y: 100, z: 0 }, p) })()`)
     check(await until(() => js('window.__cargo().site.filter(t => t.smashed).length === 1'), 3000), 'a kicked target did not count smashed')
-    check(await until(() => js('/1 \\/ \\d+ smashed/.test(document.getElementById("job-promise")?.textContent ?? "")'), 2000),
-      `the HUD does not count it: "${await js('document.getElementById("job-promise")?.textContent')}"`)
-    // 11-05 (owner, option b): the first smash starts the site window; the job line counts it down.
-    check(await until(() => js('/next hit within \\d+ s/.test(document.getElementById("mission-hud").textContent)'), 2000),
-      `the job line shows no site window: "${await js('document.getElementById("mission-hud").textContent')}"`)
-    // Arrive with the rest standing: nothing settles, and the GPS goes BACK to the nearest one standing.
-    const end = await js('(() => { const m = window.__mission().mission, a = m.poly.at(-2), b = m.poly.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()')
+    // FEAT-267 (DEC-399): the job line counts the site like the paper round ("1 / N smashed"); no hit window.
+    const hud = 'document.getElementById("mission-hud").textContent'
+    check(await until(() => js(`/1 \\/ \\d+ smashed/.test(${hud})`), 2000), `the job line does not count it: "${await js(hud)}"`)
+    check(!/within/.test(await js(hud)), `the job line still shows a hit window: "${await js(hud)}"`)
+    // Arrive with the rest standing: nothing settles, the rank bar shows (a hurried job), and the GPS leg goes BACK to a
+    // cluster still standing — the remaining tour from the truck (paper-route.js planGuideJob, re-planned every tourS).
+    const end = await js('(() => { const m = window.__mission().mission, a = m.poly.at(-2), b = m.poly.at(-1); return { x: b.x, z: b.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)), fx: b.x - a.x, fz: b.z - a.z } })()')
     await seat(end.x, end.z, end.h)
-    check(await until(() => js('window.__site().next?.back === true && window.__site().gps === window.__site().guide.route'), 3000),
-      `past the end the GPS does not turn back to a target: ${await js('JSON.stringify(window.__site().next)')}`)
+    const legEnd = '(s => s.guide?.customers?.[0])(window.__site())'
+    const behind = `(c => c && (c.x - ${end.x}) * ${end.fx} + (c.z - ${end.z}) * ${end.fz} < 0 && c.members.some(i => !window.__site().targets[i].smashed))(${legEnd})`
+    check(await until(() => js(`${behind} && window.__site().gps === window.__site().guide`), 4000),
+      `past the end the GPS leg does not turn back to a standing cluster: ${await js(`JSON.stringify(${legEnd} && { x: ${legEnd}.x, z: ${legEnd}.z, members: ${legEnd}.members })`)}`)
+    check(await js('window.__site().gps?.noRing === true'), 'the demolition GPS leg carries a destination circle (FEAT-187)')
     check(await js('window.__mission().state') === 'running', `arriving with targets standing settled the line: ${await js('window.__mission().state')}`)
-    // Fell the GPS's target: it moves on to another standing one. Then the rest: the line settles where it is.
-    const i0 = await js('window.__site().next.i')
-    await js(`window.__site().targets[${i0}].smashed = true`)
-    check(await until(() => js(`(n => n && n.i !== ${i0} && !window.__site().targets[n.i].smashed)(window.__site().next)`), 2000), 'the GPS did not move on when its target fell')
-    // That smash refilled the window; let it run out (a game minute is a second of the job's clock) and the line
-    // settles where it is, with the two that fell. (The last one down settling it is the same `cleared` line.)
-    check(await js('window.__mission().state') === 'running', 'the line settled before its window ran out')
-    await js('window.__day().advanceMinutes(41)')
-    check(await until(() => js('window.__mission().state === "done"'), 5000), `the site window ran out and the line did not settle: ${await js('window.__mission().state')}`)
-    check(await js('(n => new RegExp(`Smashed\\\\s*2 \\\\/ ${n}`).test(document.getElementById("mp-body")?.textContent ?? ""))(window.__mission().mission.targets.length)'),
-      `the result card does not count the two smashed: "${await js('document.getElementById("mp-body")?.textContent')}"`)
+    check(await until(() => js('document.getElementById("rank-timer").checkVisibility()'), 3000), 'no rank bar on the demolition job at its site (DEC-399: hurried)')
+    // Fell the leg's cluster: the next plan moves the leg on to another standing one.
+    const c0 = await js(`${legEnd}.id`)
+    await js(`${legEnd}.members.forEach(i => { window.__site().targets[i].smashed = true })`)
+    check(await until(() => js(`(c => c && c.id !== ${JSON.stringify(c0)} && c.members.some(i => !window.__site().targets[i].smashed))(${legEnd})`), 4000)
+      || await js('window.__site().targets.every(t => t.smashed)'), 'the GPS leg did not move on when its cluster fell')
+    // The letter is TIME (courier's and the paper round's rule), not the share: burn the job's clock to ~0.85 par (a game
+    // minute is a second of it; the camp's line has no deadline), then fell the rest — the line settles with every target
+    // down, lettered on its par ratio.
+    await js('(m => window.__day().advanceMinutes(Math.max(0, Math.ceil(0.85 * m.mission.par - m.elapsed))))(window.__mission())')
+    check(await js('window.__mission().state') === 'running', 'the line settled before its last target fell')
+    await js('window.__site().targets.forEach(t => { t.smashed = true })')
+    check(await until(() => js('window.__mission().state === "done"'), 5000), `felling the last target did not settle the line: ${await js('window.__mission().state')}`)
+    const res = await js(`(m => { const r = m.result, th = m.mission.terms?.thresholds ?? { S: 0.652, A: 0.707, B: 0.794, C: 1 }
+      return { letter: r.letter, want: 'SABC'.split('').find(l => r.ratio <= th[l]) ?? 'D', ratio: r.ratio } })(window.__mission())`)
+    check(res.letter === res.want && res.letter !== 'S', `the line is not lettered on time: ${JSON.stringify(res)}`)
+    check(await js('(n => new RegExp(`Smashed\\\\s*${n} \\\\/ ${n}`).test(document.getElementById("mp-body")?.textContent ?? ""))(window.__mission().mission.targets.length)'),
+      `the result card does not count every target smashed: "${await js('document.getElementById("mp-body")?.textContent')}"`)
+    check(await js('window.__econ.money') === w0, `the requisition line paid for its targets: $${w0} → $${await js('window.__econ.money')}`)
     await js('document.getElementById("mp-accept").click()')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
+    // DEC-403: a BOARD demolition job (a farm's or a work site's, wherever one is live, the way the save step takes its
+    // freight) pays its base a share per target the moment each falls, quoted like a paper's money; past the deadline
+    // with targets standing it ends on what the hits paid, no tip.
+    const dj = await js(`(() => { const b = window.__cargo().board, now = window.__day().clockH()
+      for (const q of window.__map2d()._getPois()) {
+        if (!q.jobs || q.hidden || q.drop || q.park || q.type === 'expeditionCamp') continue
+        const o = b.offers(q.id, now).find(o => b.spec(o)?.family === 'demolition' && !b.spec(o).line)
+        if (o) return { h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type, ...${PAD_SEAT}(q) }
+      }
+      return null })()`)
+    let took = false
+    if (dj) {
+      await seat(dj.x, dj.z, dj.h)
+      await park(true)
+      if (SHOP_TYPES.has(dj.type) && await until(() => vis('svc-screen'), 2000)) await js('document.querySelector("#svc-screen [data-act=jobs]")?.click()')
+      if (await until(() => vis('mp-accept'), 2000)) {
+        for (let i = 0; i < 8 && await js(`window.__mission().offer?.id !== ${JSON.stringify(dj.id)}`); i++) await js('document.getElementById("mp-next")?.click()')
+        if (await js(`window.__mission().offer?.id === ${JSON.stringify(dj.id)} && !document.getElementById("mp-accept").disabled`)) {
+          await js('document.getElementById("mp-accept").click()')
+          took = !!await until(() => js('window.__site()?.mission === window.__mission().mission'), 5000)
+        }
+      }
+    }
+    if (!took) console.log('  demolition: no takeable board demolition offer in this region — the per-target pay is proven on the sheet run only')
+    else {
+      const n = await js('window.__mission().mission.targets.length'), w1 = await js('window.__econ.money')
+      await js('window.__site().targets[0].smashed = true')
+      check(await until(() => js(`window.__econ.money > ${w1}`), 2000), 'DEC-403: a board demolition target fell and paid nothing')
+      const share = Math.round((await js('window.__econ.money') - w1) * 100) / 100
+      const ro = 'document.getElementById("throw-readout")'
+      check(await until(() => js(`/smashed .*\\+\\$/.test(${ro}.textContent) && ${ro}.checkVisibility()`), 1000),
+        `DEC-403: the hit's pay is not quoted: "${await js(`${ro}.textContent`)}"`)
+      await js('window.__site().targets[1].smashed = true')
+      check(await until(() => js(`window.__econ.money > ${w1 + share}`), 2000), 'DEC-403: the second target paid nothing')
+      const w2 = await js('window.__econ.money')
+      // The deadline passes with the rest standing: the job is over, the two shares stay, no tip.
+      // (Pulled to now, not slept to: the deadline is hours of game clock, and a skip that long crashes the driver.)
+      await js('window.__mission().mission.dueH = window.__day().clockH()')
+      check(await until(() => js('window.__mission().mission.expired'), 2000), 'the board demolition job did not expire at its deadline')
+      await js('window.__site() && window.__site().targets[2] && (window.__site().targets[2].smashed = true)')
+      await sleep(400)
+      check(await js('window.__econ.money') === w2, 'DEC-403: a target felled past the deadline paid')
+      await park(true)
+      await js('document.getElementById("job-cancel").click()')
+      check(await until(() => js('window.__mission().result?.expired'), 2000), 'signing off the expired demolition job did not end it')
+      const txt = await js('document.getElementById("mp-body").textContent')
+      check(/no tip/.test(txt) && new RegExp(`Smashed\\s*2 / ${n}`).test(txt) && txt.includes('$' + (w2 - w1).toFixed(2)) && await js('window.__econ.money') === w2,
+        `DEC-403: the expired card does not keep the two shares: "${txt}" (wallet $${w1} → $${await js('window.__econ.money')})`)
+      console.log(`  demolition: board job ${dj.id} (${dj.type}), ${n} targets, $${share} a share, expired on 2 down: "${txt}"`)
+      await js('document.getElementById("mp-accept").click()')
+      await tap(' ')
+      await sleep(300)
+    }
   }],
   // FEAT-154: a road out of the area. Full throttle at its barricade row: the loose barricades get
   // smashed aside, past the fade line the screen goes black, and the truck comes back on a road inside
@@ -2003,7 +2070,7 @@ const STEPS = [
     { const h0 = await js('window.__day().clockH()'), c0 = await car(); await sleep(800)
       const c1 = await car(); check(await js('window.__day().clockH()') === h0 && Math.hypot(c1.x - c0.x, c1.z - c0.z) < 0.01, 'the sim ran under the tutorial card') }
     await js('document.getElementById("tc-play").click()')
-    check(await until(async () => await js(live) && await world() === '3590618618', 60000, 250), `"play" did not load the tutorial seed (world ${await world()}, ${JSON.stringify(await tut())})`)
+    check(await until(async () => await js(live) && await world() === TUTORIAL.seed, 60000, 250), `"play" did not load the tutorial seed (world ${await world()}, ${JSON.stringify(await tut())})`)
     check((await tut()).returnSeed === '6', `the tutorial's world does not carry seed 6 back: ${JSON.stringify(await tut())}`)
     check(Math.abs(await js('window.__day().clockH()') + 17) < 0.1, `the tutorial's day is not 07:00 on day 0 (clockH ${await js('window.__day().clockH()')})`)
     // DEC-160: the tutorial saves as part of the run, the way back in it.
@@ -2080,9 +2147,11 @@ const STEPS = [
     // rolling resistance, so a truck with the brake off stays put), clear of hard props within 6 m, and 90 m from every
     // place. The old pick (the first ±9 m point beside the joint) sat on a 13–35 % cross-slope 2.3 m from a trunk: the
     // truck perched or rolled, by frame timing. The old tutorial seed 822480141 had no such point within 250 m along the joint's road.
-    // The check below is unchanged.
-    const sh = await js(`(() => { const v = window.__vs.position, H = window.terrain; let best = null
-      for (let dx = -300; dx <= 300; dx += 4) for (let dz = -300; dz <= 300; dz += 4) { const x = v.x + dx, z = v.z + dz
+    // The check below is unchanged. FEAT-229 (DEC-402): on 1872706826 the only such spot within 400 m is one ~10 m patch
+    // 264 m north of the joint, so the search centres on the joint (not wherever R left the truck) on a 2 m grid (the 4 m
+    // one stepped over the 3 m band; ~1 s).
+    const sh = await js(`(() => { const v = window.__poi().list().find(p => p.type === 'foodVendor'), H = window.terrain; let best = null
+      for (let dx = -300; dx <= 300; dx += 2) for (let dz = -300; dz <= 300; dz += 2) { const x = v.x + dx, z = v.z + dz
         const g = Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
         if (g >= 0.015 || g < 1e-9 || (best && g >= best.g)) continue   // g === 0: height not streamed in yet (3590618618 read a flat 0 at a 35 % slope), not a flat spot
         const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
@@ -2359,7 +2428,8 @@ const STEPS = [
     // DEC-357: the tire fixed, the driver is SLEEPY, and blinks on the held clock's drive (day.js blinkOnly).
     check(await js('window.__day().stage()') === 'sleepy', `the tire fixed, the driver is not sleepy (DEC-357): ${await js('window.__day().energyH()')} h`)
     { const h1 = await clock(); await js('window.__day()._nextBlinkH = 1e-4')
-      check(await until(() => js('!!window.__day()._blink'), 2000) && await clock() === h1, 'DEC-357: no blink on the sleepy night drive, or the clock ran') }
+      const ok = await until(() => js('!!window.__day()._blink'), 2000) && await clock() === h1
+      check(ok, ok || `DEC-357: no blink on the sleepy night drive, or the clock ran: clock ${h1} → ${await clock()} ${await js('JSON.stringify({ parked: window.__vs.parked, stage: window.__day().stage(), next: window.__day()._nextBlinkH, tut: window.__tutorial(), dlg: document.getElementById("dlg-text")?.textContent })')}`) }
     // Parked at hers: home safe (DEC-325), her hunger line, her sleep card, the timer preset to wake at 07:00 on
     // day 0 — and sleeping ends the firing day.
     // Not seat(): its settle waits on the sim, and the lessons that land on arrival hold it — read them first.
@@ -2535,7 +2605,7 @@ const STEPS = [
     for (const [name, open] of Object.entries(CASES)) {
       await js('document.getElementById("pm-menu").click()')   // out of the last run (or free roam) to the main menu
       await js('document.getElementById("mm-new").click()')
-      await js('document.getElementById("su-seed").value = "3590618618"; document.getElementById("su-start").click()')   // data/tutorial.js
+      await js(`document.getElementById("su-seed").value = "${TUTORIAL.seed}"; document.getElementById("su-start").click()`)   // data/tutorial.js
       check(await until(() => js(live), 45000, 250), `${name}: the tutorial run never went live`)
       for (let i = 0; i < 12 && !await js('document.getElementById("tut-card").style.display === "flex"'); i++) { await tap('Enter'); await sleep(250) }
       check(await until(() => js('document.getElementById("tut-card").style.display === "flex"'), 3000), `${name}: the firing did not end on the tutorial card`)
@@ -2705,7 +2775,7 @@ const STEPS = [
     for (let i = 0; i < 12 && await js('document.getElementById("tut-card").style.display !== "flex"'); i++) { await btn(0); await sleep(150) }
     check(await js('document.getElementById("tut-card").style.display === "flex"'), 'the pad never reached the tutorial card')
     await padTo('tc-play'); await btn(0)
-    check(await until(async () => await js(live) && await js('window.__worldCode().split("/")[0]') === '3590618618' && await dlg(), 60000, 250),
+    check(await until(async () => await js(live) && await js('window.__worldCode().split("/")[0]') === TUTORIAL.seed && await dlg(), 60000, 250),
       `A on "play" did not load the tutorial seed with mom's call up: ${JSON.stringify(await js('window.__tutorial()'))}`)
     // Read on to mom's first lesson naming a key (her call's M, the drive's W / S): it reads the pad's button, not the keyboard's.
     const lessonCap = () => js('(k => k && JSON.stringify({ kb: getComputedStyle(k.querySelector(".kc-kb")).display, pad: getComputedStyle(k.querySelector(".kc-pad")).display, key: k.querySelector(".kc-kb").textContent, text: k.querySelector(".kc-pad").textContent }))(document.querySelector("#dlg-text .dlg-key .keycap"))')

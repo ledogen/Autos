@@ -3,8 +3,11 @@
  *
  * A demolition job is an ordinary roadside job whose LAST siteM OF ROUTE is the site: its targets
  * stand on the shoulder there, off the deck. It does NOT settle on arrival (slice 2, owner 2026-11-03):
- * it settles when the last target falls, so the player can turn back for a missed one, and the GPS
- * goes to the nearest one standing (nearestTarget / guideTo). The letter is the share smashed (economy.js RANK_TABLE.demolition). main.js stands each target as a
+ * it settles when the last target falls, so the player can turn back for a missed one. DEC-399 (FEAT-267):
+ * it is a HURRIED job like the paper round — one deadline, par × (1 + DEADLINE_SLACK.demolition), the
+ * letter on time (a job settles only with every target down; at the deadline with any standing it
+ * expires unpaid), and the GPS follows the shortest tour from the truck through the clusters still
+ * standing (siteStops → paper-route.js planGuideJob, re-planned every RR_PARAMS.tourS). main.js stands each target as a
  * plain model far from the truck and, within onM, as a debris body put to SLEEP at once — a sleeping
  * body cannot slide off a sloped shoulder and costs nothing, and the truck touching it wakes it:
  * "static until the truck collides with them" (owner).
@@ -29,11 +32,6 @@ export const DEMOLITION_PARAMS = {
     smashTiltRad: 25 * Math.PI / 180,   // … or how far it has tilted: either is smashed. A graze that only wakes it is not.
     onM: 120,            // m from the truck at which a target's model becomes a sleeping body (FEAT-154's rows)
     offM: 200,           // …and back (hysteresis); a smashed target is simply gone
-    // The site window (owner 2026-11-05, option b: "reset the timer on every object hit so the timer runs out
-    // faster once you start hitting them"): the first smash starts it, every smash refills it, and when it
-    // runs out the job settles with what is smashed. Seconds of the job's clock [DEFAULT].
-    // 40 s: the widest gap between two targets on the gated seeds is 341 m — 23 s at 54 km/h, 34 s at 36.
-    hitWindowS: 40,
 }
 
 /**
@@ -92,7 +90,7 @@ function walkBack (route) {
         const s = sp.g.s1 - dir * (uu - sp.u0)
         const p = sp.g.centerline.pointAt(s), t = sp.g.centerline.tangentAt(s)
         const tl = Math.hypot(t.x, t.z) || 1
-        return { x: p.x, z: p.z, tx: dir * t.x / tl, tz: dir * t.z / tl }
+        return { x: p.x, z: p.z, tx: dir * t.x / tl, tz: dir * t.z / tl, g: sp.g, s }
     }
     return { at, junctions, length: u }
 }
@@ -176,41 +174,22 @@ export function siteTargets (route, dressing, key, { road, height, isWater, half
 }
 
 /**
- * Slice 2 (owner, 2026-11-03: "too easy to miss targets, gps should always route to the nearest one"):
- * the target still standing that is nearest the truck ALONG THE ROAD — back the way it came for one it
- * missed. `standing` lists the indices not yet smashed; `togo` is mission.routeRemaining(), the truck's
- * own u while it is still short of the site — so a route that loops past the site cannot pull the guide
- * onto it early. Returns { i, back, dist } (back: the target is behind the truck; dist: metres to it along
- * the road), or null.
+ * FEAT-267 (DEC-399): the planner's STOPS — one a CLUSTER (FEAT-187's halo: its members stand a footprint and a
+ * metre apart, so the cluster is one place to drive to and one turn arrow) while any member of it stands.
+ * `standing` lists the target indices not yet smashed. Each stop is splitRoadGraph's point shape: the route's
+ * edge (cellA/cellB, QUAL-24's window-stable ids) and arc at the members' mean `u`, and x/z at their centre —
+ * off the deck, so gps.js gives it the turn arrow (FEAT-218).
  */
-export function nearestTarget (route, x, z, standing, togo) {
-    if (!standing.length) return null
-    const { at, length } = walkBack(route)
-    const U = Math.min(length, DEMOLITION_PARAMS.siteM)
-    let uT = togo, bd = Infinity
-    // On the site the truck's own u is the nearest centreline point, every 2 m. It clamps at both ends,
-    // so a truck past the route's end reads 0 — every target behind it.
-    if (togo < U + 100) for (let u = 0; u <= U; u += 2) {
-        const c = at(u), d = (c.x - x) ** 2 + (c.z - z) ** 2
-        if (d < bd) { bd = d; uT = u }
+export function siteStops (route, standing) {
+    const left = new Set(standing), groups = new Map()
+    route.targets.forEach((t, i) => groups.set(t.g, [...(groups.get(t.g) ?? []), i]))
+    const { at } = walkBack(route)
+    const out = []
+    for (const [g, members] of groups) {
+        if (!members.some(i => left.has(i))) continue
+        const ts = members.map(i => route.targets[i]), mean = (f) => ts.reduce((a, t) => a + f(t), 0) / ts.length
+        const c = at(mean(t => t.u))
+        out.push({ id: `site:${g}`, aId: c.g.cellA, bId: c.g.cellB, s: c.s, x: mean(t => t.x), z: mean(t => t.z), members })
     }
-    let i = standing[0]
-    for (const k of standing) if (Math.abs(route.targets[k].u - uT) < Math.abs(route.targets[i].u - uT)) i = k
-    return { i, back: route.targets[i].u > uT, dist: Math.abs(route.targets[i].u - uT) }
-}
-
-/**
- * The GPS route (gps.js reads only `segments`) to the point u metres before the route's end: the route
- * up to it, or, `back`, the route from its end walked back to it. A segment with s1 < s0 is driven
- * backwards (mission.js), and one driven backwards ends at the node it started from — the previous
- * segment's end, whose degree gps.js reads for its junction arrows.
- */
-export function guideTo (route, u, back) {
-    const segs = route.segments, rev = []
-    for (let i = segs.length - 1, u0 = 0; i >= 0; i--) {
-        const g = segs[i], len = Math.abs(g.s1 - g.s0), s = g.s1 - Math.sign(g.s1 - g.s0) * (u - u0)
-        if (u <= u0 + len || i === 0) return { segments: back ? [...rev, { ...g, s0: g.s1, s1: s }] : [...segs.slice(0, i), { ...g, s1: s }] }
-        rev.push({ ...g, s0: g.s1, s1: g.s0, endDeg: segs[i - 1].endDeg })
-        u0 += len
-    }
+    return out
 }

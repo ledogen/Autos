@@ -1,6 +1,6 @@
 ---
 id: DEC-351
-status: standing
+status: superseded
 decided: 2026-11-16
 area: world
 governs: FEAT-229, FEAT-184, DEC-344, data/tutorial.js, test/tutorial-seed.mjs, tutorial seed

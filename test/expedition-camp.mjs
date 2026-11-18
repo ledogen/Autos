@@ -222,7 +222,7 @@ for (const s of SEEDS) {
     check('the fuel line is a 172 kg strapped drum; the camp gear a Fragile crate',
         fuel?.load === 'drum' && fuel.massKg === 172 && !fuel.fragile
             && gear?.load === 'largeCrate' && gear.fragile?.tier === 'fragile' && gear.fragile.breakG > 0)
-    const axis = { haul: /bundles delivered/, freight: /upon delivery/, fragile: /%\+ intact/, delivery: /C or better/, demolition: /%\+ smashed/ }
+    const axis = { haul: /bundles delivered/, freight: /upon delivery/, fragile: /%\+ intact/, delivery: /C or better/, demolition: /C or better/ }   // FEAT-267: demolition ranks on time
     let bad = [], badDeed = []
     for (const o of lines) {
         const m = board.planDistinct(o, planOne(board))

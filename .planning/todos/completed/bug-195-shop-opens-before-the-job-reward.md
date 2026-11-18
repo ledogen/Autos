@@ -1,7 +1,7 @@
 ---
 id: BUG-195
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 — "I was able to open the shop menu before taking my job reward when I stopped directly at the POI. I'm concerned that if you have an item choice, this could allow the player to overspend by buying something in the store before choosing their reward. For the record, I didn't try it."
@@ -30,3 +30,5 @@ Reasoned from the code, not reproduced in a browser. The item choice is priced o
 
 ## Log
 - 2026-11-17: no gate covers the brake flow; main.js smoke owed at landing.
+
+- 2026-11-17 CLOSED by the orchestrator on the owner's card answer ("Good: close them", card missions-1117-look). On main, in the play build.

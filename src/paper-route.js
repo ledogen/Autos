@@ -48,10 +48,10 @@
 //
 // ── ANY N, AGAINST A DEADLINE [FEAT-141, owner 2026-10-21 — reverses 2026-09-29's "no time limit"] ──
 //
-// Every customer is deliverable. The plotter picks the N of them with the shortest route from Larry
-// (planTourJob — which N as well as the order) and that route's par is the round's par; the GPS draws
-// it, and the player may ignore it. The round ENDS at the Nth delivery (going past N was rejected: a
-// tight cluster of houses would be a repeatable payout). The DEADLINE is par × 1.5 (data/offers.js
+// The plotter picks the N customers with the shortest route from Larry (planTourJob — which N as well as
+// the order) and that route's par is the round's par. DEC-398 (owner, 2026-11-17, replacing FEAT-141's
+// "any customer counts"): ONLY those N count, and only they are drawn; the GPS follows the shortest tour
+// from the truck through the ones still owed. The round ENDS at the Nth delivery. The DEADLINE is par × 1.5 (data/offers.js
 // DEADLINE_SLACK.papers): par is still the C/D line, the deadline is the end of D. Unfinished at the
 // deadline — or out of papers short of N — the round is over: accuracy money already banked stays,
 // and there is no fare, no letter and no ladder rung. A finished round at B or better on the top
@@ -295,11 +295,44 @@ export const RR_PARAMS = {
     minShowS: 0.4,    // minimum RECALCULATING time. The job takes ~120 ms, so without this
                       // the indicator would flash rather than inform.
     staleM:   50,     // m of drift that invalidates a finished job. Should never fire.
-    nearS:    1.0,    // s between BUG-194 nearest-recipient re-plans: the guide always points at the nearest owed house by road
+    tourS:    1.0,    // s between FEAT-266 quiet re-plans of the remaining tour from the truck: a house passed without a
+                      // throw turns the line back within this (plus the ~ms job) when going back is the shorter tour
     snapM:    200,    // queryNearest search radius for the truck's own road point
 }
 
 const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
+
+/**
+ * FEAT-266/267: THE GUIDE — the shortest tour from the truck through `stops`, as a resumable planTourJob, or null when the
+ * truck is off the network or nothing is left. Every stop is wanted: the job's own N, never a subset. The paper round's
+ * re-plan (PaperRouteSystem._startReplan) and a demolition site's (main.js _updateSite, DEC-399) both plan through here.
+ * `stops` need {id, aId, bId, s, x, z} (splitRoadGraph's point shape).
+ */
+export function planGuideJob (road, car, stops, region = null, margin = 100) {
+    const origin = stops?.length ? roadOrigin(road, car) : null
+    return origin ? planTourJob(road, origin, stops, stops.length, region, margin) : null
+}
+
+/**
+ * Drain a planner job for up to `budgetMs` — at least one step, so a loaded frame slows it and never starves it (FEAT-63).
+ * Returns the generator's last result: `.done` with `.value` the route once it has finished.
+ */
+export function stepJob (it, budgetMs) {
+    const t0 = _now()
+    let r
+    do { r = it.next() } while (!r.done && _now() - t0 < budgetMs)
+    return r
+}
+
+/**
+ * FEAT-266: a tour's LEG to its first stop — what the in-world GPS draws, so each stop in turn carries the FEAT-218 turn
+ * arrow (gps.js reads `customers.at(-1)`). `legM` is its length along the road. The tour itself when it has no first stop.
+ */
+export function tourLeg (line) {
+    if (!line?.first) return line
+    const segments = line.segments.slice(0, line.first.n)
+    return { ...line, segments, customers: [line.first.c], legM: segments.reduce((a, g) => a + Math.abs(g.s1 - g.s0), 0) }
+}
 
 /**
  * A car's position as a planner stop: the same `{aId, bId, s}` shape Larry has. This is the one genuinely
@@ -682,6 +715,10 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
     // through on the way back. Consumed as the segments are built, so only the first arrival is
     // charged — without this a route that doubles back priced 13 stops for 12 customers.
     const custKeys = new Set(order.map(c => ptKeyOf.get(c.id)))
+    // FEAT-266: the first porch the drive reaches, and how many segments get there — the GPS draws only that leg
+    // (gpsLine), so each owed house in turn carries the FEAT-218 turn arrow (DEC-371's arrow, kept by DEC-398).
+    const custAt = new Map(order.map(c => [ptKeyOf.get(c.id), c]))
+    let first = null
 
     const segments = [], poly = []
     const pushPoly = (cl, s0, s1) => {
@@ -727,6 +764,7 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
             // not. The two flags say different things about the same point on purpose.
             stop: custKeys.delete(vk),
         })
+        if (!first && segments.at(-1).stop) first = { n: segments.length, c: custAt.get(vk) }
         pushPoly(ed.centerline, s0, s1)
     }
     if (!segments.length) return null
@@ -739,7 +777,7 @@ export function* planTourJob (road, larry, allCust, want, region = null, margin 
     const { time, distance } = computePar(segments)
     if (!(time > 0)) return null
 
-    return { customers: order, segments, poly, polyCum: polyCumOf(poly), par: time, distance, edges: segments.length }
+    return { customers: order, segments, poly, polyCum: polyCumOf(poly), par: time, distance, edges: segments.length, first }
 }
 
 // ── the mission ─────────────────────────────────────────────────────────────────────────────────
@@ -807,7 +845,6 @@ export class PaperRouteSystem {
         this.result = null
         this.giver = null        // the POI the route was taken from
         this.sizeIdx = 0         // FEAT-141: the chosen route size — an index into PAPER_PARAMS.tiers (≤ runPaper.tier)
-        this.eligible = []       // FEAT-141: every customer — any of them counts toward the round's N
         this.offer = null        // FEAT-67: the mission-board offer this route is (null outside the board)
         this._startZone = null   // the green threshold at Larry's while staging
         this._briefed = false
@@ -911,6 +948,24 @@ export class PaperRouteSystem {
      */
     line () { return this.guide ?? this.route }
 
+    /**
+     * FEAT-266: the in-world GPS's line — `line()` cut at its first porch. The map draws the whole tour; the GPS
+     * draws the leg to the next house on it, so that house carries the turn arrow (gps.js reads `customers.at(-1)`).
+     * Cached per line: gps.js re-bakes on a new OBJECT, so the same line must hand back the same leg.
+     */
+    gpsLine () {
+        const l = this.line()
+        if (!l?.first) return l
+        if (this._leg?.src !== l) this._leg = { src: l, leg: tourLeg(l) }
+        return this._leg.leg
+    }
+
+    /**
+     * DEC-398: the POOL a round is planned from — the top rung's customers (customers(tier) is everyone placement
+     * stamped at or below it). Every rung's N come from here, and only the round's planned N ever count or show.
+     */
+    _pool () { return this._getPois()?.customers(PAPER_PARAMS.tiers.length - 1) ?? [] }
+
     /** The customers on THIS route — not the region's. Read-only. */
     routeCustomers () { return this.route?.customers ?? [] }
     /** Has this customer already had their paper? */
@@ -936,7 +991,7 @@ export class PaperRouteSystem {
     /** FEAT-133: is a customer still owed a paper within r metres of (x, z)? (The pad's throw gate.) */
     owedWithin (x, z, r) {
         if (this.state !== 'running') return false
-        return this.eligible.some(c => !this.run.hits.has(c.id) && Math.hypot(c.x - x, c.z - z) < r)
+        return this.route.customers.some(c => !this.run.hits.has(c.id) && Math.hypot(c.x - x, c.z - z) < r)
     }
     /** Seconds on the route's clock so far. Elapsed, not remaining: the HUD states the deadline as a clock time (SM-INV-3). */
     elapsed () { return this.run ? this.run.elapsed : 0 }
@@ -971,11 +1026,9 @@ export class PaperRouteSystem {
     _plan () {
         if (this.state !== 'planning') return
         try {
-            const pois = this._getPois()
             const larry = this.giver
-            // FEAT-141: every customer is deliverable; the plotter picks the N with the shortest route.
-            this.eligible = pois?.customers(PAPER_PARAMS.tiers.length - 1) ?? []
-            this.route = planTour(this._getRoad(), larry, this.eligible, customersForTier(this.sizeIdx),
+            // FEAT-141 / DEC-398: the plotter picks the N with the shortest route from the pool, and only those N count.
+            this.route = planTour(this._getRoad(), larry, this._pool(), customersForTier(this.sizeIdx),
                                   this._getRegion(), 100)
             if (!this.route) this.error = 'no route could be routed from here'
         } catch (e) {
@@ -1006,7 +1059,7 @@ export class PaperRouteSystem {
      */
     setSize (idx) {
         if (this.state !== 'offer' || idx === this.sizeIdx || idx < 0 || idx >= this.sizes().length) return
-        const r = planTour(this._getRoad(), this.giver, this.eligible, customersForTier(idx), this._getRegion(), 100)
+        const r = planTour(this._getRoad(), this.giver, this._pool(), customersForTier(idx), this._getRegion(), 100)
         if (!r) return
         this.sizeIdx = idx
         this.route = r
@@ -1065,8 +1118,7 @@ export class PaperRouteSystem {
      */
     resume (giver, offer, s) {
         this.sizeIdx = s.sizeIdx ?? Math.min(runPaper.tier, s.run.sizeIdx ?? runPaper.tier)
-        this.eligible = this._getPois()?.customers(PAPER_PARAMS.tiers.length - 1) ?? []
-        const route = planTour(this._getRoad(), giver, this.eligible, customersForTier(this.sizeIdx), this._getRegion(), 100)
+        const route = planTour(this._getRoad(), giver, this._pool(), customersForTier(this.sizeIdx), this._getRegion(), 100)
         if (!route) return false
         route.par = s.par
         this.giver = giver
@@ -1238,9 +1290,7 @@ export class PaperRouteSystem {
      */
     pumpReroute (budgetMs = 2) {
         if (!this._rr) return false
-        const t0 = _now()
-        let r
-        do { r = this._rr.it.next() } while (!r.done && _now() - t0 < budgetMs)
+        const r = stepJob(this._rr.it, budgetMs)
         if (!r.done) return true
 
         const job = this._rr
@@ -1285,14 +1335,11 @@ export class PaperRouteSystem {
         if (this._checkT < RR_PARAMS.pollS) return
         this._checkT = 0
 
-        // TRIGGER N (BUG-194) — the nearest owed house can change under a truck that never left the line
-        // (it drove past a miss), so re-plan quietly every nearS. One Dijkstra: planTourJob's want-1 path.
-        this._nearT = (this._nearT ?? 0) + RR_PARAMS.pollS
-        if (this._nearT >= RR_PARAMS.nearS) { this._nearT = 0; this._startReplan('nearest', true); return }
-
-        // TRIGGER A — a customer was served out of order, so the rest of the line is a lie.
-        // Delivering IN order does not trigger anything: the remaining suffix is still optimal.
-        if (this._orderIsStale()) { this._startReplan('out of order'); return }
+        // TRIGGER T (FEAT-266, DEC-398) — the shortest remaining tour can change under a truck that never left the
+        // line (it drove past an owed house without a throw), so re-plan it quietly every tourS. Nothing special-cases
+        // the miss: going back is on the new line exactly when it is the shorter tour.
+        this._tourT = (this._tourT ?? 0) + RR_PARAMS.pollS
+        if (this._tourT >= RR_PARAMS.tourS) { this._tourT = 0; this._startReplan('tour', true); return }
 
         // TRIGGER B — genuinely off the line, for long enough that it is a wrong turn and not a
         // wide corner or a lay-by.
@@ -1303,18 +1350,6 @@ export class PaperRouteSystem {
         } else {
             this._offRouteT = 0
         }
-    }
-
-    /** Has anything been delivered out of the guide's order? */
-    _orderIsStale () {
-        const cs = this.line()?.customers
-        if (!cs || !this.run) return false
-        let sawUndelivered = false
-        for (const c of cs) {
-            if (!this.run.hits.has(c.id)) sawUndelivered = true
-            else if (sawUndelivered) return true
-        }
-        return false
     }
 
     /**
@@ -1333,31 +1368,27 @@ export class PaperRouteSystem {
         return Math.sqrt(best)
     }
 
-    /** The truck's own position as a planner stop — see roadOrigin below. */
-    _originPoint () { return roadOrigin(this._getRoad(), this._getCar()) }
-
     /**
      * Start (or restart) a sliced re-plan of everything still undelivered.
      * `quiet` suppresses the indicator — see hasReplan().
      */
     _startReplan (reason, quiet = false, retry = false) {
         if (this.state !== 'running' || !this.route || !this.run) return
-        // BUG-194 (owner, 2026-11-17): the GUIDE goes to the NEAREST house still owed a paper, by road from
-        // the truck (want 1 — planTourJob's one-stop case), so a house passed without a throw flips the
-        // line back to it. The priced tour, par and the deadline are untouched: this is `guide`, never `route`.
-        const left = this.eligible.filter(c => !this.run.hits.has(c.id))
-        const want = this.run.n - this.run.hits.size > 0 ? 1 : 0
-        if (!left.length || want <= 0) return
+        // FEAT-266 (DEC-398, replacing BUG-194's nearest house): the GUIDE is the shortest tour from the truck
+        // through exactly the round's planned houses still owed — candidates and `want` are that set, so it can
+        // never reach for a house off the route. The priced tour, par and the deadline are untouched: this is
+        // `guide`, never `route`.
+        const left = this.route.customers.filter(c => !this.run.hits.has(c.id))
         const car = this._getCar()
-        const origin = this._originPoint()
-        if (!origin) return          // off the network entirely; try again on the next poll
+        const it = planGuideJob(this._getRoad(), car, left, this._getRegion(), 100)
+        if (!it) return              // nothing owed, or off the network entirely; try again on the next poll
 
         this._cancelReplan()
         this._rr = {
-            it: planTourJob(this._getRoad(), origin, left, want, this._getRegion(), 100),
+            it,
             // cx/cz is where the TRUCK was, which is what the staleness guard measures against;
-            // origin is the road point it planned from, and the two are not the same place.
-            cx: car?.x ?? origin.x, cz: car?.z ?? origin.z, reason, quiet, retry,
+            // the planner's origin is the road point nearest it, and the two are not the same place.
+            cx: car.x, cz: car.z, reason, quiet, retry,
         }
         if (!quiet) this._rrHideAt = this._clock + RR_PARAMS.minShowS
         this._onChange()
@@ -1407,7 +1438,7 @@ export class PaperRouteSystem {
         if (this.run.expired) return null   // FEAT-113: a paper in the air at the deadline scores nothing
         const R = this._getTargetR()
         let best = null, bd = Infinity
-        for (const c of this.eligible) {          // FEAT-141: any customer counts, not only the plotted N
+        for (const c of this.route.customers) {   // DEC-398: only the round's planned N count (FEAT-141's any-customer rule is gone)
             const d = Math.hypot(c.x - x, c.z - z)
             if (d < bd) { bd = d; best = c }
         }

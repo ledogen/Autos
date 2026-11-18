@@ -149,10 +149,23 @@ Worktree: `CarGame` (main), dev servers :8000 loopback / :8001 Tailscale, play b
 tonight. I have a reset in the pocket." So the two-agent cap is OFF for tonight: one agent per free worktree, grouped by
 code area. A one-shot timer fires at 07:13 with the word "orchestrator" (session-only cron).
 
-**Main:** 53cabcb7, NOT pushed, GREEN: confirming smoke PASS 38 steps on exactly this tree
-(wip/orch/smoke-1117-campfire.log). Holds everything below plus BUG-179 (closed), FEAT-243 (closed), DEC-395, and
-campfire/camera round 2: ASSET-90 model, dead-fire smoke, cooking relights (DEC-397), camera vs tunnel walls. Card
-campfire-camera-r2-look: on his "Good" move FEAT-246 and FEAT-264 to completed/. Play build :8002 = 53cabcb7.
+**Main:** 4a441133 + docs, NOT pushed, GREEN (FEAT-266's branch smoke PASS 38 steps; main had only docs since its
+base). Holds everything below plus BUG-179, FEAT-243, DEC-395, campfire/camera r2 (DEC-397), FEAT-266 paper route =
+its planned houses (DEC-398, card feat266-paper-route-drive). FEAT-249 closed, nothing landed. Play build :8002 = 4a441133.
+**RUNNING 18:30 (four Opus agents; each lands only as stated):**
+- s, CarGame-land-gps, land/feat-267-demolition-deadline: FEAT-267 demolition on the papers' deadline + planner
+  (DEC-399 supersedes DEC-178). Lands when green; card feat267-demolition-drive.
+- u, CarGame-spare-base, land/feat-26-rockslides (:3886): FEAT-26 rock slides for the alpha (DEC-400). Does NOT land
+  without the owner's drive; card feat26-rockslides-drive.
+- p, CarGame-perf, land/feat-265-dead-zones: FEAT-265 investigation → options card feat265-dead-zones-pick. No build.
+- b, CarGame-machine, land/bug-200-hairpin-grade (on top of bug-201): BUG-200 → options card bug200-hairpin-grade-pick.
+**BUILT, WAITING ON THE OWNER'S LOOK:** BUG-201 land/bug-201-deg2-sliver @ 9cf85a9e (card bug201-bend-sliver-look) ·
+BUG-202 land/bug-202-bake-tiles @ 1943437b in CarGame-spare, vite :3885 (card bug202-bake-tiles-look; Ultra GPU A/B
+owed). Each lands via merge of main + gates + smoke.
+**Open owner questions:** generate 16 paper customers and keep the best 11? (today a region places exactly 11) ·
+demolition letter when the deadline hits with targets standing · DEC-028/DEC-340 bed toolbox vs DEC-372 · fire pit
+driven over dead centre · rim strike with negative wheel load (owner: no assumption for now).
+Next free: BUG-203, FEAT-268, DEC-401.
 **HOW LANDINGS WORK TONIGHT:** never merge finished branches into main one by one. An Opus integration agent in
 CarGame-land-gps merges them onto `land/integrate-1117<x>` (cut from main), fixes clashes, runs gates + pad-e2e + ONE full
 smoke there; main is then fast-forwarded (`git merge --ff-only`) and the play build refreshed
@@ -201,8 +214,7 @@ Next free: BUG-202, DEC-398.
 **BUILT, HELD for the owner (not on main):**
 - land/food-1117 (CarGame-content): FEAT-250, FEAT-260, FEAT-261, BUG-198; DEC-376..381 (DEC-380 draft). Card
   food-1117-numbers BLOCKS landing. Needs a main merge (keep the BUG-198 top-up before Larry's call in _checkOpeningEnd).
-- land/feat-249-far-shade @ b21696f0 (CarGame-machine): far shadow box grows with the tier (High ±512 m, Ultra ±640 m).
-  Card feat249-far-shade-look. GPU active cycles still owed (bench on a quiet machine, High + Ultra).
+- FEAT-249 CLOSED 11-17 "good enough on main" (owner); land/feat-249-far-shade @ b21696f0 kept, never land it unasked.
 - land/feat-235-r3 @ f72c5d15 (branch only): cluster round 3 (DEC-391). Card feat235-cluster-r3-look. Its gpu-reset run
   failed on TREE IMPOSTORS ("empty tiles 0 → 8"), unexplained, probably load: re-run `node test/gpu-reset.mjs` on main
   on a quiet machine before believing either way.
