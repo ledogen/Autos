@@ -12,8 +12,7 @@ lane: Perf
 # BUG-202: Baked far ground shows dark speckled tiles with hard seams
 
 ## Next steps
-Owner look at `wip/bug-202/sheet.jpg` (owed card bug202-bake-tiles-look), then land `land/bug-202-bake-tiles`. Owed after
-landing: an Ultra GPU A/B on a quiet machine (the fix puts the ground past ±6 chunks back on the live shader on High/Ultra).
+Landed (integration `land/int-1117d`). Still owed, the reason this stays open: an Ultra GPU A/B on a quiet machine (the fix puts the ground past ±6 chunks back on the live shader on High/Ultra).
 
 ## Summary
 On Ultra, far ground drawn from the terrain bake (the pre-rendered ground image used beyond ~70 m from the truck,
@@ -65,7 +64,7 @@ atlas per tier (Ultra 17 tiles → ≈ 200 MB of VRAM instead of 100 MB).
 - [x] Known whether a tier switch mid-session causes it
 - [x] Fixed at the root, with a headless or browser check that fails before and passes after
 - [x] Before/after screenshots for the owner, from his capture's viewpoint
-- [ ] Owner look (sheet) and landing
+- [x] Owner look (sheet) and landing ("Good: land it", 2026-11-17)
 - [ ] Ultra GPU A/B (active cycles) on a quiet machine
 
 ## Decisions
@@ -86,3 +85,4 @@ atlas per tier (Ultra 17 tiles → ≈ 200 MB of VRAM instead of 100 MB).
 - 2026-11-17: Perf lane. Cause: toroidal atlas slots shared on High/Ultra. Fix f982c97a (bake window + slot-keyed state);
   gate `terrain-bake-slots` (FAIL 217/361 chunks wrong before, PASS after); affected 11/11 green; gpu-reset PASS (ground
   comes back; the impostor-atlas count is noisy on old and new). Sheet wip/bug-202/sheet.jpg. Unbenched: Ultra GPU.
+- 2026-11-17: owner "Good: land it". `land/bug-202-bake-tiles` @ 1943437b merged into `land/int-1117d`; terrain-bake-slots PASS, gpu-reset webgl PASS (ground blank 0.001 → 0.001, lum 106.4 → 96.8; impostor 0 → 0). Left OPEN: the Ultra GPU A/B (active cycles, quiet machine) is still owed.

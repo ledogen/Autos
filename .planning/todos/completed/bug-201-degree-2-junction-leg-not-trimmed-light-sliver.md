@@ -1,7 +1,7 @@
 ---
 id: BUG-201
 type: bug
-status: in-review
+status: closed
 severity: major
 opened: 2026-11-17
 source: owner, 2026-11-17 — "the unknown sliver is an active bug class on main. i think specifically deg 2 junctions dont get their legs trimmed properly. ticket and fix it"
@@ -12,8 +12,7 @@ lane: B
 # BUG-201: A light sliver on the outer edge of a two-road bend
 
 ## Next steps
-Owner look at `CarGame-machine/wip/bug-201/sheet.jpg` (owed card `bug201-bend-sliver-look`). On "good": land
-`land/bug-201-deg2-sliver`.
+None: landed (integration `land/int-1117d`).
 
 ## Summary
 At a degree-2 bend each leg's ribbon was trimmed at the bare junction cutback (10 m from the node), but the bend's
@@ -90,3 +89,4 @@ sheet.mjs.
   identical; junctions, tiles, surface differ (seed-7 window: 30 of 410,881 physics lattice points moved, ≤ 1.8 cm,
   all inside a deg-2 node's mouth radius). Affected gates 78/78 green (serial; play-area held back as manual).
   Sheet: the flaps show on main at 8 of the 9 bends (the mild 0.19 m one is not visible at 40 m), none after.
+- 2026-11-17 CLOSED: owner "Good: land it" on card bug201-bend-sliver-look. `land/bug-201-deg2-sliver` @ 9cf85a9e merged into `land/int-1117d` with BUG-202 and FEAT-235 r3; deg2-leg-trim PASS (12 legs) after the merge.
