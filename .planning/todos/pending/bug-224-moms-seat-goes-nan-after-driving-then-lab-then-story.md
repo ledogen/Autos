@@ -56,3 +56,6 @@ src/main.js, src/stage.js, src/physics.js
 - 2026-11-18 minted by the orchestrator.
 - 2026-11-18 lane: reproduced + cause (diag1). Smoke: re-seat workaround removed, lab step asserts the truck stays finite
   and < 5 m/s after exit. src fix NOT yet written (agent stopped). Scratch: test/_diag224.mjs (delete before landing).
+- 2026-11-18 lane: fix built (087080f4 hold + guard, d3934e1f resetStepCarry + gate step-carry-reset), main merged twice.
+  Fingerprint ALL IDENTICAL to wip/bug-224/fp-main.json. Affected gates 45/45 green (47 selected, 2 browser).
+  Targeted smoke PASS; full smoke PASS / FAIL "DEC-357 no blink" (opening) / PASS (load 7-9); pad-e2e ALL OK.
