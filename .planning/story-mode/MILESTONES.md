@@ -68,6 +68,7 @@ How the cut works:
 | FEAT-109 | engine stall — ✅ closed 2026-10-23, shipped with FEAT-126's gearbox |
 | FEAT-128 | truck shuts off at camp |
 | FEAT-93, FEAT-94 | hazard punctures, driving on a flat |
+| FEAT-26 | rock slides: the ambush only, no spirit ties, fixed rate of about one per 20 km driven; visible approach, steep side slopes, timed to hit the truck (owner, 2026-11-17, DEC-400). FEAT-27, the static slide, stays later |
 | FEAT-166 | the clutch-type LSD (Traction-Lok): open → clutch LSD that wears back to open, rebuildable → helical (owner, 2026-11-04) |
 | FEAT-66 | camp gear slots |
 | FEAT-42 | saves — suspend and resume |
