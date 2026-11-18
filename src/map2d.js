@@ -2711,7 +2711,8 @@ export class Map2D {
             ctx.beginPath()
             ctx.moveTo(this._sx(m.poly[0].x), this._sy(m.poly[0].z))
             for (let i = 1; i < m.poly.length; i++) ctx.lineTo(this._sx(m.poly[i].x), this._sy(m.poly[i].z))
-            ctx.strokeStyle = 'rgba(244,241,230,0.95)'
+            // BUG-208: 0.95 hid the camp casing (6 px under a 7 px halo); 0.5 lets the yellow tint through the halo.
+            ctx.strokeStyle = 'rgba(244,241,230,0.5)'
             ctx.lineWidth = 7
             ctx.stroke()
             ctx.strokeStyle = ROUTE_BLUE
