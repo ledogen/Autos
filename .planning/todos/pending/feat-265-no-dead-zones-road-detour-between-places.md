@@ -12,8 +12,11 @@ lane: engine & world
 # FEAT-265: No dead zones — places a long drive apart that are close on the map
 
 ## Next steps
-Owner: pick an option on the card `feat265-dead-zones-pick` (sheets in `wip/feat-265/`). Then the world-gen lane builds
-it in `src/road.js` (B2: in `_assembleGraphEdges`, where an empty route is skipped) with a census gate on place stretch.
+B2 is built on `land/feat-265-dead-zones` (DEC-401). Two things are the owner's before it lands (owed card
+`feat265-b2-look`): his look at `wip/feat-265/b2-built.jpg` and seed 3200351065 in story mode, and the conflict with the
+NEW tutorial seed 1872706826 (DEC-402): B2 restores two roads there, which moves its east auto shop, so
+`test/tutorial-seed.mjs` fails 3 census checks (green on main). Per that gate a failure means re-pick or re-census the
+seed, never loosen it: his call.
 
 ## Summary
 On seed 3200351065 the drive from the food vendor to Larry's is far longer than the map distance suggests, and the
@@ -113,11 +116,49 @@ Sheets: `wip/feat-265/overview.jpg` (his seed, every option, census table) and `
 (`census.mjs`, `options.mjs`, `tile.mjs`, `sheet.mjs`, `bench.mjs`, `diag.mjs`; git-invisible).
 
 
+### B2 as built (world-gen lane, 2026-11-17; `RoadSystem._v2RestoreDropped`, called from `_assembleGraphEdges`)
+The rule: a Delaunay side d that Urquhart dropped comes back when EVERY triangle that dropped it (at most 2) has a
+short side that failed to route. "Failed" = an edge of the settled graph (not degree-dropped, not a merge-band stub)
+whose route is empty on every rung. Degree drops and crossing deletes are not failures (each keeps its own detour rule).
+1. Which edge: only the longest side of a triangle the failed edge belongs to. A dropped side that was ALSO the longest
+   side of its other triangle stays dropped when that other triangle's two short sides both built (that triangle still
+   gives it a two-road detour). Chains: one round. A restored side that itself fails to route stays dropped and
+   restores nothing in turn (bound: 1).
+2. Degree cull: unchanged and still before routing. Restored sides are added after it and are exempt from it: a node
+   may reach degree 4 (seen: the owner's -1,0,0 is now degree 5 with its failed edge counted). No re-run, so the cull's
+   decisions are identical and connectivity only goes up.
+3. Determinism: the restore is an ASSEMBLY step after every planned edge is routed. Restored sides never enter the
+   graph's adjacency, so no heading pin, plan verdict or cull decision moves; they route on chord pins at both ends
+   (a pure function of the two node positions). A world with no failed route builds byte-identical. The decision is
+   made wherever d has an in-band endpoint (= wherever it registers), from the triangles around d (interior to the
+   band graph) and the emptiness of routes. Emptiness is a reachability fact of the corridor search (finite costs,
+   the last rung unpinned and uncapped), so it does not depend on which pins a window derives. A short side the window
+   does not register is routed on its base pins (a cache hit when the settle pass already routed it). Story region and
+   free roam run the same code; the gate builds a free-roam window centred on the owner's restored side and gets it
+   identically, and the network worker path (buildNetworkSnapshot + adoptNetwork) matches the sync build.
+   Not proven: a margin case where d's far short side is outside every window's settle set is argued, not tested.
+4. The silent skip stays: the failed edge is still not built (5 of 46 seeds, 8 in-region edges, same as main). What
+   changed is that its dropped side comes back. No logging in `src/`; the census counts it.
+5. Grades: no road-character change. A restored side whose profile cannot solve even on the hard-grade re-route rungs
+   stays dropped (a condemned road would refuse the seed, DEC-054). Restored roads: steepest 10 m 12-25 %, 0-221 m
+   above 20 % per road (in the region: 18.4 % / 0 m and 24 % / 71 m on the owner's seed, 24 % / 123 m on 1979256859,
+   21.1 % / 18 m on 2176144795). How many candidates the grade rule kept dropped was not counted.
+
+Results (46-seed census on the real build, `wip/feat-265/census-b2built.jsonl`, places re-sited by the real POI build):
+- Owner's seed 3200351065: food vendor to Larry's 6.68 -> 2.99 km (2.09 km on the map); place stretch 3.67 -> 2.07.
+  Two roads come back: -1,1,1 to -1,0,0 (1119 m, the one the diagnosis named) and -1,0,0 to 0,0,0 (768 m).
+- Place stretch median 2.21 -> 2.21, max 3.67 -> 3.09. Seeds >= 3.0: 2 -> 1 (3832686841: no failed route, its cause is
+  a degree drop plus the region wall; not chased).
+- Seeds given roads: 13 of 46 (5 inside the region), km added mean 0.61, max 4.14 (most outside the region, in the
+  warm band). The 33 seeds with no restore measure identically; `fingerprint-world` (six windows) identical to main.
+- Build cost: COST
+
 ## Tracker
 - [x] The capture diagnosed: the stretch food vendor → Larry's, and the stage that removed the missing edge
 - [ ] A measure agreed with the owner (proposed: place stretch ≥ 3.0), censused on ≥ 30 random seeds (done: 44)
 - [x] Options shown as map sheets (before/after per option, same seeds), with build time and added road length
-- [ ] The owner's pick built; fingerprint differences explained; a gate on the measure
+- [x] The owner's pick (B2) built; fingerprint-world identical on its six windows; gate `urquhart-restore.mjs`
+- [ ] Owner look at `wip/feat-265/b2-built.jpg` + the tutorial-seed conflict (card feat265-b2-look)
 
 ## Decisions
 - DEC-070 (connectivity up; add options, not roads; keep sparse): A, B2, B, C add roads. A/B2 add 1–3 roads on 2–4
