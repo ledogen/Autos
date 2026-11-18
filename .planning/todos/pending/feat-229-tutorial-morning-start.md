@@ -12,8 +12,8 @@ lane: A (tutorial)
 # FEAT-229: The tutorial starts the run in the morning
 
 ## Next steps
-Tutorial seed: owner picks on card `tutorial-seed-pick-r3` (round 3 ranks the whole tutorial's hard driving; 3590618618 stays pinned until then).
-On main: seed 3590618618 pinned (DEC-351) and round 2 (DEC-353..357) landed; owner drives it (card `tutorial-test-drives`).
+Tutorial seed: 1872706826 pinned (DEC-402, supersedes DEC-351) on `land/tut-seed-search-r3`; owner drives it (card
+`tutorial-seed-1872706826-drive`). Round 2 (DEC-353..357) is on main.
 On `land/tut-round2`: the owner's round 2 (DEC-353) built — phone calls ring and click (DEC-354), Katie's lines
 (DEC-355), the peanuts-only snack shelf and the ranch arrival / waypoint (DEC-356, supersedes DEC-346), sleepy after the
 tire, the 06:30 alarm, the joint called "work" (DEC-357); BUG-189's fixes ride along. Owner: the placeholder lines (Katie's
@@ -63,6 +63,8 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
 - [x] DEC-353 built (DEC-354..357): phone frame, Katie's lines, peanuts-only shelf, ranch arrival + waypoint both ways,
   sleepy after the tire (with blinks on the held clock), the 06:30 alarm, "work"; smoke `opening` walks each
 - [ ] Owner: round 2's placeholders and the mom-lesson-cards-as-calls question (DEC-354)
+- [x] Tutorial seed re-pinned to 1872706826 (DEC-402): data/tutorial.js, the seed gate's census constants, smoke literals
+- [ ] Owner: drives the tutorial on 1872706826 (card `tutorial-seed-1872706826-drive`)
 
 ## Decisions
 - DEC-299 (owner, 2026-11-15/16): the tutorial is 24 in-game hours, fired about 07:00, free will about 07:00 the next
@@ -128,3 +130,7 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
   score3.mjs) on 86 seeds: pinned 2528 hard m (57th of 71); top 1464815701 665, 1872706826 838, 3615534968 927, 3881445155 995,
   3270310529 1055; no round-2 seed survives. All five pass gate-at.mjs. Card `tutorial-seed-pick-r3` (r2 card moved to answered/).
   Unverified: the index for the ~250 near seeds outside the grade-proxy top 60 (proxy r = 0.83); stream-crossing counts.
+- 2026-11-17: DEC-402 re-pin (lane a, `land/tut-seed-search-r3`): data/tutorial.js → 1872706826; test/tutorial-seed.mjs AT/KM/CROW from
+  its census line (gate green); smoke reads TUTORIAL.seed, and its BUG-173 shoulder pick now centres on the joint on a 2 m grid (the
+  seed's only flat shoulder is 264 m out; the 4 m grid around the truck found none). Walk + sheet: wip/tut-repin/sheet.jpg. Flagged:
+  the flat lands on a 17.7 % climb beside a tunnel mouth. Unverified: a real drive.
