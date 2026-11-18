@@ -2327,7 +2327,7 @@ const STEPS = [
     // FEAT-288 P3b, the map beat (DEC-422: the list on the side, a waypoint, the legend pointed at): inside her call each card
     // waits for its action, the wrong one is refused; the fake pad and the keyboard each take a turn.
     const waits = () => js('window.__tutorial().until')
-    const wpt = () => js('(w => w && { x: w.x, z: w.z })(window.__map2d()._getWaypoint())')
+    const wpt = () => js('window.__tutorial().wpt')   // the player's own pin: since P4 the map draws the leg's (her station) too
     // ringed: the gate marks on a 100 ms paint (tut-gate.js), so a card just turned, or a screen just re-rendered, is read
     // within a second, not on the instant
     const hi = (q) => until(() => js(`!!document.querySelector(${JSON.stringify(q)})?.classList.contains('tut-hi')`), 1000)

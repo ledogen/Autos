@@ -4717,7 +4717,8 @@ window.__tutorial = () => ({ phase: _tutCardOpen ? 'card' : _firingDay() ? (dial
   : _morningLeg() ? 'morning' : 'free', returnSeed: _returnSeed, seed: _seedString,
   stop: _tutDrive() && dialogueSystem.has(DLG.played) ? _dayStop() : null, pack: (({ x, z } = {}) => x == null ? null : { x, z })(_packOnGround() ?? undefined),
   camp: _firingDay() && _campDoor() ? { x: _campDoor().x, z: _campDoor().z } : null,   // DEC-304
-  until: dialogueSystem.current()?.until ?? null })   // DEC-359: the card up waits for this action: the snack's camping area
+  until: dialogueSystem.current()?.until ?? null,   // DEC-359: the card up waits for this action: the snack's camping area
+  wpt: _waypoint && { x: _waypoint.x, z: _waypoint.z } })   // FEAT-288 P3b: the player's own pin (the map also draws the leg's, P4)
 // dev handle — test/cdp-smoke.mjs walks the worst day's beats
 window.__worstDay = () => ({ pump: _evePump && { id: _evePump.q.id, done: _evePump.done }, pumpsShut: _pumpsShut(), flatR: _eveFlatR, flat: _eveFlat, towed: _eveTowed, held: damageModel.held,
   snackLock: (id) => _snackLock({ id }) })   // DEC-356's shelf guard (the smoke: her cards lock the rows it would refuse)
