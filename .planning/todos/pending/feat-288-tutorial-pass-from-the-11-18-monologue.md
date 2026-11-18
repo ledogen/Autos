@@ -299,6 +299,8 @@ quest-item mark (§ 5) and the rings, not by CSS.
   (4) as you wake at hers and waits for one eaten; a run on the firing starts with no lunches, `_topUpLunches()` gives
   three on a skip, at the tutorial's end and in the paper scenario; pad B over a press-any-key card sends Escape
   (`pad.cardHolds`, gamepad.js) and opens no B menu — in every story run, not only the tutorial.
+- A lesson card (`.dlg-waits`) lifts the camp card above it (index.html, a fixed 216 px): the sheet showed mom's alarm
+  slider hidden under her card. The shop and the inventory are centred and clear of it.
 - Left for P3b: the shop (`#svc-screen`) and the pump are still free between cards (BETWEEN lists the shop): the shop
   beat's cards lock them; the vibe's "make camp" (beat 24) is free between cards (BETWEEN lists the camp card: tut-vibe
   has no `until` yet); R while camped still breaks camp (it is the reset, never locked). The deeds counter ring (beat 26)
