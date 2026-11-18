@@ -2298,12 +2298,18 @@ const STEPS = [
     // DEC-305 (DEC-238's errand): the pack lands by her steps; parked beside it, G loads it; parked at Larry's, he gives it you.
     check(await until(async () => !!(await tut()).pack, 3000), `mom's toss put no pack on the ground: ${JSON.stringify(await tut())}`)
     await readCards()   // the pick-up lesson
+    // FEAT-288 P5: the pick-up lesson's step names the pack, so the tossed pack wears the quest mark (beam + white pulse).
+    check(await until(() => js('!!window.__questMark()'), 3000), `the tossed pack wears no quest mark (card up: ${JSON.stringify(await tut())})`)
     const pk = (await tut()).pack, mq = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'momsHouse'); return { x: q.roadX, z: q.roadZ } })()`)
-    const toRoad = Math.atan2(mq.x - pk.x, mq.z - pk.z)   // the truck 3 m out from the pack, nose to the road
-    await js(`window.__seated = false; window.__teleport(${pk.x + 3 * Math.sin(toRoad)}, ${pk.z + 3 * Math.cos(toRoad)}, ${toRoad + Math.PI}).then(() => { window.__seated = true })`)
+    // the truck 3 m out from the pack toward the road, nose on the pack (FEAT-288 P5: its mark in the chase view)
+    const toRoad = Math.atan2(mq.x - pk.x, mq.z - pk.z)
+    await js(`window.__seated = false; window.__teleport(${pk.x + 3 * Math.sin(toRoad)}, ${pk.z + 3 * Math.cos(toRoad)}, ${toRoad}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the pack never seated')
-    await simFor(2); await park(true); await tap('g')
+    await simFor(2); await park(true)
+    check(await until(async () => (m => m?.onScreen && m.lit)(await js('window.__questMark()')), 3000), `beside the pack its quest mark is not in view and pulsing: ${JSON.stringify(await js('window.__questMark()'))}`)
+    await tap('g')
     check(await until(async () => (await tut()).stop === 'larry', 3000), `G beside the pack did not load it: ${JSON.stringify(await tut())}`)
+    check(await until(async () => !await js('window.__questMark()'), 1000), 'the pack loaded, its quest mark stayed up')
     check(await until(async () => (await eve()).gps, 3000), `the pack loaded, no GPS to Larry's: ${JSON.stringify(await eve())}`)
     const lq = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'larrysHouse'); return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
     await js(`window.__seated = false; window.__teleport(${lq.x}, ${lq.z}, ${lq.h}).then(() => { window.__seated = true })`)
@@ -2772,6 +2778,15 @@ const STEPS = [
         await key('m', true); await sleep(100); await key('m', false)
         check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a tap of M opened no map')
       },
+      // FEAT-288 P5: parked at mom's door, the pack tossed and quest-marked; after the skip (below) the mark is gone.
+      pack: async () => {
+        const m = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse'); return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
+        await tp(m.x, m.z, m.h)
+        for (let i = 0; i < 30 && !await js('!!window.__tutorial().pack'); i++) {
+          if (await speaker()) { await tap('Enter'); await sleep(200) } else { await park(true); await sleep(800) }
+        }
+        check(await until(() => js('!!window.__questMark()'), 3000), `pack: the tossed pack wears no quest mark: ${JSON.stringify(await js('window.__tutorial()'))}`)
+      },
       recovery: async () => {
         // the chip hides in a place's ring: a road point well clear of every POI
         const r = await js(`(() => { const v = window.__vs.position, P = window.__poi().list()
@@ -2808,6 +2823,7 @@ const STEPS = [
       console.log(`  skipMenus ${name}: open ${before} → ${after} · $${got.money} · ${got.gal} gal`)
       check(!a.list.length && !Object.entries(a).some(([k, v]) => k !== 'list' && v), `${name}: the skip left a menu open: ${after}`)
       // FEAT-288 P2 / BUG-183: the skip leaves nothing locked or ringed, and the key the base lock refused works again
+      check(!await js('window.__questMark()'), `${name}: the skip left the quest mark up (FEAT-288 P5)`)
       check(!await js('document.querySelectorAll(".tut-locked, .tut-hi").length'), `${name}: the skip left the tutorial gate's marks: ${await js('[...document.querySelectorAll(".tut-locked, .tut-hi")].map(e => e.id || e.className).join(", ")')}`)
       if (name === 'damage') {
         if (!await js('window.__vs.parked')) await park(true)
