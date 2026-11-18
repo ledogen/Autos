@@ -43,7 +43,7 @@ out on the game's path. Before the fix, an unreachable destination with both nod
 main piece) and the degraded entry (nodes null). After the fix: **0 throws** in 800 builds. The story build never met
 an unreachable requisition destination (0 of 400): the fix is inert there, totals mean 22.3 km, 18.7–27.7. The
 degraded build met one on **31 of 400**; on the old code (same seeds, the fix's parent) **13 of those 31 threw** (all
-this TypeError), 0 story builds threw. After the fix those 13 build; 9 keep the story build's camp, and 4 of the 31
+this TypeError), 0 story builds threw. After the fix those 13 build; 8 site the story build's camp, and 8 of the 31 (4 of the 13)
 leave a line unplanned at the final camp (a source on a stranded piece, BUG-85: without the filter the roster takes
 stranded POIs; pre-existing, degraded path only). The 18 old-code non-throwers keep their camp exactly.
 FEAT-292's 60 census seeds (`wip/feat-292/census.mjs`, every hash: camp, rows, returns, roster, customers, lines,
