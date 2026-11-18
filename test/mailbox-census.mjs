@@ -1,18 +1,22 @@
-// GATE (FEAT-275 / FEAT-280): the roadside mailboxes, on real worlds (12 random seeds, the live 2500 m region).
+// GATE (FEAT-275, DEC-429): the residences' mailboxes, on real worlds (12 random seeds, the live 2500 m region).
 //
-//   · every paper-route house has one; every roster residence (Larry's, mom's, the yard houses) has one on its pad
-//   · counts per km of road (reported; the random ones must be present on every seed: a seed with none is a bug)
-//   · none on the deck or its shoulder, none on a junction pad, none in a tunnel bore, none on a roster pad
-//     (a roadside mailbox) or off the pad (a residence's), none in water; ground within 0.7 m of the road top (no ditch)
-//   · each faces the road: its door (-Z) points at the nearest centreline within ~25 degrees
-//   · the random ones keep poiMailboxSep from each other and from every paper-route house
+//   · every residence that is not an RV (data/prop-models.js `rv`) has exactly one mailbox; an RV has none
+//   · it stands on the ROAD SHOULDER: the post between the paved edge and the shoulder's outer edge, the box's
+//     reach clear of the lane (none on the deck), off every roster pad, on no junction pad, in no bore, in no water
+//   · its base is within 5 cm of the surface the truck drives there (main.js _groundSampleY's rule: the road top
+//     inside the road footprint, else the carved terrain), at the post and 15 cm round it
+//   · it faces the road: its door (-Z) points at the nearest centreline within ~25 degrees
+//   · it is near its own pad: within 12 m of the pad's road-edge end (where the pad meets the road)
+//   · ZERO lone boxes: no mailbox satellite outside a residence, no roadside list, no mailbox on a paper-route house
 //   · deterministic: a second build of the same seed gives the identical list
-// Heavy: 12 routed worlds. (Seed 6666666 is not in the set: main's FEAT-292 _evenRequisition throws in build() on it, mission.js:1290, unrelated to mailboxes.)
+// Census per seed: mailboxes, and every residence with none and why (RV / no viable spot).
+// Heavy: 12 routed worlds. MAILBOX_SEEDS=a,b,c overrides the set (the 12-random-seed census).
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
+import { PROP_MODELS } from '../data/prop-models.js'
 import { WaterSystem } from '../src/water.js'
-import { PoiSystem, POI_PARAMS } from '../src/poi.js'
+import { PoiSystem, MAILBOX_POOL } from '../src/poi.js'
 import { padSd } from '../src/road-carve.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
@@ -25,7 +29,8 @@ const SEEDS = (process.env.MAILBOX_SEEDS ?? '11,222,3333,44444,555555,6666668,77
     .split(',').map(Number)
 const R = 2500, C = { x: 0, z: 0 }
 const P = RANGER_PARAMS
-const edgeLat = (P.roadHalfWidth ?? 5) + (P.roadShoulderWidth ?? 2.5)
+const half = P.roadHalfWidth ?? 5, edgeLat = half + (P.roadShoulderWidth ?? 2.5)
+const isMailbox = (key) => PROP_MODELS[key]?.tags?.includes(MAILBOX_POOL)
 
 function world (seed) {
     const road = new RoadSystem(seed, P)
@@ -36,54 +41,56 @@ function world (seed) {
     poi.build(C, R); poi.buildHouses(C, R)
     return { road, water, terrain, poi }
 }
-const fmt = (m) => `${m.key}@${m.x.toFixed(2)},${m.z.toFixed(2)},${m.y.toFixed(2)}/${m.yaw.toFixed(3)}/${m.variant}`
+const mailboxesOf = (poi) => poi.list().flatMap(q => (q.satellites ?? []).filter(s => isMailbox(s.key)).map(s => ({ q, s })))
+const fmt = ({ q, s }) => `${q.id}:${s.key}@${s.x.toFixed(3)},${s.z.toFixed(3)},${s.y.toFixed(3)}/${s.yaw.toFixed(4)}/${s.variant}`
 
-let tot = { route: 0, rand: 0, km: 0 }
+let tot = { mb: 0, res: 0, rv: 0, none: 0 }
 for (const seed of SEEDS) {
-    const { road, water, poi } = world(seed)
-    const mbs = poi.mailboxes()
-    const houses = poi.houses()
-    const route = mbs.filter(m => m.route), rand = mbs.filter(m => !m.route)
-    // road length inside the region: unique edges, as buildHouses walks them
-    const g = road.networkGraph(); const seen = new Set(); let metres = 0
-    for (const [a, b] of g.edges) {
-        const k = [String(a), String(b)].sort().join('|'); if (seen.has(k)) continue; seen.add(k)
-        const ed = road.edgeParData(a, b); metres += ed?.arcLength ?? ed?.centerline?.length ?? 0
+    const { road, water, terrain, poi } = world(seed)
+    // the truck's surface: main.js _groundSampleY
+    const ground = (x, z) => {
+        const nr = road.queryNearest(x, z, edgeLat + 1)
+        const ry = nr?.point && Math.hypot(nr.point.x - x, nr.point.z - z) <= edgeLat ? road.sampleRoadTopY(x, z) : null
+        return ry ?? terrain.analyticHeight(x, z)
     }
-    const km = metres / 1000
-    check(`seed ${seed}: every house with a viable verge has a route mailbox`, route.length >= houses.length * 0.7, `${route.length}/${houses.length}`)
-    check(`seed ${seed}: random mailboxes exist`, rand.length > 0, 'none')
-    for (const m of mbs) {
-        const nr = road.queryNearest(m.x, m.z, 30)
-        if (!check(`seed ${seed}: ${m.id} has a road near`, !!nr?.point)) continue
-        const dx = nr.point.x - m.x, dz = nr.point.z - m.z, d = Math.hypot(dx, dz)
-        check(`seed ${seed}: ${m.id} off the deck and shoulder`, d >= edgeLat + 0.3, `${d.toFixed(2)} m from the centreline`)
-        const fx = -Math.sin(m.yaw), fz = -Math.cos(m.yaw)
-        check(`seed ${seed}: ${m.id} faces the road`, (fx * dx + fz * dz) / d >= 0.9, `dot ${((fx * dx + fz * dz) / d).toFixed(2)}`)
-        check(`seed ${seed}: ${m.id} not in a bore`, !road.tunnelSpanAt?.(nr.runKey ?? '', nr.arcS ?? 0))
-        check(`seed ${seed}: ${m.id} not on a junction pad`, !road.padReachNodes().some(nd => Math.hypot(nd.x - m.x, nd.z - m.z) <= nd.reach))
-        check(`seed ${seed}: ${m.id} not in water`, !(water.isRoadNoGo(m.x, m.z) || water.streamChannelAt?.(m.x, m.z)?.inChannel))
-        check(`seed ${seed}: ${m.id} not on a roster pad`, !poi.list().some(q => q.halfLen && padSd(q, m.x - q.x, m.z - q.z) < 0))
-        check(`seed ${seed}: ${m.id} no ditch`, Math.abs(m.y - (road.sampleRoadTopY(nr.point.x - dx / d * edgeLat, nr.point.z - dz / d * edgeLat) ?? m.y)) <= 0.8)
+    const all = mailboxesOf(poi)
+    check(`seed ${seed}: no roadside mailbox list (FEAT-280 withdrawn)`, typeof poi.mailboxes !== 'function')
+    check(`seed ${seed}: no paper-route house carries a mailbox`, poi.houses().every(h => !h.mb && !(h.satellites ?? []).some(s => isMailbox(s.key))))
+    for (const { q } of all) check(`seed ${seed}: ${q.id} (${q.type}) is a residence, not an RV — no lone box`, q.tags?.includes('residence') && !PROP_MODELS[q.modelKey]?.rv)
+    const res = poi.list().filter(q => q.tags?.includes('residence'))
+    const why = []
+    for (const q of res) {
+        const sats = (q.satellites ?? []).filter(s => isMailbox(s.key))
+        const rv = !!PROP_MODELS[q.modelKey]?.rv
+        if (rv) { check(`seed ${seed}: ${q.id} (RV) has no mailbox`, sats.length === 0, `${sats.length}`); why.push(`${q.type}/${q.modelKey}: RV`); continue }
+        if (!check(`seed ${seed}: ${q.id} (${q.type}/${q.modelKey}) has one mailbox`, sats.length === 1, `${sats.length}`)) { if (!sats.length) why.push(`${q.type}/${q.modelKey}: no viable spot`); continue }
+        const s = sats[0]
+        const r = 0.5 * Math.hypot(PROP_MODELS[s.key].collision.size[0], PROP_MODELS[s.key].collision.size[2])
+        const nr = road.queryNearest(s.x, s.z, 30)
+        if (!check(`seed ${seed}: ${q.id} mailbox has a road near`, !!nr?.point)) continue
+        const dx = nr.point.x - s.x, dz = nr.point.z - s.z, d = Math.hypot(dx, dz)
+        check(`seed ${seed}: ${q.id} mailbox post on the shoulder`, d >= half && d <= edgeLat, `${d.toFixed(2)} m from the centreline`)
+        check(`seed ${seed}: ${q.id} mailbox clear of the lane (not on the deck)`, d - r >= half, `reach ${(d - r).toFixed(2)} m`)
+        const fx = -Math.sin(s.yaw), fz = -Math.cos(s.yaw)
+        check(`seed ${seed}: ${q.id} mailbox faces the road`, (fx * dx + fz * dz) / d >= 0.9, `dot ${((fx * dx + fz * dz) / d).toFixed(2)}`)
+        let dy = 0
+        for (const [ox, oz] of [[0, 0], [0.15, 0], [-0.15, 0], [0, 0.15], [0, -0.15]]) dy = Math.max(dy, Math.abs(s.y - ground(s.x + ox, s.z + oz)))
+        check(`seed ${seed}: ${q.id} mailbox base within 5 cm of the ground`, dy <= 0.05, `${(dy * 100).toFixed(1)} cm`)
+        check(`seed ${seed}: ${q.id} mailbox not in a bore`, !road.tunnelSpanAt?.(nr.runKey ?? '', nr.arcS ?? 0))
+        check(`seed ${seed}: ${q.id} mailbox not on a junction pad`, !road.padReachNodes().some(nd => Math.hypot(nd.x - s.x, nd.z - s.z) <= nd.reach))
+        check(`seed ${seed}: ${q.id} mailbox not in water`, !(water.isRoadNoGo(s.x, s.z) || water.streamChannelAt?.(s.x, s.z)?.inChannel))
+        check(`seed ${seed}: ${q.id} mailbox on no pad`, !poi.list().some(p => p.halfLen && padSd(p, s.x - p.x, s.z - p.z) < 0))
+        // where the pad meets the road: the pad's road-edge end, along the pad's own tangent
+        const u = (s.x - q.x) * q.tx + (s.z - q.z) * q.tz
+        check(`seed ${seed}: ${q.id} mailbox at its pad's end`, Math.abs(Math.abs(u) - q.halfLen) <= 12, `${u.toFixed(1)} m along, halfLen ${q.halfLen}`)
     }
-    for (const a of rand) {
-        for (const b of mbs) if (a !== b && a.id < b.id) check(`seed ${seed}: ${a.id} ${b.id} apart`, Math.hypot(a.x - b.x, a.z - b.z) >= (b.route ? POI_PARAMS.poiMailboxSep : 0))
-        for (const h of houses) check(`seed ${seed}: ${a.id} clear of route house ${h.id}`, Math.hypot(a.x - h.x, a.z - h.z) >= POI_PARAMS.poiMailboxSep - 14)
-    }
-    // residences: one on the pad, door to the road, stood on the carved ground
-    for (const q of poi.list().filter(q => q.tags?.includes('residence'))) {
-        const sats = (q.satellites ?? []).filter(s => s.key.startsWith('mailbox'))
-        check(`seed ${seed}: ${q.id} (${q.type}) has one mailbox on its pad`, sats.length === 1 || (q.tags.includes('farm') && sats.length === 0), `${sats.length}`)   // a farm's barn fills its road edge: none there
-        for (const s of sats) {
-            check(`seed ${seed}: ${q.id} mailbox on the pad`, padSd(q, s.x - q.x, s.z - q.z) <= 0)
-            check(`seed ${seed}: ${q.id} mailbox faces the road`, Math.abs(Math.atan2(Math.sin(s.yaw - q.yaw), Math.cos(s.yaw - q.yaw))) < 1e-6)
-        }
-    }
-    const again = world(seed).poi.mailboxes().map(fmt).join(';') === mbs.map(fmt).join(';')
+    const again = mailboxesOf(world(seed).poi).map(fmt).join(';') === all.map(fmt).join(';')
     check(`seed ${seed}: deterministic`, again)
-    console.log(`seed ${String(seed).padStart(8)}: ${route.length} route + ${rand.length} random over ${km.toFixed(1)} km of road → ${(mbs.length / km).toFixed(2)} per km (${(rand.length / km).toFixed(2)} random)`)
-    tot.route += route.length; tot.rand += rand.length; tot.km += km
+    const rv = res.filter(q => PROP_MODELS[q.modelKey]?.rv).length
+    console.log(`seed ${String(seed).padStart(10)}: ${all.length} mailboxes / ${res.length} residences (${rv} RV)` +
+        (why.length ? ` · none: ${why.join(', ')}` : ''))
+    tot.mb += all.length; tot.res += res.length; tot.rv += rv; tot.none += res.length - rv - all.length
 }
-console.log(`ALL: ${tot.route} route + ${tot.rand} random over ${tot.km.toFixed(1)} km → ${((tot.route + tot.rand) / tot.km).toFixed(2)}/km`)
+console.log(`ALL: ${tot.mb} mailboxes / ${tot.res} residences (${tot.rv} RV, ${tot.none} non-RV with none)`)
 console.log(fails ? `\n${fails} FAIL` : '\nPASS')
 process.exit(fails ? 1 : 0)

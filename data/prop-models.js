@@ -606,6 +606,7 @@ export const PROP_MODELS = {
     // 14 m and only 2.4 m crosses it, which is also how a real one parks in a lay-by.
     yawOffset: Math.PI * 0.5,
     tags: ['residence'],
+    rv: true,   // DEC-429: "Every residence that is not an RV should also get mailboxes" — src/poi.js gives this one none
     // FEAT-71. Turned broadside, the model's +X is its RIGHT flank — the entry-door side on a US RV
     // — and it faces the road; the pad's back edge is model -X. Seated 2.2 m back, the far side
     // (mirrors at x -1.46) stands 0.34 m off the back edge and the yard is the strip between the
@@ -1142,13 +1143,12 @@ export const PROP_MODELS = {
   // eyeballed — mailbox.py's header has the working. mailboxLeaning has NO Flag node on
   // purpose (its flag is snapped off): CHECK FOR THE NODE, do not assume it.
   //
-  // POOL 'mailbox' (FEAT-275/280, owner 2026-11-17: "add the mailboxes to Larry's pool", "random mailboxes
-  // around"). Consumed ONLY by src/poi.js (mailboxKey): one per residence pad (Larry's and mom's, a satellite
-  // on the road edge of the pad), one per paper-route house, and a seeded few at unpicked house sites. They
-  // are NOT 'lawnFurniture': the yard scatter must not draw eleven of them. Placement is derived from road
-  // geometry and habitation (a verge a metre past the shoulder, door to the road), never scattered on bare
-  // ground. Knockable (DEC-394): a mailbox is a box on a post, so it breaks away and tumbles with the mass
-  // below (box ~2 kg + a 4x4 post ~6 kg; the pillar is masonry, the planter holds soil); crushN is the post.
+  // POOL 'mailbox' (FEAT-275, owner 2026-11-17: "add the mailboxes to Larry's pool"; DEC-429). Consumed ONLY by
+  // src/poi.js (mailboxKey / _residenceMailbox): one per residence that is not an RV (`rv` below), out on the
+  // road shoulder at one end of its pad, door to the road. No lone roadside ones (FEAT-280, withdrawn by the
+  // owner in DEC-429: "remove the random clutter boxes"). NOT 'lawnFurniture': the yard scatter must not draw
+  // eleven of them. Knockable (DEC-394): a mailbox is a box on a post, so it breaks away and tumbles with the
+  // mass below (box ~2 kg + a 4x4 post ~6 kg; the pillar is masonry, the planter holds soil); crushN is the post.
   // CHECK FOR the Flag node: mailboxLeaning has none.
   //
   // Reachable meanwhile via spawnModel('mailboxClassic') etc.
