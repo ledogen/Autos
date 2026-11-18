@@ -20,6 +20,7 @@ moves (station, camping area, auto shop) and gets steeper (38 % climb vs 19.1 %)
 or (2) re-pin to the seed he names (DEC-402's walk: data/tutorial.js, the gate's census, the smoke's tutorial checks,
 a record superseding DEC-402), or (3) change item 6 to "a restored side that grazes stays dropped" (no berth re-route),
 re-run the affected gates; then the landing request.
+Affected gates with the fix (`--serial --changed=src/road.js`): 77/78 green; red only tutorial-seed (the call above).
 
 ## Summary
 On seed 3200351065 the drive from the food vendor to Larry's is far longer than the map distance suggests, and the
@@ -234,7 +235,7 @@ branch (`wip/tutb2/`); `python3 -I wip/feat-265/tutcmp.py` prints the table; she
 ## Log
 - 2026-11-17: clearance fix (`_v2RestoreLegs`/`_v2RestoreGrazes`): road-clearance PASS, urquhart-restore 6/6,
   fingerprint-world identical to main; census 7 re-routed + 2 dropped of 27. Tutorial under B2 measured (838 -> 738
-  hard m, 19.1 -> 38 % climb); option 3 checked in a copy. Card feat265-b2-look rewritten.
+  hard m, 19.1 -> 38 % climb); option 3 checked in a copy. Affected gates 77/78 (tutorial-seed red). Card feat265-b2-look rewritten.
 - 2026-11-17: B2 built (`_v2RestoreDropped`, `urquhartEdges` dropped-side records); gate urquhart-restore 6/6;
   fingerprint-world identical; census 46 seeds; tutorial-seed FAILS on 1872706826 (shop moves): owner call. Card feat265-b2-look.
 - 2026-11-17: minted by the orchestrator from the owner's capture and note.
