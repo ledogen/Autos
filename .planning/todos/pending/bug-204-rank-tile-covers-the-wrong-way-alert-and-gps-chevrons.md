@@ -34,3 +34,4 @@ src/main.js / the HUD's rank tile and alert line
 
 ## Log
 - 2026-11-17 minted from the FEAT-267 sheet.
+- 2026-11-17 same strip, second case (`CarGame-land-gps/wip/feat-267/sheet-r2.jpg`, the hit frame): the "spawn point set" toast overlaps the rank bar, with the deed line and the "+$" pay read-out stacked under it. One fix should cover the whole top-centre strip.
