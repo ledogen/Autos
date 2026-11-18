@@ -706,6 +706,18 @@ export class MissionSystem {
         return Math.max(this.distanceToGo(), cum[ceil] - cum[bi])
     }
 
+    /**
+     * BUG-205 follow-up (owner 11-18: "add back in total distance… it helps you plan"): metres left for the WHOLE job
+     * along its line — the current leg (routeRemaining) plus every leg after it, in the order the GPS follows; a fetch's
+     * is out and back. Equals routeRemaining on a single-stop job and on the last leg.
+     */
+    routeTotalRemaining() {
+        const m = this.mission, leg = this.routeRemaining()
+        if (!m?.legs || !m.polyCum) return leg
+        const cum = m.polyCum, ceil = m.legs[this.leg ?? 0]?.polyIdx ?? cum.length - 1
+        return leg + cum[cum.length - 1] - cum[ceil]
+    }
+
     // ── per-frame ───────────────────────────────────────────────────────────────────────────
     /** Cheap: a countdown tick and one distance check. Safe to call every frame. */
     update(dt) {

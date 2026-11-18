@@ -97,8 +97,10 @@ for (const s of SEEDS) {
             const k = m.polyCum.findIndex(c => c >= u), p = m.poly[k]
             while (ms.leg < m.legs.length - 1 && k > (m.legs[ms.leg].polyIdx ?? Infinity)) { ms._polyIdx = m.legs[ms.leg].polyIdx; ms.leg++ }
             car.x = p.x; car.z = p.z
-            const after = ms.routeRemaining(), truth = truthM(car, doors[ms.leg])
-            out.hud.push({ seed: s, kind: j.kind, legs: m.legs.length, leg: ms.leg, u: Math.round(u), truth, before: oldRemaining(m, k), after })
+            const after = ms.routeRemaining(), truth = truthM(car, doors[ms.leg]), total = ms.routeTotalRemaining()
+            let totalTruth = truth   // BUG-205 follow-up: the planner's next stop, then stop to stop in the job's order
+            for (let i = ms.leg + 1; i < m.legs.length; i++) totalTruth += truthM(m.legs[i - 1].end, doors[i])
+            out.hud.push({ seed: s, kind: j.kind, legs: m.legs.length, leg: ms.leg, u: Math.round(u), truth, before: oldRemaining(m, k), after, total, totalTruth })
         }
     }
     ms.mission = null; ms.state = 'idle'
@@ -203,6 +205,10 @@ for (const k of ['multi-drop', 'fetch', 'waypoint']) {
     if (!r.length) { console.log(`  ${k.padEnd(11)} none`); continue }
     const eb = r.map(h => Math.abs(h.before - h.truth)), ea = r.map(h => Math.abs(h.after - h.truth))
     console.log(`  ${k.padEnd(11)} ${String(r.length).padStart(3)}  before ${med(eb).toFixed(0).padStart(5)} / ${Math.max(...eb).toFixed(0).padStart(5)}   after ${med(ea).toFixed(0).padStart(5)} / ${Math.max(...ea).toFixed(0).padStart(5)}`)
+}
+for (const k of ['multi-drop', 'fetch']) {
+    const r = out.hud.filter(h => h.kind === k && isFinite(h.totalTruth)), e = r.map(h => Math.abs(h.total - h.totalTruth))
+    if (r.length) console.log(`  ${k.padEnd(11)} total (parentheses) ${String(r.length).padStart(3)}  |err| ${med(e).toFixed(0)} / ${Math.max(...e).toFixed(0)}`)
 }
 console.log('\nBUG-212 follow-the-GPS drives: label · scen · drives · target changes · flip-backs · order flips · tour grew (max m) · unfinished')
 const groups = new Map()

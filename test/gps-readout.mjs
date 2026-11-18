@@ -26,9 +26,15 @@ at(5)
 check('multi-drop, leg 1: the metres to stop 1, not to the last stop', Math.abs(ms.routeRemaining() - 150) < 1e-6, `${ms.routeRemaining().toFixed(1)} m (job end 550 m)`)
 at(15)
 check('…and it counts down along the leg', Math.abs(ms.routeRemaining() - 50) < 1e-6, `${ms.routeRemaining().toFixed(1)} m`)
+check('…and the total is that leg plus the legs after it (the whole job left)', Math.abs(ms.routeTotalRemaining() - 450) < 1e-6, `${ms.routeTotalRemaining().toFixed(1)} m`)
 ms._polyIdx = multi.legs[0].polyIdx; ms.leg = 1   // acquire() at stop 1
 at(30)
 check('leg 2: the metres to the last stop', Math.abs(ms.routeRemaining() - 300) < 1e-6, `${ms.routeRemaining().toFixed(1)} m`)
+check('…on the last leg the total IS the leg (one number, no parentheses)', ms.routeTotalRemaining() === ms.routeRemaining())
+// A single-stop job (no legs): total = to go.
+ms.mission = { poly, polyCum: polyCumOf(poly), end: poly.at(-1) }; ms.leg = 0; ms._polyIdx = 0
+at(12)
+check('single stop: the total equals the first number', ms.routeTotalRemaining() === ms.routeRemaining() && Math.abs(ms.routeRemaining() - 480) < 1e-6)
 
 // A fetch: out to the pickup at the far end and back the same way (the poly retraces itself).
 const fpoly = [...poly, ...poly.slice(0, -1).reverse()]
@@ -37,6 +43,7 @@ const fetch = { poly: fpoly, polyCum: polyCumOf(fpoly), end: poly[0], fetch: tru
 ms.mission = fetch; ms.leg = 0; ms._polyIdx = 0
 at(10)
 check('fetch, out: the metres to the pickup, not out and back', Math.abs(ms.routeRemaining() - 500) < 1e-6, `${ms.routeRemaining().toFixed(1)} m (out and back 1100 m)`)
+check('…its total is out and back', Math.abs(ms.routeTotalRemaining() - 1100) < 1e-6, `${ms.routeTotalRemaining().toFixed(1)} m`)
 for (let i = 11; i <= 58; i++) { at(i); ms.routeRemaining() }   // drive on to 20 m short of the pickup
 check('…never matched onto the return beside it near the pickup', Math.abs(ms.routeRemaining() - 20) < 1e-6, `${ms.routeRemaining().toFixed(1)} m`)
 ms._polyIdx = fetch.legs[0].polyIdx; ms.leg = 1
