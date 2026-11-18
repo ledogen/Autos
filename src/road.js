@@ -12427,18 +12427,40 @@ export class RoadSystem {
         const solve = (ext, capAt, over) => {
             const { s, y0, cC, cS, dAt, interior, edge = 0, hold } = ext
             const M = s.length, maxReach = Math.max(0, reachCap - hold)
-            let reach = Math.min(maxReach, Math.max(reach0, 1)), best = null, resid = Infinity, free = null
-            for (let attempt = 0; attempt < 6; attempt++) {
-                const y = y0.slice(), r = reach
+            // The projection runs on the samples the widest window can free, ±2 (every constraint it can move): the
+            // rest of the run is pinned and skipped anyway, so the result is the same, without sweeping the whole run.
+            let i0 = M, i1 = -1
+            for (let i = 0; i < M; i++) { const d = dAt(i); if (d > hold - 8 - 1e-9 && d < hold + maxReach + 8) { if (i < i0) i0 = i; i1 = i } }
+            i0 = Math.max(0, i0 - 2); i1 = Math.min(M - 1, i1 + 2)
+            const sw = s.slice(i0, i1 + 1), cCw = cC.slice(i0, i1 + 1), cSw = cS.slice(i0, i1 + 1)
+            // one window of reach r: project, then the residual. A capped rung stops sweeping at 1 mm a sweep (the
+            // residual, not the step, decides the fit; the default 1e-5 crept on for hundreds of sweeps).
+            const trial = (r) => {
+                const y = y0.slice()
                 const fr = (i) => { const d = dAt(i); return interior(i) && d > hold + edge && d < hold + r }
-                projectProfile(s, y, { cCrest: cC, cSag: cS, cap: capAt, free: fr, maxIt: 600 })
+                if (i1 > i0) {
+                    const yw = y.slice(i0, i1 + 1)
+                    projectProfile(sw, yw, { cCrest: cCw, cSag: cSw, cap: (i) => capAt(i + i0), free: (i) => fr(i + i0), maxIt: 600, tol: over ? 1e-3 : undefined })
+                    for (let i = i0; i <= i1; i++) y[i] = yw[i - i0]
+                }
                 let res = 0
-                for (let i = 1; i < M - 1; i++) {
+                for (let i = Math.max(1, i0); i < Math.min(M - 1, i1 + 1); i++) {
                     const d = dAt(i); if (d < hold - 8 || d > hold + r + 8) continue
                     const d2 = y[i - 1] - 2 * y[i] + y[i + 1]
                     res = Math.max(res, -d2 - cC[i], d2 - cS[i])
                     if (over && (fr(i) || fr(i + 1))) res = Math.max(res, Math.abs(y[i + 1] - y[i]) - capAt(i) * (s[i + 1] - s[i]))
                 }
+                return { y, res, fr }
+            }
+            let reach = Math.min(maxReach, Math.max(reach0, 1)), best = null, resid = Infinity, free = null
+            // A capped rung that misses at its first window is tried once at the widest: if that misses too the rung
+            // cannot fit, and the next rung is tried without the four windows in between (~20 ms a junction).
+            for (let attempt = 0; attempt < 6; attempt++) {
+                if (over && attempt === 1 && reach < maxReach - 1e-6) {
+                    const wide = trial(maxReach)
+                    if (!(wide.res < 0.02)) return { best: wide.y, resid: wide.res, free: wide.fr, ok: false }
+                }
+                const { y, res, fr } = trial(reach)
                 if (res < resid) { best = y; resid = res; free = fr }
                 if (res < 0.02 || reach >= maxReach - 1e-6) break
                 reach = Math.min(maxReach, reach * 1.5)
