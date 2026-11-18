@@ -58,3 +58,7 @@ src/shadow-fade.js, src/main.js
 
 ## Log
 - 2026-11-18 minted by the orchestrator from the owner's chat message and capture.
+- 2026-11-18 fixed on land/bug-217-shadow-seam (bfc280b7, src/shadow-fade.js). Shaded-ground step 18.9 → −0.04 luma (capture 1); low sun 17.8 → −0.07;
+  capture 2 ground that changed brightness for a 20 m truck move 673 → 155 m² (the rest is the truck's shadow and grass). Noon unchanged.
+  Gates 10/10 affected, cdp-smoke PASS (38 steps), pad-e2e ALL OK, gpu-reset PASS. Shots, sheet and tools: wip/bug-217/ (shots.mjs, measure.mjs, edge.mjs, sheet.mjs).
+  Unverified: other quality tiers (only Ultra was shot), a moving sun, and the owner's own eyes. Card: owed/bug217-shadow-seam-look.json.
