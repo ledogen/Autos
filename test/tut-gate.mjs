@@ -7,6 +7,8 @@
 // 3b. P3a's lessons (FEAT-288 P3a): the flat → diagnostics → inventory → spare → tow path, break camp under Katie's talk,
 //     eating only the lesson's item, the sleep card's slider, and between cards (BETWEEN) the inventory / damage screen
 //     locked while the shop, the camp card, the job card and the tow stay free.
+// 3c. P3b's lessons (FEAT-288 P3b): the map beat (the map, Shopping, a waypoint on the station only, the legend, the map
+//     shut) and the shop beat (the peanuts only, check out only, leave only); every until is a main.js _UNTIL action.
 // 4. Release (BUG-183): no step → everything allowed, and main.js hands the gate null outside the tutorial and after a
 //    run's end (the browser half — nothing marked after a skip — is test/cdp-smoke.mjs's opening step).
 
@@ -103,6 +105,32 @@ ok(!allowsEl(swap, BETWEEN) && allowsEl(el('', ['#inv-screen'], ['[data-act="clo
 for (const [z, id] of [['#svc-screen', ''], ['#camp-panel', 'cp-break'], ['#camp-panel', 'cp-make'], ['#mission-panel', ''], ['#recovery-card', '']])
   ok(allowsEl(el(id, [z], ['button']), BETWEEN), `between cards: ${z} ${id} stays free`)
 ok(!BETWEEN.allow.some(q => !isSelector(q)), 'BETWEEN unlocks no locked action')
+
+// ── 3c. P3b's lessons: Katie's map beat (inside tut-picnic) and her shop beat (tut-shop) ──
+const mapBeat = DLG.TUT['tut-picnic'].filter(c => c.until)
+ok(mapBeat.map(c => c.until).join() === 'map,shoptab,waypoint,mapshut', `the map beat waits for: the map, Shopping, a waypoint, the map shut (${mapBeat.map(c => c.until)})`)
+ok(mapBeat.every(c => c.phone) && mapBeat.at(-1).holds && DLG.TUT['tut-picnic'].at(-1) === mapBeat.at(-1), 'the map beat is inside her call, which holds the line to the store')
+ok(mapBeat.every(c => allows('map', c) && allows('back (menus, cards, map)', c)), 'the map beat never locks the map or back')
+ok(mapBeat.every(c => allows('map: drop / clear the waypoint', c) === (c.until === 'waypoint')), 'the waypoint: refused on every map card but the waypoint card')
+ok(mapBeat.find(c => c.until === 'waypoint').hi.some(q => q.includes('{snack}')), "the waypoint card rings the station's row (main.js fills {snack})")
+const [pick, pay, bye] = DLG.TUT['tut-shop']
+ok(pick.answered && pick.phone && !bye.holds && [pick, pay, bye].map(c => c.until).join() === 'cart,bought,shopshut',
+  'tut-shop: her held call, the cart, the check out, the shop left, then her click')
+const nutRow = el('', ['#svc-screen', '#svc-screen [data-item="bagOfPeanuts"]'], ['button'])
+const gumRow = el('', ['#svc-screen', '#svc-screen [data-item="gummyWorms"]'], ['button'])
+const svc = (act) => el('', ['#svc-screen', `#svc-screen [data-act="${act}"]`], ['button', `[data-act="${act}"]`])
+ok(allowsEl(nutRow, pick) && !allowsEl(gumRow, pick) && !allowsEl(svc('checkout'), pick), 'shop card 1: the peanuts row and its add to cart only')
+ok(allowsEl(svc('checkout'), pay) && !allowsEl(svc('discard'), pay) && !allowsEl(svc('unqueue'), pay) && !allowsEl(nutRow, pay), 'shop card 2: check out only (no discard, no ×)')
+ok(!allowsEl(svc('checkout'), bye) && !allowsEl(nutRow, bye) && allowsEl(el('', ['#svc-screen'], ['[data-act="close"]']), bye), 'shop card 3: leave only')
+for (const c of [pick, pay, bye]) ok(['inventory', 'damage screen', 'camp', 'recovery'].every(a => !allows(a, c)), `shop card '${c.until}': the B menu's screens stay locked`)
+
+// Every until a card names is a main.js _UNTIL action; mom's gas call no longer waits on the brake (DEC-422); every waypoint
+// drop (N, pad Y, a click) passes the gate.
+const mainSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+const untils = new Set([...(mainSrc.match(/const _UNTIL = \{([\s\S]*?)\n\}/)?.[1] ?? '').matchAll(/^  (\w+): /gm)].map(m => m[1]))
+for (const [name, c] of cards) if (c.until) ok(untils.has(c.until), `${name}: until '${c.until}' is a main.js _UNTIL action`)
+ok(/stop === 'pump' && !serviceScreen\.isOpen\) _tut\('tut-gas'\)/.test(mainSrc), "main.js: mom's gas call fires as the shop closes, not on the brake")
+ok(/onWaypoint: \(p\) => [^\n]*_tutWaypointOk\(p\) && _setWaypoint\(p\)/.test(mainSrc), 'main.js: every waypoint drop passes _tutWaypointOk')
 
 // ── 4. release ──
 for (const a of actions) ok(allows(a, null), `no step: '${a}' allowed`)

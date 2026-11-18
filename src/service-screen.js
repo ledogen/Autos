@@ -570,7 +570,7 @@ export class ServiceScreen {
     const nxt = s.nextStock?.()
     // "Just a list of parts" (owner, 2026-11-13): an empty slot is no row; the head says when the next item lands.
     const rows = s.stock().flatMap((e, i) => !e ? []
-      : [Object.assign(node(String(i), chip(e.id) + shelfName(e), [this._buyOpts(e, i)], this._shelfInfo(e, i, now)), { attrs: ` data-slot="${i}"` })])
+      : [Object.assign(node(String(i), chip(e.id) + shelfName(e), [this._buyOpts(e, i)], this._shelfInfo(e, i, now)), { attrs: ` data-slot="${i}" data-item="${e.id}"` })])   // data-item: the tutorial's shop lesson (FEAT-288 P3b)
     return `<div class="sv-slot"><div class="sv-slothead">For sale${nxt ? ` <span class="sv-desc">· new stock in ${nxt}</span>` : ''}</div>`
       + this._level(rows, 0) + `</div>` + (this.store ? '' : this._myItems())
   }
@@ -590,7 +590,7 @@ export class ServiceScreen {
     const s = this.service, sockets = socketsFor(e.id)
     const fitQ = sockets.length && s.buyQuote(i, sockets[0]), carry = s.buyQuote(i)
     const why = s.locked?.(e) ?? null, ok = !why   // DEC-356: a row the shop will not sell now (main.js says why), its buttons off
-    return `<div data-slot="${i}"><div class="sv-row"><span class="sv-name sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</span></div>`   // the row's padding: as My items' first line
+    return `<div data-slot="${i}" data-item="${e.id}"><div class="sv-row"><span class="sv-name sv-desc sv-clamp">${PARTS[e.id]?.desc ?? ITEMS[e.id].desc}</span></div>`   // the row's padding: as My items' first line
       + (why ? `<div class="sv-row"><span class="sv-name sv-desc">${why}</span></div>` : '')
       + (sockets.length ? this._act('Fit on the truck', fitQ, sockets.length > 1   // a tire or wheel names its corner
         ? sockets.map(sk => btn('buy', where(sk), ok, `data-slot="${i}" data-socket="${sk}"`)).join(' ')

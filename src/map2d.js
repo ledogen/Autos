@@ -964,6 +964,9 @@ export class Map2D {
         if (k === 'Escape' && this._listId) { take(); this._leaveList() }
     }
 
+    /** The list's tab, 'missions' | 'shopping' (FEAT-288 P3b: the tutorial's map lesson waits on it). */
+    get tab() { return this._tab }
+
     /** FEAT-211: Missions ↔ Shopping. The new list starts with nothing highlighted, the map where it is. */
     _swapTab() {
         this._tab = this._tab === 'missions' ? 'shopping' : 'missions'
