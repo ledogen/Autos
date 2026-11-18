@@ -12433,6 +12433,10 @@ export class RoadSystem {
             for (let i = 0; i < M; i++) { const d = dAt(i); if (d > hold - 8 - 1e-9 && d < hold + maxReach + 8) { if (i < i0) i0 = i; i1 = i } }
             i0 = Math.max(0, i0 - 2); i1 = Math.min(M - 1, i1 + 2)
             const sw = s.slice(i0, i1 + 1), cCw = cC.slice(i0, i1 + 1), cSw = cS.slice(i0, i1 + 1)
+            // The window's cap and free mask as arrays: the sweeps read each up to 3× per sample per sweep, and the
+            // closures behind them (segG, dAt) cost more than the sweep's own arithmetic. Same values, same result.
+            const W = Math.max(0, i1 - i0 + 1), capW = new Float64Array(W), freeW = new Uint8Array(W)
+            for (let i = 0; i < W; i++) capW[i] = capAt(i + i0)
             // one window of reach r: project, then the residual. A capped rung stops sweeping at 1 mm a sweep (the
             // residual, not the step, decides the fit; the default 1e-5 crept on for hundreds of sweeps).
             const trial = (r) => {
@@ -12440,7 +12444,8 @@ export class RoadSystem {
                 const fr = (i) => { const d = dAt(i); return interior(i) && d > hold + edge && d < hold + r }
                 if (i1 > i0) {
                     const yw = y.slice(i0, i1 + 1)
-                    projectProfile(sw, yw, { cCrest: cCw, cSag: cSw, cap: (i) => capAt(i + i0), free: (i) => fr(i + i0), maxIt: 600, tol: over ? 1e-3 : undefined })
+                    for (let i = 0; i < W; i++) freeW[i] = fr(i + i0) ? 1 : 0
+                    projectProfile(sw, yw, { cCrest: cCw, cSag: cSw, cap: (i) => capW[i], free: (i) => freeW[i] === 1, maxIt: 600, tol: over ? 1e-3 : undefined })
                     for (let i = i0; i <= i1; i++) y[i] = yw[i - i0]
                 }
                 let res = 0
