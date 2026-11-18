@@ -267,6 +267,7 @@ const STEPS = [
       return c && { x: c.imp.x, z: c.imp.z, h: Math.atan2(-c.c.tx * c.dir, -c.c.tz * c.dir), rel: c.face.rel } })()`)
     check(!!c, 'no rock slide candidate within 1500 m of the seed-6 spawn')
     if (!c) return
+    const h0 = await js('(f => Math.atan2(-f.x, -f.z))(new window.__vs.position.constructor(0, 0, -1).applyQuaternion(window.__vs.quaternion))')
     let touched = false, tries = 0, faded = false, onDeck = false, n0 = await js('window.__rockslide.events')
     for (; tries < 3 && !touched; tries++) {
       await seat(c.x, c.z, c.h)
@@ -291,6 +292,13 @@ const STEPS = [
     check(onDeck, 'no slide rock ever reached the road deck')
     check(touched, 'three slides on a parked truck in the lane and no rock touched it')
     console.log(`  rockslide: candidate at (${c.x.toFixed(0)}, ${c.z.toFixed(0)}), the truck touched on slide ${tries}`)
+    // Leave the world as boot did for the steps after: no rocks, the truck back where it booted (seat() moved the spawn
+    // to the cut: re-seat at home with its boot heading), then R for fresh parts and tires.
+    await js('window.__rockslide.clear()')
+    await seat(home.x, home.z, h0)
+    await tap('r')
+    check(await until(async () => { const q = await car(); return q.v < 0.2 && Math.hypot(q.x - home.x, q.z - home.z) < 5 }, 5000),
+      'after the slides, R did not re-seat the truck at the spawn')
   }],
   ['boreCam', async () => {
     // FEAT-246: seed 6's nomenu spawn is in a bore (a test seed). The right stick swings the chase camera a full turn
