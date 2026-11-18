@@ -7139,12 +7139,63 @@ export class RoadSystem {
             const pa = this._nodePos(a), pc = this._nodePos(c)
             const l = Math.hypot(pc.x - pa.x, pc.z - pa.z)
             const chord = { x: (pc.x - pa.x) / l, z: (pc.z - pa.z) / l }
+            const legsInf = this._v2Infeasible || 0
+            const legs = this._v2RestoreLegs(g, drop, a, c)
+            this._v2Infeasible = legsInf   // the legs' samples replay their own tallies; this side's verdict is its own
             const inf0 = this._v2Infeasible || 0
-            const smp = this._v2SampleEdge(a, c, { startDir: chord, goalDir: chord })
+            const smp = this._v2SampleEdge(a, c, { startDir: chord, goalDir: chord, occupied: legs.occupied })
             if (!smp || (this._v2Infeasible || 0) > inf0) { this._v2Infeasible = inf0; continue }
+            if (this._v2RestoreGrazes(smp, legs.samples, key(a), key(c))) continue
             this._registerRun(`g:${key(a)}:${key(c)}`, smp.cl, a, c)
             this._v2Restored.add(key(a) + '|' + key(c)); this._v2Restored.add(key(c) + '|' + key(a))
         }
+    }
+
+    // FEAT-265 clearance (FEAT-77 for a restored side): a restored side is outside the plan layer, so the clearance
+    // walk never makes it a loser. It routes instead with EVERY other leg at its two nodes as `occupied` (their
+    // shipped pass-2 lines, _v2RunSample: pure per edge, so window-invariant), each node's throat exempt as for a
+    // pass-2 loser. The router only prices the berth; a side that still grazes a leg (centres under the graze floor
+    // past the geometric throat, the road-clearance random-seed tier) stays dropped (_v2RestoreGrazes).
+    // ponytail: legs of the two nodes only — a restored side grazing a non-adjacent road or another restored side is
+    // left to the gate; add _v2ClearPartners' chord partners if one shows.
+    _v2RestoreLegs(g, drop, a, c) {
+        const key = g.key, kA = key(a), kC = key(c)
+        const delF = this._v2DelFrozen?.rev === this._networkRev ? this._v2DelFrozen.del : null
+        const dropped = (x, y) => (drop && drop.has(x + '|' + y)) || (delF && delF.size && delF.has(x + '|' + y))
+        const THROAT = this._v2Costs().clearThroatM ?? 30
+        const lines = [], exempt = [], samples = []
+        for (const [nk, n, other] of [[kA, a, kC], [kC, c, kA]]) {
+            const p = this._nodePos(n)
+            exempt.push(p.x, p.z, THROAT)
+            for (const o of [...(g.adj.get(nk) || [])].sort()) {
+                if (o === other || dropped(nk, o)) continue
+                const Q = this._v2RunSample(g, drop, n, o.split(',').map(Number))
+                if (!Q || !Q.pts.length) continue
+                const flat = new Float64Array(Q.pts.length * 3)
+                for (let i = 0; i < Q.pts.length; i++) { flat[3 * i] = Q.pts[i].x; flat[3 * i + 1] = Q.pts[i].y; flat[3 * i + 2] = Q.pts[i].z }
+                lines.push(flat)
+                samples.push({ Q, nk })
+            }
+        }
+        return { samples, occupied: lines.length ? { lines, exempt, exemptM: THROAT, prm: this._v2ClearPrm() } : null }
+    }
+
+    // Does restored route S (spelled kA → kC) come under the graze floor of a leg past the geometric throat at the node
+    // they share? The same walk the clearance pass's graze test makes (bores excluded).
+    _v2RestoreGrazes(S, samples, kA, kC) {
+        const FLOOR = this._v2ClearPrm().floor
+        for (const { Q, nk } of samples) {
+            const atA = nk === kA
+            const t = this._v2ThroatLen(S, atA, Q)
+            for (let i = 0; i < S.pts.length; i++) {
+                const s = S.polyCum[i]
+                if (atA ? s < t : s > S.L - t) continue
+                if ((S.spans || []).some((sp) => s >= sp.s0 - 80 && s <= sp.s1 + 80)) continue
+                const h = _nearestWithinXZ(S.pts[i].x, S.pts[i].z, Q.pts, Q.polyCum, 60)
+                if (h && h.d < FLOOR) return true
+            }
+        }
+        return false
     }
 
     /**
