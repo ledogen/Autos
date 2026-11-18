@@ -53,8 +53,11 @@ export const SLIDE = {
   // Timing (the study's arrival model: t = a + b·√(drop) + lateral/v_road)
   fadeS: 0.5,
   minSpeed: 5,            // m/s — slower than this, the director holds its pick
-  lifeS: 120,             // a settled slide is reclaimed this long after release, once out of view…
-  farM: 150,              // …and beyond this distance from the truck (never vanishes in view)
+  // Cleanup, the owner's rule (2026-10-15, on the ticket; dead deer FEAT-111 the same): resting rocks stay where they
+  // land and go once their ground chunk is unloaded AND keepH game hours have passed ("an hour or two"). Out of the
+  // chunk ring sooner, they are frozen (no collider under them) and wake when it streams back. Never in view.
+  keepH: 1.5,
+  maxSlides: 4,           // past this the oldest slide whose ground is unloaded goes (a long free-roam drive)
 }
 
 /**
@@ -259,8 +262,9 @@ export const releaseDue = (aheadM, v, T) => aheadM > 0 && aheadM <= v * T
  * update() runs once per frame with the truck's pose; nothing here touches the engine or the save.
  */
 export class RockslideDirector {
-  constructor ({ debris, road, heightAt, hasGround = () => true, rng = Math.random, params = SLIDE }) {
+  constructor ({ debris, road, heightAt, hasGround = () => true, clockH = () => 0, freeze = () => {}, rng = Math.random, params = SLIDE }) {
     this._debris = debris; this._road = road; this._heightAt = heightAt; this._hasGround = hasGround
+    this._clockH = clockH; this._freeze = freeze
     this._rng = rng; this.P = params
     this._odo = 0; this._armAt = nextArmM(rng, params.perKm)
     this.armed = false; this.pick = null; this._scan = null
@@ -328,7 +332,7 @@ export class RockslideDirector {
       sl.age += dt
       if (sl.mat.opacity < 1) sl.mat.opacity = Math.min(1, sl.age / this.P.fadeS)
     }
-    this._cleanup(truck)
+    this._cleanup()
     if (!enabled) return
     this._odo += Math.hypot(truck.vx, truck.vz) * dt
     if (!this.armed && this._odo >= this._armAt) { this.armed = true; this._scan = null }
@@ -381,16 +385,20 @@ export class RockslideDirector {
       if (h) bodies.push(h)
     }
     if (!bodies.length) { mat.dispose(); return }
-    this.slides.push({ bodies, mat, age: 0, x: p.face.rel.x, z: p.face.rel.z })
+    this.slides.push({ bodies, mat, age: 0, x: p.face.rel.x, z: p.face.rel.z, h0: this._clockH(), frozen: false })
     this.events++
     this.last = { at: { x: p.face.rel.x, z: p.face.rel.z }, imp: p.imp, rocks: bodies.length, dropM: p.face.dropM, T: p.T }
   }
 
-  /** A slide goes once it is old AND far from the truck (never in view), or at once if its ground has streamed out. */
-  _cleanup (t) {
+  /** The owner's rule (SLIDE.keepH): ground unloaded AND keepH hours on → gone; unloaded sooner → frozen until it returns. */
+  _cleanup () {
     for (let i = this.slides.length - 1; i >= 0; i--) {
-      const sl = this.slides[i], d = Math.hypot(sl.x - t.x, sl.z - t.z)
-      if ((sl.age > this.P.lifeS && d > this.P.farM) || !this._hasGround(sl.x, sl.z)) this._drop(i)
+      const sl = this.slides[i], ground = this._hasGround(sl.x, sl.z)
+      if (!ground && this._clockH() - sl.h0 >= this.P.keepH) { this._drop(i); continue }
+      if (ground === sl.frozen) { sl.frozen = !ground; this._freeze(sl.bodies, sl.frozen) }
+    }
+    for (let i = 0; this.slides.length > this.P.maxSlides && i < this.slides.length;) {
+      if (this.slides[i].frozen) this._drop(i); else i++
     }
   }
 

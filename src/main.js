@@ -2825,7 +2825,8 @@ const debrisSystem = new DebrisSystem(physicsEngine, scene)   // FEAT-36: thrown
 // FEAT-26 (DEC-400): rock slides off the cut slopes. Its rocks are debris bodies outside the throw cap; it reads the
 // road and the ground, never the save (a slide in flight is not saved: a reload drops it).
 const rockslides = new RockslideDirector({ debris: debrisSystem, road: () => roadSystem,
-  heightAt: (x, z) => terrainSystem ? terrainSystem.analyticHeight(x, z) : 0, hasGround: (x, z) => terrainPhysics.hasChunkAt(x, z) })
+  heightAt: (x, z) => terrainSystem ? terrainSystem.analyticHeight(x, z) : 0, hasGround: (x, z) => terrainPhysics.hasChunkAt(x, z),
+  clockH: () => daySystem.clockH(), freeze: (bodies, on) => debrisSystem.setEnabled(bodies, !on) })
 window.__rockslide = rockslides   // dev handle — the debug panel's "Rock slide now" and test/cdp-smoke.mjs
 
 // ── FEAT-96: the strapped load — a freight job's, or the debug "Load Cargo" pick ─────────────

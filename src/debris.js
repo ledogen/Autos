@@ -526,6 +526,11 @@ export class DebrisSystem {
     }
   }
 
+  /** FEAT-26: take live bodies out of the world (no collider under them) or put them back. Unknown handles are ignored. */
+  setEnabled (bodies, on) {
+    for (const b of bodies) if (this._live.some(r => r.body === b)) this._eng.setEnabled(b, on)
+  }
+
   _reclaim (rec) {
     this._eng.destroyBody(rec.body)
     this._scene.remove(rec.mesh)
