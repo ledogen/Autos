@@ -145,7 +145,8 @@ Same class as A, milder: a 7.1 % corner at one sample, 3 m inside a bore, 3.1 %/
 - [x] BUG-200 option E re-measured: fixes neither spot (B's foot gets sharper)
 - [ ] Owner: the junction class (card `bug216-bottoming-spots`)
 - [x] Fix 1 built, with vertical-curvature covering bores (line 0.04 /m)
-- [ ] Affected gates serial + smoke + pad-e2e green, landed
+- [x] Affected gates serial (84 green) + smoke (39 steps) + pad-e2e green
+- [ ] Landed
 
 ## Decisions
 
@@ -172,4 +173,5 @@ src/road.js (`_v2GradePts`, the near-bore BOUND), test/vertical-curvature.mjs, L
   recovery sag (BUG-97 class, owner call); E fixes neither. Census 12 seeds / 165 km. Harness note: drive-soak's
   `freshState` has no `bumpForce`, so its soak never sees spring wear.
 - 2026-11-18 fix 1 built (4df08e26, 7b54cb8b, ff64bd61; drive-soak 98df2bfc). road-tunnel, bore-junction-clearance,
-  vertical-curvature and tutorial-seed are green. Structural diff: topology identical. Affected serial run: see below.
+  vertical-curvature and tutorial-seed are green. Structural diff: topology identical. Affected serial run 84/84
+  green; cdp-smoke (39 steps, zero console errors) and pad-e2e green first try.
