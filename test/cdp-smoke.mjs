@@ -2449,8 +2449,25 @@ const STEPS = [
     check(await js('window.__tutorial().until') === 'damage', `the flat's card does not wait for V: ${JSON.stringify(await js('window.__tutorial()'))}`)
     await js('window.__inv.use("spareTire")'); await sleep(300)   // DEC-359: tire work before V is locked (silent)
     check(await js('!document.getElementById("dmg-screen").classList.contains("picking")'), 'the spare picker opened before the damage screen was looked at (DEC-359)')
+    // FEAT-288 P2 (src/tut-gate.js): the flat's card is a gate step — V is its lesson and every other locked action is
+    // refused: Tab, and a real mouse click on the inventory icon, open nothing; the V icon wears the ring, the inventory
+    // icon is dimmed. The mark is read on screen (checkVisibility), as a player sees it.
+    const gateMarks = () => js(`JSON.stringify({ inv: document.getElementById("inv-screen").classList.contains("open"),
+      hi: [...document.querySelectorAll(".tut-hi")].filter(e => e.checkVisibility()).map(e => e.id || e.className.split(" ")[0]),
+      locked: [...document.querySelectorAll(".tut-locked")].map(e => e.id).filter(Boolean) })`)
+    await sleep(300)   // the gate's 10 Hz paint
+    await tap('Tab'); await sleep(300)
+    { const r = await js('(() => { const b = document.getElementById("inv-icon").getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 } })()')
+      for (const type of ['mousePressed', 'mouseReleased']) await client.cmd('Input.dispatchMouseEvent', { type, x: r.x, y: r.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 })
+      await sleep(300)
+      const g = JSON.parse(await gateMarks())
+      check(!g.inv, `FEAT-288: at the flat, Tab or a click on the inventory icon opened the inventory (locked): ${JSON.stringify(g)}`)
+      check(g.hi.includes('dmg-icon') && g.locked.includes('inv-icon'), `FEAT-288: at the flat the V icon is not ringed on screen, or the inventory icon not dimmed: ${JSON.stringify(g)}`) }
     await tap('v'); await readCards()   // the damage screen's card: it waits for the spare to be tried
     check(await js('window.__tutorial().until') === 'spare', `the damage card does not wait for the spare: ${JSON.stringify(await js('window.__tutorial()'))}`)
+    await sleep(300)
+    { const g = JSON.parse(await gateMarks())   // FEAT-288: the second card's ring is on its own control, the inventory icon
+      check(g.hi.includes('inv-icon') && !g.hi.includes('dmg-icon') && !g.locked.includes('inv-icon'), `FEAT-288: at the damage card the inventory icon is not ringed and live: ${JSON.stringify(g)}`) }
     await tap('Escape')
     await js('window.__inv.use("spareTire")')
     check(await until(() => js('document.getElementById("dmg-screen").classList.contains("picking")'), 1000), 'the spare opened no tire picker')
@@ -2650,14 +2667,15 @@ const STEPS = [
           for (let i = 0; i < lines().length && !buy(); i++) lines()[i].click(); buy()?.click() })()`)
         console.log(`  skipMenus shop: cart ${await js('document.querySelector("#svc-screen [data-act=checkout]") ? "filled" : "empty"')}`)
       },
+      // FEAT-288 P2: between lessons the tutorial's base lock refuses V, Tab and X (src/tut-gate.js), so those three cases
+      // prove the refusal here and, after the skip, that nothing stays locked (below).
       damage: async () => {
         await tap('v')
-        check(await until(() => js('document.getElementById("dmg-screen").classList.contains("open")'), 2000), 'V opened no damage screen')
-        await readCards()
+        check(!await until(() => js('document.getElementById("dmg-screen").classList.contains("open")'), 1000), 'FEAT-288: V opened the damage screen between lessons (base lock)')
       },
       inventory: async () => {
         await tap('Tab')
-        check(await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 2000), 'Tab opened no inventory')
+        check(!await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 1000), 'FEAT-288: Tab opened the inventory between lessons (base lock)')
       },
       map: async () => {
         await key('m', true); await sleep(100); await key('m', false)
@@ -2672,8 +2690,8 @@ const STEPS = [
           return null })()`)
         check(r, 'no road clear of every POI near the joint')
         await tp(r.x, r.z, r.h); await park(true); await readCards()
-        await tap('x'); await readCards()   // BUG-181: in the tutorial the tow's card goes first
-        check(await until(() => js('document.getElementById("recovery-card").checkVisibility()'), 3000), 'X opened no recovery menu')
+        await tap('x'); await readCards()
+        check(!await until(() => js('document.getElementById("recovery-card").checkVisibility()'), 1000), 'FEAT-288: X opened the recovery menu between lessons (base lock)')
       },
     }
     let clean = null
@@ -2698,6 +2716,14 @@ const STEPS = [
       const after = await opened(), a = JSON.parse(after)
       console.log(`  skipMenus ${name}: open ${before} → ${after} · $${got.money} · ${got.gal} gal`)
       check(!a.list.length && !Object.entries(a).some(([k, v]) => k !== 'list' && v), `${name}: the skip left a menu open: ${after}`)
+      // FEAT-288 P2 / BUG-183: the skip leaves nothing locked or ringed, and the key the base lock refused works again
+      check(!await js('document.querySelectorAll(".tut-locked, .tut-hi").length'), `${name}: the skip left the tutorial gate's marks: ${await js('[...document.querySelectorAll(".tut-locked, .tut-hi")].map(e => e.id || e.className).join(", ")')}`)
+      if (name === 'damage') {
+        if (!await js('window.__vs.parked')) await park(true)
+        await tap('v')
+        check(await until(() => js('document.getElementById("dmg-screen").classList.contains("open")'), 2000), 'FEAT-288: after the skip, V still opened no damage screen (left locked)')
+        await tap('Escape')
+      }
       if (await js('window.__vs.parked')) {
         const g0 = await js('window.__vs.fuel.gal'); await hold('f', 1)
         check(await js(`window.__vs.fuel.gal <= ${g0} + 1e-6`), `${name}: F still pumps after the skip`)

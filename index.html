@@ -871,6 +871,16 @@
       box-shadow: 0 0 0 1px var(--accent-story), 0 0 12px rgba(127, 194, 255, 0.45);
     }
 
+    /* FEAT-288 P2: the tutorial's gate (src/tut-gate.js). .tut-hi rings what the card on screen is about in the
+       "press this" yellow, pulsing once a second; .tut-locked dims what the lesson does not use and takes no pointer;
+       .tut-nudge is the quiet "not that" of a refused press: a short shake, no sound. */
+    .tut-hi { outline: 2px solid var(--key); outline-offset: 2px; animation: tut-hi 1s ease-in-out infinite; }
+    @keyframes tut-hi { 50% { outline-color: color-mix(in srgb, var(--key) 40%, transparent); } }
+    .tut-locked { opacity: 0.35 !important; pointer-events: none !important; }
+    .tut-nudge { animation: tut-nudge 0.3s ease-in-out; }
+    .tut-hi.tut-nudge { animation: tut-nudge 0.3s ease-in-out, tut-hi 1s ease-in-out infinite; }
+    @keyframes tut-nudge { 25% { translate: -4px 0; } 75% { translate: 4px 0; } }
+
     /* FEAT-53: the run wallet — top-right, story mode only. Money and good deeds are RUN state,
        not mission state: visible whenever the region is live, including mid-drive (owner,
        2026-08-01). It never references par or the current job, so SM-INV-3 stays whole — the

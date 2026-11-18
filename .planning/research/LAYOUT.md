@@ -146,6 +146,9 @@ preset, gearbox, assists — under one localStorage key, defaults on any storage
 them) · `menu-nav.js` (FEAT-41 ↑/↓/←/→/Enter over whichever menu owns the screen — one path for keyboard
 and pad, the pad reaching it through gamepad.js's menu key map; a `.nav-focus` class, never DOM focus) ·
 `hud-menu.js` (the pad's B-hold icon menu over the HUD column: D-pad ↑/↓ walks the usable icons,
-release clicks the pick; gamepad.js drives it through `pad.hudMenu`).
+release clicks the pick; gamepad.js drives it through `pad.hudMenu`) · `tut-gate.js` (FEAT-288 P2 the
+tutorial's lock and highlight in one place: main.js hands it the step — the lesson card up, `allow` / `hi` from
+data/dialogue.js — and it refuses every other locked action at four hooks: keys and clicks here, `items()` in
+hud-menu.js, `live()` in menu-nav.js; `.tut-hi` / `.tut-locked` marks on a 10 Hz poll; null step = nothing locked).
 
 **Entry** — `main.js` (scene setup, fixed-step accumulator loop, wires everything). Its always-on `window.__*` dev handles are the CDP surface; `__cam` (the render camera) was added for `test/cdp-smoke.mjs` (INFRA-07), and `__story` / `__tp` / `__road` / `__world` exist only under `?prof=1`.

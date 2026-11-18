@@ -76,6 +76,7 @@ import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearb
 import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
+import { initTutGate } from './tut-gate.js'                // FEAT-288 P2: the tutorial's lock and highlight
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -10169,6 +10170,13 @@ const AUTOSAVE_S = 1          // s between rolling writes
 let _boardLog = null          // the live board's history (save.js logBoard) — the run save carries it
 let _restoring = false        // a resume's seat is in flight: the truck is not where the save says yet
 let _runEnded = false         // the run is over: never write it again (_discardRunSave)
+/** FEAT-288 P2 (src/tut-gate.js): the tutorial's step — null outside it (nothing locked), else the card up (its `allow` /
+ *  `hi`, data/dialogue.js). Between cards the base lock stands, except while the worst day's flat waits for its tow:
+ *  recovery stays open then, or a recovery card closed by mistake would strand the truck. Installed here, below every
+ *  name it reads (storySystem, _runEnded), so its poll can never touch one before it exists. */
+const _TUT_BASE = {}, _TUT_TOW = { allow: ['recovery', '#recovery-card'] }
+initTutGate(() => !_tutDrive() || _runEnded || !storySystem.isActive() ? null
+  : dialogueSystem.current() ?? (_eveFlat && !_eveTowed && dialogueSystem.has('tut-spareflat') ? _TUT_TOW : _TUT_BASE))
 
 /**
  * Why the run cannot be saved right now, or null. A board job and Larry's round ride the save
