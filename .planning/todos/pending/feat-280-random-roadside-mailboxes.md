@@ -12,7 +12,7 @@ lane: Engine & world
 # FEAT-280: Random mailboxes around the world, part of the clutter system
 
 ## Next steps
-Follows FEAT-72's flavour-by-household idea.
+Owner look (card mailboxes-look): are lone roadside mailboxes (~1.9 per km) right, or only at houses? The main.js hook that draws them is not built (FEAT-275's Next steps). FEAT-278 can later stream them: they are `poiSystem.mailboxes()` records.
 
 ## Summary
 Put random mailboxes around the world as part of the world-clutter system (separate from the signs).
@@ -26,13 +26,15 @@ Owner's words, verbatim (inbox 20261118013441-v9hd):
 One owner message (inbox 20261118013441-v9hd) split into three tickets: FEAT-278 (the clutter system and its streaming), FEAT-279 (the sign-system proposal), FEAT-280 (random mailboxes).
 
 ## Tracker
-- [ ] Mailboxes appear at random around the world
-- [ ] They come in through the world-clutter system (FEAT-278)
+- [x] Mailboxes appear at random around the world (a seeded walk, one candidate per 150 m of road, ~1.9 per km after the reject tests; drawing needs the main.js hook)
+- [ ] They come in through the world-clutter system (FEAT-278): that system does not exist yet; they are plain records (poiSystem.mailboxes()) so it can stream them
 
 ## Decisions
+- Placement derived from road geometry: a verge 1.2 m past the shoulder edge, door to the road, never on the deck, a junction pad, a roster pad, in a bore, in water or in a ditch (ground within 0.7 m of the road top). Deterministic per seed, cold, nothing saved.
+- Knockable (DEC-394), same masses as FEAT-275's.
 
 ## Open questions
-- Where do random mailboxes go: along roads, at driveways, away from houses?
+- Where do random mailboxes go: along roads, at driveways, away from houses? Built: along roads, no house needed ("random mailboxes around"). CONFLICT to flag: a lone mailbox with no house reads as litter (the FEAT-71 rule: nothing spawns without an anchor that reads as habitation), and DEC-398 ("never any extra distractions") says only the route's houses are targets: a lone mailbox is not a target (no halo) but a player may aim at it. Owner's call: keep lone ones, only at house sites, or none.
 
 ## Links
 FEAT-72, FEAT-278, FEAT-275, ASSET-22
@@ -41,4 +43,5 @@ FEAT-72, FEAT-278, FEAT-275, ASSET-22
 assets/models/mailbox*.glb · the clutter system
 
 ## Log
+- 2026-11-18 land/feat-275-280-mailboxes: poi.js _mailboxAt / _placeMailboxesOnEdge (poiMailboxSpacing 150, poiMailboxSep 60), test/mailbox-census.mjs (12 seeds). Draw needs the main.js hook.
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118013441-v9hd).

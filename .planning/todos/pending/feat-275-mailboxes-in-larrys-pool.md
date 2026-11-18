@@ -12,7 +12,7 @@ lane: Places and Missions
 # FEAT-275: Add the mailboxes to Larry's pool
 
 ## Next steps
-A lane registers the mailboxes in Larry's pool.
+Owner look (card mailboxes-look). The src/main.js hook that draws the roadside ones is NOT built (another agent's file): `wip/mailboxes/main-hook.txt` in the lane worktree, ~6 lines, then the FEAT-276 halo has a mailbox to sit on.
 
 ## Summary
 Put the mailbox models (ASSET-22, built, unplaced) into Larry's pool, so a paper route has a mailbox to aim at.
@@ -30,10 +30,13 @@ Owner's words, verbatim (inbox 20261118013250-sf5w):
 Paper-route juice, one owner message (inbox 20261118013250-sf5w) split into four tickets: ASSET-91 (houses), FEAT-275 (mailboxes in Larry's pool), FEAT-276 (halo), FEAT-277 (thrown-paper physics). He said it follows FEAT-266, which landed 2026-11-17.
 
 ## Tracker
-- [ ] Mailbox models are in Larry's pool and appear as paper-route targets or beside them
+- [x] Mailbox models are in Larry's pool and appear as paper-route targets or beside them (data + placement done; the roadside ones need the main.js hook to DRAW — see Next steps)
 - [ ] The target halo (FEAT-276) sits on a mailbox
 
 ## Decisions
+- Read "Larry's pool" as the residence pool Larry's house is dressed from, plus the paper-route houses: a new pool tag `mailbox` (11 flavours, uniform draw per place), NOT `lawnFurniture` (eleven of them would swamp the yard scatter). Agent's reading, awaiting the owner's look.
+- One mailbox per recipient house (the open question's recommended answer): Larry's and mom's pads carry one on the pad's road edge, every paper-route house one on its verge.
+- Knockable, DEC-394: each flavour has a mass (8 kg classic .. 150 kg masonry pillar).
 
 ## Open questions
 - How the mailboxes sit with the houses: one per recipient house, or standalone? He did not say.
@@ -45,4 +48,5 @@ FEAT-266, FEAT-276, FEAT-72, FEAT-71, ASSET-22
 src/poi.js · data pools · assets/models/mailbox*.glb
 
 ## Log
+- 2026-11-18 land/feat-275-280-mailboxes: pool tag + knock masses (data/prop-models.js), poi.js mailboxKey / dressYard pad mailbox / _mailboxAt route-house mailboxes, test/mailbox-census.mjs. Roadside draw needs the main.js hook (wip/mailboxes/main-hook.txt).
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118013250-sf5w).
