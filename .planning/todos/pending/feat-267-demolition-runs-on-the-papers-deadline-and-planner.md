@@ -12,8 +12,8 @@ lane: SM-3 missions
 # FEAT-267: Demolition runs on the papers' deadline and route planner
 
 ## Next steps
-Missions lane (Opus), AFTER FEAT-266 lands (it changes the planner and guide this reuses): build it; the owner drives
-a demolition job and confirms the slack number.
+Built on `land/feat-267-demolition-deadline` (see Log). The owner drives a demolition job on the play build and answers
+the owed card `feat267-demolition-drive` (the slack number, the deadline rule, the words).
 
 ## Summary
 A demolition job becomes a hurried job like a paper round: one deadline for the whole job, priced from the planned
@@ -38,11 +38,11 @@ To build, mirroring the paper round as FEAT-266 leaves it:
   rule (coverage and time) is the model; anything it does not answer goes on the card as a question.
 
 ## Tracker
-- [ ] One deadline from the planned tour; the 40 s hit window removed (code, saves, HUD line, run log)
-- [ ] Rank bar and time rank as a hurried job; the letter's rule stated
-- [ ] GPS follows the remaining tour and turns back for a missed target when shorter
-- [ ] Slack set slightly easier than courier's, number on the card
-- [ ] Gates and the smoke's demolition step updated; saves from before still load
+- [x] One deadline from the planned tour; the 40 s hit window removed (code, saves, HUD line, run log)
+- [x] Rank bar and time rank as a hurried job; the letter's rule stated
+- [x] GPS follows the remaining tour and turns back for a missed target when shorter
+- [x] Slack set slightly easier than courier's, number on the card (1.25 vs 1.0 [DEFAULT])
+- [x] Gates and the smoke's demolition step updated; saves from before still load
 - [ ] Owner drives a demolition job
 
 ## Decisions
@@ -53,3 +53,8 @@ To build, mirroring the paper round as FEAT-266 leaves it:
 
 ## Log
 - 2026-11-17: minted by the orchestrator from the owner's ruling in chat.
+- 2026-11-17 (lane s): built. Deadline par × 2.25 (`DEADLINE_SLACK.demolition` 1.25 [DEFAULT]; courier 1.0 = par × 2). Letter = time
+  (gradeRun), only with every target down; at the deadline with any standing the job expires unpaid (DEC-004, the paper fare's rule).
+  Guide = paper-route.js `planGuideJob` (shared with the paper re-plan) over one stop a cluster (`siteStops`), leg via `tourLeg`.
+  Impatient / Patient now apply. RANK_TABLE.demolition, hitWindowS, nearestTarget/guideTo, lastHitS gone. Clean-run model:
+  wip/feat-267/clean-run.log (9 sites, 0.69–0.72 par at 40 km/h). Gates/smoke: see the branch report.
