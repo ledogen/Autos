@@ -4795,7 +4795,10 @@ const _packOnGround = () => runWorldItems.items.find(it => it.entry.id === 'pack
 // (tut-snackcamp), Katie's call (tut-katie).
 const TUT_SNACK = 'bagOfPeanuts'
 const _snackOnBoard = () => inventorySystem.list().some(r => r.id === TUT_SNACK)
-const _snackBought = () => dialogueSystem.has('tut-snackcamp') || _snackOnBoard()
+// FEAT-288 P3b: bought means checked out. The cart previews its lines on the truck and the inventory (discard restores
+// them), so a bag only added to the cart is already "on board": read as bought, it skipped Katie's check out card and
+// sent the day to the pump with the purchase still undoable. (_snackOnBoard alone stays right for "one bag will do".)
+const _snackBought = () => dialogueSystem.has('tut-snackcamp') || (_snackOnBoard() && !serviceCenter.cart.length)
 const _snackShop = () => {
   const L = _larry(), d = q => Math.hypot(q.x - L.x, q.z - L.z)
   return L ? poiSystem.list().filter(q => q.type === 'gasStation').sort((a, b) => d(a) - d(b))[0] ?? null : null
