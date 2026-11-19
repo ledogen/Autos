@@ -457,6 +457,20 @@ await js(`(async () => { window.__o = (${appMod('/src/gamepad.js')}).PAD_PARAMS.
 await sleep(200)
 const dzSet = await js('window.__o')
 check(dzSet === 0.12 && JSON.parse(await js('localStorage.getItem("autos-settings/1")')).stickDeadzone === 0.12, `stick deadzone → 12 %, live and saved (${dzSet})`)
+// FEAT-294 (DEC-431): the pad layout row, past controller vibration: Professor → Ventura Highway, live and saved, and the
+// binding chart and the side menu's "hold" line name its buttons.
+await press(DOWN, 2); await press(RIGHT)
+await js(`(async () => { window.__o = (${appMod('/src/gamepad.js')}).PAD_PARAMS.padLayout })()`)
+await sleep(200)
+const lay = await js('window.__o')
+check(lay === 'Ventura Highway' && JSON.parse(await js('localStorage.getItem("autos-settings/1")')).padLayout === 'Ventura Highway', `pad layout → Ventura Highway, live and saved (${lay})`)
+const chart = () => js(`Object.fromEntries([...document.querySelectorAll('#cs-bindings tr')].map(r => [r.cells[0].textContent, r.cells[2].textContent]))`)
+let ch = await chart()
+check(ch['handbrake / park (tap)'] === 'A' && ch['upshift (manual)'] === 'B' && ch['downshift (manual)'] === 'X' && ch['clutch (manual)'] === 'LB'
+  && ch.inventory === 'RB (hold, ↑/↓, release)' && ch['abandon job (parked; twice)'] === 'RB + ↑ (hold RB, ↑, release)'
+  && ch['back (menus, cards, map)'] === 'B' && ch['throw paper (aiming)'] === 'right stick aims, RB tap' && ch['cards: pick / press'] === 'D-pad / A (card up)',
+  `the binding chart shows Ventura Highway's buttons: ${JSON.stringify(ch)}`)
+check(await js('document.querySelector("#hud-b-hint > .kc-pad").textContent') === 'RB', 'the side menu\'s "hold" line reads RB')
 await press(B)
 check(!await shown('mm-settings-panel') && await shown('pm-resume'), 'B steps back to the pause list')
 await press(START)
@@ -473,5 +487,107 @@ check((await selVal('worldPreset')).includes('casual') && (await selVal('gearbox
       'after a reload the setup page shows casual / manual')
 await press(B)
 check(!await js('document.getElementById("main-menu").classList.contains("setup")'), 'B backs out of the setup page')
+await js(`(async () => { window.__o = (${appMod('/src/gamepad.js')}).PAD_PARAMS.padLayout })()`)
+await sleep(200)
+ch = await chart()
+check(await js('window.__o') === 'Ventura Highway' && ch['handbrake / park (tap)'] === 'A', `FEAT-294: after a reload the pad layout is still Ventura Highway, chart too (${await js('window.__o')})`)
+
+// ── FEAT-294 (DEC-431): Ventura Highway, driving. A handbrake / park tap, B up, X down, LB clutch, RB held the side menu
+// (RB tap still throws while aiming). Every parked screen: A selects, B closes, then the gas rolls the truck away; a press
+// that selected or backed never acts as a driving button when its screen closes under it. Free roam, the automatic first.
+await c.cmd('Page.navigate', { url: `http://localhost:${PORT}/index.html?nomenu=1&seed=6` })
+for (let t = 0; t < 160 && !(await js('window.__rsReady === true')); t++) await sleep(250)
+await sleep(500)
+await js(fakePad)
+await js(`(async () => { const m = ${appMod('/src/gamepad.js')}; window.__padMod = m; window.__vhKeys = []
+  addEventListener('keydown', e => __vhKeys.push(e.key), true) })()`)
+await sleep(200)
+check(await js('__padMod.PAD_PARAMS.padLayout') === 'Ventura Highway', 'the free-roam boot reads the saved layout')
+const keysSeen = () => js('__vhKeys.splice(0).join()')
+const reset = async () => { await js('__fp.b[7] = 0; __fp.b[15] = 1'); await sleep(1300); await js('__fp.b[15] = 0'); await sleep(2500) }
+await js('__fp.b[7] = 0.5'); await sleep(400); await js('__fp.b[7] = 0'); await sleep(200)   // the pad drives; the boot's latch let go
+await reset()
+s = await vs(); check(s.parked && s.v < 0.2, `VH: D-pad → hold parks the truck at rest (parked=${s.parked})`)
+await keysSeen()
+await press(A); s = await vs()
+const aUn = !s.parked, aKeys = await keysSeen()
+await press(A); s = await vs()
+check(aUn && s.parked && aKeys === ' ' && await keysSeen() === ' ', `VH: an A tap lets the parking brake go, the next latches it (Space only: "${aKeys}")`)
+await js('__fp.b[0] = 1'); await sleep(300); s = await vs(); await js('__fp.b[0] = 0'); await sleep(200)
+check(s.hb, `VH: A held is the handbrake (hb=${s.hb})`)
+if (!(await vs()).parked) await press(A)
+await keysSeen()
+// RB held: the side menu, D-pad ↓ walks it, release opens the pick. Parked, so the park zone's icons are on it.
+await js('__fp.b[5] = 1'); await sleep(250)
+const vhPick = await pick(), vhOn = await menuOn()
+await js('__fp.b[13] = 1'); await sleep(150); await js('__fp.b[13] = 0'); await sleep(150)
+const vhWalk = await pick()
+await js('__fp.b[12] = 1'); await sleep(150); await js('__fp.b[12] = 0'); await sleep(150)
+await js('__fp.b[5] = 0'); await sleep(500)
+check(vhOn && vhPick === 'inv-icon' && vhWalk === 'dmg-icon' && await inv() && !await menuOn(), `VH: RB held opens the side menu (${vhPick}), ↓ walks it (${vhWalk}), release opens the pick (inventory ${await inv()})`)
+check(!/ /.test(await keysSeen()), 'VH: the RB hold sent no Space (RB is not the handbrake)')
+// The inventory: A selects (on its highlight), B closes, the gas rolls away.
+await press(A); s = await vs()
+check(await inv() && s.parked && !/ /.test(await keysSeen()), `VH inventory: A selects and stays a select (open ${await inv()}, parked ${s.parked})`)
+await js('__fp.b[1] = 1'); await sleep(300); await js('__fp.b[1] = 0'); await sleep(300)   // held past the close: the drive layout comes up under it
+check(!await inv() && (await vs()).parked && !/\be\b/.test(await keysSeen()), 'VH inventory: B closes it, the truck still parked, and that back never upshifts')
+const rolls = async (what) => {
+  await js('__fp.b[7] = 0.6'); await sleep(1200); s = await vs(); await js('__fp.b[7] = 0'); await sleep(200)
+  check(!s.parked && s.v > 0.5, `VH ${what}: after B the gas lets the parking brake go and rolls the truck (parked ${s.parked}, v ${s.v.toFixed(2)})`)
+}
+await rolls('inventory'); await reset(); await keysSeen()
+// An A press that CLOSES a screen is the screen's: the inventory's back button, held past the close, never pulls the handbrake.
+await js('__fp.b[5] = 1'); await sleep(250); await js('__fp.b[5] = 0'); await sleep(500)
+for (let i = 0; i < 14 && !await js('!!document.querySelector("#inv-screen .nav-focus[data-act=close]")'); i++) await press(DOWN)
+check(await js('!!document.querySelector("#inv-screen .nav-focus[data-act=close]")'), 'VH: the D-pad reaches the inventory\'s back button')
+await keysSeen()
+await js('__fp.b[0] = 1'); await sleep(400); await js('__fp.b[0] = 0'); await sleep(300)
+s = await vs()
+check(!await inv() && s.parked && !/ /.test(await keysSeen()), `VH: A on the back button closes the inventory and never toggles the handbrake (parked ${s.parked})`)
+// The damage screen: RB menu ↓, A selects a part, B closes, the gas rolls away.
+await js('__fp.b[5] = 1'); await sleep(250); await js('__fp.b[13] = 1'); await sleep(150); await js('__fp.b[13] = 0'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(500)
+const dmgOpen = () => js('document.getElementById("dmg-screen").classList.contains("open")')
+check(await dmgOpen(), 'VH: RB menu ↓ release opens the damage screen')
+await press(DOWN); await press(A)
+check(await dmgOpen() && (await vs()).parked && !/ /.test(await keysSeen()), 'VH damage screen: A selects, the screen stays, no handbrake')
+await press(B)
+check(!await dmgOpen() && (await vs()).parked && !/\be\b/.test(await keysSeen()), 'VH damage screen: B closes it, parked, no upshift')
+await rolls('damage screen'); await reset(); await keysSeen()
+// The map opened at rest (FEAT-194: it holds the truck): A selects (Enter), B closes it, the gas rolls away.
+await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
+await press(A); await js('__fp.b[7] = 0.5'); await sleep(300); s = await vs(); await js('__fp.b[7] = 0'); await sleep(100)
+check(await mapShown() && s.parked && /Enter/.test(await keysSeen()), `VH map at rest: A is Enter, the gas does not release it (parked ${s.parked})`)
+await press(B)
+check(!await mapShown() && (await vs()).parked, 'VH map: B closes it, still parked')
+await rolls('map'); await reset(); await keysSeen()
+// RB while aiming (throwReady forced): a tap throws (F, no menu); held past the tap it is the side menu, not the handbrake.
+await js('window.__tr0 = __padMod.pad.throwReady; __padMod.pad.throwReady = () => true')
+await js('__fp.b[5] = 1'); await sleep(100); await js('__fp.b[5] = 0'); await sleep(200)
+const tapKeys = await keysSeen()
+check(tapKeys === 'f' && !await menuOn(), `VH aiming: an RB tap throws (keys "${tapKeys}"), no menu`)
+await js('__fp.b[5] = 1'); await sleep(450)
+const heldMenu = await menuOn(), heldKeys = await keysSeen()
+await js('__fp.b[5] = 0; __padMod.pad.throwReady = __tr0'); await sleep(500)
+check(heldMenu && !/[f ]/.test(heldKeys) && await inv(), `VH aiming: RB held past the tap is the side menu (menu ${heldMenu}, keys "${heldKeys}"), its release opens the pick`)
+await press(B); await sleep(4000)   // the F tap's practice-throw view runs out
+// FEAT-126 manual through Ventura Highway: B up, X down, LB clutch.
+await js(`(async () => { const R = (${appMod('/data/ranger.js')}).RANGER_PARAMS, T = (${appMod('/data/transmissions.js')}).TRANSMISSIONS
+  Object.assign(R, T.m5odr1); Object.assign(__vs.drivetrain, { mGear: 0, shiftT: 0, locked: false }); window.__R = R })()`)
+await sleep(300)
+// B backing out of a screen never shifts: the inventory over neutral, B held past its close.
+await js('__fp.b[5] = 1'); await sleep(250); await js('__fp.b[5] = 0'); await sleep(500)
+await js('__fp.b[1] = 1'); await sleep(400); await js('__fp.b[1] = 0'); await sleep(400)
+check(!await inv() && await gear() === 0 && (await vs()).parked, `VH manual: B closes the inventory and stays in neutral (gear ${await gear()})`)
+await press(A)   // A: let the parking brake go
+await press(B); await sleep(400)
+check(await gear() === 1, `VH manual, assist ON: B shifts N → 1 (gear ${await gear()})`)
+await press(2); await sleep(400)
+check(await gear() === 0, `VH manual: X shifts 1 → N (gear ${await gear()})`)
+await js('__R.clutchAssist = false')
+await press(B); await sleep(400)
+check(await gear() === 0, `VH manual, assist OFF: B without LB is rejected (gear ${await gear()})`)
+await js('__fp.b[4] = 1'); await sleep(200); await press(B); await sleep(400); await js('__fp.b[4] = 0')
+check(await gear() === 1, `VH manual, assist OFF: LB + B shifts N → 1 (gear ${await gear()})`)
+await js('__R.clutchAssist = true')
 console.log(fails ? `${fails} FAILED` : 'ALL OK', '| console errors:', errs.length ? errs : 'none')
 c.close(); cleanup(); process.exit(fails ? 1 : 0)
