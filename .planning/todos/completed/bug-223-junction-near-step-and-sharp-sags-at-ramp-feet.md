@@ -1,7 +1,7 @@
 ---
 id: BUG-223
 type: bug
-status: open
+status: done
 severity: major
 opened: 2026-11-18
 source: BUG-216 agent, 2026-11-18
@@ -34,3 +34,4 @@ BUG-216, BUG-200, BUG-97, DEC-409
 
 ## Log
 - 2026-11-18 minted by the orchestrator.
+- 2026-11-18 CLOSED, not fixed. Owner on card `bug216-bottoming-spots`: option 1, leave them ("10 before a 90deg corner the player should not be going 80kph"; "This is a feel problem"). He asked that no lasting ruling be written, so there is no decision record. BUG-200 option E lands without a sag limit at the foot.

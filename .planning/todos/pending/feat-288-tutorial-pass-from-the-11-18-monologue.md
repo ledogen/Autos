@@ -12,7 +12,7 @@ lane: SM (tutorial)
 # FEAT-288: Tutorial pass from the owner's 2026-11-18 monologue
 
 ## Next steps
-P1, P7, P2 on main; P3a built on land/feat-288-p3a-lessons. Next, serially per § 8: P3b on the gate (read § 3's "As built (P2)" and "As built (P3a)" first), then P4, P5, P6, P8. The owner owes words for the lines listed under Open questions.
+P1–P7 on main; P8 (speaker slide) on land/feat-288-p8-speakers, owner look owed (card feat288-speakers-look). Then the owner's play and his words for the lines under Open questions.
 
 ## Summary
 A complete, simple tutorial: full dialogue and storytelling, a brief but complete explanation of every system, every control / menu / bar the player must use highlighted and everything else locked out, plus the specific fixes below.
@@ -306,6 +306,30 @@ quest-item mark (§ 5) and the rings, not by CSS.
   has no `until` yet); R while camped still breaks camp (it is the reset, never locked). The deeds counter ring (beat 26)
   and the cook mention (26b) are not built.
 
+**As built (P3b, 2026-11-18) — what P4 needs.**
+- The map beat is four more cards at the end of `tut-picnic` (Katie still on the line), each a lesson: `map` (open it:
+  M / View), `shoptab` (the Shopping tab ringed; Q / pad X or a click on the tab), `waypoint` (her station's list row
+  ringed, the waypoint action allowed: main.js `_fillSnack` puts the station's POI id into the card's `{snack}`), then
+  `mapshut` (the legend ringed; the card `holds` the call). § 2's beats 15 and 16 are one card: a press-any-key card over
+  the open map never turned on the pad (A on a highlighted shop row toggles it, map2d eats the Enter), a lesson card does.
+- Every waypoint drop (N, pad Y, a click on the sheet) now passes the gate in ONE place, main.js `_tutWaypointOk` (the
+  click on the sheet was ungated before); under the waypoint card a drop more than 150 m from her station is refused.
+  The pin is the lesson's: spent when the shop beat starts, and a skip at the snack stop clears it (`_undoWorstDay`).
+- BUG-219 cannot bite here: no job is offered before free will (`_tutDrive()` → no offer), so Q / X always switch tabs;
+  a click on the tab header works in either state too.
+- The shop beat is `tut-shop`, played when the snack station's shop opens: `cart` (the peanuts row and its add to cart
+  only; service-screen.js tags shelf rows `data-item`), `bought` (check out only: discard and the cart's × locked), `shopshut`
+  (her send-off, the owner's words; back only), then her click. Its precondition: mom's money (`_momCash`, topped up every
+  poll until the bag is bought) always covers the bag, and back is never locked, so a shop closed early re-opens on the
+  brake with the card still waiting.
+- Mom's gas call (`tut-gas`) fires when the shop closes at the pump stop (no longer on the brake), so it follows Katie's
+  click while the truck is still parked.
+- A card over the open map centres on the sheet, clear of the list column and legend (index.html).
+- Gaps left (not P3b's beats): the pump face is free between cards and not ringed (beat 21); "make camp" is free between
+  cards (`tut-vibe` has no `until`, beat 24); R while camped still breaks camp (the reset, never locked); the deeds ring
+  (26), the cook mention (26b) and the auto shop's tire lesson (beat 33: the tire row + check out, P4 moves its trigger)
+  are not built; card 12 rings nothing (there is no HUD hint for the map key).
+
 ### 4. The phone
 
 - **Sounds.** Nothing exists in `src/` and the library has no ring or flip-shut on disk (fact f). Recommend
@@ -335,6 +359,21 @@ Cost: one extra mesh and one cloned material set per marked item, about 40 lines
 when the item is picked up. The pulse alone was considered and rejected: from 15 m and in her shade the pack is too small
 to read even when lit.
 
+**As built (P5, 2026-11-18).**
+- The target is named by the tutorial's STEP, through the gate (no second system): a card's `quest` (an item id;
+  data/dialogue.js `tut-pickup` = `'pack'`), or main.js `_TUT_PACK` (BETWEEN plus `quest: 'pack'`) while `_dayStop()` is
+  'pack' and no card is up (the pack fallen off on the way to Larry's is marked again). The step is main.js `_tutStep`,
+  the same function `initTutGate` reads, so a skip, the tutorial's end, a run end and a reload past the pack give no mark.
+  Not a world-item flag: § 5's `quest: true` would ride the save and outlive the tutorial; outside the tutorial nothing is marked.
+- `_questMark()` (main.js, every frame): one unlit beam, `_ringGeo` + the rings' upward alpha fade, 0.25 m × 6 m, white
+  (the paper target's), opacity 0.7, not tone-mapped (reads in her shade and at night), fogged like the world; its foot
+  0.4 m above the item's largest half extent, so it never covers the item. The pulse is debris.js `blink(body, k, rgb)`
+  in white at 1 Hz while the item's body is live (blink now clones a body's materials on first use, so the pack model's
+  shared materials are never tinted); put out when the mark leaves.
+- Cost (wip/feat-288-p5/sheet.mjs, beside the pack, 300 frames): +1 draw call while marked (151 vs 147 after G; the
+  other 3 are the pack itself); frame p50 16.7 ms both, p90 18.2 vs 18.1 (vsync-capped, within noise). 0 calls otherwise.
+- Sheet wip/feat-288-p5/sheet.jpg: her door / 4 m / 18 m × 08:00, 19:30, 22:30; fog 0.03; big UI.
+
 ### 6. The opening camera
 
 `_updateFiringCam` (main.js:5237) sets the camera's angle every frame from the clock, so input has no effect. Change:
@@ -343,6 +382,15 @@ the orbit stops setting the angle and camera.js's own look input turns it; after
 rotation resumes from the current angle (its start angle re-based, so there is no jump). camera.js needs one small export
 (read the current orbit angle) and its pad-look branch already runs under a focus. BUG-203 (the wrong-way alert over the
 opening) rides along in the same package.
+
+**As built (P6, 2026-11-18).** The numbers are `FIRING_CAM` in data/tutorial.js: radius 16 m, aim 2 m over the pad, start
+0.35 rad short of square-on, 0.05 rad/s on its own (≈ 2.9°/s), `resumeS` 3 s after the last touch, then `easeS` 1.5 s of
+linear ease from 0 to that rate. By hand: the right stick at camera.js's own rate (2 rad/s at full tilt, up/down too) and a
+RIGHT-button drag (0.005 rad/px; the left click still turns the card, and the right press no longer does while the orbit
+is up). main.js `_updateFiringCam` reads camera.js `getOrbitAngles()`: moved since it last set them = a touch. The right
+drag is only on a focus that asks for it (`setCameraFocus` `rightDrag`), so camp and the chase are as they were.
+BUG-203: the tutorial's GPS line (and with it gps.js's wrong-way flag) is not handed over on the firing day until mom's
+pedals card (`tut-drive`, "Follow the line home"): the firing, the intro's card and her call show no line on the road.
 
 ### 7. Conflicts with standing records
 
@@ -380,6 +428,44 @@ does not touch.
 Order: P1 → P7 → P2 → P3a → P3b → P4 → P5 → P6 → P8. P1 and P7 can start now; P4, P5, P6 need no answer and may slot
 anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is not answered.
 
+**As built (P4, 2026-11-18) — what P3b / P5 need.**
+- Mom's ring: main.js `_rebuildPoiMarkers` draws the orange ring round `momsHouse` too (poiInteractR 10 m, inside her 25 m
+  door, camp.js `atMoms`), in every story run; it hides on a job like every ring. poi.js's `jobs` comment rewritten.
+  `tut-park` now says "park out front, in the marked spot" (§ 2 beat 7's draft; on the wording list).
+- The map: `getWaypoint` falls back to main.js `_tutMapLeg()`: while the tutorial drives (after "play"), the leg in play
+  (`_tutLeg`) as the map's Waypoint pin on its door plus the GPS's own line (`_tutLine`, detours included). The drive to
+  the ranch keeps DEC-346/356's rule (gone on arrival or a camp made short). A player's own waypoint still wins (pin only,
+  `_waypointOn` is false in the tutorial): **P3b's map beat** must decide what the line shows once Katie has the player
+  drop one on the station.
+- The flat: data/tutorial.js `FLAT.alongM` (250) and `flatRadius(poly, home)`: it goes off once the truck is closer to
+  mom's by crow than the drive home's planned line is at 250 m along. No height enters it, so BUG-216's deck moves near the
+  tunnel cannot shift it. On 1872706826: 264 m along (the first line vertex past 250), 193 m before the tunnel at 457 m;
+  the tow to the same shop 0.66 km (was 0.75). test/tutorial-seed.mjs holds ≥ 150 m before the tunnel.
+- `tut-lights` fires when the flat is fixed and mom's tire (or patch) is spent, which ServiceCenter does only at the
+  check-out (`_momOwes`; the cart fits a tire at once and a highlighted row is fitted for a look, so neither the flat nor
+  `pending()` can tell). The card is up in the shop, before the player leaves it (its `allow: []` locks the shop's rows;
+  leave is never locked).
+
+**As built (P8, 2026-11-18): speaker separation (DEC-426 Q2).**
+- One mechanism for every dialogue card: `#dialogue-panel` (calls, the ring and `<click>` cards, in person, the paper
+  briefing, the run intro). The camp, pump, shop, job and recovery cards are other components and do not slide. The ring
+  card is the speaker "Phone", so ring → caller is a change of speaker; the caller's `<click>` is the caller's, so it cycles.
+- The rule is src/dialogue.js `cardSlide(prev, next, side)`: the same speaker cycles in place; on a change the card up leaves
+  by the side it came in from and the next enters from the other, so sides alternate per change (A, B, A enter left, right,
+  left). The first card of a showing enters from the left; the last leaves by its own side.
+- main.js `_dlgSlide`: the card leaving is a copy of the panel (`.dlg-ghost`: no ids, no pointer, the panel's CSS rules
+  name it beside `#dialogue-panel`, so it keeps the shop-left and map-sheet placements at Small and Big); the live panel is
+  already the new card, so the gate's `hi` / lock paint, menu-nav and `cardOwnsKeys` always read the card that is up. Web
+  Animations on `translate` (composited, no per-frame JS): out 150 ms `cubic-bezier(.5,0,1,1)` (accelerating), then in
+  200 ms `cubic-bezier(0,0,.2,1)` (decelerating) = 350 ms on a change; a first card 200 ms; the text streams as it arrives.
+- A press (key, click, pad) mid-slide lands the card at once, filled, and is spent; the next press turns it. Presses per
+  card are unchanged (fill, turn); no card can turn unread. `prefers-reduced-motion` (the browser's "avoid motion"
+  setting): an instant swap.
+- Not UI-STYLE's pop-in overshoot curve: on a full-screen slide it would swing the card ~130 px past its place.
+- Proof: test/tut-gate.mjs § 5 (the rule over every framed script); cdp-smoke `opening` (Katie's `<click>` cycles, the
+  manager slides in from the right as Katie leaves left and leaves right, a click mid-slide lands him whole, rapid keys and
+  clicks show the framed script's 3 cards, reduced motion swaps mom's call with no slide). Sheet wip/feat-288-p8/sheet.jpg.
+
 ## Tracker
 - [x] Itemised plan + conflicts + questions written here (no code): § Plan, 44 items, DEC-422
 - [ ] Owner answers card `feat288-tutorial-plan` (or the defaults stand)
@@ -387,11 +473,11 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - [x] P7 phone sounds: ring and flip-shut, owner's ear
 - [x] P2 the gate: one lock + highlight for keys, mouse and pad; nothing locked after a skip
 - [x] P3a lessons 1: forced diagnostics → inventory → spare, break camp locked, eating locked, the sleep lesson, lunches at breakfast, B advances a card
-- [ ] P3b lessons 2: the map beat, the shop beat, mom's gas call on leaving the shop, the end menu
-- [ ] P4 world fixes: mom's ring (story-wide), legs on the map, the flat before the tunnel, mom's card on the tire's check-out
-- [ ] P5 quest-item mark on the pack
-- [ ] P6 opening camera: free rotation, resumes; BUG-203
-- [ ] P8 speaker separation (after Q2)
+- [x] P3b lessons 2: the map beat, the shop beat, mom's gas call on leaving the shop (the end menu dropped: DEC-426 Q3)
+- [x] P4 world fixes: mom's ring (story-wide), legs on the map, the flat before the tunnel, mom's card on the tire's check-out
+- [x] P5 quest-item mark on the pack (the step names it; beam + white pulse; owner look owed: card feat288-marker-look)
+- [x] P6 opening camera: free rotation, resumes; BUG-203
+- [x] P8 speaker separation: a change of speaker slides out / in from the other side, the same speaker cycles (DEC-426 Q2; owner look owed: card feat288-speakers-look)
 - [ ] Owner has played it
 
 ## Decisions
@@ -400,13 +486,20 @@ anywhere after P1 if a lane is free; P3a/P3b take the defaults if the card is no
 - 2026-11-18, owner (via the orchestrator, chat): on the sleep lesson, "I think it might always make you wake up at 630 but doesn't make the player choose 630. Or maybe it doesn't … I didn't actually try it, I just saw that it let me choose any time."
 
 ## Open questions
-**Lines awaiting the owner's wording** (P3a's plainest functional lines; the owner's script review replaces them):
+**Lines awaiting the owner's wording** (P3a's and P3b's plainest functional lines; the owner's script review replaces them):
 - `tut-flat`, the pad's half: "hold B and pick vehicle condition" (the B menu's label for the damage screen; the monologue says "Vehicle Diagnostics").
 - `tut-damage` card 1, new last sentence: "Back out with Esc / B."
 - `tut-damage` card 2: "Now put your spare on: Tab / hold B and pick the inventory, then the mounted tire."
 - `tut-spareflat`, the pad's half: "hold B and pick the recovery menu."
 - `tut-moms` last card (now after the paycheck line): "Sleep is how a day ends. Set your alarm clock for 06:30: pick sleep and slide it until it reads wake 06:30, then sleep. The bar shows how rested you'll wake up."
+- `tut-park` (P4): "Pull over and park out front, in the marked spot. Come to a full stop, then tap Space / RB to set the handbrake."
 - `tut-breakfast`: "Morning! I packed you some lunches for the road. Eat one before you go — you'll run out of steam early on an empty stomach. Select inventory, then a packed lunch."
+- `tut-picnic` (P3b's map beat), card 4: "Not sure which station? Open your map: M / View."
+- `tut-picnic` card 5: "That list on the side shows every shop around here. Switch it to Shopping: Q / X."
+- `tut-picnic` card 6: "There's the station. Walk the list to it with ↑ ↓ / the D-pad and drop a waypoint on it: N / Y."
+- `tut-picnic` card 7: "And the key to all those little marks is down in the corner. Close the map (M / View) and holler when you're at the store."
+- `tut-shop` card 1: "Got it? Pick the peanuts off the shelf: ↑ ↓ to the row, Enter / the D-pad to the row, A to open it, then add to cart."
+- `tut-shop` card 2: "Now check out. That pays for whatever's in your cart." (Card 3 is his: "You know where to go, I'll see you there!")
 
 ANSWERED 2026-11-18 (DEC-426): Q1 = A. Q2 = a speaker's card slides out of frame when they finish and the next speaker's slides in from the opposite side; cards from the same speaker cycle in place. Q3 = the end stays as built (manager, one press, tutorial over, Larry's call in the truck): P3b's end-menu item is DROPPED. Q4 = default (four lunches, leave with three). Q5 = default, depending on the seed. The original questions, for the record:
 - Q1 The sleep lesson's control. (A) the slider is highlighted and the player slides it to 06:30 themselves; Sleep is greyed and refuses until it reads 06:30 — **default**, it still teaches the alarm. (B) preset to 06:30 and locked, one button: shorter, teaches less.
@@ -428,3 +521,10 @@ data/tutorial.js, data/dialogue.js, src/main.js, src/menu-nav.js, src/hud-menu.j
 - 2026-11-18 P7 built on land/feat-288-p7-phone: `src/phone-audio.js` (ring + flip-shut, synthesized), `call` marker on the frame cards in dialogue.js `_frame`, one hook in main.js `_renderDialogue`; Sounds-tab entries in FEAT-120. Owner's ear owed (card feat288-phone-sounds-ear); nobody has heard it.
 - 2026-11-18 P1 dialogue built on land/feat-288-p1-dialogue (words and speakers only; 6 data/dialogue.js cards re-worded, 7 draft tags out, mom's two paycheck lines in). run-all affected gates green; smoke boot,opening PASS (38 steps). Left for P3/P4: mom's "marked spot" in tut-park waits on her ring (P4); tut-gas / tut-pickup keep their current words (§ 2's versions tie to P2/P3b flow).
 - 2026-11-18 P3a built on land/feat-288-p3a-lessons (§ 3 "As built (P3a)"): flat → diagnostics (swap locked, back out) → inventory (the spare only) → picker → the shop's tow only; press-any-key cards lock what lies under them (break camp under Katie, leave/sleep under mom); no eating between cards; Sleep greyed until 06:30 (DEC-426 Q1); four lunches at breakfast, none before (Q4); pad B turns a press-any-key card. Affected gates 55/55 green; smoke PASS 39 steps (load ~9.6); pad-e2e ALL OK (load ~8.9). The pad B check rides the smoke's real tutorial (Katie's talk, fake pad), not pad-e2e. Six lines await the owner's words (Open questions). Unverified: a human play on a real pad.
+- 2026-11-18 P5 built on land/feat-288-p5-marker (§ 5 "As built (P5)"): beam + white pulse on the pack, named by the
+  gate's step (`quest`), gone with the step. tut-gate PASS; affected gates 21/21; smoke/pad-e2e: see the landing report.
+  Sheet wip/feat-288-p5/sheet.jpg (lane worktree). Unverified: a human look, a real pad.
+- 2026-11-18 P4 built on land/feat-288-p4-world (§ 8 "As built (P4)"): mom's ring story-wide, every leg's pin + line on the map, the flat at FLAT.alongM 250 m along the drive home (264 m, 193 m before the tunnel; BUG-216 merged, unchanged), `tut-lights` on the tire's check-out (mom's tire spent). tutorial-seed re-measured (campFlat 0.26, tow 0.66 km); fingerprint-world ALL IDENTICAL to main; affected gates 36/36; smoke PASS 40 steps (load 8.7); pad-e2e ALL OK, on a head with main (P5) merged. Sheet wip/feat-288-p4/sheet.jpg. Unverified: a human drive of the night leg.
+- 2026-11-18 P6 built on land/feat-288-p6-opening (§ 6 "As built (P6)"): right stick + right drag turn the firing's orbit, 3 s idle then a 1.5 s ease back to 0.05 rad/s; BUG-203 fixed at the source (no tutorial line until `tut-drive`). Smoke `opening`: stick, drag, hold, resume, no wrong-way over the opening (truck turned round too), wrong-way works after; `skipMenus`: skip mid-orbit / at the card / under the ring leaves the camera on the truck, no marks, wrong-way live. Gates, smoke, pad-e2e: see the lane report. Unverified: a real pad and the owner's taste (card feat288-opening-look).
+- 2026-11-18 P3b browser-proven on land/feat-288-p3b-map-shop (main merged at P6/BUG-224). Game fixes: the snack is bought at check out, not in the cart (the cart previews on the inventory: Katie's check-out card was skipped); a press on P4's leg pin drops a waypoint (it cleared nothing, so pad Y on her station did nothing); at Big the shop fits the screen (max-height in %, a zoomed vh ran 1.5 screens) and a card over the shop or the map keeps beside it. Smoke: rings read within the gate's 100 ms paint, the pad step starts the list on Missions, DEC-356's shelf guard read off `__worstDay().snackLock` (her cards lock the rows; the store never re-opens on the pump stop). Gates 14/14; smoke PASS ×2 + opening-only ×3, pad-e2e ALL OK ×3. Unverified: a human play on a real pad; P3a's inventory tooltip over mom's card and her card over the diagram at Big.
+- 2026-11-18 P8 browser-proven on land/feat-288-p8-speakers (main merged). The one P8 smoke failure (`in` read 0) was the test's own: the mid-slide press finishes the animation before the MutationObserver ran, so the recorder now notes the slide as `panel.animate` starts it (test/cdp-smoke.mjs only; src/ unchanged). Gates 12/12 (tut-gate, tutorial-seed, affected set), cdp-smoke PASS 40 steps zero console errors (load 10.2), pad-e2e ALL OK (load 10.2), look sheet wip/feat-288-p8/sheet.jpg. Owner look owed: card feat288-speakers-look. Side finding: BUG-227 covers the bent-wheels announce.

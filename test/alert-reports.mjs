@@ -46,4 +46,17 @@ poll([1, 0, 1, 0, 0, 0], true); poll([0, 0, 0, 0, 0, 0], true)   // closed with 
 poll([0, 0, 0, 0, 0, 0], false); assert.equal(opened.length, 0)
 poll([1, 0, 1, 0, 0, 0], false); poll([1, 0, 1, 0, 0, 0], false)  // a real bend after the visit: once per wheel
 assert.deepEqual(opened, ['w0', 'w2'])
+
+// BUG-227: free roam (a sound truck, steps 10), then New game rolls a jalopy with a wheel bent to 85 % (step 9). The reset
+// on entry nulls the levels only; the first poll of the new truck must take it in, not read it against the old steps.
+{
+  const opened = [], al = { open: (id) => opened.push(id), close () {} }
+  const st = { levels: null, steps: null }, ex = new Map(), txt = [[null, 'bent']]
+  pollWords(al, ex, st, [0], [10], () => false, txt, 0, 4)   // free-roam truck, sound
+  st.levels = null                                           // main.js _machineWords: the new-run reset
+  pollWords(al, ex, st, [1], [9], () => false, txt, 0, 4)    // the jalopy's first poll: its own condition, no alert
+  assert.deepEqual(opened, [])
+  pollWords(al, ex, st, [1], [8], () => false, txt, 0, 4)    // a real 10 % more after the start still alerts
+  assert.deepEqual(opened, ['w0'])
+}
 console.log('alert-reports: ok')

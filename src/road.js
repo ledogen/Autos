@@ -227,6 +227,7 @@ const XS_OFF_FADE = 4.0
 // Measured over 91 connectors (seeds 6, 3, 7, 20, 11 + 477662008): no connector whose crest unloads the
 // wheels below 12 m/s is left; at 0° (every deg-2 node) it also flattened the owner's "fair" dip 3.
 const DEG2_PLANE_KINK = 60 * Math.PI / 180
+const _BJ_RP = { gradeY: 0, tx: 1, tz: 0 }   // BUG-230: _bareJoinFrame's scratch profile sample
 const _xsOffFade = (d) => { const u = Math.min(1, Math.max(0, d / XS_OFF_FADE)); return 1 - u * u * (3 - 2 * u) }
 // Reusable sinks for the connector design-surface path (carve hot path — no per-query allocation).
 const _CD_A = { grade: 0, gap: 0, xs: 0, off: 0 }
@@ -8461,8 +8462,52 @@ export class RoadSystem {
             const sa = _interpArcTable(e.polyCum, e.clArc, a) - hit.s, sb = _interpArcTable(e.polyCum, e.clArc, b) - hit.s
             if (sa >= 0) hi = Math.min(hi, sa); else if (sb <= 0) lo = Math.max(lo, sb)
         }
-        return { fx: hit.x, fz: hit.z, tx: hit.tangent.x, tz: hit.tangent.z, k: hit.curvature, lo, hi,
-                 arcS: _interpArcTable(e.clArc, e.polyCum, hit.s) - arcOrigin }
+        const f = { fx: hit.x, fz: hit.z, tx: hit.tangent.x, tz: hit.tangent.z, k: hit.curvature, lo, hi,
+                    arcS: _interpArcTable(e.clArc, e.polyCum, hit.s) - arcOrigin }
+        return this._bareJoinFrame(e, f, wx, wz)
+    }
+
+    /**
+     * BUG-230: near a BARE degree-2 join (no connector) the ribbon's sections are framed on FEAT-10's weld (runFrameAt:
+     * the analytic tangent eased to the join's bisector over roadJoinWeldLength), so the two runs' end sections
+     * coincide. Physics projected the same point perpendicular to the analytic tangent instead: on a kink the two runs'
+     * sections then overlapped on its inside, the surface stepped where ownership flipped by overlap × edge grade
+     * (0.10 m at 4.6°) and the drawn ribbon sat up to 8 cm under it. Here the frame is re-solved on the ribbon's own
+     * section: the arc s whose welded normal line passes through (wx, wz) (a few fixed-point steps; the weld turns
+     * slowly). So physics and the mesh share one cross-section by construction. Joins a connector covers keep the
+     * analytic frame (the strip is what is drawn there). The reused-hint window closes (lo = hi = 0): the frame is not
+     * the primitive's own, so a neighbour re-solves rather than offsets it.
+     */
+    _bareJoinFrame(e, f, wx, wz) {
+        const key = this._entryKeyOf(e)
+        if (!key) return f
+        let pc = this._runProfileCache?.get(key)
+        if (!pc || pc.rev !== this._networkRev) { this.runProfile(f.arcS, key, _BJ_RP); pc = this._runProfileCache.get(key) }
+        const w = pc?.weld
+        if (!w || !((w.wS?.bare && f.arcS - w.aS < w.Rw) || (w.wE?.bare && w.aE - f.arcS < w.Rw))) return f
+        const ao = e.arcOrigin ?? 0
+        let s = f.arcS, q = null
+        for (let it = 0; it < 4; it++) {
+            q = e.centerline.pointAt(_interpArcTable(e.polyCum, e.clArc, s + ao))
+            this._ribbonTangentAt(s, key, _BJ_RP)
+            const along = (wx - q.x) * _BJ_RP.tx + (wz - q.z) * _BJ_RP.tz
+            const sN = Math.max(w.aS, Math.min(w.aE, s + along))
+            if (Math.abs(sN - s) < 1e-4) break
+            s = sN
+        }
+        q = e.centerline.pointAt(_interpArcTable(e.polyCum, e.clArc, s + ao))
+        this._ribbonTangentAt(s, key, _BJ_RP)
+        return { fx: q.x, fz: q.z, tx: _BJ_RP.tx, tz: _BJ_RP.tz, k: f.k, lo: 0, hi: 0, arcS: s }
+    }
+
+    // BUG-230: network entry → its run key (memoised per network revision).
+    _entryKeyOf(e) {
+        if (this._entryKeyRev !== this._networkRev || !this._entryKeys) {
+            this._entryKeys = new Map()
+            for (const [k, v] of this._network) this._entryKeys.set(v, k)
+            this._entryKeyRev = this._networkRev
+        }
+        return this._entryKeys.get(e)
     }
 
     /**
@@ -11388,6 +11433,12 @@ export class RoadSystem {
      * road footprint (caller falls back to nodeY).
      */
     sampleRoadTopY(wx, wz) {
+        // BUG-233: inside a ringed (≥ 3-leg) pad the drawn pad and the physics overlay both ride padTopY
+        // (_nodeSurfaceTop + apron lift, _sampleCarveWorld's on-pad branch). The free resolve below picks one leg and,
+        // at a pad's tear line, a different one: it read up to 0.86 m under the pad, so a truck seated there
+        // (_groundSampleY's four corners) or a paper landing there sat inside the asphalt. padTopY needs no raw height.
+        const pad = this._junctionPadCarve(wx, wz, 0)
+        if (pad?.padTopY != null) return pad.padTopY
         const nr = this._resolveRoadSurface(wx, wz)
         const clearanceMargin = this._params.roadClearanceMargin ?? 0.25
         let runTop = null
@@ -12011,13 +12062,22 @@ export class RoadSystem {
             // hold must fit the speed the run allows, not an 18 m corner's.
             let vNode2 = PAR_REF.mu * PAR_REF.g * PAR_REF.junctionRadius
             let inside = null   // BUG-90: a gentle deg-2 kink's inside direction (see _applyJunctionBlend)
+            let join = null     // BUG-230: a BARE deg-2 join's other leg (see _applyJunctionBlend's bank mean)
             if (d === 2) {
                 const strands = this._graphNodeStrands(id)
                 if (strands && strands.length === 2) {
                     const dot = strands[0].wx * strands[1].wx + strands[0].wz * strands[1].wz
                     const kink = Math.PI - Math.acos(Math.max(-1, Math.min(1, dot)))
+                    // BUG-230: _detectNodeJunctions builds a connector only above roadJunctionKinkDeg, on the same
+                    // first-chord kink. BUG-90's bank run-off is for that connector's inside apex; at a BARE join (no
+                    // connector) it ran ONE leg's bank off while the other kept it — a 0.27 m step at the edge.
+                    const kinkMin = (this._params.roadJunctionKinkDeg ?? 0) * Math.PI / 180
                     if (kink >= DEG2_PLANE_KINK) flatCamber = true
-                    else inside = { x: strands[0].wx + strands[1].wx, z: strands[0].wz + strands[1].wz }
+                    else if (kinkMin > 0 && kink > kinkMin) inside = { x: strands[0].wx + strands[1].wx, z: strands[0].wz + strands[1].wz }
+                    else {
+                        const oth = strands[0].key === runKey ? strands[1] : strands[0], oe = this._network.get(oth.key)
+                        if (oe && oth.key !== runKey) join = { key: oth.key, isStart: this._proto.graph.key(oe.cellA) === this._proto.graph.key(id) }
+                    }
                     const rEff = kink > PAR_REF.junctionDeadband ? PAR_REF.junctionRadius / Math.min(1, kink / (Math.PI / 2)) : Infinity
                     vNode2 = Math.min(PAR_REF.vMax * PAR_REF.vMax, PAR_REF.mu * PAR_REF.g * rEff)
                 }
@@ -12038,7 +12098,10 @@ export class RoadSystem {
             // The plane is handed on so the hold can evaluate it AT each sample's XZ: two legs held on
             // one plane then agree wherever their ribbons overlap, which a per-leg grade LINE (arc
             // distance × slope along the leg's own departure) only approximates on a curving leg.
-            return { is, flatCamber, y, slopeAway, plane: plane || null, vNode2, inside, hold: is ? this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_PLANE) : 0 }
+            // part (BUG-200): where this leg's pavement really parts from every sibling's, past the plane's hold cap — the
+            // design-maximum recovery may not climb out of pavement a sibling still shares. Lazy: only that recovery reads it.
+            return { is, flatCamber, y, slopeAway, plane: plane || null, vNode2, inside, join, hold: is ? this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_PLANE) : 0,
+                     part: is ? () => this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_SURFACE) : null }
         }
         return { jStart: nodeInfo(e.cellA, this._strandAtEnd(e.points, true), true), jEnd: nodeInfo(e.cellB, this._strandAtEnd(e.points, false), false) }
     }
@@ -12469,6 +12532,22 @@ export class RoadSystem {
         }
         const flatS = ej.jStart.flatCamber || bankCrest(ej.jStart, true)
         const flatE = ej.jEnd.flatCamber || bankCrest(ej.jEnd, false)
+        // BUG-230: at a BARE deg-2 join (no connector) both legs ease their bank to the MEAN of the two at the node —
+        // the grade's own rule (owner 2026-10-12): each leg takes half the disagreement, so the two end sections bank
+        // alike by construction. The camber predecessor chain links only a head to a tail; an end-end or start-start
+        // join had two independent banks (0° meeting 3.01°: a 0.23 m step at the edge). Both legs read both PRE-blend
+        // node banks from the same routines (_runStartCamber / _runEndCamber), so they agree on the mean exactly.
+        // Banks in each leg's AWAY-from-node frame: a continuous bank reads a and −a.
+        const joinCam = (j, fromStart) => {
+            if (!j.join || !camberRad || (fromStart ? flatS : flatE)) return null
+            const node = (k, st) => st ? this._runStartCamber(k) : this._runEndCamber(k)
+            const aOwn = (fromStart ? 1 : -1) * node(runKey, fromStart), aOth = (j.join.isStart ? 1 : -1) * node(j.join.key, j.join.isStart)
+            return (fromStart ? 1 : -1) * (aOwn - aOth) / 2
+        }
+        const Rjn = Math.max(1, Math.min(this._params?.roadJoinWeldLength ?? 6, span * 0.45))
+        const jcS = ej.jStart.is ? joinCam(ej.jStart, true) : null, jcE = ej.jEnd.is ? joinCam(ej.jEnd, false) : null
+        // BUG-200 (DEC-409): the run's own solved profile, before the hold bends it — the recovery's grade cap reads it.
+        const own = gradeY ? gradeY.slice() : null
         for (let i = 0; i < N; i++) {
             // fG = grade-reconcile weight (any junction endpoint); fC = camber weight (only a
             // flatCamber endpoint — a ≥3-way intersection or a ≥60° deg-2 kink — or a BUG-90 crest-side
@@ -12479,12 +12558,14 @@ export class RoadSystem {
                 const fs = w(d, hS, RgS)
                 if (gradeY && fs > fG) { fG = fs; ny = target(ej.jStart, i, d) }
                 if (camberRad && flatS) { const fc = w(d, hS, RcS); if (fc > fC) { fC = fc; nc = planeCam(ej.jStart, i) } }
+                if (jcS !== null) { const fc = w(d, 0, Rjn); if (fc > fC) { fC = fc; nc = jcS } }
             }
             if (ej.jEnd.is) {
                 const d = aEnd - arcPos[i]
                 const fs = w(d, hE, RgE)
                 if (gradeY && fs > fG) { fG = fs; ny = target(ej.jEnd, i, d) }
                 if (camberRad && flatE) { const fc = w(d, hE, RcE); if (fc > fC) { fC = fc; nc = planeCam(ej.jEnd, i) } }
+                if (jcE !== null) { const fc = w(d, 0, Rjn); if (fc > fC) { fC = fc; nc = jcE } }
             }
             if (gradeY && fG > 0)    gradeY[i] += (ny - gradeY[i]) * fG
             if (camberRad && fC > 0) camberRad[i] += (nc - camberRad[i]) * fC
@@ -12504,15 +12585,21 @@ export class RoadSystem {
         if (gradeY && havePts) {
             const crestHold = this._params?.roadV2?.crestHold ?? 0
             if (crestHold > 0) {
-                if (ej.jStart.is) this._recoverFromHold(arcPos, gradeY, pts, true, hS, RgS, reachCap, crestHold, ej.jStart.vNode2)
-                if (ej.jEnd.is) this._recoverFromHold(arcPos, gradeY, pts, false, hE, RgE, reachCap, crestHold, ej.jEnd.vNode2)
+                // the deck's own slope leaving the node along this run (rise per metre into the run) — the recovery's
+                // tangent where no held sample lies past the node (BUG-200)
+                const deck = (j, i0, i1) => { const d1 = Math.abs(arcPos[i1] - arcPos[i0]) || 1; return (target(j, i1, d1) - target(j, i0, 0)) / d1 }
+                const part = (j, h, keep) => j.part && h > 0 ? Math.max(h, Math.min(j.part(), span * 0.45, span - keep)) : h
+                const spans = this._network?.get(runKey)?.tunnelSpans
+                const bore = spans ? (a) => spans.some((sp) => a >= sp.s0 && a <= sp.s1) : null
+                if (ej.jStart.is) this._recoverFromHold(arcPos, gradeY, pts, true, hS, RgS, reachCap, crestHold, ej.jStart.vNode2, own, deck(ej.jStart, 0, 1), part(ej.jStart, hS, keepE), bore)
+                if (ej.jEnd.is) this._recoverFromHold(arcPos, gradeY, pts, false, hE, RgE, reachCap, crestHold, ej.jEnd.vNode2, own, deck(ej.jEnd, N - 1, N - 2), part(ej.jEnd, hE, keepS), bore)
             }
         }
     }
 
     // FEAT-82: bend the handoff past a deck hold into a vertical curve that satisfies the crest/sag
     // rule at the junction-approach design speed. See _applyJunctionBlend.
-    _recoverFromHold(arcPos, gradeY, pts, fromStart, hold, reach0, reachCap, crestHold, vNode2) {
+    _recoverFromHold(arcPos, gradeY, pts, fromStart, hold, reach0, reachCap, crestHold, vNode2, own, deckSlope, part = hold, bore = null) {
         const N = arcPos.length
         if (N < 4) return
         const g = PAR_REF.g
@@ -12542,32 +12629,116 @@ export class RoadSystem {
         }
         const C = this._v2Costs()
         const capG = (C.gMaxRoad ?? 0.24) + (C.gradeTol ?? 0.14)   // the ceiling — a leg may be steep, never illegal
-        const maxReach = Math.max(0, reachCap - hold)
-        let reach = Math.min(maxReach, Math.max(reach0, 1))
-        const start = gradeY.slice()
-        let best = null, bestResid = Infinity, bestFree = null
-        for (let attempt = 0; attempt < 6; attempt++) {
-            const y = start.slice()
-            const r = reach
-            const free = (i) => { const d = dOf(i); return i > 0 && i < N - 1 && d > hold && d < hold + r }
-            projectProfile(arcPos, y, { cCrest, cSag, cap: () => capG, free, maxIt: 600 })
-            // Residual curvature violation (m of second difference over the limit) across the window
-            // AND its pinned neighbours — the handoff into the pinned own profile is where an
-            // undersized window shows. Judged on the residual, not the projection's last step size:
-            // the sweeps creep for a long time at ~1e-3 while the curve is already within 2 mm.
-            let resid = 0
-            for (let i = 1; i < N - 1; i++) {
-                const d = dOf(i); if (d < hold - 8 || d > hold + r + 8) continue
-                const d2 = y[i - 1] - 2 * y[i] + y[i + 1]
-                resid = Math.max(resid, -d2 - cCrest[i], d2 - cSag[i])
+        // One solve: the smoothstep start projected onto the crest/sag rule (and the grade cap) over a free window
+        // past the hold, widened ×1.5 up to the 45 % run cap until the residual fits. Residual = curvature violation
+        // (m of second difference over the limit) across the window AND its pinned neighbours — the handoff into the
+        // pinned own profile is where an undersized window shows — judged on the residual, not the projection's last
+        // step size (the sweeps creep for a long time at ~1e-3 while the curve is already within 2 mm). A capped solve
+        // (`over`) also counts metres of rise over its cap. `ext` = the sample arrays it works on (see ghost below).
+        const solve = (ext, capAt, over) => {
+            const { s, y0, cC, cS, dAt, interior, edge = 0, hold } = ext
+            const M = s.length, maxReach = Math.max(0, reachCap - hold)
+            // The projection runs on the samples the widest window can free, ±2 (every constraint it can move): the
+            // rest of the run is pinned and skipped anyway, so the result is the same, without sweeping the whole run.
+            let i0 = M, i1 = -1
+            for (let i = 0; i < M; i++) { const d = dAt(i); if (d > hold - 8 - 1e-9 && d < hold + maxReach + 8) { if (i < i0) i0 = i; i1 = i } }
+            i0 = Math.max(0, i0 - 2); i1 = Math.min(M - 1, i1 + 2)
+            const sw = s.slice(i0, i1 + 1), cCw = cC.slice(i0, i1 + 1), cSw = cS.slice(i0, i1 + 1)
+            // The window's cap and free mask as arrays: the sweeps read each up to 3× per sample per sweep, and the
+            // closures behind them (segG, dAt) cost more than the sweep's own arithmetic. Same values, same result.
+            const W = Math.max(0, i1 - i0 + 1), capW = new Float64Array(W), freeW = new Uint8Array(W)
+            for (let i = 0; i < W; i++) capW[i] = capAt(i + i0)
+            // one window of reach r: project, then the residual. A capped rung stops sweeping at 1 mm a sweep (the
+            // residual, not the step, decides the fit; the default 1e-5 crept on for hundreds of sweeps).
+            const trial = (r) => {
+                const y = y0.slice()
+                const fr = (i) => { const d = dAt(i); return interior(i) && d > hold + edge && d < hold + r }
+                if (i1 > i0) {
+                    const yw = y.slice(i0, i1 + 1)
+                    for (let i = 0; i < W; i++) freeW[i] = fr(i + i0) ? 1 : 0
+                    projectProfile(sw, yw, { cCrest: cCw, cSag: cSw, cap: (i) => capW[i], free: (i) => freeW[i] === 1, maxIt: 600, tol: over ? 1e-3 : undefined })
+                    for (let i = i0; i <= i1; i++) y[i] = yw[i - i0]
+                }
+                let res = 0
+                for (let i = Math.max(1, i0); i < Math.min(M - 1, i1 + 1); i++) {
+                    const d = dAt(i); if (d < hold - 8 || d > hold + r + 8) continue
+                    // a bore's pinned floor (see `open` below): no window can change it, so it says nothing about the fit
+                    if (over && !interior(i - 1) && !interior(i) && !interior(i + 1)) continue
+                    const d2 = y[i - 1] - 2 * y[i] + y[i + 1]
+                    res = Math.max(res, -d2 - cC[i], d2 - cS[i])
+                    if (over && (fr(i) || fr(i + 1))) res = Math.max(res, Math.abs(y[i + 1] - y[i]) - capAt(i) * (s[i + 1] - s[i]))
+                }
+                return { y, res, fr }
             }
-            if (resid < bestResid) { best = y; bestResid = resid; bestFree = free }
-            if (resid < 0.02 || reach >= maxReach - 1e-6) break
-            reach = Math.min(maxReach, reach * 1.5)
+            let reach = Math.min(maxReach, Math.max(reach0, 1)), best = null, resid = Infinity, free = null
+            // A capped rung that misses at its first window is tried once at the widest: if that misses too the rung
+            // cannot fit, and the next rung is tried without the four windows in between (~20 ms a junction).
+            for (let attempt = 0; attempt < 6; attempt++) {
+                if (over && attempt === 1 && reach < maxReach - 1e-6) {
+                    const wide = trial(maxReach)
+                    if (!(wide.res < 0.02)) return { best: wide.y, resid: wide.res, free: wide.fr, ok: false }
+                }
+                const { y, res, fr } = trial(reach)
+                if (res < resid) { best = y; resid = res; free = fr }
+                if (res < 0.02 || reach >= maxReach - 1e-6) break
+                reach = Math.min(maxReach, reach * 1.5)
+            }
+            return { best, resid, free, ok: resid < 0.02 }
         }
-        // Ship the best attempt even when no window satisfied the rule — it is never worse than the
-        // smoothstep it started from on the measure that matters (the residual).
-        if (best) for (let i = 0; i < N; i++) if (bestFree(i)) gradeY[i] = best[i]
+        const ship = (ext, r) => { if (r.best) for (let i = 0; i < ext.s.length; i++) if (r.free(i)) gradeY[i - ext.off] = r.best[i] }
+        const base = { s: arcPos, y0: gradeY.slice(), cC: cCrest, cS: cSag, dAt: dOf, interior: (i) => i > 0 && i < N - 1, off: 0, hold }
+        const ceilingPass = () => { const r = solve(base, () => capG, false); ship(base, r); return 'ceiling' }
+        if (!own) return ceilingPass()
+        // BUG-200 (DEC-409): the recovery is held to the DESIGN maximum — the solver's vocabulary cap gMaxRoad, or the
+        // run's own solved grade between two samples where that is already steeper — so a junction never makes a road
+        // steeper than the solver built it. Before, the smoothstep start blended a held line into a diverging one and
+        // reached the 38 % ceiling on 1 run in 10 (BUG-200's census; seed 688224244's hairpin: 22 % solved, 38.8 %
+        // shipped). FALLBACK ORDER: the design maximum with the curvature rule met; else the gentlest grade between it
+        // and the ceiling that still meets the rule (bisected, 1.75 % steps); else the old ceiling pass, unchanged.
+        const gDesign = C.gMaxRoad ?? 0.24
+        // A hold shorter than one sample leaves no held sample past the node, so nothing pins the deck's tangent and a
+        // capped recovery arrives at the node at full grade (seed 11 (1929, −1254): 21 % into a level pad, a 0.13 /m
+        // crest). A ghost sample one spacing beyond the node, on the deck's line, carries the rule across the node — at
+        // HALF the limit, because the leg on the node's far side bends from the same deck at once: two halves, one rule.
+        // A sample AT the hold's edge is on the deck (the blend's weight is 1 there); the old pass let float noise
+        // (6.483192797380411 > 6.483192797380407 on seed 11) free it, harmless only while nothing pushed on it.
+        const EDGE = 1e-6
+        const iN = fromStart ? 0 : N - 1, iA = fromStart ? 1 : N - 2
+        const ghost = dOf(iA) > Math.max(hold, part) + EDGE && Number.isFinite(deckSlope)
+        // A leg whose pavement still overlaps a sibling's past the plane's 30 m hold cap (a merge shape) keeps its start
+        // values out to where they part: climbing out at the design maximum there tore 0.48 m across shared pavement
+        // (BUG-179 site #13, seed 209215080), where the old pass's late ceiling climb happened to stay on the deck.
+        // BUG-216 x BUG-200: the design-maximum recovery never reshapes a bore's floor (the solver's deck, corner-rounded):
+        // its long window reached 26 m into a tube on seed 11 (981, −171) and left a 0.041 /m sag on the floor (the bore
+        // line is 0.04). Bore samples stay pinned; where that leaves no fit, the old ceiling pass runs as before.
+        // The window stops at the first bore sample from the node: it never frees road on a tube's far side either.
+        let dBore = Infinity
+        if (bore) for (let i = 0; i < N; i++) if (bore(arcPos[i])) dBore = Math.min(dBore, dOf(i))
+        const open = (k) => dOf(k) < dBore
+        let ext = { ...base, edge: EDGE, hold: Math.max(hold, part), interior: (i) => i > 0 && i < N - 1 && open(i) }
+        if (ghost) {
+            const h = Math.abs(arcPos[iA] - arcPos[iN]), yG = gradeY[iN] - deckSlope * h
+            const vN2 = Math.max(1, vAt(iN)) ** 2
+            const cG = 0.5 * h * h * g * crestHold / vN2, sG = sagLoad > 0 ? 0.5 * h * h * g * sagLoad / vN2 : Infinity
+            const pre = fromStart, off = pre ? 1 : 0, M = N + 1
+            const s = new Float64Array(M), y0 = new Float64Array(M), cC = new Float64Array(M), cS = new Float64Array(M)
+            for (let i = 0; i < N; i++) { s[i + off] = arcPos[i]; y0[i + off] = gradeY[i]; cC[i + off] = cCrest[i]; cS[i + off] = cSag[i] }
+            const iG = pre ? 0 : N, iNx = iN + off
+            s[iG] = pre ? arcPos[0] - h : arcPos[N - 1] + h; y0[iG] = yG
+            cC[iNx] = cG; cS[iNx] = sG
+            ext = { s, y0, cC, cS, off, edge: EDGE, hold: ext.hold, dAt: (i) => i === iG ? -h : dOf(i - off), interior: (i) => i - off > 0 && i - off < N - 1 && open(i - off) }
+        }
+        const segG = (i) => { const k = i - ext.off; return k < 0 || k >= N - 1 ? 0 : Math.abs(own[k + 1] - own[k]) / ((arcPos[k + 1] - arcPos[k]) || 1) }
+        const rung = (gc) => solve(ext, (i) => (i - ext.off < 0 || i - ext.off >= N - 1) ? Infinity : Math.min(capG, Math.max(gc, segG(i))), true)
+        let r = rung(gDesign)
+        if (r.ok) { ship(ext, r); return 'tight' }
+        let lo = gDesign, hi = capG, fit = null
+        for (let k = 0; k < 3; k++) {
+            const mid = 0.5 * (lo + hi), rm = rung(mid)
+            if (rm.ok) { fit = rm; hi = mid } else lo = mid
+        }
+        if (fit) { ship(ext, fit); return 'partial' }
+        return ceilingPass()
     }
 
     // FEAT-07 Step 2 + FEAT-19: reconcile this run toward each AT_GRADE MID-SPAN crossing within
@@ -12723,7 +12894,11 @@ export class RoadSystem {
                 const own = st.find(s => s.key === runKey), oth = st[0] === own ? st[1] : st[0]
                 if (!own || own.wx * oth.wx + own.wz * oth.wz > 0.5) return null   // kink > 120°: pad elbow
                 const ax = own.wx - oth.wx, az = own.wz - oth.wz, L = Math.hypot(ax, az), sg = isStart ? 1 : -1
-                return { x: sg * ax / L, z: sg * az / L }
+                // BUG-230: `bare` = no connector covers this join (the BUG-90 `inside` / bank-mean test in
+                // _runEndpointJunctions); physics then frames on this weld too (_refineFrame), as the ribbon does.
+                const kink = Math.PI - Math.acos(Math.max(-1, Math.min(1, own.wx * oth.wx + own.wz * oth.wz)))
+                const kinkMin = (p.roadJunctionKinkDeg ?? 0) * Math.PI / 180
+                return { x: sg * ax / L, z: sg * az / L, bare: kink < DEG2_PLANE_KINK && !(kinkMin > 0 && kink > kinkMin) }
             }
             const wS = Rw > 0 ? weldDir(netEntry.cellA, true) : null
             const wE = Rw > 0 ? weldDir(netEntry.cellB, false) : null

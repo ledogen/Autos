@@ -179,6 +179,9 @@ let focusViews     = null              // [{ p, theta, phi, radius }] or null
 let focusViewIdx   = 0
 let focusRadius    = FOCUS_RADIUS      // the live focus's radius (the service screen frames the whole truck)
 const FOCUS_PHI    = 0.45              // rad — a gentle look-down set on entry; drag from there
+// FEAT-288 P6: the opening's orbit also turns on a RIGHT-button drag (its left click turns the card). Only on a focus that
+// asks for it (setCameraFocus rightDrag), so camp and the chase keep the left drag alone and the browser's right click.
+let focusRightDrag = false
 
 // ── Input listeners ────────────────────────────────────────────────────────────
 document.addEventListener('mousedown', e => {
@@ -194,7 +197,7 @@ document.addEventListener('mousedown', e => {
   // NOT while the menu stage owns the screen (body.stage-on). On a load the menu overlay is gone, so
   // the click DID land on the canvas: this took the pointer lock, which freezes clientX/Y, and the
   // stage's own drag-orbit (src/stage.js, client deltas) died for the whole load (owner, 2026-10-05).
-  if (e.button === 0 && !focusViews && (cameraMode === 'chase' || cameraMode === 'hood')
+  if ((e.button === 0 || (e.button === 2 && focusTarget && focusRightDrag)) && !focusViews && (cameraMode === 'chase' || cameraMode === 'hood')
       && e.target === document.querySelector('canvas')
       && !document.body.classList.contains('stage-on')) {
     isDragging = true
@@ -264,6 +267,8 @@ document.addEventListener('mousemove', e => {
 })
 
 document.addEventListener('mouseup', () => { isDragging = false; _releasePointer() })
+// FEAT-288 P6: no browser menu over a right drag of the opening's orbit (fires on the press on macOS, the release on Windows).
+document.addEventListener('contextmenu', e => { if (focusTarget && focusRightDrag && e.target === document.querySelector('canvas')) e.preventDefault() })
 document.addEventListener('mouseleave', () => { isDragging = false; _releasePointer() })
 
 // Pointer lock state — driven by browser event only (T-07-01-PL: never set speculatively).
@@ -619,6 +624,9 @@ export function setAimMode (on, cursorX = dragLastX, cursorY = dragLastY) {
 /** True while hold-to-aim is engaged. */
 export function isAiming () { return aimMode }
 
+/** FEAT-288 P6: the orbit's angles (rad) — main.js reads whether the player turned the opening's orbit since it set them. */
+export function getOrbitAngles () { return { theta: orbitTheta, phi: orbitPhi } }
+
 /** FEAT-133: true while the right stick is steering the view (moved, or within orbitHold of it). */
 export function isPadLooking () { return padLookT > 0 }
 
@@ -629,11 +637,13 @@ export function isPadLooking () { return padLookT > 0 }
  * bearing on entry (the front three-quarter) and `radius` backs off far enough to hold the truck.
  *
  * FEAT-178: `phi` seats the look-down too (the service station's fixed corner).
+ * FEAT-288 P6: `rightDrag` lets a right-button drag turn the orbit too (the opening, whose left click turns its card).
  *
  * @param {{x:number,y:number,z:number}|null} p
- * @param {{theta?:number, phi?:number, radius?:number}} [o]
+ * @param {{theta?:number, phi?:number, radius?:number, rightDrag?:boolean}} [o]
  */
-export function setCameraFocus (p, { theta = null, phi = null, radius = FOCUS_RADIUS } = {}) {
+export function setCameraFocus (p, { theta = null, phi = null, radius = FOCUS_RADIUS, rightDrag = false } = {}) {
+  focusRightDrag = !!p && rightDrag
   if (!p) { focusTarget = null; focusViews = null; return }
   if (!focusTarget) orbitPhi = FOCUS_PHI   // seat the look-down once, on entry; drag owns it after
   if (phi !== null) orbitPhi = phi

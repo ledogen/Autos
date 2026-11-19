@@ -183,8 +183,8 @@ export const POI_PARAMS = {
  *
  * `jobs` is WHETHER PARKING HERE OPENS AN OFFER, and it is DERIVED, not hand-set (FEAT-67): a
  * type posts offers iff it has a row in data/offers.js SOURCES (the mission board's source table).
- * Mom's house has none — she only receives — so she wears no interaction ring and answers no park
- * trigger. A marker that wears the ring but answers
+ * Mom's house has none — she only receives — so she answers no offer's park trigger; she still wears the ring
+ * (FEAT-288, DEC-422), because parking in it knocks on her door (camp.js atMoms, a wider radius). A marker that wears the ring but answers
  * nothing is the same lie as a prompt drawn wider than its trigger, which this module already
  * refuses to tell; deriving the flag from the one table that decides who posts work is what makes
  * that impossible to get out of step.
@@ -805,11 +805,10 @@ export class PoiSystem {
         out.forEach((q, i) => { q.index = i })
         // FEAT-154: the barricade rows (the camp's at its pad, then one at every road out) and the
         // edge fade's return spots. Deterministic in (seed, network, centre), like the camp.
-        this._barricades = [
-            ...(camp ? this._barrierRow(road, road.edgeParData(camp.aId, camp.bId), camp.rowS, Math.sign(camp.s - camp.rowS), P) : []),
-            ...this._edgeRows(road, canon, r, wall, adj, camp?.edge, P),
-        ]
-        this._returns = this._returnSpots(road, canon, r, wall - P.poiEdgeReturnM, adj, this._barricades, P)
+        const campRow = camp ? this._barrierRow(road, road.edgeParData(camp.aId, camp.bId), camp.rowS, Math.sign(camp.s - camp.rowS), P) : []
+        const rowsOf = new Map(camp ? [[camp.edge, campRow]] : [])   // road key → the barricades standing on that road
+        this._barricades = [...campRow, ...this._edgeRows(road, canon, r, wall, adj, camp?.edge, P, rowsOf)]
+        this._returns = this._returnSpots(road, canon, r, wall - P.poiEdgeReturnM, adj, rowsOf, P)
 
         this._list = out
         this._pool = pool
@@ -1678,8 +1677,9 @@ export class PoiSystem {
      * poiRowNodeClearM from both its ends (a junction mouth) — so past a junction just inside the wall
      * a leg's row can stand a few metres beyond the edge fade's line (owner, 2026-10-31: accepted). The
      * camp's edge is skipped: its row stands at the pad. BUG-63's parallel runs are roads out too (_wallRoads).
+     * Each road's rows are also filed under its key in `rowsOf` (read by _returnSpots).
      */
-    _edgeRows (road, canon, r, wall, adj, campEdge, P) {
+    _edgeRows (road, canon, r, wall, adj, campEdge, P, rowsOf) {
         const rows = []
         for (const w of this._wallRoads(road, canon)) {
             if (w.ek === campEdge || (adj.has(w.ka) && adj.has(w.kb))) continue
@@ -1692,7 +1692,9 @@ export class PoiSystem {
                 const tt = Math.min(t, L), out = r(ed.centerline.pointAt(off + tt)) > wall
                 if (out !== prev) {
                     const sc = off + tt, s0 = off + Math.min(Math.max(tt - 2.5, clear), L - clear), win = P.poiRowSlideM
-                    rows.push(...this._rowOnPlane(road, ed, s0, Math.max(off + clear, sc - win), Math.min(off + L - clear, sc + win), out ? -1 : 1, P))
+                    const row = this._rowOnPlane(road, ed, s0, Math.max(off + clear, sc - win), Math.min(off + L - clear, sc + win), out ? -1 : 1, P)
+                    rows.push(...row)
+                    rowsOf.set(w.ek, [...(rowsOf.get(w.ek) ?? []), ...row])
                 }
                 prev = out
             }
@@ -1709,18 +1711,24 @@ export class PoiSystem {
      * the camp's row stands at its pad, ~30 m inside the wall, so the return put the truck just past
      * the barricades and it crashed back through them). A row's back axis (poi.js _barrierRow: +Z =
      * (sin yaw, cos yaw)) points out, so a spot is "past" a row when it lies along that axis from it.
+     *
+     * BUG-222 (2026-11-18): only a row on the spot's OWN road can put it past (`rowsOf`: road key → its barricades).
+     * A row's half-plane reaches 60 m sideways, so tested against every row it dropped the inside stretch of a
+     * neighbouring road (a sibling leg off a junction just outside the wall): on 5 of 24 far returns over 60 worlds
+     * the fade then skipped a spot 13–32 m inside the truck's own row for one 41–62 m away, once 454 m.
      */
-    _returnSpots (road, canon, r, rIn, adj, barricades, P) {
+    _returnSpots (road, canon, r, rIn, adj, rowsOf, P) {
         const out = [], keep = P.poiEdgeReturnM
-        const past = (p) => barricades.some(b => Math.hypot(p.x - b.x, p.z - b.z) < 60 && (p.x - b.x) * Math.sin(b.yaw) + (p.z - b.z) * Math.cos(b.yaw) > -keep)
+        const past = (p, bars) => bars.some(b => Math.hypot(p.x - b.x, p.z - b.z) < 60 && (p.x - b.x) * Math.sin(b.yaw) + (p.z - b.z) * Math.cos(b.yaw) > -keep)
         for (const w of this._wallRoads(road, canon)) {
             if (!adj.has(w.ka) && !adj.has(w.kb)) continue
+            const bars = rowsOf.get(w.ek) ?? []
             const ed = w.ed()
             if (!ed?.centerline) continue
             const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
             for (let t = 0; t <= L; t += 10) {
                 const p = ed.centerline.pointAt(off + t)
-                if (r(p) > rIn || past(p)) continue
+                if (r(p) > rIn || past(p, bars)) continue
                 const ct = ed.centerline.tangentAt(off + t), tl = Math.hypot(ct.x, ct.z) || 1
                 out.push({ x: p.x, z: p.z, tx: ct.x / tl, tz: ct.z / tl })
             }

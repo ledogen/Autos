@@ -24,6 +24,8 @@ import { ECONOMY_PARAMS } from '../src/economy.js'
 import { DAY_PARAMS } from '../src/day.js'
 import { summarize, parseLines, report } from '../tools/run-log-summary.mjs'   // the runlog step reads its real log back
 import { TUTORIAL } from '../data/tutorial.js'   // FEAT-184: the tutorial seed's world (DEC-402)
+import { FIRING, PHONE } from '../data/dialogue.js'   // FEAT-288 P8: the firing's cards, framed, to count what was shown
+import { DialogueSystem } from '../src/dialogue.js'
 import { SHOP_TYPES } from '../src/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -220,6 +222,41 @@ const skipAndReadLarry = async () => {
   check(!await dlg(), "the skip's cards did not close after 24 presses")
 }
 const car = () => js('window.__car()')
+// BUG-203: the alerts area (#machine-word) shows "Wrong way. Turn around" right now
+const wrongWayUp = () => js('(e => e.style.opacity === "1" && /Wrong way/.test(e.textContent))(document.getElementById("machine-word"))')
+// …and a 10 Hz page-side count of the polls it showed while a dialogue card or the intro's card was up (window.__wwOver),
+// over the opening: it stops itself when the tutorial's line comes on (mom's pedals card, after the opening's cards)
+const watchWrongWay = () => js(`window.__wwOver = 0; clearInterval(window.__wwWatch); window.__wwWatch = setInterval(() => {
+  try { if (window.__gps()) return clearInterval(window.__wwWatch) } catch { return }   // (no GPS yet mid-load)
+  const e = document.getElementById('machine-word'), card = getComputedStyle(document.getElementById('dialogue-panel')).display !== 'none'
+    || document.getElementById('tut-card').style.display === 'flex'
+  if (card && e.style.opacity === '1' && /Wrong way/.test(e.textContent)) window.__wwOver++ }, 100)`)
+// The truck's heading (rad, the seat's convention: forward = (−sin h, −cos h)), and a re-seat on the spot facing h.
+const heading = () => js('(q => Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y)))(window.__vs.quaternion)')
+const faceTo = async (h) => { const v = await car()
+  await js(`window.__seated = false; window.__teleport(${v.x}, ${v.z}, ${h}).then(() => { window.__seated = true })`)
+  check(await until(() => js('window.__seated'), 30000, 250), 'the re-seat on the spot never seated') }
+// FEAT-288 P6: the opening's orbit angle (rad, camera.js orbitTheta's convention) read off the camera round the joint
+const orbitAt = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), c = window.__cam().position
+  return Math.atan2(c.x - (q.modelX ?? q.x), c.z - (q.modelZ ?? q.z)) })()`)
+const dAng = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a))
+// BUG-203: seated on the nearest road along it, then turned round: one of the two faces against any line along that road,
+// so "Wrong way" shows at one of them unless something silences it. Puts the truck back where it stood.
+async function wrongWayEitherWay () {
+  const v = await car(), h0 = await heading()
+  const r = await js(`(v => { const nr = window.__roadSys().queryNearest(v.x, v.z, 200)
+    return nr?.point ? { x: nr.point.x, z: nr.point.z, h: Math.atan2(-nr.tangent.x, -nr.tangent.z) } : null })(window.__vs.position)`)
+  check(r, 'no road near the truck to face along')
+  let shown = false
+  for (const h of [r.h, r.h + Math.PI]) {
+    await js(`window.__seated = false; window.__teleport(${r.x}, ${r.z}, ${h}).then(() => { window.__seated = true })`)
+    check(await until(() => js('window.__seated'), 30000, 250), 'the seat on the road never seated')
+    if ((shown = await until(wrongWayUp, 3000))) break
+  }
+  await js(`window.__seated = false; window.__teleport(${v.x}, ${v.z}, ${h0}).then(() => { window.__seated = true })`)
+  check(await until(() => js('window.__seated'), 30000, 250), 'the seat back never seated')
+  return shown
+}
 // A fake pad: navigator.getGamepads stubbed to one standard-mapping pad whose buttons and sticks are
 // window.__fp.b / .axes (gamepad.js polls it every frame). padOff hands back the real one.
 const padOn = () => js(`window.__realPads ??= navigator.getGamepads.bind(navigator)
@@ -245,6 +282,22 @@ function check (cond, what) { if (!cond) throw new Error(what) }
 // ── Scenarios: run in order, one Chrome session ─────────────────────────────
 let home = null
 const STEPS = [
+  ['menuRace', async () => {
+    // BUG-231: the menu is wired while main.js is still evaluating (its top-level awaits), so a click at first paint
+    // reached `let`s not yet declared ("Cannot access '_paperSizeIdx' before initialization") and no run started. Click
+    // the paper route the moment its handler exists (the page's own console-error watch fails the step on a throw), then
+    // require the round to leave idle with the menu gone: the click either waits for the world and starts it, or is ignored and the second works.
+    await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
+    const click = () => js(`(() => { const mm = document.getElementById('main-menu'); if (!mm) return false
+      if (!mm.classList.contains('setup')) { document.getElementById('mm-new')?.click(); if (!mm.classList.contains('setup')) return false }
+      const p = document.querySelector('#mm-scenario-list button:nth-child(3)')   // list: descent, descent 2, the paper route
+      if (!p) { for (let i = 0; i < 4 && document.getElementById('mm-setup-panel').dataset.mode !== 'scenarios'; i++) document.querySelector('button[data-key=gameMode]').click(); return false }
+      p.click(); return /paper/.test(p.textContent) })()`).catch(() => false)
+    check(await until(click, 30000, 2), 'the paper route button never came up on the menu')
+    check(await until(() => js('!!window.__paper?.system?.state && window.__paper.system.state !== "idle" && document.getElementById("main-menu").style.display === "none"'), 120000, 250),
+      'a paper-route click at first paint started no run (state ' + await js('window.__paper?.system?.state') + ')')
+    console.log('  menuRace: a click at first paint raised nothing and the round started')
+  }],
   ['boot', async () => {
     // INFRA-08: the boot is the box's speed test (see stretch). Past TOO_SLOW × an idle boot this run cannot
     // speak for the code — it says so now, rather than failing on whichever step the load lands on.
@@ -386,10 +439,7 @@ const STEPS = [
     const back = await js('({ on: window.__autoDrive.on, status: window.__autoDrive.status })')
     check(!back.on && /took the wheel/.test(back.status), `a driving key did not hand the truck back: ${JSON.stringify(back)}`)
     console.log(`  autoDrive: ${moved.toFixed(0)} m in 10 sim-s (${st.status}); D handed it back`)
-    // Put the truck back where the teleport step left it (seated, brake latched). Left ~150 m down the road, the lab
-    // step then ends in a later NaN at mom's seat (strut compression ~3e5 m, the engine's velocity NaN): `camp` failed
-    // three times, 2026-11-18. The AI is not the cause: driving the same 150 m with W does the same; a main bug, reported.
-    await seat(c0.x, c0.z, 0)
+    await park()   // BUG-224: the truck stays ~150 m down the road; the lab and the story run that follow must cope
   }],
   ['map', async () => {
     await tap('m')
@@ -447,9 +497,20 @@ const STEPS = [
     check(await js('document.getElementById("pm-lab").textContent') === 'exit testing lab', 'lab did not enter')
     const a = await car(); await simFor(1); const b = await car()
     check(Math.abs(b.y - a.y) < 0.05 && b.y > -1 && b.y < 3, `truck not resting on the lab slab: y ${a.y.toFixed(2)} → ${b.y.toFixed(2)}`)
+    // BUG-224: autoDrive left the truck ~150 m from its last seat, so leaving the lab re-seats it behind a network build.
+    // While that build ran the sim used to step the truck at the LAB's pose against the real ground (~200 m above it):
+    // launched at ~400 m/s, 142 km up, and the engine world it left behind sent the next seat (mom's, in `camp`) NaN.
+    // Every frame from the click on, the truck must stay finite and at rest.
+    await js(`(() => { window.__b224 = { n: 0, vMax: 0, bad: false }; const t0 = performance.now()
+      const f = () => { const v = window.__vs, s = v.velocity.length(), b = window.__b224
+        b.n++; b.vMax = Math.max(b.vMax, s); if (![s, v.position.x, v.position.y, v.position.z, ...v.strutComp].every(Number.isFinite)) b.bad = true
+        if (performance.now() - t0 < 3000) requestAnimationFrame(f) }
+      requestAnimationFrame(f) })()`)
     await js('document.getElementById("pm-lab").click()')
     check(await js('document.getElementById("pm-lab").textContent') === 'testing lab', 'lab did not exit')
     await sleep(3000)
+    const b224 = await js('window.__b224')
+    check(b224.n > 10 && !b224.bad && b224.vMax < 5, `leaving the lab threw the truck (BUG-224): ${JSON.stringify(b224)}`)
     const c = await car()
     check(c.y > await js(`window.terrain(${c.x}, ${c.z})`) - 1, `truck under the world after leaving the lab: y ${c.y.toFixed(1)}`)
   }],
@@ -1508,10 +1569,20 @@ const STEPS = [
     // The letter is TIME (courier's and the paper round's rule), not the share: burn the job's clock to ~0.85 par (a game
     // minute is a second of it; the camp's line has no deadline), then fell the rest — the line settles with every target
     // down, lettered on its par ratio.
+    const wp235 = await js(`(() => { for (const q of window.__poi().list()) if (window.__map2d()._onWaypoint({ x: q.x, z: q.z })) return true; return false })()`)
+    check(wp235 && await js('!!window.__map2d()._getWaypoint()'), 'BUG-235: no waypoint could be set during the job')
     await js('(m => window.__day().advanceMinutes(Math.max(0, Math.ceil(0.85 * m.mission.par - m.elapsed))))(window.__mission())')
     check(await js('window.__mission().state') === 'running', 'the line settled before its last target fell')
     await js('window.__site().targets.forEach(t => { t.smashed = true })')
     check(await until(() => js('window.__mission().state === "done"'), 5000), `felling the last target did not settle the line: ${await js('window.__mission().state')}`)
+    // BUG-235: a waypoint set during the job is live again the moment it ends; the HUD poll must not rewrite the card
+    // (it replayed the reveal at 10 Hz). Count #mp-body rewrites over 1.5 s once the first render is in.
+    await sleep(500)
+    await js(`window.__rw235 = 0; new MutationObserver(m => { window.__rw235 += m.length })
+      .observe(document.getElementById('mp-body'), { childList: true, subtree: true, characterData: true })`)
+    await sleep(1500)
+    const rw = await js('window.__rw235')
+    check(rw === 0, `BUG-235: the result card's body was rewritten ${rw} times in 1.5 s with a waypoint set`)
     const res = await js(`(m => { const r = m.result, th = m.mission.terms?.thresholds ?? { S: 0.652, A: 0.707, B: 0.794, C: 1 }
       return { letter: r.letter, want: 'SABC'.split('').find(l => r.ratio <= th[l]) ?? 'D', ratio: r.ratio } })(window.__mission())`)
     check(res.letter === res.want && res.letter !== 'S', `the line is not lettered on time: ${JSON.stringify(res)}`)
@@ -1519,6 +1590,8 @@ const STEPS = [
       `the result card does not count every target smashed: "${await js('document.getElementById("mp-body")?.textContent')}"`)
     check(await js('window.__econ.money') === w0, `the requisition line paid for its targets: $${w0} → $${await js('window.__econ.money')}`)
     await js('document.getElementById("mp-accept").click()')
+    check(await until(() => js('/to the waypoint/.test(document.querySelector("#mission-hud .hud-text")?.textContent ?? "")'), 3000), `BUG-235: after continue the waypoint's HUD line is gone: "${await js('document.querySelector("#mission-hud .hud-text")?.textContent')}"`)
+    await js('window.__map2d()._onWaypoint(null)')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
     // DEC-403: a BOARD demolition job (a farm's or a work site's, wherever one is live, the way the save step takes its
@@ -2141,27 +2214,87 @@ const STEPS = [
       throw new Error('cards never stopped coming')
     }
     // GATE_SHOTS=<dir>: a screenshot of each FEAT-288 lesson's ringed state (the P3a look sheet)
-    const gateShot = async (name) => { if (!process.env.GATE_SHOTS) return; mkdirSync(process.env.GATE_SHOTS, { recursive: true }); await sleep(400)
-      writeFileSync(join(process.env.GATE_SHOTS, `${name}.png`), Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    const gateShot = async (name) => { if (!process.env.GATE_SHOTS) return; mkdirSync(process.env.GATE_SHOTS, { recursive: true })
+      const was = await js('document.documentElement.dataset.uiScale')
+      for (const sc of ['small', 'big']) {   // FEAT-248: both UI sizes
+        await js(`document.documentElement.dataset.uiScale = '${sc}'`); await sleep(400)
+        writeFileSync(join(process.env.GATE_SHOTS, `${name}-${sc}.png`), Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+      await js(`document.documentElement.dataset.uiScale = '${was}'`) }
     // DEC-320: the firing opens on Katie's call, wrapping up as Billy arrives; then the manager.
     check(await until(async () => await speaker() === 'Katie', 3000), `the run did not open on the firing's call (speaker "${await speaker()}")`)
+    // FEAT-288 P8 (DEC-426 Q2): every card shown from here, with the slide it came with — the copy leaving (.dlg-ghost's
+    // 'dlg-out') and the live panel's 'dlg-in', each as the side it moves by (-1 left, +1 right, 0 none) — and a sequence's
+    // end as { end, out }. Read off the page's own animations; nothing in src/ records it.
+    await js(`(() => { const R = window.__dlgRec = [], p = document.getElementById('dialogue-panel')
+      const sgn = (a) => !a ? 0 : a.effect.getKeyframes().some(k => /^(calc\\()?-/.test(k.translate ?? '')) ? -1 : 1
+      // the live panel's slide is read as it is STARTED: a press in the same task lands it (finish) before this observer runs
+      let enter = 0, animate = p.animate.bind(p)
+      p.animate = (kf, o) => { if (o?.id === 'dlg-in') enter = kf.some(k => /^(calc\\()?-/.test(k.translate ?? '')) ? -1 : 1; return animate(kf, o) }
+      new MutationObserver(recs => {
+        let out = 0, card = false
+        for (const r of recs) {
+          for (const n of r.addedNodes) if (n.classList?.contains('dlg-ghost')) out = sgn(n.getAnimations().find(a => a.id === 'dlg-out'))
+          card ||= r.target.id === 'dlg-text' }
+        if (card) R.push({ sp: document.getElementById('dlg-speaker').textContent, tx: document.getElementById('dlg-text').textContent, out, in: enter }), enter = 0
+        else if (out) R.push({ end: true, out })
+      }).observe(p.parentNode, { childList: true, subtree: true }) })()`)
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
       return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), h: window.__day().clockH() } })()`)
     const a = await at(); await sleep(1000); const b = await at()
     check(a.truck < 8, `the truck is ${a.truck.toFixed(1)} m from the burger joint's pad, want < 8`)
     check(b.cam > 9, `the camera is ${b.cam.toFixed(1)} m from the truck — not on the joint's orbit`)
     check(b.h === a.h, `the day clock ran under the firing (${a.h} → ${b.h})`)
+    await watchWrongWay()   // BUG-203: counted from here to the pedals card
+    // FEAT-288 P6 (FIRING_CAM, data/tutorial.js): the orbit turns on its own (0.05 rad/s); the right stick and a RIGHT drag
+    // turn it by hand without turning the card; resumeS (3 s) after the last touch it turns on its own again, from there.
+    { const card = () => js('document.getElementById("dlg-text").textContent')
+      const o0 = await orbitAt(); await sleep(1500); const o1 = await orbitAt()
+      check(dAng(o0, o1) > 0.02, `the firing's orbit did not turn on its own: ${dAng(o0, o1).toFixed(3)} rad in 1.5 s`)
+      const t0 = await card(); await padOn()
+      await js('__fp.axes[2] = 1'); await sleep(600); await js('__fp.axes[2] = 0'); await sleep(1000)   // the camera's 5/s follow settles
+      const o2 = await orbitAt()
+      check(dAng(o1, o2) < -0.3, `the right stick did not turn the firing's orbit: ${dAng(o1, o2).toFixed(3)} rad`)
+      await sleep(1000); const o3 = await orbitAt()
+      check(Math.abs(dAng(o2, o3)) < 0.01, `the orbit turned again under 3 s after the stick let go: ${dAng(o2, o3).toFixed(3)} rad`)
+      await sleep(3000); const o4 = await orbitAt(); await sleep(1000); const o5 = await orbitAt()
+      check(dAng(o4, o5) > 0.02, `the orbit did not resume 3 s after the stick let go: ${dAng(o4, o5).toFixed(3)} rad/s`)
+      await padOff()
+      const mouse = (type, x, y) => client.cmd('Input.dispatchMouseEvent', { type, x, y, button: 'right', buttons: type === 'mouseReleased' ? 0 : 2, clickCount: 1 })
+      await mouse('mouseMoved', 300, 200); await mouse('mousePressed', 300, 200)
+      for (let i = 1; i <= 10; i++) { await mouse('mouseMoved', 300 + 20 * i, 200); await sleep(30) }
+      await mouse('mouseReleased', 500, 200); await sleep(500)
+      const o6 = await orbitAt()
+      check(dAng(o5, o6) < -0.3, `a right drag did not turn the firing's orbit: ${dAng(o5, o6).toFixed(3)} rad`)
+      check(await card() === t0 && await speaker() === 'Katie', `the stick or the right drag turned the firing's card ("${t0}" → "${await card()}")`)
+      check(!await js('window.__gps()'), `BUG-203: the GPS has a line under the firing: ${JSON.stringify(await js('window.__tutorial()'))}`) }
     // DEC-299: about 07:00; FEAT-184 (DEC-159): day −1, so a played tutorial enters free will on day 0
     check(Math.abs(a.h + 17) < 0.1, `the firing is not at 07:00 on day 0 (clockH ${a.h})`)
     // BUG-136: the days before the clock's zero; the HUD read day 0 as "Day 0, -6 am".
     const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
     check(await until(async () => await hudClock() === 'Day 0, 7 am', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day 0, 7 am" (BUG-136)`)
-    let boss = false, hung = false
-    for (let i = 0; i < 8 && ['Katie', 'The manager'].includes(await speaker()); i++) {
-      boss ||= await speaker() === 'The manager'; hung ||= !boss && await js('document.getElementById("dlg-text").textContent') === '<click>'
-      await tap('Enter'); await sleep(250) }
-    check(boss, 'the firing had no card from the manager')
-    check(hung, "the firing's call did not hang up (<click>) before the manager (DEC-354)")
+    // FEAT-288 P8: Katie's <click> cycles in place; the manager is a change of speaker: Katie's card leaves by the left (she
+    // came in from there, the first card of a showing), his comes in from the right, and leaves by the right at the end.
+    // A press mid-slide (here a click, dispatched in the same task as the press that started the slide, so it IS mid-slide
+    // on any load) lands his card whole and is spent: he is still up. Then presses as fast as CDP sends them, keys and
+    // clicks: the cards shown are the framed script's, none lost.
+    await tap('Enter'); await sleep(120)   // Katie's first card (filled under the orbit checks) → her <click>
+    const mid = await js(`(() => { const p = document.getElementById('dialogue-panel'), run = () => p.getAnimations().some(a => a.id === 'dlg-in' && a.playState === 'running')
+      const words = () => [...document.querySelectorAll('#dlg-text span')].filter(w => !w.children.length)
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      const sp = document.getElementById('dlg-speaker').textContent, sliding = run(), ghost = !!document.querySelector('.dlg-ghost')
+      document.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }))
+      return { sp, sliding, ghost, landed: !run(), filled: words().every(w => w.style.visibility !== 'hidden'), after: document.getElementById('dlg-speaker').textContent } })()`)
+    check(mid.sp === 'The manager' && mid.sliding && mid.ghost, `P8: the change of speaker to the manager did not slide: ${JSON.stringify(mid)}`)
+    check(mid.landed && mid.filled && mid.after === 'The manager', `P8: a click mid-slide did not land the manager's card whole, or turned it: ${JSON.stringify(mid)}`)
+    for (let i = 0; i < 12 && await speaker(); i++) {   // as fast as CDP goes, alternating key and click
+      if (i % 2) await tap('Enter'); else { for (const type of ['mousePressed', 'mouseReleased']) await client.cmd('Input.dispatchMouseEvent', { type, x: 400, y: 200, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 }) } }
+    { const R = await js('window.__dlgRec'), cards = R.filter(r => !r.end), want = new DialogueSystem(PHONE)._frame(FIRING)
+      check(1 + cards.length === want.length && cards.every((c, i) => c.sp === want[i + 1].speaker),
+        `P8: the firing's cards shown are not its script's (${want.length} framed, the first read before): ${JSON.stringify(R)}`)
+      check(cards[0]?.tx === '<click>', "the firing's call did not hang up (<click>) before the manager (DEC-354)")
+      check(cards[0]?.out === 0 && cards[0]?.in === 0, `P8: Katie's <click> slid — the same speaker must cycle in place: ${JSON.stringify(cards[0])}`)
+      check(cards[1]?.sp === 'The manager' && cards[1].out === -1 && cards[1].in === 1, `P8: Katie's card did not leave by the left, the manager's come in from the right: ${JSON.stringify(cards[1])}`)
+      check(R.at(-1)?.end && R.at(-1).out === 1, `P8: the manager's card did not leave by the right, the side it came in from: ${JSON.stringify(R.at(-1))}`) }
     // The card: up, the sim held under it; "play" on seed 6 loads the tutorial seed with seed 6 to come back to.
     check(await until(() => js('document.getElementById("tut-card").style.display === "flex"'), 3000), `the firing did not end on the tutorial card: ${JSON.stringify(await tut())}`)
     check((await tut()).phase === 'card', `the card is up but the tutorial reads ${JSON.stringify(await tut())}`)
@@ -2175,7 +2308,18 @@ const STEPS = [
     check(await until(() => js('window.__autosave()'), 3000) && await js('JSON.parse(localStorage.getItem("autos-run/1")).data.returnSeed') === '6',
       'the tutorial did not save with its way back to seed 6')
     check(await until(async () => await speaker() === 'Phone', 5000), `the tutorial seed did not open on mom's call ringing (speaker "${await speaker()}")`)
+    // BUG-203: the truck turned round under her ring card — no line, so no "Wrong way", whichever way it faces
+    { const h0 = await heading(); await faceTo(h0 + Math.PI); await sleep(1500)
+      check(!await js('window.__gps()') && !await wrongWayUp(), 'BUG-203: a line or "Wrong way" under mom\'s call, the truck turned round')
+      await faceTo(h0) }
+    // FEAT-288 P8: prefers-reduced-motion (the browser's "avoid motion" setting) swaps the card at once: the ring card → mom
+    // is a change of speaker, and nothing slides.
+    await client.cmd('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+    const rec0 = await js('window.__dlgRec.length')
     await readCards()   // her call, up to the key card (DEC-359: it waits for the key, the game runs under it)
+    await client.cmd('Emulation.setEmulatedMedia', { features: [] })
+    { const R = (await js('window.__dlgRec')).slice(rec0), m = R.find(r => r.sp === 'Mom')
+      check(m && R.every(r => !r.out && !r.in), `P8: under reduced motion a card slid (or mom's call never showed): ${JSON.stringify(R.slice(0, 4))}`) }
     check(await js('window.__tutorial().until') === 'engine', `mom's call did not stop at the key card: ${JSON.stringify(await js('window.__tutorial()'))}`)
     await crank(); await readCards()   // the key catches: her <click>, then the driving lesson
     // DEC-354: a call rings first and hangs up last — the key card (FEAT-184) inside it.
@@ -2183,6 +2327,13 @@ const STEPS = [
       check(r === 0 && k > r && said[k + 1] === 'Mom: <click>', `mom's call is not ring, her cards, the key, <click>: ${JSON.stringify(said.slice(0, 7))}`) }
     // (the call closes on <click>; the pedals' card follows at once, so no 'speaker is gone' check here)
     check(await until(async () => (await at()).cam < 9, 3000), 'the camera never came back to the truck')
+    // BUG-203: never "Wrong way" while an opening card was up; from the pedals card on the line is there, and it works:
+    // turned against it, the alert shows (either way round: one of the two points against the line)
+    await readCards()   // her <click> (still up when the key card had not cleared yet), then the pedals card
+    check(!await js('window.__wwOver'), `BUG-203: "Wrong way" showed over the opening's cards (${await js('window.__wwOver')} polls)`)
+    check(await until(() => js('!!window.__gps()'), 5000), `BUG-203: the line never came on with the pedals card: ${JSON.stringify(said.slice(-3))}`)
+    check(await wrongWayEitherWay(), 'BUG-203: no "Wrong way" with the truck turned against the tutorial\'s line')
+    await readCards(); await crank()   // a re-seat leaves the engine off
     // FEAT-229: the FIRING DAY — no job (free will is after the paycheck), the HUD and the GPS to mom's first.
     const eve = () => js(`(() => ({ s: window.__mission().state, tut: window.__tutorial().phase, gps: !!window.__gps(),
       hud: getComputedStyle(document.getElementById('mission-hud')).display !== 'none' && document.getElementById('mission-hud').textContent.trim() }))()`)
@@ -2280,6 +2431,7 @@ const STEPS = [
       return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
     await js(`window.__seated = false; window.__teleport(${mom.x}, ${mom.z}, ${mom.h}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), "the teleport to mom's never seated")
+    await gateShot('p4-1-mom-ring')   // FEAT-288 P4: her parking ring (the look sheet)
     // The parking lesson lands near hers; read up to her hand-over, parking when no card is up.
     const handover = () => js('/Take this pack over to your uncle/.test(document.getElementById("dlg-text")?.textContent ?? "")')
     let heard = false
@@ -2295,12 +2447,18 @@ const STEPS = [
     // DEC-305 (DEC-238's errand): the pack lands by her steps; parked beside it, G loads it; parked at Larry's, he gives it you.
     check(await until(async () => !!(await tut()).pack, 3000), `mom's toss put no pack on the ground: ${JSON.stringify(await tut())}`)
     await readCards()   // the pick-up lesson
+    // FEAT-288 P5: the pick-up lesson's step names the pack, so the tossed pack wears the quest mark (beam + white pulse).
+    check(await until(() => js('!!window.__questMark()'), 3000), `the tossed pack wears no quest mark (card up: ${JSON.stringify(await tut())})`)
     const pk = (await tut()).pack, mq = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'momsHouse'); return { x: q.roadX, z: q.roadZ } })()`)
-    const toRoad = Math.atan2(mq.x - pk.x, mq.z - pk.z)   // the truck 3 m out from the pack, nose to the road
-    await js(`window.__seated = false; window.__teleport(${pk.x + 3 * Math.sin(toRoad)}, ${pk.z + 3 * Math.cos(toRoad)}, ${toRoad + Math.PI}).then(() => { window.__seated = true })`)
+    // the truck 3 m out from the pack toward the road, nose on the pack (FEAT-288 P5: its mark in the chase view)
+    const toRoad = Math.atan2(mq.x - pk.x, mq.z - pk.z)
+    await js(`window.__seated = false; window.__teleport(${pk.x + 3 * Math.sin(toRoad)}, ${pk.z + 3 * Math.cos(toRoad)}, ${toRoad}).then(() => { window.__seated = true })`)
     check(await until(() => js('window.__seated'), 30000, 250), 'the teleport to the pack never seated')
-    await simFor(2); await park(true); await tap('g')
+    await simFor(2); await park(true)
+    check(await until(async () => (m => m?.onScreen && m.lit)(await js('window.__questMark()')), 3000), `beside the pack its quest mark is not in view and pulsing: ${JSON.stringify(await js('window.__questMark()'))}`)
+    await tap('g')
     check(await until(async () => (await tut()).stop === 'larry', 3000), `G beside the pack did not load it: ${JSON.stringify(await tut())}`)
+    check(await until(async () => !await js('window.__questMark()'), 1000), 'the pack loaded, its quest mark stayed up')
     check(await until(async () => (await eve()).gps, 3000), `the pack loaded, no GPS to Larry's: ${JSON.stringify(await eve())}`)
     const lq = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'larrysHouse'); return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
     await js(`window.__seated = false; window.__teleport(${lq.x}, ${lq.z}, ${lq.h}).then(() => { window.__seated = true })`)
@@ -2312,13 +2470,43 @@ const STEPS = [
     await readCards()
     check((await tut()).stop === 'snack' && await js("window.__inv.list().some(r => r.id === 'pack')"), `Larry's hand-over did not leave the pack on board and send the day for the snack: ${JSON.stringify(await tut())}`)
     // DEC-345: his cards over, Katie calls — the picnic at the old McGill ranch, a snack from the station on the way.
-    check(saidAny(/^Katie: .*picnic out at the old McGill ranch/) && saidAny(/^Katie: You know where to go, I'll see you there!/),
-      `at Larry's, no picnic call from Katie in the owner's words: ${JSON.stringify(said.slice(-4))}`)
-    // DEC-355: her call opens on the owner's line and names the peanuts; DEC-354: it rings and hangs up.
-    { const h = said.findIndex(t => t === 'Katie: Hey Billy! How you doing? Sorry about yesterday…'), e = said.findIndex(t => /^Katie: You know where to go/.test(t))
-      check(h > 0 && said[h - 1] === 'Phone: Ring ring ring' && said[e + 1] === 'Katie: <click>' && saidAny(/^Katie: .*bag of peanuts/),
-        `Katie's picnic call is not ring, "Hey Billy!…", the peanuts, <click>: ${JSON.stringify(said.slice(-7))}`) }
+    check(saidAny(/^Katie: .*picnic out at the old McGill ranch/), `at Larry's, no picnic call from Katie in the owner's words: ${JSON.stringify(said.slice(-4))}`)
+    // DEC-355: her call opens on the owner's line and names the peanuts; DEC-354: it rings (and hangs up at the store, below).
+    { const h = said.findIndex(t => t === 'Katie: Hey Billy! How you doing? Sorry about yesterday…')
+      check(h > 0 && said[h - 1] === 'Phone: Ring ring ring' && saidAny(/^Katie: .*bag of peanuts/),
+        `Katie's picnic call is not ring, "Hey Billy!…", the peanuts: ${JSON.stringify(said.slice(-7))}`) }
     await stamped(9, "Larry's")
+    // FEAT-288 P3b, the map beat (DEC-422: the list on the side, a waypoint, the legend pointed at): inside her call each card
+    // waits for its action, the wrong one is refused; the fake pad and the keyboard each take a turn.
+    const waits = () => js('window.__tutorial().until')
+    const wpt = () => js('window.__tutorial().wpt')   // the player's own pin: since P4 the map draws the leg's (her station) too
+    // ringed: the gate marks on a 100 ms paint (tut-gate.js), so a card just turned, or a screen just re-rendered, is read
+    // within a second, not on the instant
+    const hi = (q) => until(() => js(`!!document.querySelector(${JSON.stringify(q)})?.classList.contains('tut-hi')`), 1000)
+    check(await waits() === 'map' && !await js('window.__map2d().isOpen()'), `her call did not stop on "open your map": ${JSON.stringify(await tut())}`)
+    await gateShot('10-map-card')
+    await padOn(); await js('__fp.b[8] = 1'); await frames(2, 60); await js('__fp.b[8] = 0'); await frames(2, 60)   // View, a tap (a hold is the skip)
+    check(await until(async () => await waits() === 'shoptab', 3000) && await js('window.__map2d().isOpen()'), `the pad's View did not open the map and turn her card: ${JSON.stringify(await tut())}`)
+    check(await hi('#map-list-head [data-tab="shopping"]'), 'the map card: the Shopping tab is not ringed')
+    await gateShot('11-map-shopping-tab')
+    await padOff(); await tap('n'); await sleep(300)
+    check(!await wpt(), 'N dropped a waypoint before her waypoint card (the gate)')
+    await padOn(); await btn(2)   // the pad's X: the Shopping tab
+    check(await until(async () => await waits() === 'waypoint', 3000) && await js('window.__map2d().tab') === 'shopping', `the pad's X did not switch the list to Shopping: ${JSON.stringify(await tut())}`)
+    const st = await js(`(() => { const L = window.__poi().list().find(q => q.type === 'larrysHouse'), d = q => Math.hypot(q.x - L.x, q.z - L.z)
+      const q = window.__poi().list().filter(q => q.type === 'gasStation').sort((a, b) => d(a) - d(b))[0]; return { id: q.id, x: q.x, z: q.z } })()`)
+    check(await until(() => hi(`#map-list .ml-row[data-key="${st.id}"]`), 2000), "the waypoint card: her station's row is not ringed")
+    check(!await js(`window.__map2d()._onWaypoint({ x: ${st.x + 1000}, z: ${st.z} })`) && !await wpt(), 'a waypoint 1 km off her station was taken (the click / N / Y path)')
+    for (let i = 0; i < 30 && await js('window.__map2d()._listId') !== st.id; i++) await btn(13)   // the D-pad walks the list to it
+    check(await js('window.__map2d()._listId') === st.id, `the pad's D-pad never reached her station's row: ${await js('window.__map2d()._listId')}`)
+    await gateShot('12-map-waypoint-card')
+    await btn(3)   // the pad's Y: the waypoint, on the row's place
+    check(await until(async () => await waits() === 'mapshut', 3000), `the pad's Y on her station's row did not drop the waypoint: ${JSON.stringify({ w: await wpt(), tut: await tut() })}`)
+    check(await hi('#map-legend'), 'the legend card: the legend is not ringed')
+    await gateShot('13-map-legend')
+    await padOff(); await tap('m')   // the keyboard closes it
+    check(await until(async () => !await js('window.__map2d().isOpen()') && !await speaker(), 3000), `M did not close the map and end her map beat: ${JSON.stringify(await tut())}`)
+    check(!said.slice(said.indexOf('Katie: Hey Billy! How you doing? Sorry about yesterday…')).includes('Katie: <click>'), 'Katie hung up at Larry\'s: her call holds the line to the store')
     // The station nearest Larry's: a bag of peanuts at its store, then (mom's card) its pump, filled until broke.
     const gs = await js(`(() => { const L = window.__poi().list().find(q => q.type === 'larrysHouse'), d = q => Math.hypot(q.x - L.x, q.z - L.z)
       const q = window.__poi().list().filter(q => q.type === 'gasStation').sort((a, b) => d(a) - d(b))[0]
@@ -2331,29 +2519,61 @@ const STEPS = [
     const shopUp = () => js('document.getElementById("svc-screen").checkVisibility()')
     if (!await shopUp()) { await simFor(1); await park(true) }
     check(await until(shopUp, 3000), `parked at the gas station for the snack, no shop: ${JSON.stringify(await tut())}`)
-    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
-    const nut = 'Array.from(document.querySelectorAll("#svc-screen [data-act=node][data-slot]")).find(r => /Bag of peanuts/.test(r.textContent))'
-    check(await js(`!!${nut}`), `the gas station sells no peanuts: "${(await js('document.querySelector("#svc-screen").textContent')).slice(0, 200)}"`)
-    // DEC-356: the snack stop's shelf sells the peanuts alone — any other row says why and its buttons are off.
-    { const other = 'Array.from(document.querySelectorAll("#svc-screen [data-act=node][data-slot]")).find(r => !/Bag of peanuts/.test(r.textContent))'
-      await js(`${other}.click()`)
-      const lk = await js('({ why: /Katie asked for the peanuts/.test(document.querySelector("#svc-screen .sv-kids")?.textContent ?? ""), on: [...document.querySelectorAll("#svc-screen .sv-kids [data-act=stow], #svc-screen .sv-kids [data-act=buy], #svc-screen .sv-kids [data-act=eat]")].filter(b => !b.disabled).length })')
-      check(lk.why && lk.on === 0, `at the snack stop another row is for sale (DEC-356): ${JSON.stringify(lk)}`) }
-    await js(`${nut}.click()`)
-    await js('document.querySelector("#svc-screen .sv-kids [data-act=stow]").click()')
-    await js('document.querySelector("#svc-screen [data-act=checkout]").click()')
-    check(await until(async () => (await tut()).stop === 'pump', 3000), `buying the peanuts did not send the day to the pump: ${JSON.stringify(await tut())}`)
-    { await js(`${nut}.click()`)   // a second bag: refused, so the gas money stays (DEC-356)
-      check(await js('/one bag will do/.test(document.querySelector("#svc-screen .sv-kids")?.textContent ?? "") && !!document.querySelector("#svc-screen .sv-kids [data-act=stow]")?.disabled'),
-        'the peanuts bought, the shop sells a second bag (DEC-356)') }
-    check(!await js('window.__worstDay().pumpsShut'), 'the peanuts bought, the pumps stayed shut (DEC-323)')
-    if (await shopUp()) await tap('Escape')
-    check(await until(async () => !await shopUp(), 2000), 'Escape did not close the gas station shop')
-    // DEC-323: pulling away from the store, mom sends you to a pump.
-    check(!await js('/pump/.test(document.getElementById("dlg-text")?.textContent ?? "") && document.getElementById("dialogue-panel").checkVisibility()'), "mom's pump card came before pulling away")
-    if (await js('window.__vs.parked')) await tap(' ')
-    check(await until(() => js('/Ring ring ring|plumb outta gas/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 3000), "pulling away from the store, no call from mom about the gas (DEC-345)")
+    // FEAT-288 P3b, the shop beat (DEC-422: "how to select an item, how to check out"): Katie, still on the line.
+    check(await until(async () => await waits() === 'cart', 3000), `the shop open, Katie's shop card did not come: ${JSON.stringify(await tut())}`)
     await readCards()
+    check(/^Katie: Got it\?/.test(said.at(-1)) && said.at(-2) !== 'Phone: Ring ring ring', `the shop card is not Katie's held call: ${JSON.stringify(said.slice(-3))}`)
+    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
+    const nut = 'document.querySelector("#svc-screen .sv-line[data-item=bagOfPeanuts]")'
+    check(await js(`!!${nut}`), `the gas station sells no peanuts: "${(await js('document.querySelector("#svc-screen").textContent')).slice(0, 200)}"`)
+    // DEC-356: the shelf's own guard keeps the gas money (any other row "Katie asked for the peanuts", a second bag "one bag
+    // will do", their buttons off). Her cards lock those rows before a click can reach them, so the guard is read off the
+    // hook here and after check out; the shop renders it as the row's why line with its buttons off (service-screen.js).
+    const snackLock = (id) => js(`window.__worstDay().snackLock(${JSON.stringify(id)})`)
+    { const other = await js('document.querySelector("#svc-screen .sv-line[data-item]:not([data-item=bagOfPeanuts])")?.dataset.item ?? null')
+      check(await snackLock('bagOfPeanuts') === null && (!other || await snackLock(other) === 'Katie asked for the peanuts'),
+        `DEC-356 at the snack stop: the peanuts ${await snackLock('bagOfPeanuts')}, ${other} ${other && await snackLock(other)}`) }
+    // the wrong row: locked (DEC-356's "Katie asked for the peanuts" is the shop's own guard; her card refuses the click outright)
+    { const other = 'document.querySelector("#svc-screen .sv-line[data-item]:not([data-item=bagOfPeanuts])")'
+      if (await js(`!!${other}`)) { await js(`${other}.click()`)
+        check(await js(`${other}.classList.contains("tut-locked") && !${other}.classList.contains("on")`), 'the shop card: another shelf row opened') } }
+    check(await hi('#svc-screen .sv-line[data-item="bagOfPeanuts"]'), 'the shop card: the peanuts row is not ringed')
+    await gateShot('14-shop-peanuts')
+    await padOn()   // the fake pad: the D-pad walks the peanuts row and its add to cart alone, A presses
+    const walk = []
+    for (let i = 0; i < 12 && await waits() === 'cart'; i++) {
+      const f = await js(`(e => !e ? 'none' : e.dataset.act === 'stow' ? 'stow' : e.matches('.sv-line[data-item=bagOfPeanuts]:not(.on)') ? 'row' : 'other:' + (e.dataset.act ?? e.textContent.trim().slice(0, 20)))(document.querySelector('#svc-screen .nav-focus'))`)
+      walk.push(f); await btn(f === 'row' || f === 'stow' ? 0 : 13)
+    }
+    await padOff()
+    check(await until(async () => await waits() === 'bought', 3000), `the pad did not put the peanuts in the cart: ${JSON.stringify({ tut: await tut(), f: await navFocus(), walk })}`)
+    check(await hi('#svc-screen [data-act="checkout"]'), 'the check out card: check out is not ringed')
+    await gateShot('15-shop-checkout')
+    await js('document.querySelector("#svc-screen [data-act=discard]").click()')   // the mouse: discard is refused
+    check(await js('!!document.querySelector("#svc-screen [data-act=discard]")') && await waits() === 'bought', 'the check out card: discard emptied the cart')
+    await js('document.querySelector("#svc-screen [data-act=checkout]").click()')
+    check(await until(async () => (await tut()).stop === 'pump' && await waits() === 'shopshut', 3000), `checking out did not buy the peanuts and turn her card: ${JSON.stringify(await tut())}`)
+    check(!await js('window.__worstDay().pumpsShut'), 'the peanuts bought, the pumps stayed shut (DEC-323)')
+    check(await snackLock('bagOfPeanuts') === 'one bag will do', `DEC-356: the peanuts bought, the shelf sells a second bag (${await snackLock('bagOfPeanuts')})`)
+    // her send-off: leave, and only leave (a second bag: DEC-356's guard, checked below; here the row is locked too). The
+    // click is refused at once (tut-gate.js computes it); the marks follow on the gate's 100 ms paint of the re-rendered shelf.
+    await js(`${nut}.click()`)
+    check(!await js(`${nut}.classList.contains("on")`), "Katie's send-off: the peanuts row opened")
+    check(await until(async () => await js(`${nut}.classList.contains("tut-locked")`) && await hi('#svc-screen [data-act="close"]'), 1000),
+      `Katie's send-off: the shelf is not locked, or back is not ringed: ${JSON.stringify(await js(`({ locked: ${nut}.classList.contains("tut-locked"), close: !!document.querySelector('#svc-screen [data-act="close"]'), hi: [...document.querySelectorAll("#svc-screen .tut-hi")].map(e => e.dataset.act ?? e.className) })`))}`)
+    await gateShot('16-shop-leave')
+    await readCards()
+    await tap('Escape')
+    check(await until(async () => !await shopUp(), 2000), 'Escape did not close the gas station shop')
+    // her send-off clears on the HUD poll (10 Hz): read on before it has, readCards stops at it as a card that waits
+    check(await until(async () => await waits() !== 'shopshut', 2000), "the shop closed, Katie's send-off card stayed up")
+    // DEC-422 (was DEC-345's brake): the shop closed, Katie hangs up and mom calls — the truck still parked at the store.
+    await readCards(800, 'Phone')   // her click; mom's ring is left up to look at
+    check(await until(() => js('/Ring ring ring/.test(document.getElementById("dlg-text")?.textContent ?? "") && window.__vs.parked'), 5000),
+      `the shop closed, no call from mom about the gas while still parked (DEC-422): ${JSON.stringify({ card: `${await speaker()}: ${await js('document.getElementById("dlg-text")?.textContent ?? ""')}`, parked: await js('window.__vs.parked'), said: said.slice(-3), tut: await tut(), shop: await shopUp() })}`)
+    await readCards()
+    { const e = said.findIndex(t => /^Katie: You know where to go, I'll see you there!/.test(t))
+      check(e > 0 && said[e + 1] === 'Katie: <click>' && said[e + 2] === 'Phone: Ring ring ring', `Katie's send-off, her click, then mom's ring: ${JSON.stringify(said.slice(e - 1, e + 4))}`) }
     check(saidAny(/^Mom: .*plumb outta gas/) && saidAny(/^Mom: .*pull up at a pump/), `mom's call did not go on to the gas lesson: ${JSON.stringify(said.slice(-3))}`)
     { const g = said.findLastIndex(t => /pull up at a pump/.test(t))
       check(said[g + 1] !== 'Mom: <click>', `mom hung up before the fill-up (DEC-354: she stays on the line): ${JSON.stringify(said.slice(g - 2, g + 2))}`) }
@@ -2379,7 +2599,8 @@ const STEPS = [
     { const f = said.findLastIndex(t => /have fun with Katie/.test(t))
       check(f >= 0 && said[f + 1] === 'Mom: <click>', `mom's send-off did not hang up her gas call (DEC-354): ${JSON.stringify(said.slice(-3))}`) }
     const ranch = await js('({ w: window.__map2d()._getWaypoint(), d: window.__tutorial().camp })')
-    check(ranch.w && ranch.d && Math.hypot(ranch.w.x - ranch.d.x, ranch.w.z - ranch.d.z) < 1, `the tank filled, no waypoint on the camping area: ${JSON.stringify(ranch)}`)
+    check(ranch.w && ranch.d && Math.hypot(ranch.w.x - ranch.d.x, ranch.w.z - ranch.d.z) < 1 && ranch.w.poly?.length > 1,   // FEAT-288 P4: and its line
+      `the tank filled, no waypoint or no line on the camping area: ${JSON.stringify({ ...ranch, w: ranch.w && { ...ranch.w, poly: ranch.w.poly?.length } })}`)
     check(/^drive out to the old McGill ranch · /.test((await eve()).hud), `the drive to the camping area does not read "drive out to the old McGill ranch" ("${(await eve()).hud}")`)
     const door = await js(`(() => { const d = window.__tutorial().camp, nr = window.__roadSys().queryNearest(d.x, d.z, 30)
       return { x: nr.point.x, z: nr.point.z, h: Math.atan2(-nr.tangent.x, -nr.tangent.z) } })()`)
@@ -2472,6 +2693,11 @@ const STEPS = [
     console.log('  worst day: halfway')
     // Halfway home: a road point at 40 % of the crow distance from mom's, once the home leg is measured.
     await simFor(0.5)
+    // FEAT-288 P4 (DEC-422): the leg home is on the map, a pin on her door and the GPS's line to it.
+    { const w = await js(`(() => { const w = window.__map2d()._getWaypoint(), q = window.__map2d()._getPois().find(q => q.type === 'momsHouse')
+        return w && { d: Math.hypot(w.x - q.x, w.z - q.z), n: w.poly?.length ?? 0 } })()`)
+      check(w && w.d < 60 && w.n > 1, `FEAT-288: the drive home shows no pin by mom's or no line on the map: ${JSON.stringify(w)}`) }
+    if (process.env.GATE_SHOTS) { await tap('m'); await sleep(2500); await gateShot('p4-2-map-home'); await tap('m'); await sleep(500) }
     const half = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse'), v = window.__vs.position
       const x = q.x + (v.x - q.x) * 0.4, z = q.z + (v.z - q.z) * 0.4, nr = window.__roadSys().queryNearest(x, z, 400)
       return nr?.point ? { x: nr.point.x, z: nr.point.z, h: Math.atan2(-nr.tangent.x, -nr.tangent.z) } : null })()`)
@@ -2573,11 +2799,15 @@ const STEPS = [
     const m0 = await js('window.__econ.money')
     await js(`${fit}.click()`)
     check(await until(() => js('!window.__damage.flat[0]'), 2000), 'buying a tire for the flat corner did not fix it')
+    const lightsUp = () => js('/headlights/.test(document.getElementById("dlg-text")?.textContent ?? "") && document.getElementById("dialogue-panel").checkVisibility()')
+    await sleep(300)
+    check(!await lightsUp(), "FEAT-288 P4: the headlights card came up with the tire still in the cart (it waits for the check-out)")
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')   // FEAT-212: the cart
+    check(await until(async () => await lightsUp() && await js('document.getElementById("svc-screen").checkVisibility()'), 3000),
+      `FEAT-288 P4 (DEC-422): the tire's check-out put no headlights card up in the shop (it waited for the shift): ${await js('JSON.stringify({ tut: window.__tutorial(), dlg: document.getElementById("dlg-text")?.textContent.slice(0, 60), shop: document.getElementById("svc-screen").checkVisibility(), flat: window.__damage.flat, wd: window.__worstDay() })')}`)
     check(await js('window.__econ.money') === m0, `the tire was not on mom (FEAT-184): $${m0} → $${await js('window.__econ.money')}`)
     console.log(`  the fix: energy ${(await js('window.__day().energyH()')).toFixed(2)} h before (${await js('window.__day().stage()')})`)
-    await tap('Escape'); await tap(' ')   // off the brake: the night drive, whose card holds the sim
-    check(await until(async () => /headlights/.test(await js('document.getElementById("dlg-text")?.textContent ?? ""')), 3000), 'no headlights card on the night drive')
+    await tap('Escape'); await tap(' ')   // out of the shop, off the brake: the night drive, under the lights' card
     await readCards()   // up to the lights' card, which waits for L (DEC-359)
     check(await js('window.__tutorial().until') === 'lights', `the headlights card does not wait for L: ${JSON.stringify(await js('window.__tutorial()'))}`)
     await tap('l'); await readCards()   // it clears on the lights; her slow-down card follows
@@ -2769,6 +2999,15 @@ const STEPS = [
         await key('m', true); await sleep(100); await key('m', false)
         check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a tap of M opened no map')
       },
+      // FEAT-288 P5: parked at mom's door, the pack tossed and quest-marked; after the skip (below) the mark is gone.
+      pack: async () => {
+        const m = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'momsHouse'); return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
+        await tp(m.x, m.z, m.h)
+        for (let i = 0; i < 30 && !await js('!!window.__tutorial().pack'); i++) {
+          if (await speaker()) { await tap('Enter'); await sleep(200) } else { await park(true); await sleep(800) }
+        }
+        check(await until(() => js('!!window.__questMark()'), 3000), `pack: the tossed pack wears no quest mark: ${JSON.stringify(await js('window.__tutorial()'))}`)
+      },
       recovery: async () => {
         // the chip hides in a place's ring: a road point well clear of every POI
         const r = await js(`(() => { const v = window.__vs.position, P = window.__poi().list()
@@ -2805,6 +3044,7 @@ const STEPS = [
       console.log(`  skipMenus ${name}: open ${before} → ${after} · $${got.money} · ${got.gal} gal`)
       check(!a.list.length && !Object.entries(a).some(([k, v]) => k !== 'list' && v), `${name}: the skip left a menu open: ${after}`)
       // FEAT-288 P2 / BUG-183: the skip leaves nothing locked or ringed, and the key the base lock refused works again
+      check(!await js('window.__questMark()'), `${name}: the skip left the quest mark up (FEAT-288 P5)`)
       check(!await js('document.querySelectorAll(".tut-locked, .tut-hi").length'), `${name}: the skip left the tutorial gate's marks: ${await js('[...document.querySelectorAll(".tut-locked, .tut-hi")].map(e => e.id || e.className).join(", ")')}`)
       if (name === 'damage') {
         if (!await js('window.__vs.parked')) await park(true)
@@ -2818,6 +3058,34 @@ const STEPS = [
       }
       if (!clean) clean = got
       else if (!pays) check(got.money === clean.money && Math.abs(got.gal - clean.gal) < 0.01, `${name}: the skip's wallet and tank differ from a clean skip's: ${JSON.stringify(got)} vs ${JSON.stringify(clean)}`)
+    }
+    // FEAT-288 P6 / BUG-203: a skip at three moments of the opening — mid-orbit, the stick just let go; on the intro's card;
+    // under mom's ring — leaves the camera on the truck, nothing locked or ringed, and the GPS on its normal path: a
+    // waypoint's line shows, and turned against it "Wrong way" does (no alert left silenced).
+    for (const at of ['orbit', 'card', 'call']) {
+      await js('document.getElementById("pm-menu").click()')
+      await js('document.getElementById("mm-new").click()')
+      await js(`document.getElementById("su-seed").value = "${TUTORIAL.seed}"; document.getElementById("su-start").click()`)
+      check(await until(() => js(live), 45000, 250), `skip at the ${at}: the tutorial run never went live`)
+      check(await until(async () => await speaker() === 'Katie', 5000), `skip at the ${at}: the run did not open on the firing`)
+      if (at === 'orbit') { await padOn(); await js('__fp.axes[2] = 1'); await sleep(400); await js('__fp.axes[2] = 0'); await padOff() }
+      else {
+        for (let i = 0; i < 12 && !await js('document.getElementById("tut-card").style.display === "flex"'); i++) { await tap('Enter'); await sleep(250) }
+        if (at === 'call') {
+          await js('document.getElementById("tc-play").click()')
+          check(await until(async () => await speaker() === 'Phone', 5000), `skip at the ${at}: "play" did not ring`)
+        }
+      }
+      for (let i = 0; i < 2 && await js('window.__tutorial().phase !== "free"'); i++) { await key('m', true); await sleep(1300); await key('m', false); await sleep(300) }
+      check(await until(skipDone, 8000), `skip at the ${at}: holding M did not skip: ${await skipPeek()}`)
+      await readCards(); await sleep(1000)
+      const v = await car(), c = await js('(p => ({ x: p.x, z: p.z }))(window.__cam().position)')
+      check(Math.hypot(c.x - v.x, c.z - v.z) < 9, `skip at the ${at}: the camera is ${Math.hypot(c.x - v.x, c.z - v.z).toFixed(1)} m off the truck (left on the orbit)`)
+      check(!await js('document.querySelectorAll(".tut-locked, .tut-hi").length'), `skip at the ${at}: the tutorial gate's marks stayed`)
+      const mom = await js('(q => ({ x: q.x, z: q.z }))(window.__poi().list().find(q => q.type === "momsHouse"))')
+      check(await js(`window.__map2d()._onWaypoint({ x: ${mom.x}, z: ${mom.z} })`) && await until(() => js('!!window.__gps()'), 3000), `skip at the ${at}: a waypoint drew no line`)
+      check(await wrongWayEitherWay(), `skip at the ${at}: no "Wrong way" turned against a waypoint's line (left silenced)`)
+      await js('window.__map2d()._onWaypoint(null)')
     }
   }],
   ['newRun', async () => {
@@ -3028,6 +3296,9 @@ const STEPS = [
     // and its card shows), LB / RB page its offers (D-pad ← / → are spare), the first B leaves the list with the map still open, the second closes it.
     await btn(8)
     check(await until(() => js('window.__map2d().isOpen()'), 2000), 'a View tap did not open the map')
+    // The list keeps its tab across runs: the opening's map lesson (FEAT-288 P3b) leaves it on Shopping. X switches back.
+    if (await js('window.__map2d().tab') !== 'missions') { console.log(`  pad: the map list opened on ${await js('window.__map2d().tab')}; X to Missions`); await btn(2) }
+    check(await until(async () => await js('window.__map2d().tab') === 'missions', 2000), `the map list is not on Missions: ${await js('window.__map2d().tab')}`)
     // Not a shop (SHOP_TYPES: its brake opens the shop screen; the jobs are a button in it, FEAT-104) nor Larry's (the paper route):
     // the flake that hit A, Spare and B was a random world whose busiest giver was a shop. Nor a giver with pump zones:
     // parked there the brake opens the pump (world 1505891932, prompt "to use the pump"). Nor a haul giver (BUG-157):
@@ -3113,6 +3384,12 @@ const STEPS = [
     await hold(0, 2500)
     const g1 = await js('window.__vs.fuel.gal')
     check(g1 - g0 > 1, `A held 2.5 s pumped ${(g1 - g0).toFixed(2)} gal`)
+    // BUG-237: the map shuts every menu through its own close, and the pump's close is the checkout; so M (and the pad's
+    // View, a tap) does not open the map over an open pump: the pump stays up and the wallet is untouched.
+    await key('m', true); await sleep(100); await key('m', false); await sleep(300)
+    await btn(8); await sleep(300)
+    check(!await js('window.__map2d().isOpen()') && await js('document.getElementById("pump-display").classList.contains("on")') && await js('window.__openMenus().includes("pump")') && await js('window.__econ.money') === m0,
+      `BUG-237: M / View at an open pump: ${JSON.stringify(await js('({ map: window.__map2d().isOpen(), menus: window.__openMenus(), money: window.__econ.money })'))} (money was ${m0})`)
     await btn(5)
     check(await until(() => js(`window.__econ.money < ${m0} - 0.01`), 2000), 'RB at the pump did not pay')
     // Mom's doorstep: its camp card on the D-pad, the sleep timer's slider on ←/→, B back out of both.
@@ -3124,6 +3401,73 @@ const STEPS = [
     check(await until(() => js(`+document.getElementById("cp-hours").value > ${h0}`), 2000), 'D-pad → did not step the sleep slider')
     await btn(1); await btn(1)
     check(await until(() => js('document.getElementById("camp-panel").style.display !== "block"'), 2000), 'B twice did not back out of the camp card')
+    // FEAT-294 (DEC-431): Ventura Highway at the story's parked screens. A is the handbrake (park: A held to rest, A tap),
+    // B is back on every screen, and after it the gas lets the parking brake go and rolls the truck away. At the pump A
+    // pumps and the gas pays. The giver's offer, the shop and mom's card; the free-roam screens are test/pad-e2e.mjs's.
+    await js(`(async () => { const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => /\\/src\\/gamepad\\.js(\\?|$)/.test(n))); m.PAD_PARAMS.padLayout = 'Ventura Highway' })()`)
+    const vhPark = async () => {
+      if (await js('window.__vs.parked')) { await btn(0); await frames(4, 200) }
+      if (await js('window.__vs.velocity.length() > 1.2')) { await js('__fp.b[6] = 1'); await until(() => js('window.__vs.velocity.length() < 1.2'), 15000); await js('__fp.b[6] = 0') }
+      await js('__fp.b[0] = 1'); await until(() => js('window.__vs.velocity.length() < 0.4'), 15000); await frames(2, 60); await js('__fp.b[0] = 0'); await frames(3, 100)
+      if (!await js('window.__vs.parked')) await btn(0)
+      check(await js('window.__vs.parked'), 'Ventura Highway: the pad could not park the truck (LT, A held, A tap)')
+    }
+    // The gas lets the latch and the lock go (the handbrake off). Rolling is not asked: a giver's seat can face its
+    // building (world 4044776284/K: let go, 0 m/s against the wall); mom's door and pad-e2e show the truck moving.
+    // The seat lands latched and its reseat may answer the brake itself (the shop or the pump already open: there A is
+    // the screen's, and A, A walked into the shop's jobs and took one, worlds 2899767923/K, 1014917537/K). Otherwise let go
+    // and set it again at once (A, A) rather than roll out of the park box to a full stop.
+    const vhRepark = async () => { if (!await js('window.__vs.parked')) return vhPark(); await btn(0); await btn(0)
+      check(await until(() => js('window.__vs.parked'), 1000), 'Ventura Highway: A, A did not re-set the parking brake') }
+    const rollOff = async (what) => {
+      await js('__fp.b[7] = 0.6')
+      const ok = await until(() => js('!window.__vs.parked && !window.__vs.handbrake'), 4000)
+      const v = await js('window.__vs.velocity.length().toFixed(2)')
+      await js('__fp.b[7] = 0'); await frames(3, 100)
+      check(ok, `Ventura Highway, ${what}: the gas did not let the brake go (parked ${await js('window.__vs.parked')}, handbrake ${await js('window.__vs.handbrake')})`)
+      console.log(`  pad: Ventura Highway, ${what}: the gas let the brake go (${v} m/s)`)
+    }
+    await seatPoi("q => q.type === 'momsHouse'"); await vhPark(); await readCards()
+    check(await until(() => js('document.getElementById("camp-panel").style.display === "block"'), 3000), 'Ventura Highway: parking at mom\'s with A opened no card')
+    await padTo('cp-sleep'); await btn(0)
+    check(await until(() => js('!!document.getElementById("cp-hours")?.offsetParent'), 2000) && await js('window.__vs.parked'), 'Ventura Highway: A on mom\'s "sleep" did not select it (or let the brake go)')
+    await btn(1); await btn(1)
+    check(await until(() => js('document.getElementById("camp-panel").style.display !== "block"'), 2000) && await js('window.__vs.parked'), 'Ventura Highway: B twice did not back out of mom\'s card, parked')
+    await rollOff("mom's card")
+    // The giver (its offers may be spent by the job above): A places the card's highlight, B declines, the gas rolls.
+    const vhGiver = await js(`(() => { const m = window.__map2d(), b = m._getBoard()
+      return m._getPois().find(q => !q.hidden && b.status(q.id)?.source && !${JSON.stringify(['larrysHouse', ...SHOP_TYPES])}.includes(q.type) && !q.pumpZones?.length && !q.drop && (b.view(q.id, 0)?.count ?? 0) > 0)?.id ?? null })()`)
+    if (vhGiver) {
+      await seatPoi(`q => q.id === ${JSON.stringify(vhGiver)}`)
+      if (await until(offerUp, 1500)) { await btn(1); await until(async () => !await offerUp(), 2000) }
+      await vhPark()
+      check(await until(offerUp, 6000), 'Ventura Highway: parking at a giver with A opened no offer card')
+      await btn(0)
+      check(await offerUp() && await js('window.__vs.parked && !window.__mission().isOnJob()'), 'Ventura Highway: A on the offer card took a job or let the brake go (its first press places the highlight)')
+      await btn(1)
+      check(await until(async () => !await offerUp(), 2000) && await js('window.__vs.parked'), 'Ventura Highway: B did not decline the offer, parked')
+      await rollOff('the offer card')
+    } else console.log(`  pad: no giver with an offer left in ${await js('window.__worldCode?.()')}; Ventura Highway's offer card unchecked this run`)
+    // The shop (an auto shop's lift): B closes it, the gas rolls.
+    const svcUp = () => js('document.getElementById("svc-screen").checkVisibility()')
+    await seatPoi(`q => q.type === 'autoShop' && !q.hidden`); await readCards(); if (!await until(svcUp, 1500)) { await vhRepark(); await readCards() }
+    check(await until(svcUp, 3000), 'Ventura Highway: parking at the auto shop with A opened no shop: ' + await js(`JSON.stringify({ parked: __vs.parked,
+      prompt: document.getElementById('poi-prompt')?.innerText.slice(0, 60), clock: document.querySelector('#run-hud .rh-clock')?.textContent,
+      open: [...document.querySelectorAll('.open, [style*="display: block"]')].map(e => e.id).filter(Boolean).slice(0, 8) })`))
+    await btn(1)
+    check(await until(async () => !await svcUp(), 2000) && await js('window.__vs.parked'), 'Ventura Highway: B did not close the shop, parked')
+    await rollOff('the shop')
+    // The pump: A held pumps; the gas pays and rolls (the pump is not a card: no B needed, the gas is its way out).
+    await js('window.__vs.fuel.gal = 4')
+    const pumpOn = () => js('document.getElementById("pump-display").classList.contains("on")')
+    await seatRead(pz.x, pz.z, pz.heading); if (!await until(pumpOn, 1500)) await vhRepark()
+    check(await until(pumpOn, 3000), 'Ventura Highway: parking at the pump with A opened no pump')
+    const vg0 = await js('window.__vs.fuel.gal'), vm0 = await js('window.__econ.money')
+    await hold(0, 2500)
+    check(await js('window.__vs.fuel.gal') - vg0 > 1, 'Ventura Highway: A held 2.5 s at the pump did not pump')
+    await rollOff('the pump')
+    check(await until(() => js(`window.__econ.money < ${vm0} - 0.01`), 2000), 'Ventura Highway: the gas at the pump did not pay')
+    await js(`(async () => { const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => /\\/src\\/gamepad\\.js(\\?|$)/.test(n))); m.PAD_PARAMS.padLayout = 'Professor' })()`)
     await padOff()
   }],
 ]

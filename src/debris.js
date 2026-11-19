@@ -578,9 +578,13 @@ export class DebrisSystem {
     if (rec.ownMaterials) rec.mesh.traverse(o => { if (o.isMesh) o.material.dispose() })
   }
 
-  /** FEAT-97: tint a load spawned with `ownMaterials` red — k 0..1, 0 is unlit. */
-  blink (body, k) {
-    this._live.find(r => r.body === body)?.mesh.traverse(o => { if (o.material?.emissive) o.material.emissive.setRGB(k, 0, 0) })
+  /** FEAT-97: tint a load's emissive, red unless `rgb` says otherwise (FEAT-288 P5: the quest mark's white) — k 0..1, 0 is
+   *  unlit. A body spawned without `ownMaterials` gets its own on the first blink, so a shared model is never tinted. */
+  blink (body, k, rgb = [1, 0, 0]) {
+    const rec = this._live.find(r => r.body === body)
+    if (!rec) return
+    if (!rec.ownMaterials) { rec.mesh.traverse(o => { if (o.isMesh) o.material = o.material.clone() }); rec.ownMaterials = true }
+    rec.mesh.traverse(o => { if (o.material?.emissive) o.material.emissive.setRGB(k * rgb[0], k * rgb[1], k * rgb[2]) })
   }
 
   /**

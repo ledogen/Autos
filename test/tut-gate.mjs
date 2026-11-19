@@ -7,14 +7,21 @@
 // 3b. P3a's lessons (FEAT-288 P3a): the flat → diagnostics → inventory → spare → tow path, break camp under Katie's talk,
 //     eating only the lesson's item, the sleep card's slider, and between cards (BETWEEN) the inventory / damage screen
 //     locked while the shop, the camp card, the job card and the tow stay free.
-// 4. Release (BUG-183): no step → everything allowed, and main.js hands the gate null outside the tutorial and after a
+// 3c. P3b's lessons (FEAT-288 P3b): the map beat (the map, Shopping, a waypoint on the station only, the legend, the map
+//     shut) and the shop beat (the peanuts only, check out only, leave only); every until is a main.js _UNTIL action.
+// 4. Release (BUG-183) and the quest mark (P5): no step → everything allowed, and main.js hands the gate null outside the tutorial and after a
 //    run's end (the browser half — nothing marked after a skip — is test/cdp-smoke.mjs's opening step).
+// 5. P8's speaker slide (src/dialogue.js cardSlide, DEC-426 Q2): over every played script as framed, the same speaker cycles
+//    in place, a change of speaker slides the old card out by the side it came in from and the new one in from the other,
+//    the sides alternate per change, the first card enters from the left and the last leaves by its side. (The browser
+//    half — the slide on screen, a press mid-slide, reduced motion — is test/cdp-smoke.mjs's opening step.)
 
 import { readFileSync, readdirSync } from 'node:fs'
 import { BINDINGS } from '../src/gamepad.js'
 import { LOCKED, ICON_ACT, ZONES, BETWEEN, isSelector, allows, allowsEl, stepFor } from '../src/tut-gate.js'
 import * as DLG from '../data/dialogue.js'
 import { ITEMS } from '../data/items.js'
+import { DialogueSystem, cardSlide } from '../src/dialogue.js'
 
 let fails = 0
 const ok = (c, msg) => { if (!c) { fails++; console.log('  FAIL ' + msg) } }
@@ -38,6 +45,7 @@ for (const [name, c] of cards) {
     for (const [, id] of q.matchAll(/data-id="(\w+)"/g)) ok(!!ITEMS[id], `${name}: data-id ${id} is an item`)
   }
   for (const q of c.hi ?? []) ok(isSelector(q), `${name}: hi '${q}' is a selector`)
+  if (c.quest) ok(!!ITEMS[c.quest], `${name}: quest '${c.quest}' is an item`)
 }
 ok(steps >= 10, `the existing lesson cards are steps (${steps} found, ≥ 10)`)
 for (const a of LOCKED) ok(actions.has(a), `LOCKED '${a}' is a BINDINGS action`)
@@ -104,15 +112,75 @@ for (const [z, id] of [['#svc-screen', ''], ['#camp-panel', 'cp-break'], ['#camp
   ok(allowsEl(el(id, [z], ['button']), BETWEEN), `between cards: ${z} ${id} stays free`)
 ok(!BETWEEN.allow.some(q => !isSelector(q)), 'BETWEEN unlocks no locked action')
 
+// ── 3c. P3b's lessons: Katie's map beat (inside tut-picnic) and her shop beat (tut-shop) ──
+const mapBeat = DLG.TUT['tut-picnic'].filter(c => c.until)
+ok(mapBeat.map(c => c.until).join() === 'map,shoptab,waypoint,mapshut', `the map beat waits for: the map, Shopping, a waypoint, the map shut (${mapBeat.map(c => c.until)})`)
+ok(mapBeat.every(c => c.phone) && mapBeat.at(-1).holds && DLG.TUT['tut-picnic'].at(-1) === mapBeat.at(-1), 'the map beat is inside her call, which holds the line to the store')
+ok(mapBeat.every(c => allows('map', c) && allows('back (menus, cards, map)', c)), 'the map beat never locks the map or back')
+ok(mapBeat.every(c => allows('map: drop / clear the waypoint', c) === (c.until === 'waypoint')), 'the waypoint: refused on every map card but the waypoint card')
+ok(mapBeat.find(c => c.until === 'waypoint').hi.some(q => q.includes('{snack}')), "the waypoint card rings the station's row (main.js fills {snack})")
+const [pick, pay, bye] = DLG.TUT['tut-shop']
+ok(pick.answered && pick.phone && !bye.holds && [pick, pay, bye].map(c => c.until).join() === 'cart,bought,shopshut',
+  'tut-shop: her held call, the cart, the check out, the shop left, then her click')
+const nutRow = el('', ['#svc-screen', '#svc-screen [data-item="bagOfPeanuts"]'], ['button'])
+const gumRow = el('', ['#svc-screen', '#svc-screen [data-item="gummyWorms"]'], ['button'])
+const svc = (act) => el('', ['#svc-screen', `#svc-screen [data-act="${act}"]`], ['button', `[data-act="${act}"]`])
+ok(allowsEl(nutRow, pick) && !allowsEl(gumRow, pick) && !allowsEl(svc('checkout'), pick), 'shop card 1: the peanuts row and its add to cart only')
+ok(allowsEl(svc('checkout'), pay) && !allowsEl(svc('discard'), pay) && !allowsEl(svc('unqueue'), pay) && !allowsEl(nutRow, pay), 'shop card 2: check out only (no discard, no ×)')
+ok(!allowsEl(svc('checkout'), bye) && !allowsEl(nutRow, bye) && allowsEl(el('', ['#svc-screen'], ['[data-act="close"]']), bye), 'shop card 3: leave only')
+for (const c of [pick, pay, bye]) ok(['inventory', 'damage screen', 'camp', 'recovery'].every(a => !allows(a, c)), `shop card '${c.until}': the B menu's screens stay locked`)
+
+// Every until a card names is a main.js _UNTIL action; mom's gas call no longer waits on the brake (DEC-422); every waypoint
+// drop (N, pad Y, a click) passes the gate.
+const mainSrc = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+const untils = new Set([...(mainSrc.match(/const _UNTIL = \{([\s\S]*?)\n\}/)?.[1] ?? '').matchAll(/^  (\w+): /gm)].map(m => m[1]))
+for (const [name, c] of cards) if (c.until) ok(untils.has(c.until), `${name}: until '${c.until}' is a main.js _UNTIL action`)
+ok(/stop === 'pump' && !serviceScreen\.isOpen\) _tut\('tut-gas'\)/.test(mainSrc), "main.js: mom's gas call fires as the shop closes, not on the brake")
+ok(/onWaypoint: \(p\) => [^\n]*_tutWaypointOk\(p\) && _setWaypoint\(p\)/.test(mainSrc), 'main.js: every waypoint drop passes _tutWaypointOk')
+
 // ── 4. release ──
 for (const a of actions) ok(allows(a, null), `no step: '${a}' allowed`)
 ok(allowsEl(el('cp-break', ['#camp-panel']), null) && allowsEl(el('dmg-icon', ['#hud-icons']), null), 'no step: every element allowed')
 const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
-ok(/initTutGate\(\(\) => !_tutDrive\(\) \|\| _runEnded \|\| !storySystem\.isActive\(\) \? null\s*: stepFor\(/.test(main),
+ok(/const _tutStep = \(\) => !_tutDrive\(\) \|\| _runEnded \|\| !storySystem\.isActive\(\) \? null\s*: stepFor\(/.test(main)
+  && /initTutGate\(_tutStep\)/.test(main),
   'main.js: the step is null outside the tutorial (skip, end), after the run\'s end and outside a story run; else stepFor')
+// P5: the quest mark is read off that same step every frame (no state of its own), so it goes when the step does.
+ok(/function _questMark \(\) \{\n  const id = _tutStep\(\)\?\.quest\n/.test(main) && /_dayStop\(\) === 'pack' \? _TUT_PACK/.test(main),
+  'main.js: the quest mark reads _tutStep().quest; the pack is marked while it is the stop')
 // The sleep card's value lock is the button's own disabled state, recomputed from the tutorial's state on every sync — so a
 // skip, the night's end or a reload (fresh DOM, _firingDay() read off the save) leaves Sleep live.
 ok(/go\.disabled = _firingDay\(\) && /.test(main) && !/cp-sleep-go[^\n]*disabled = true/.test(main), 'main.js: Sleep is greyed only while _firingDay() (DEC-426 Q1)')
+
+// ── 5. P8: the speaker slide ──
+{ const S = (speaker) => ({ speaker })
+  const walk = (cards) => { let side = -1, prev = null; const out = []
+    for (const c of [...cards, null]) { const m = cardSlide(prev, c, side); out.push(m); side = m.side; prev = c }
+    return out }
+  // Katie, Katie, the manager, then nothing: cycle; out left + in right; out right.
+  const w = walk([S('Katie'), S('Katie'), S('The manager')])
+  ok(w[0].out === 0 && w[0].in === -1, `P8: the first card enters from the left, nothing leaves: ${JSON.stringify(w[0])}`)
+  ok(w[1].out === 0 && w[1].in === 0, `P8: the same speaker's next card cycles in place: ${JSON.stringify(w[1])}`)
+  ok(w[2].out === -1 && w[2].in === 1, `P8: a change of speaker: out by the side it came in (left), in from the other: ${JSON.stringify(w[2])}`)
+  ok(w[3].out === 1 && w[3].in === 0, `P8: the last card leaves by its own side: ${JSON.stringify(w[3])}`)
+  // A, B, A: per change, not per person — A's second turn enters from the right's opposite (left), not "A's side".
+  const a = walk([S('A'), S('B'), S('A'), S('C')])
+  ok(a.slice(0, 4).map(m => m.in).join() === '-1,1,-1,1', `P8: sides alternate per change of speaker: ${a.map(m => m.in)}`)
+  // Every played script, framed as main.js frames it (DEC-354's ring and <click> cards included): each step obeys the rule.
+  const dlg = new DialogueSystem(DLG.PHONE)
+  const scripts = [...Object.values(DLG.TUT), ...['FIRING', 'MOM_CALL', 'LARRY_CALL', 'PAYCHECK', 'BOSS_CHECK', 'LARRY_PACK', 'RUN_INTRO', 'PAPER_ROUTE_INTRO'].map(k => DLG[k])]
+    .filter(cs => Array.isArray(cs) && cs.length)
+  let changes = 0
+  for (const cs of scripts) {
+    const f = dlg._frame(cs), m = walk(f)
+    for (let i = 1; i < f.length; i++) {
+      const same = f[i].speaker === f[i - 1].speaker
+      if (!same) changes++
+      ok(same ? !m[i].out && !m[i].in : m[i].out === m[i - 1].side && m[i].in === -m[i].out,
+        `P8: ${f[i - 1].speaker} → ${f[i].speaker} (${same ? 'cycle' : 'slide'}): ${JSON.stringify(m[i])}`)
+    }
+  }
+  ok(changes > 5, `P8: the scripts hold ${changes} changes of speaker (the ring card → the caller counts)`) }
 
 console.log(fails ? `tut-gate: ${fails} FAIL` : `tut-gate: PASS (${steps} steps)`)
 process.exit(fails ? 1 : 0)

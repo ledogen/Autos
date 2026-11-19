@@ -423,7 +423,7 @@
        start/drop pins are visible behind it; the panel is bottom-anchored, not centered. */
     /* #camp-panel (FEAT-45), #dialogue-panel and #paper-panel (FEAT-61) share the mission panel's
        chrome by selector rather than by a copied block — one place to restyle a story-mode panel. */
-    #mission-panel, #camp-panel, #dialogue-panel, #paper-panel, #scenario-panel, #run-end {
+    #mission-panel, #camp-panel, #dialogue-panel, .dlg-ghost, #paper-panel, #scenario-panel, #run-end {
       display: none;
       position: fixed;
       left: 50%;
@@ -445,6 +445,15 @@
        mom's alarm slider, the camp's inventory button — so the camp card sits above it. ponytail: a fixed lift clears a
        card of up to ~5 lines (zoom scales both alike); measure the card if a longer lesson ever covers it. */
     body:has(#dialogue-panel.dlg-waits) #camp-panel { bottom: 216px; }
+    /* FEAT-288 P3b: Katie's shop lesson points at the shop's rows, its check out and back, and the shop card stands at the
+       right (520 px + 16 px padding, src/service-screen.js): a card over the shop centres on the screen left of it. At
+       Big the sheet showed her card over the peanuts row. Same units as the map's rule below (% the screen's, px zoomed). */
+    body:has(#svc-screen.open) :is(#dialogue-panel, .dlg-ghost) { left: calc(50% - 268px); width: clamp(240px, 100% - 584px, 680px); }
+    /* FEAT-288 P3b: Katie's map lesson is read over the open map and points at its list column and legend (the right
+       300 px), so over the map a card centres on the sheet instead, clear of that column. Under Big's zoom (FEAT-248) px
+       and vw scale with the card but % stays the screen's, so the sheet's width is 100% − the map's 2 × 5vw inset − the
+       300 px column (− 48 px margin): at Small that is 90vw − 348px, at Big it keeps the card off the legend. */
+    body:has(#map-window[style*="flex"]) :is(#dialogue-panel, .dlg-ghost) { left: calc(50% - 150px); width: min(680px, 100% - 10vw - 348px); }
     /* FEAT-146: the run's end sits in the middle of the screen — nothing behind it is still in play. */
     #run-end { top: 50%; bottom: auto; transform: translate(-50%, -50%); }
     #re-body { line-height: 1.7; }
@@ -488,12 +497,15 @@
        card needs and the offer panel doesn't: prose reads left-aligned, the card is wide enough to
        hold two lines of speech without reflowing between cards, and it sits a little higher so the
        run HUD stays legible while someone is talking. */
-    #dialogue-panel {
+    #dialogue-panel, .dlg-ghost {
       text-align: left;
       width: min(680px, 82vw);
       bottom: 64px;
       z-index: 96;              /* over the offer panel: a briefing always has the floor */
     }
+    /* FEAT-288 P8: the copy of a speaker's card sliding out of frame (main.js _dlgSlide) — the card's own look and place
+       (every rule above names it beside #dialogue-panel), never a press target. */
+    .dlg-ghost { pointer-events: none; }
     .dlg-row { display: flex; gap: 16px; align-items: flex-start; }
     /* The reserved portrait slot. Empty on purpose — see the note on the markup. Fixed size so
        dropping an <img> in later cannot change the card's metrics. */
@@ -1749,6 +1761,7 @@
       <div class="mm-group">controller</div>
       <button class="mm-sel" data-key="stickDeadzone"></button>
       <button class="mm-sel" data-key="vibration"></button>
+      <button class="mm-sel" data-key="padLayout"></button>
       <div class="mm-group">display</div>
       <button class="mm-sel" data-key="uiScale"></button>
       <button class="mm-sel" data-key="frameCap"></button>
