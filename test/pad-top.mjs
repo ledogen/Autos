@@ -12,7 +12,7 @@ import { parseWorldSeed } from '../src/seed.js'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 
-const SEEDS = ['3524018126', '3358923599'], RAD = 900, MAX_D = 0.01
+const SEEDS = process.argv.length > 2 ? process.argv.slice(2) : ['3524018126', '3358923599'], RAD = 900, MAX_D = 0.01   // argv: a census seed list
 const P = { ...RANGER_PARAMS, potholeEnabled: false }
 let fails = 0, n = 0, pads = 0, worst = 0, at = ''
 for (const S of SEEDS) {
