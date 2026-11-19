@@ -74,8 +74,11 @@ one 124° elbow (0.146 m, the straight walk leaves the road). The mesh shares th
 ## Tracker
 - [x] Census re-run on main, by junction class, with the count of mouths over 5 cm (table above).
 - [x] The 1.99 m outlier explained: a self-crossing run (948023748), real, a routing defect, not this bug.
-- [ ] Each class fixed as a plain defect, or shown to the owner if a fix has a cost. Pads, run ends, causeways and
-      bores need no fix. The bare-join class waits on the owner (Open questions 1).
+- [x] Each class fixed as a plain defect, or shown to the owner if a fix has a cost. Pads, run ends, causeways and
+      bores need no fix. Bare-join class: option A built (both legs ease to the mean bank): worst step 0.267 -> 0.035 m,
+      none over 5 cm, connector joins unchanged. Gate `test/bare-join.mjs`.
+- [x] Close-out proofs on the branch: 90 affected gates green, world fingerprint vs main, before/after sheet, smoke, pad, 400-seed sweep (Log).
+- [ ] Landed on main (orchestrator).
 
 ## Decisions
 - DEC-068 (pads weld), DEC-190 (2.5 cm seam bar), DEC-260 (fix by construction) govern this. None conflicts with the options.
@@ -104,3 +107,6 @@ probes in `wip/bug-230/` (census2.mjs, joins.mjs, probe.mjs, pt.mjs, xsec.mjs, l
 - 2026-11-18 lane agent, branch land/bug-230-ribbon-above-deck: re-census on main f97cd76e, 13 seeds (table). The
   0.86 m came from the `sampleRoadTopY` reference. The 1.99 m is a self-crossing. The real class is bare deg-2 joins
   (5 of 12 step > 5 cm). Fix (a) was tried and reverted (f58b5c68). No src change on the branch. Waiting on the owner.
+- 2026-11-18 close-out, head 999c2a8c+: gates 90/90 green (`wip/bug-230/gates.log`). Fingerprint vs main: network, junctions, poi, props, and water in 5 of 6 windows identical;
+  profiles differ in 6 windows (the bank easing at bare joins), surface/carve/tiles in the 2 story windows and water in seed11 story (they follow the deck). No POI moved.
+  Sheet `wip/bug-230/sheet.jpg`: step visible at both worst joins on main, gone on the branch (faint seam only). cdp-smoke PASS 40 steps; pad-e2e ALL OK (104 ok). Sweeps 2 x 200 seeds: 0 ok:false, bad 0, 0 throws.
