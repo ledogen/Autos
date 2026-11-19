@@ -3405,9 +3405,11 @@ const STEPS = [
       await rollOff('the offer card')
     } else console.log(`  pad: no giver with an offer left in ${await js('window.__worldCode?.()')}; Ventura Highway's offer card unchecked this run`)
     // The shop (an auto shop's lift): B closes it, the gas rolls.
-    await seatPoi("q => q.type === 'autoShop'"); await vhPark(); await readCards()
+    await seatPoi("q => q.type === 'autoShop' && !q.hidden"); await vhPark(); await readCards()
     const svcUp = () => js('document.getElementById("svc-screen").checkVisibility()')
-    check(await until(svcUp, 3000), 'Ventura Highway: parking at the auto shop with A opened no shop')
+    check(await until(svcUp, 3000), 'Ventura Highway: parking at the auto shop with A opened no shop: ' + await js(`JSON.stringify({ parked: __vs.parked,
+      prompt: document.getElementById('poi-prompt')?.innerText.slice(0, 60), clock: document.querySelector('#run-hud .rh-clock')?.textContent,
+      open: [...document.querySelectorAll('.open, [style*="display: block"]')].map(e => e.id).filter(Boolean).slice(0, 8) })`))
     await btn(1)
     check(await until(async () => !await svcUp(), 2000) && await js('window.__vs.parked'), 'Ventura Highway: B did not close the shop, parked')
     await rollOff('the shop')
