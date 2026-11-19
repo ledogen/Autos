@@ -1060,6 +1060,54 @@ export const PROP_MODELS = {
     seat: 0.85,
   },
 
+  // ASSET-91 — three small HOUSES whose porch floor is a paper-route target (FEAT-295): a paper thrown
+  // at the wall or door drops onto it, and one landing on it rests there. Kit generator
+  // assets/models/src/porch-houses.py; 7 materials each, no images. NOT tagged 'residence' yet: placing
+  // them is FEAT-295 (owner rule: an asset ticket closes when the .glb ships).
+  // Two boxes each: the BODY (walls + foundation to the eave) and the PORCH FLOOR (ground to floor top,
+  // wall to front edge; the board crowns sit on its top). Steps, stair, posts, porch roof and the main
+  // roof are left soft, so a paper on a roof sinks to the body box's top at the eave.
+  // `seat` puts the back eave 0.30 m inside the pad's back edge (numbers printed by the generator).
+  //   cottagePorch  1484 tris. Folk cottage, walls 7.2 x 4.4; 8.1 x 7.1 x 5.3 m overall. Full-width
+  //                 covered porch 7.2 wide x 1.77 deep, floor 0.50 m. Front 0.64 m inside the pad.
+  //   ranchDeck     1098 tris. Ranch, walls 8.8 x 4.8; 9.5 x 7.4 x 4.6 m overall. Open deck 3.2 wide x
+  //                 1.87 deep, floor 0.40 m, no railing. Front 0.27 m inside the pad.
+  //   cabinLanding  1266 tris. Front-gable cabin on piers, walls 5.4 x 5.0; 6.0 x 7.1 x 5.4 m overall.
+  //                 Landing 2.4 wide x 1.47 deep, floor 0.72 m, open stair down +X. Front 0.63 m inside.
+  cottagePorch: {
+    url: 'assets/models/cottage-porch.glb',
+    collision: {
+      shape: 'box', size: [8.14, 5.34, 7.06],
+      boxes: [
+        { c: [0, 1.55, 0], s: [7.26, 3.1, 4.46] },         // body
+        { c: [0, 0.25, -3.115], s: [7.2, 0.5, 1.77] },     // porch floor
+      ],
+    },
+    seat: 1.2,
+  },
+  ranchDeck: {
+    url: 'assets/models/ranch-deck.glb',
+    collision: {
+      shape: 'box', size: [9.54, 4.6, 7.43],
+      boxes: [
+        { c: [0, 1.425, 0], s: [8.86, 2.85, 4.86] },       // body
+        { c: [1.2, 0.2, -3.365], s: [3.2, 0.4, 1.87] },    // deck floor
+      ],
+    },
+    seat: 0.85,
+  },
+  cabinLanding: {
+    url: 'assets/models/cabin-landing.glb',
+    collision: {
+      shape: 'box', size: [6.0, 5.42, 7.07],
+      boxes: [
+        { c: [0, 1.51, 0], s: [5.46, 3.02, 5.06] },        // body (on piers, but solid to the ground)
+        { c: [-1.0, 0.36, -3.265], s: [2.4, 0.72, 1.47] }, // landing floor
+      ],
+    },
+    seat: 0.63,
+  },
+
   // ASSET-73 — the COUNTRY SCHOOL, 1141 tris, 7 materials, one 512x512 atlas (the SCHOOL plaque + the
   // flag). White lapped clapboard, six-over-six windows with burgundy curtains, an entry vestibule
   // with red doors, a bell cupola, a flagpole. Main block 9.6 x 4.8; 10.2 x 7.0 x 7.8 m overall (to
