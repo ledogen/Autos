@@ -231,19 +231,8 @@ export function buildCoverMaterial(cover = {}) {
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>` + fade + windGLSL)
   }
   const coverMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })
-  // BUG-229 TEMP probe (remove at landing): ?b229nb=<m> / ?b229b=<depth bias> override the FAR map's
-  // normal / depth bias for the cover blades only.
-  const _q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null
-  const B229NB = _q?.get('b229nb'), B229B = _q?.get('b229b')
-  coverMaterial.onBeforeCompile = (shader) => {
-    patchCover(shader, fadeGLSL(1.0))
-    if (B229NB != null) shader.vertexShader = shader.vertexShader.replace('#include <shadowmap_vertex>',
-      THREE.ShaderChunk.shadowmap_vertex.replace('directionalLightShadows[ i ].shadowNormalBias',
-        '( UNROLLED_LOOP_INDEX == 1 ? ' + Number(B229NB).toFixed(4) + ' : directionalLightShadows[ i ].shadowNormalBias )'))
-    if (B229B != null) shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_begin>',
-      THREE.ShaderChunk.lights_fragment_begin.replace('directionalLightShadows[ 1 ].shadowBias', Number(B229B).toFixed(6)))
-  }
-  coverMaterial.customProgramCacheKey = () => 'feat85-cover' + (B229NB ?? '') + '|' + (B229B ?? '')
+  coverMaterial.onBeforeCompile = (shader) => patchCover(shader, fadeGLSL(1.0))
+  coverMaterial.customProgramCacheKey = () => 'feat85-cover'
   // The sun-shadow depth pass for the near cover pools (customDepthMaterial): the SAME wind, so a
   // blade's shadow sways with the blade and the blade never walks through its own stale shadow.
   // NO distance fade: in the shadow pass `cameraPosition` is the LIGHT's camera (~hundreds of m
