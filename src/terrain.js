@@ -2169,10 +2169,10 @@ export class TerrainSystem {
             mesh.position.set(cx * S + S / 2, 0, cz * S + S / 2)
             mesh.receiveShadow = true
             // Terrain CASTS as well as receives: main.js's `sunFar` cascade renders a ±256 m shadow
-            // box specifically so ridges shade valleys at low sun. The near (truck-framed, ±20 m)
-            // map picks chunks up too, which is what puts cut banks and berms onto the road beside
-            // you. Chunks are frustum-culled per shadow camera, so only the boxed ones are drawn,
-            // and the far pass re-renders on a coarse 64 m snap rather than per frame (see the
+            // box specifically so ridges shade valleys at low sun. Into that far map ONLY: the near
+            // (truck-framed) pass switches castShadow off around itself (BUG-217, the wrapped shadow
+            // pass in main.js). Chunks are frustum-culled per shadow camera, so only the boxed ones are
+            // drawn, and the far pass re-renders on a coarse 64 m snap rather than per frame (see the
             // far-cascade follow in main.js) — that gating is what makes this affordable.
             mesh.castShadow = true
 

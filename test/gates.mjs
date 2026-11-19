@@ -30,6 +30,8 @@ export const GATES = [
     desc: 'BUG-169/PERF-48: the render frame cap draws cap fps (display rate when 0) fed synthetic rAF timestamps at 60/90/120/144/240 Hz, for caps 30/60/90/120/display' },
   { file: 'leg-overlap-tear.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-179 (DEC-366): two legs of one node never tear on shared pavement — the capture seed whose chained fork the merge plan used to drop (6.12 m)' },
+  { file: 'junction-recovery-grade.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-200 (DEC-409): a junction recovery is held to the design maximum grade — seed 688224244\'s hairpin ≤ 25 % (38.8 % before), and ceilings on runs at the 38 % ceiling / over 30 % on three seeds' },
   { file: 'road-minradius.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-12: DENSE realized centerline min-radius the ribbon sweeps, every run of the headless graph network over several stream centres — the fold metric' },
   { file: 'centerline-curvature.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
@@ -409,5 +411,5 @@ export const GATES = [
   { file: 'pad-e2e.mjs', subsystem: 'app', cost: 'heavy', browser: true, extraDeps: ['src', 'data', 'index.html', 'vite.config.js'],
     desc: 'FEAT-125/FEAT-41 the pad contract in the real app: a scripted fake gamepad drives analog pedals, position steering + assist, last-moved-wins, unplug safety, the button layout, then the menus pad-only and the choices surviving a reload' },
   { file: 'tut-gate.mjs', subsystem: 'story', cost: 'fast', extraDeps: ['index.html', 'src/main.js'],
-    desc: 'FEAT-288 P2: the tutorial gate (src/tut-gate.js) — every lesson card in data/dialogue.js is a step (`allow`), every allow / hi entry is a locked BINDINGS action or a selector whose #ids and item ids exist; the base lock refuses only inventory / damage / camp / recovery / abandon / waypoint (never driving, the brake, the key, lights, map, pause, back, reset); a step with `allow` locks the cards\' other elements, back and pause never; no step (skip, end, run end) allows everything (BUG-183)' },
+    desc: 'FEAT-288 P2: the tutorial gate (src/tut-gate.js) — every lesson card in data/dialogue.js is a step (`allow`), every allow / hi entry is a locked BINDINGS action or a selector whose #ids and item ids exist; the base lock refuses only inventory / damage / camp / recovery / abandon / waypoint (never driving, the brake, the key, lights, map, pause, back, reset); a step with `allow` locks the cards\' other elements, back and pause never; no step (skip, end, run end) allows everything (BUG-183); P8: over every framed script the same speaker cycles in place and a change of speaker slides out by the side it came in, in from the other (DEC-426 Q2)' },
 ]
