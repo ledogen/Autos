@@ -12,7 +12,8 @@ lane: C (models)
 # ASSET-91: Three small house POI models with porches, decks or landings, for the residences pool
 
 ## Next steps
-An asset lane models them. Pool registration is FEAT-74 (owner rule: an asset ticket closes when the .glb ships).
+Built and registered (no pool) on `land/asset-91-porch-houses`. Owner look owed: card `asset91-porch-houses-look`, sheet
+`wip/asset-91/sheet.jpg` in main. On "Good": land, close this ticket. Placing them on the route is FEAT-295.
 
 ## Summary
 Build three small house models for the residences pool, each with a porch, front deck, or stairs with a landing, so a thrown paper has something to land on. Authored per `.planning/research/ASSETS.md` and ART-STYLE.md.
@@ -30,14 +31,23 @@ Owner's words, verbatim (inbox 20261118013250-sf5w):
 Paper-route juice, one owner message (inbox 20261118013250-sf5w) split into four tickets: ASSET-91 (houses), FEAT-275 (mailboxes in Larry's pool), FEAT-276 (halo), FEAT-277 (thrown-paper physics). He said it follows FEAT-266, which landed 2026-11-17.
 
 ## Tracker
-- [ ] Three small house .glb models, each with a porch, a front deck, or stairs with a landing
-- [ ] Authored to the asset convention (flat colours, faceted, no textures) with the ticket's tri budget and collision metadata
-- [ ] The .glb ships (an asset ticket closes then; registering them in the pool is FEAT-74)
+- [x] Three small house .glb models, each with a porch, a front deck, or stairs with a landing (`cottage-porch`, `ranch-deck`, `cabin-landing`)
+- [x] Authored to the asset convention (flat colours, faceted, no textures) with the ticket's tri budget and collision metadata (1484 / 1098 / 1266 tris; body + porch-floor boxes)
+- [ ] Owner look (card asset91-porch-houses-look)
+- [ ] The .glb ships (an asset ticket closes then; registering them in the pool is FEAT-74 / FEAT-295)
 
 ## Decisions
+- One kit generator, three .glb (ASSETS.md kit rule): `assets/models/src/porch-houses.py`; `-- export`, `-- render` headless.
+- Every porch floor is under 0.76 m (the real-world height above which a porch needs a guard), so no railing crosses
+  the road side. The ranch deck's two end rails were built and removed: from an oblique thrower they stood in front of
+  the door, and as soft (non-colliding) parts a paper would fly through them. The cabin's stair handrail is on the wall side for the same reason.
+- Collision: body box to the eave + a solid porch-floor box (ground to floor top). Steps, stair, posts, porch roof and
+  roofs are soft. NOTE: the doctor's office landing/steps are drive-through by owner ruling (2026-10-31); these porch
+  floors are solid on purpose (a paper must rest on them), so the truck stops at a 0.40-0.72 m porch edge.
 
 ## Open questions
-- Tri budget and real-world footprint: the ticket has not set them; a modelling lane proposes them per ASSETS.md.
+- Solid porch floors stop the truck (unlike the doctor's office landing). Owner's call on the card; the alternative is a paper-only collider, which does not exist yet.
+- No recolour palette yet: three houses in a five-slot pool will repeat. A siding palette per house is a small follow-up if wanted.
 
 ## Links
 FEAT-266, FEAT-74, FEAT-71, FEAT-153
@@ -47,3 +57,6 @@ assets/models/ · wip/
 
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118013250-sf5w).
+- 2026-11-19 built: a8c53301 (generator + .glb), 7dc64d09 (registry). Gates dist-assets, model-palette, model-variant,
+  poi-collider, tow-seat, poi-yard 6/6 green. Facing 0 inverted, z-fight 0, re-export byte-identical. Unverified: in-game
+  look and the paper actually resting on the porch box (FEAT-295's card).
