@@ -51,6 +51,18 @@ const STAND_BEHIND = 10     // m back along the road, opposite the route, from w
 export const START_GONE_M = 20   // m the truck travels (either way) from where it accepted before the start board goes
 // FEAT-218: an objective further than this from the route's last road point is OFF the road: it gets the turn arrow, not the ring.
 const OFFROAD_M    = 3      // a demolition target stands ~5 m off the centreline; a courier's end is on it
+// FEAT-297 (DEC-434): the marker over an off-road objective: points straight down, spins about the vertical, bobs.
+const OBJ_ARROW_H   = 3.0   // m: its height (tip to tail) at close range
+const OBJ_MARGIN    = 0.8   // m: the tip hovers this far above the objective's roof (not up high: owner)
+const OBJ_NEAR_H    = 1.5   // m: parked at it the tip comes down to this height over the truck, so a roof out of the chase camera's view still holds the arrow in it
+const OBJ_NEAR_M    = 15    // m: the tip is fully down at this distance from the objective, fully on the roof from OBJ_NEAR_M + OBJ_NEAR_SPAN
+const OBJ_NEAR_SPAN = 30    // m
+const OBJ_NO_TOP    = 3.0   // m above the road: the roof of an objective that is no POI (a house, a demolition target)
+const OBJ_SPIN      = 2.0   // rad/s about the vertical: one turn in 3.1 s
+const OBJ_BOB       = 0.25  // m amplitude of the bob, at 2.4 rad/s
+const OBJ_GROW_M    = 45    // m of CAMERA distance per metre of scale: the marker keeps one apparent size (3 m / 45 m, ~7 % of the screen) from 9 m to 157 m, so it never swells as you close in
+const OBJ_MIN_D     = 14    // m: closest the marker stands to the truck
+const OBJ_SIDE      = 0.4   // rad: close in, the marker slides to within this bearing of the truck's heading, so it stays in the chase camera's frame
 const TAN_SPAN     = 20     // m of route averaged into the exit direction at a junction
 const REACQUIRE_M  = 40     // lateral error that forces a full-route re-scan
 // FEAT-61 self-overlap (a paper route drives some streets out and back). A vertex counts as a
@@ -334,6 +346,24 @@ function _arrowGeometry () {
   return g
 }
 
+/**
+ * FEAT-297: the marker over an off-road objective: a down arrow with its TIP on y = 0 and its tail up. Two crossed
+ * vanes (one in XY, one in ZY), so it reads from every side as it spins instead of vanishing edge-on twice a turn.
+ */
+function _markerGeometry () {
+  const L = OBJ_ARROW_H, hl = L * 0.45, shaft = L * 0.18, hw = L * 0.6
+  const s = new THREE.Shape()
+  s.moveTo(0, 0)
+  s.lineTo(hw / 2, hl)
+  s.lineTo(shaft / 2, hl)
+  s.lineTo(shaft / 2, L)
+  s.lineTo(-shaft / 2, L)
+  s.lineTo(-shaft / 2, hl)
+  s.lineTo(-hw / 2, hl)
+  s.closePath()
+  return [new THREE.ShapeGeometry(s), new THREE.ShapeGeometry(s).rotateY(Math.PI / 2)]
+}
+
 /** DEC-287: the start board goes once the truck is START_GONE_M from where it accepted, either way. */
 export const startBoardGone = (at, car) => Math.hypot(car.x - at.x, car.z - at.z) > START_GONE_M
 
@@ -349,7 +379,7 @@ export class GpsSystem {
    *   getRoad returns the RoadSystem, read ONLY at bake time (not per frame) for the design
    *   profile the carve actually uses — see bakeRoute's ELEVATION SOURCE note.
    */
-  constructor (scene, { getRoute, getCar, getFwd = null, getRoad = null }) {
+  constructor (scene, { getRoute, getCar, getFwd = null, getRoad = null, getObjectiveTopY = null, getCamera = null }) {
     this._scene = scene
     this._getRoute = getRoute
     this._getCar = getCar
@@ -358,6 +388,8 @@ export class GpsSystem {
     this._startPending = false   // markStart() armed, waiting for a baked route
     this._startAt = null      // {x, z}: where the truck was when the start board was placed
     this._getRoad = getRoad
+    this._getCamera = getCamera   // FEAT-297: the camera's world position, to hold the marker's apparent size
+    this._getObjectiveTopY = getObjectiveTopY   // FEAT-297: (objective) -> world Y of its roof, or null when it is no POI
     this._route = null
     this._src = null          // the mission object the current bake came from (identity compare)
     this._bakeRev = -1        // road._networkRev the current bake was taken at
@@ -407,9 +439,14 @@ export class GpsSystem {
     this.group.add(this._arrow)
 
     this._objMat = mat()
-    this._objArrow = new THREE.Mesh(this._arrowGeo, this._objMat)   // FEAT-218: the same board, at the road point nearest an off-road objective
-    this._objArrow.frustumCulled = false
-    this._objArrow.renderOrder = 3
+    this._objMat.depthTest = false   // FEAT-297: close in, the tip sits inside the POI's walls (its marker is the model's centre); it still has to show
+    this._objArrow = new THREE.Group()   // FEAT-218 / FEAT-297: the down arrow over an off-road objective
+    for (const g of _markerGeometry()) {
+      const m = new THREE.Mesh(g, this._objMat)
+      m.frustumCulled = false
+      m.renderOrder = 3
+      this._objArrow.add(m)
+    }
     this._objArrow.visible = false
     this.group.add(this._objArrow)
 
@@ -673,8 +710,8 @@ export class GpsSystem {
 
   /**
    * The route's end. An objective that sits OFF the road (FEAT-218: `objective` further than OFFROAD_M from the
-   * route's last road point: a paper stop, a demolition target, a POI) gets the turn arrow at that road point aimed at
-   * it; one on the road keeps the ring.
+   * route's last road point: a paper stop, a demolition target, a POI) gets the marker over IT (FEAT-297, DEC-434): an
+   * arrow pointing straight down, its tip OBJ_MARGIN over the roof, spinning and bobbing; one on the road keeps the ring.
    */
   _placeRing (route, s) {
     const remain = route.length - s
@@ -685,8 +722,27 @@ export class GpsSystem {
     if (remain > 260) return
     const fade = Math.min(1, (260 - remain) / 60)
     if (off) {
-      this._objArrow.position.set(route.px[n], route.py[n] + ARROW_HOVER + Math.sin(this._t * 1.6) * 0.12, route.pz[n])
-      this._objArrow.rotation.y = Math.atan2(-(o.z - route.pz[n]), o.x - route.px[n])
+      const car = this._getCar()
+      const top = this._getObjectiveTopY?.(o) ?? route.py[n] + OBJ_NO_TOP
+      const d = Math.hypot(car.x - o.x, car.z - o.z)
+      const roofY = top + OBJ_MARGIN, nearY = Math.min(roofY, car.y + OBJ_NEAR_H)
+      const k = Math.min(1, Math.max(0, (d - OBJ_NEAR_M) / OBJ_NEAR_SPAN))   // 0 close, 1 far
+      // Close in, swing the marker's bearing from the truck into the frame (it stays at its distance, over the objective's side).
+      let x = o.x, z = o.z
+      const f = this._getFwd?.()
+      if (f && k < 1 && d > 1e-3) {
+        const dx = o.x - car.x, dz = o.z - car.z
+        const a = Math.atan2(f.x * dz - f.z * dx, f.x * dx + f.z * dz)   // signed bearing off the heading
+        const c = Math.max(-OBJ_SIDE, Math.min(OBJ_SIDE, a)) - a          // the turn that brings it inside OBJ_SIDE
+        const cs = Math.cos(c * (1 - k)), sn = Math.sin(c * (1 - k))
+        const m = 1 + (Math.max(1, OBJ_MIN_D / d) - 1) * (1 - k)   // and out to at least OBJ_MIN_D, so a truck parked at the wall still sees it ahead, not overhead
+        x = car.x + (dx * cs - dz * sn) * m
+        z = car.z + (dx * sn + dz * cs) * m
+      }
+      this._objArrow.position.set(x, nearY + (roofY - nearY) * k + Math.sin(this._t * 2.4) * OBJ_BOB, z)
+      this._objArrow.rotation.y = this._t * OBJ_SPIN
+      const cam = this._getCamera?.() ?? car
+      this._objArrow.scale.setScalar(Math.min(3.5, Math.max(0.25, Math.hypot(cam.x - x, cam.y - car.y, cam.z - z) / OBJ_GROW_M)))
       this._objMat.opacity = fade
       this._objArrow.visible = true
       return

@@ -1,7 +1,7 @@
 ---
 id: BUG-242
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-19
 source: owner, 2026-11-19 (inbox) — "When you're navigating mission cards at a POI, the visual hint says Q&E instead of RBLB. When you're on pad."
@@ -24,8 +24,8 @@ When the pad is the active input, the hint on the mission cards shown at a POI r
 (See Summary.)
 
 ## Tracker
-- [ ] Find the "Q & E" hint at POI mission cards
-- [ ] It prints the bumper names when the pad is active, in Professor and Ventura Highway
+- [x] Find the "Q & E" hint at POI mission cards
+- [x] It prints the bumper names when the pad is active, in Professor and Ventura Highway
 - [ ] Gate / smoke step for the hint
 - [ ] Owner has looked
 
@@ -37,3 +37,4 @@ When the pad is the active input, the hint on the mission cards shown at a POI r
 
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
+- 2026-11-19: land/small-1119. The hint was the static `mp-prev` / `mp-next` buttons in index.html ("‹ Q" / "E ›"). Now `kc-kb` Q / E and `kc-pad` LB / RB. The card's bumpers are physical and the same in both layouts (CARD_MAP_KEYS 4 / 5), so one wording serves both. Not gated; looked at nothing on the pad yet. Owner look open.
