@@ -544,9 +544,9 @@ const rolls = async (what) => {
 }
 await rolls('inventory'); await repark(); await keysSeen()
 // An A press that CLOSES a screen is the screen's: the inventory's back button, held past the close, never pulls the handbrake.
-await js('__fp.b[5] = 1'); await sleep(250); const z1 = await zone(); await js('__fp.b[5] = 0'); await sleep(500)
+await js('__fp.b[5] = 1'); await sleep(250); const zH = await zone(); await js('__fp.b[5] = 0'); await sleep(500)
 for (let i = 0; i < 14 && !await js('!!document.querySelector("#inv-screen .nav-focus[data-act=close]")'); i++) await press(DOWN)
-check(await js('!!document.querySelector("#inv-screen .nav-focus[data-act=close]")'), `VH: the D-pad reaches the inventory's back button (open ${await inv()}, on ${await js('(e => e && (e.dataset.act || e.className))(document.querySelector(".nav-focus"))')}, parked ${(await vs()).parked}, mid-hold ${z1})`)
+check(await js('!!document.querySelector("#inv-screen .nav-focus[data-act=close]")'), `VH: the D-pad reaches the inventory's back button (open ${await inv()}, on ${await js('(e => e && (e.dataset.act || e.className))(document.querySelector(".nav-focus"))')}, parked ${(await vs()).parked}, mid-hold ${zH})`)
 await keysSeen()
 await js('__fp.b[0] = 1'); await sleep(400); await js('__fp.b[0] = 0'); await sleep(300)
 s = await vs()
