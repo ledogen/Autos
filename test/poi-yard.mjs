@@ -153,7 +153,7 @@ for (let seed = 1; seed <= SEEDS; seed++) {
                     Math.abs(b.c[2] - house.c[2]) < (b.s[2] + house.s[2]) / 2) bad.vanInHouse.push(`${seed}`)
             }
         }
-        const sats = q.satellites
+        const sats = q.satellites.filter(s => !PROP_MODELS[s.key].tags?.includes('mailbox'))   // FEAT-275: the pad's mailbox is not yard dressing (test/mailbox-census.mjs)
         if (!q.tags.some(t => YARD_POOLS[t]) || !yardOf(q)) {
             if (sats.length) bad.bareGround.push(`${seed}:${q.type}/${q.modelKey}`)
             continue
