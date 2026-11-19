@@ -11433,6 +11433,12 @@ export class RoadSystem {
      * road footprint (caller falls back to nodeY).
      */
     sampleRoadTopY(wx, wz) {
+        // BUG-233: inside a ringed (≥ 3-leg) pad the drawn pad and the physics overlay both ride padTopY
+        // (_nodeSurfaceTop + apron lift, _sampleCarveWorld's on-pad branch). The free resolve below picks one leg and,
+        // at a pad's tear line, a different one: it read up to 0.86 m under the pad, so a truck seated there
+        // (_groundSampleY's four corners) or a paper landing there sat inside the asphalt. padTopY needs no raw height.
+        const pad = this._junctionPadCarve(wx, wz, 0)
+        if (pad?.padTopY != null) return pad.padTopY
         const nr = this._resolveRoadSurface(wx, wz)
         const clearanceMargin = this._params.roadClearanceMargin ?? 0.25
         let runTop = null
