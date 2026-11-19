@@ -526,9 +526,11 @@ await js('__fp.b[12] = 1'); await sleep(150); await js('__fp.b[12] = 0'); await 
 await js('__fp.b[5] = 0'); await sleep(500)
 check(vhOn && vhPick === 'inv-icon' && vhWalk === 'dmg-icon' && await inv() && !await menuOn(), `VH: RB held opens the side menu (${vhPick}), ↓ walks it (${vhWalk}), release opens the pick (inventory ${await inv()})`)
 check(!/ /.test(await keysSeen()), 'VH: the RB hold sent no Space (RB is not the handbrake)')
-// The inventory: A selects (on its highlight), B closes, the gas rolls away.
+// The inventory: A selects a slot, B closes, the gas rolls away. (It wakes on its first button, the back: walk to a slot.)
+for (let i = 0; i < 8 && !await js('!!document.querySelector("#inv-screen .nav-focus.inv-slot")'); i++) await press(UP)
+await keysSeen()
 await press(A); s = await vs()
-check(await inv() && s.parked && !/ /.test(await keysSeen()), `VH inventory: A selects and stays a select (open ${await inv()}, parked ${s.parked})`)
+check(await inv() && s.parked && !/ /.test(await keysSeen()), `VH inventory: A on a slot selects it and stays a select (open ${await inv()}, parked ${s.parked}, on ${await js('document.querySelector("#inv-screen .nav-focus")?.className')})`)
 await js('__fp.b[1] = 1'); await sleep(300); await js('__fp.b[1] = 0'); await sleep(300)   // held past the close: the drive layout comes up under it
 check(!await inv() && (await vs()).parked && !/\be\b/.test(await keysSeen()), 'VH inventory: B closes it, the truck still parked, and that back never upshifts')
 const rolls = async (what) => {
