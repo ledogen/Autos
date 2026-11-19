@@ -26,9 +26,9 @@ The scribe's reading: energy is the player-facing bar that hunger feeds (DEC-376
 (See Summary.)
 
 ## Tracker
-- [ ] Hovering or pad-highlighting Eat draws the energy bar at its post-meal level
-- [ ] Never past the scale; a meal that overflows reads as a full bar
-- [ ] Gate / smoke step holds it
+- [x] Hovering or pad-highlighting Eat draws the energy bar at its post-meal level
+- [x] Never past the scale; a meal that overflows reads as a full bar
+- [x] Gate / smoke step holds it
 - [ ] Owner has looked
 
 ## Open questions
@@ -43,3 +43,4 @@ FEAT-283, FEAT-250.
 
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
+- 2026-11-19: land/small-1119. Read "energy" as the Energy meter's hunger strip: eating moves only the satiety counter (DEC-376), never the energy hours. The green box is gone; hover draws the strip and its word at `DaySystem.leftAfterMeal`, which eat() itself now uses. test/meal-waste.mjs: 20 meals over hungry / fed / capped states, preview == result. If the owner meant the energy strip itself, nothing there moves on eating: ask. Owner look open.

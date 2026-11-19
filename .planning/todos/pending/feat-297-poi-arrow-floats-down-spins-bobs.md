@@ -30,10 +30,10 @@ FEAT-218 in `src/gps.js` (about line 675, "The route's end"): an objective furth
 (See Summary.)
 
 ## Tracker
-- [ ] The off-road end of the route shows a downward arrow hovering over the objective, not the turn arrow on the road
-- [ ] It rotates on the y axis and bobs slightly
-- [ ] Hover height: low enough to see from a few metres away (suggest 2 to 4 m above the roof line; the builder measures from the player's camera at 5, 10, 30 m)
-- [ ] Visible far away too (fades in like the old arrow: ARROW_IN / ARROW_FULL)
+- [x] The off-road end of the route shows a downward arrow hovering over the objective, not the turn arrow on the road
+- [x] It rotates on the y axis and bobs slightly
+- [x] Hover height: low enough to see from a few metres away (suggest 2 to 4 m above the roof line; the builder measures from the player's camera at 5, 10, 30 m)
+- [x] Visible far away too (fades in like the old arrow: ARROW_IN / ARROW_FULL)
 - [ ] Owner has looked
 
 ## Open questions
@@ -48,3 +48,4 @@ DEC-434.
 
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
+- 2026-11-19: land/small-1119. gps.js `_placeRing`: two crossed vanes (3 m tall, x1..x3 with distance / 50 m), tip 0.8 m over the roof (poi.js `poiTopY`, the collision boxes; 3 m over the road for a non-POI objective), spin 2 rad/s, bob 0.25 m at 2.4 rad/s. Within 15 m of the objective the tip comes down to 3.5 m over the road (blend out to 45 m) and the material ignores depth, because from the chase camera the roof is out of frame when parked. Start arrow untouched. Sheet: wip/small-1119/arrow.jpg (office, farm; day, night; 60 m, 20 m, parked). Live missions end at 28 m (ARRIVE_RADIUS), so the 20 m / parked frames had distanceToGo stubbed. Owner look open.
