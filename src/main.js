@@ -84,7 +84,7 @@ import { MissionSystem, REGION_MARGIN, secPerGameH, routeLeftM } from './mission
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, knockMass, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, poiTopY, dropZoneWorld, overDropZone, satSolid, knockMass, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS, LINE_SUPPLY } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
@@ -5552,6 +5552,8 @@ gpsSystem = new GpsSystem(scene, {
   // par oracle's elevation instead, which is a different pipeline stage and disagrees by up to
   // 27 m — see gps.js bakeRoute's ELEVATION SOURCE note.
   getRoad: () => roadSystem,
+  // FEAT-297: the POI an objective stands for (matched by its x, z), so the route-end arrow can hover over its roof.
+  getObjectiveTopY: (o) => { const q = poiSystem.list().find(p => Math.hypot(p.x - o.x, p.z - o.z) < 1); return q ? poiTopY(q) : null },
 })
 
 // ── FEAT-31: the testing lab ─────────────────────────────────────────────────
