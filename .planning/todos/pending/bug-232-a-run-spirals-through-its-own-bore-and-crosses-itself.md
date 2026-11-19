@@ -126,3 +126,4 @@ Sheet `wip/bug-232/sheet.jpg` (567993018 and 2283335151, top-down + driver view)
   infeasible and then drops; the branch ships it as a 2000 m run, solved, steepest 10 m 19 %. Probes wip/bug-232/{runs,cls,stage,rungs,drape}.mjs.
   Proofs: gate self-crossing PASS (5 seeds, 0 self-crossings, sites 18.1-29.4 %); census 302 (branch re-run, main log kept): self 5→0, near 3→0,
   run × run 30→30, engine self-crossings in the warm window 17→0 (so no looping fallback ships), components equal on all 302, edges up 12 / down 0.
+  Gates (run-all --serial --changed=src/corridor-router.js): 93 selected, 91/91 green. Fingerprint-world vs main: ALL IDENTICAL (6 windows). Not re-run: smoke, pad-e2e, 400-seed sweep.
