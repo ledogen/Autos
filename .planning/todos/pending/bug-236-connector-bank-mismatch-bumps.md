@@ -12,8 +12,9 @@ lane: unplaced
 # BUG-236: a degree-2 connector bend meets two different banks — hump, dip and a crease at the node
 
 ## Next steps
-Owner: pick a fix on the card `bug236-bumps-kink` (recommended: option 1, BUG-90's crest test reads the largest bank
-between the node and the cutback). Then a road lane builds it with a gate on this site plus the census sites.
+Owner: pick a fix on the card `bug236-bumps-kink` (recommended: X2, the node decides the BUG-90 run-off for both legs,
+plus a follow-up diagnosis of connector-bend bumps in general). Then a road lane builds it with a gate on this site
+plus the census sites, and looks at the one site X2 makes worse.
 
 ## Summary
 Two runs meet at a degree-2 node with a 42° kink; a connector arc (R ≈ 24 m) carries the road round it. BUG-90 runs
@@ -48,8 +49,7 @@ flat at the node. The sign is read from `camberRad[i]` at the cutback (10 m out)
   1.5°/m, so its bank 10 m out is 0 → `bankCrest` returns false → it keeps 10.73° at the node.
 - So the node sees 0° against 10.7°: 0.95 m of disagreement at the pavement edges. The connector overlay
   (`_withConnectorTop`, 1/(gap² + soft²) blend by distance to each leg's edge) turns that into the hump/dip/crease.
-Experiment (scratch copy, not committed): `bankCrest` reads the largest |bank| between the node and the cutback.
-Run 2 then runs off too; the connector core's worst straightedge deviation falls 32.4 → 4.3 cm, wheel-track vertical
+Experiment (scratch copy, not committed; X1 and X2 below give the identical deck here): run 2 also runs off; the connector core's worst straightedge deviation falls 32.4 → 4.3 cm, wheel-track vertical
 curvature 0.249 → 0.052 /m.
 
 ### Today's landings
@@ -58,7 +58,20 @@ samples and all 671 connector-mesh vertices are bit-identical. BUG-230 does not 
 this one has a connector).
 
 ### How common
-CENSUS_PLACEHOLDER
+60 random seeds (`wip/bug-236/seeds.txt`), R 1000 m round the origin, free-roam network, potholes off. Metric: worst
+8 m straightedge deviation on the wheel tracks (±1.785 m) through the connector core (`census.mjs`).
+- 203 connector bends; 142 gentle (kink < 60°). The one-sided bank (one leg 0°, the other > 3°) is at 10 of the 142,
+  on 9 of 60 seeds. Their bump: median 16 cm, worst 30 cm.
+- Wider class, not this cause alone: connector bends are bumpy in general. 82 of 203 have a wheel-track bump over 15 cm
+  (19 over 25 cm, 49 of 60 seeds have one). Control: the middle 48 m of 59 plain runs: median 2 cm, worst 9 cm, none
+  over 15 cm. The matched-bank bumps need their own diagnosis (candidate: the connector overlay's distance blend).
+### Fix candidates (scratch experiments, paired census on the same 203 sites)
+- X1: `bankCrest` reads the largest bank between node and cutback. Fixes this site; changed only 3 sites, 1 worse.
+- X2 (option 1): the node decides — if EITHER leg is crest-side, both run off (the other leg's pre-blend arrays via
+  `_computeCamberArrays` + `_runStartCamber`). This site 32 → 4 cm. 20 sites changed: 9 better by > 2 cm, 1 worse
+  (3245191168 (285.1, 223.1): 15 → 23 cm). 3 mismatches > 3° remain (legs with no crest side).
+- X3: X2 plus BUG-230's mean bank at connector joins too. 0 mismatches left; 9 better, 2 worse (adds 792126976
+  (435.9, 109.4): 22 → 26 cm).
 
 ## Tracker
 - [x] Reproduced headless (replay exact; deck walk, ribbon vs physics)
@@ -79,4 +92,5 @@ CarGame-machine (git-ignored): `walk2.mjs` (deck walk), `census.mjs`, `sheet.mjs
 `src/road.js` (`_applyJunctionBlend` · `bankCrest`, `_buildCamberProfile`, `_runStartCamber`, `_withConnectorTop`)
 
 ## Log
-- 2026-11-19: diagnosis on land/bug-236-bumps-kink (lane b). No src change. Not checked: in-game drive at speed.
+- 2026-11-19: diagnosis on land/bug-236-bumps-kink (lane b). No src change. Experiments X1/X2/X3 in scratch copies only.
+  Not checked: an in-game drive at speed; story-mode pruning (census used the free-roam network; this site matches).
