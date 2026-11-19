@@ -1,21 +1,21 @@
 ---
-id: FEAT-277
+id: FEAT-276
 type: feature
-status: open
-severity: major
+status: closed
+severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 (inbox) — "after f266 is settled: we can add a little more juice to the paper route mission type. lets build 3x small house poi models to add to the residences p…"
-relates: FEAT-266, FEAT-64, FEAT-276, ASSET-91, FEAT-282, src/physics-engine.js
+relates: FEAT-266, FEAT-187, FEAT-282, FEAT-277
 ---
 lane: Places and Missions
 
-# FEAT-277: Thrown papers get physics; a shot scores where the paper comes to rest
+# FEAT-276: Paper target halo: green, centre spike marks the bullseye
 
 ## Next steps
-Needs the owner's pick or a lane's proposal on how to stop the rolling (see Open questions).
+Built on land/feat-276-277-paper-throw with FEAT-277; the owner looks at the halo (owed card paper-throw-try) and says which reading of ".5m smaller dia but slightly taller" he meant.
 
 ## Summary
-Throwing a paper at a house wall or door should drop it into the circle. A shot scores where the paper comes to rest (still for more than 0.25 s), since it can land on a POI model. Almost no rebound, very high ground friction, and a way to stop it rolling.
+Rework the paper target halo: a small centre spike marks the bullseye, the ring about 0.5 m smaller in diameter and slightly taller, the halo green, the centre white.
 
 ## Description
 Owner's words, verbatim (inbox 20261118013250-sf5w):
@@ -30,22 +30,25 @@ Owner's words, verbatim (inbox 20261118013250-sf5w):
 Paper-route juice, one owner message (inbox 20261118013250-sf5w) split into four tickets: ASSET-91 (houses), FEAT-275 (mailboxes in Larry's pool), FEAT-276 (halo), FEAT-277 (thrown-paper physics). He said it follows FEAT-266, which landed 2026-11-17.
 
 ## Tracker
-- [ ] A paper thrown at a wall or the front door stops dead and falls straight down into the circle
-- [ ] A shot is scored where the paper has been at rest for more than 0.25 s, including on top of a POI model
-- [ ] Almost no rebound, very high ground friction; the paper does not roll away or down hills
-- [ ] A throw at the ground near a mailbox does not bounce out of the halo as a miss
-- [ ] Predictable: the player can aim the one small bounce or slide to stop at the mailbox
+- [x] A small centre spike marks the bullseye
+- [ ] The ring is about 0.5 m smaller in diameter and slightly taller than today (read as the SPIKE, see Open questions; the ring stays the 5 m scored circle)
+- [x] The halo is green; the centre stays white
 
 ## Decisions
 
 ## Open questions
-- Stopping the roll: (1) a short, flat, coin-shaped collider, (2) resistance on the roll axis (he called it "sketchy"), or (3) in a pinch, score where it first touches the ground, and wait to freeze only when it hits a POI. Which one, or try (1) first?
+- Bullseye is within 0.5 m of the centre (FEAT-282): does the spike's size show that radius? He did not tie them. Built: the spike is 0.5 m across, so it marks the centre, not the 1 m bullseye disc (the old pip did).
+- ".5m smaller dia but slightly taller halo": built as the centre spike (old pip 1 m × 0.5 m → 0.5 m across × 1 m tall, 0.5 m above the sink). If he meant the OUTER ring, it is a scoring change, not a look: the ring IS the scored circle (poiHouseTargetR 5 m), so 0.25 m off its radius moves the scoring rim and every tier with it. On the card.
 
 ## Links
-FEAT-266, FEAT-64, FEAT-276, ASSET-91, FEAT-282, src/physics-engine.js
+FEAT-266, FEAT-187, FEAT-282, FEAT-277
 
 ## Files
-src/paper-route.js · the thrown-paper body (physics-engine.js adapter only) · terrain-physics.js (POI colliders)
+the paper target halo (src/paper-route.js and its mesh)
 
 ## Log
+- 2026-11-18 lane s: night look checked: ring (Lambert + headlights, FEAT-180) is readable with the low beams on, near-black with lights off like every prop; no src change. White spike is drawn (_targetPipMat, 0.25 m radius), thin at distance.
+- 2026-11-18 lane s, land/feat-276-277-paper-throw: ring green (UI-STYLE --money #8ce99a, Lambert-lit like every ring), centre a white 0.5 × 1.0 m spike; the demolition halo keeps the old white ring and pip (DEC-414 names the paper's only). Sheet wip/paper-throw/sheet.jpg.
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118013250-sf5w).
+
+- 2026-11-19: owner, in chat: "the spike should be even taller than it is on 8005. otherwise the throwing and physics is good. good damping too." Spike 1 m → 3 m. Landed on main. The porch throw is reviewed on FEAT-295.
