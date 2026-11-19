@@ -12,10 +12,9 @@ lane: unplaced
 # BUG-236: a degree-2 connector bend meets two different banks — hump, dip and a crease at the node
 
 ## Next steps
-Option 1 is BUILT on land/bug-236-bumps-kink (lane b) as a plain defect fix; the card `bug236-bumps-kink` is still the
-owner's (his pick can add to it or reverse it; no decision record until he answers). Next: land it once the 400-seed
-sweep, the affected gates and the smokes are green (see Log), then a separate diagnosis of matched-bank connector-bend
-bumps (the wider class, 79 of 203 bends over 15 cm after this fix).
+Owner (2026-11-19, card answer): diagnose the whole connector deck first; option 1 is NOT to land on its own. Done:
+four classes, a proposed deck design and its census below. Owner: pick on the card `bug236-bumps-kink` (build the
+design / build only class 1 / leave it). Option 1 stays as wip on land/bug-236-bumps-kink (0487cef0, gate 0b096f51).
 
 ## Summary
 Two runs meet at a degree-2 node with a 42° kink; a connector arc (R ≈ 24 m) carries the road round it. BUG-90 runs
@@ -74,18 +73,60 @@ this one has a connector).
 - X3: X2 plus BUG-230's mean bank at connector joins too. 0 mismatches left; 9 better, 2 worse (adds 792126976
   (435.9, 109.4): 22 → 26 cm).
 
+### The whole connector deck (2026-11-19, owner's option 4)
+60 random seeds, 203 connector bends; 82 have a wheel-track bump over 15 cm (8 m straightedge, wheel tracks ±1.785 m,
+connector core ±2 m). Each bend's bump was split into its parts (`wip/bug-236/census2.mjs`): the legs' OWN centreline
+profiles through the node, the connector's grade blend, and its cross-section blend. A bend can carry several classes.
+- **Class 1, different banks at the node** (6 of 82, all gentle kinks; median 21.5 cm, worst 29.6 cm at 2215738496
+  (−756.9, −500.2)). `_applyJunctionBlend` · `bankCrest`: one leg runs its bank off, the other keeps the shared start
+  bank (5 bends); 1 bend has two different banks and no crest side (792126976 (435.9, 109.4)). Proof: option 1 takes
+  the cross-section part from 14.3 to 1.8 cm (median); the 6th is fixed by the class-4 change.
+- **Class 2, the node is a sag (or crest) the profile never smooths** (60 of 82, 23 at kinks ≥ 60°; median 22.6 cm,
+  worst 55.2 cm at 2973054976 (956.3, −66.4)). The two runs are solved separately and meet at the node with a grade
+  break: 114 of 203 connector nodes are sags with > 10 % grade change, 22 crests. `_applyJunctionBlend` holds a deg-2
+  node on the mean grade line (`_junctionGradeVector`, or the shared pad plane at kinks ≥ 60°, `_junctionPadPlane`), and
+  `_recoverFromHold` bends back to the run's own profile under the FEAT-82 sag/crest rule priced at par's corner speed
+  (`vNode2`) and capped at 45 % of the run: the worst site climbs back at 40 % within 5 m. Proof (toggle T2, one
+  parabolic vertical curve through the node at the open-road rule): the legs' own profile bump 21.5 → 10.9 cm median.
+- **Class 3, the connector blends two runs' extended grades** (21 of 82; median 18.7 cm, worst 33.5 cm at 4082309632
+  (255.5, −692.1)). `_connectorDesignAt` takes each leg's grade at its nearest point (`_runGradeAt`; past a leg's end it
+  is frozen at the end value, faded over XS_OFF_FADE 4 m) weighted 1/(gap² + 0.5²) to that leg's edge; the handover adds
+  a bump the legs do not have (median 8.5 cm over the legs' own). Proof (T3, the core's height a cubic in arc length
+  along the connector, matching each leg's height and grade at its mouth): excess 8.5 → −2.4 cm; 16 of 21 ≤ 15 cm alone.
+- **Class 4, the connector blends two runs' extended cross-sections** (35 of 82, 23 at kinks ≥ 60°; median 22.8 cm,
+  worst 37.6 cm at 3138363520 (874.2, −108.8)). `_runGradeAt`'s fold: `crownProfile` is unbounded past the edge (−15 cm
+  at 10 m off a leg, −40 cm at 15 m) and the bank lever is extended to 8 m; at sharp kinks the core lies 8–15 m off both
+  legs. Proof (T4, the normal crown about the connector's own centre line plus a bank run linearly from one mouth's
+  bank to the other's): the cross-section part 10.0 → 2.3 cm median (worst 31.2 → 5.7).
+- **Unexplained: 3 of 82** carry no class over its bar (15.2–16.9 cm, legs' own 13–15 cm: sags just under class 2's
+  bar). Toggles alone are not additive: at kinks ≥ 60° the plane's grade and cross-section errors partly cancel today,
+  so T2 alone or T4 alone makes those worse (T2 alone: 151 bends > 15 cm); only together do they help.
+### Proposed connector deck (scratch experiment T1+T2+T3+T4, not shipped)
+One road through the bend. Profile: one symmetric parabolic vertical curve centred on the node joins the two runs'
+solved grades; length = grade change / curvature limit at 28 m/s (sag R ≥ 80 m, crest R ≥ 160 m: the open-road rule
+the runs already meet), capped at 45 % of either run; the node height floats onto the curve (median 0.28 m, 27 of 203
+nodes > 1 m, max 2.5 m). Replaces the deg-2 hold, the corner-speed recovery and the ≥ 60° shared pad plane. Through the
+core: height a cubic in arc length along the connector (C1 to each run at its mouth); cross-section = crown about the
+connector's centre line + a bank run linearly between the two mouths' banks. Option 1 kept.
+Census (203 bends, main → design): > 15 cm 82 → 4, > 10 cm 132 → 35, > 5 cm 189 → 142, median 13.0 → 6.7 cm, worst
+55.2 → 21.6 cm; worse by > 0.5 cm: none. > 5 cm stays high: the open-road sag limit is ~10 cm against an 8 m
+straightedge (plain road worst 9 cm). Left over 15 cm: hairpins 2349152256 (272.2, 614.7) 127° 26.6 → 21.6, 278212208
+(169.2, 328.5) 123° 37.3 → 16.5, 3075315200 (−682.2, −109.4) 119° 33.7 → 16.3 (the tight inside of the fillet), and
+1960500736 (801.2, 484.3) 35.8 → 19.9, a node the graph counts as 3-way (pad-plane path, the experiment did not touch it).
+Not checked: MESH == PHYSICS on the experiment (both read `_connectorCarve`, so it holds by construction), the node
+height change against streams/causeways/POIs, gates, cost of the extra solved-profile build per connector leg.
+
 ## Tracker
 - [x] Reproduced headless (replay exact; deck walk, ribbon vs physics)
 - [x] Cause named and proven by experiment; today's landings cleared
 - [x] Census over 60 random seeds
 - [x] Screenshot sheet (`/Users/ledogen/CodeShit/CarGame/wip/bug-236/sheet.jpg`)
-- [ ] Owner picks a fix (option 1 built meanwhile)
-- [x] Fix: the node decides the BUG-90 run-off (`_applyJunctionBlend` · `bankCrest` tests both legs' pre-blend banks)
-- [x] Gate `connector-bank-runoff` (capture site + 7 census sites): red on main (14 checks), green on the branch
-- [x] Census main vs branch: 7 of 7 same-cause bends now agree at the node; capture site 28.2 → 4.2 cm
-- [x] Fingerprint: network/profiles/junctions/POIs identical everywhere; deck changes only within 61 m of a connector node
-- [x] Before/after sheet (`/Users/ledogen/CodeShit/CarGame/wip/bug-236/sheet-fix.jpg`)
-- [ ] 400-seed no-throw sweep, affected gates, cdp-smoke + pad-e2e (running, see Log)
+- [x] Owner picked option 4 (diagnose the whole deck first; option 1 not to land alone)
+- [x] Option 1 built as wip + gate `connector-bank-runoff` (0487cef0, 0b096f51); proofs in the Log; NOT for landing alone
+- [x] Whole-deck diagnosis: 4 classes with toggles, shares of the 82, 3 unexplained
+- [x] Proposed deck design + scratch census (82 → 4 over 15 cm, none worse); sheet `sheet-deck.jpg`
+- [ ] Owner picks: build the design / only class 1 / leave it (card `bug236-bumps-kink`)
+- [ ] Build the pick with gates; road gates green
 
 ## Open questions
 - Which fix (card `bug236-bumps-kink`). Is the "small kink" the crease or the dash stub at the node?
@@ -113,3 +154,7 @@ CarGame-machine (git-ignored): `walk2.mjs` (deck walk), `census.mjs`, `sheet.mjs
   tutorial 1872706826 (r 1400): network/profiles/junctions/POIs identical, surface/carve/tiles/water differ at 5 of 19
   connector bends (bank run-off on the pavement; earthwork slopes 13–21 m out up to 1.44 m). Every 2 m deck cell that
   moved > 1 mm in the three story windows lies within 61 m of a connector node.
+- 2026-11-19 (lane b): owner picked option 4. Option 1 landing proofs stopped (400-seed sweep: 169 seeds done, 0 throws;
+  smokes not run). Whole-deck diagnosis: classes 1–4 = 6 / 60 / 21 / 35 of the 82 (3 unexplained); design experiment
+  (scratchpad expdeck, toggles BUG236_T2/T3/T4 on the branch) 82 → 4 bends over 15 cm, worst 55.2 → 21.6 cm, none
+  worse. Scripts: census2.mjs, c7-cls.mjs, sitepro.mjs, sheet-deck.mjs. Sheet `wip/bug-236/sheet-deck.jpg`.
