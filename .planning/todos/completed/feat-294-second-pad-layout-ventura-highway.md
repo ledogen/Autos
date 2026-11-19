@@ -1,7 +1,7 @@
 ---
 id: FEAT-294
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-18
 source: owner, 2026-11-18 (chat with the orchestrator)
