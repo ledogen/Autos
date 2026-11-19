@@ -1906,6 +1906,9 @@ sunFar.shadow.camera.far  = 2600            // spans the standoff + the world's 
 // mountain shadows off their ridges). ~2 far-texels.
 sunFar.shadow.normalBias = 0.5
 sunFar.shadow.bias = -0.0005
+// BUG-229 TEMP probe (remove at landing): ?b229fnb=<m> / ?b229fb=<depth bias> override the far map's biases.
+if (_urlParams.has('b229fnb')) sunFar.shadow.normalBias = Number(_urlParams.get('b229fnb'))
+if (_urlParams.has('b229fb')) sunFar.shadow.bias = Number(_urlParams.get('b229fb'))
 // PERF: opt out of the global on-demand shadow trigger. Its needsUpdate is never armed directly —
 // the far-follow in loop() raises _farShadowPending and the wrapped shadow pass below draws it.
 sunFar.shadow.autoUpdate = false
