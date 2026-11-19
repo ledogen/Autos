@@ -154,6 +154,6 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
 
 **Queue:** BUG-232 (count how often a run crosses itself); BUG-220; BUG-204 remainder. Scratch worktrees b200-base, b200-E, b200-main, fp-main in the old session scratchpad: remove when clean. The dev server on :3890 (CarGame-land-212b) still serves the BUG-229 A/B.
 
-**Next free ids:** DEC-433 · BUG-238 · FEAT-296 · PERF-54 · ASSET-92.
+**Next free ids:** DEC-448 · BUG-245 · FEAT-306 · PERF-54 · ASSET-93.
 
 **Lessons from this night:** merge in separate small commands. In zsh `for x in $var` does not split: wrap loops in `bash -c`. Check `uptime` before heavy tools; browser tests flake above load 10. Two failures of one smoke step is real until disproven. A lane dev server needs `--host`. "Waiting on its own background work" is not a report. State predictions as predictions, and do not call a finding critical before its diagnosis (BUG-225, BUG-226 were both overstated). Any new code in world build needs a 400-seed no-throw sweep before landing (pattern: CarGame-land-gps `wip/bug-225/sweep.mjs`). A plain defect gets fixed without asking the owner, and a feel call gets no decision record (owner, card `bug216-bottoming-spots`). A `git merge --no-commit` followed by a `sed` on a ticket leaves that edit unstaged: `git add` it before the commit. Pipe a checker through `tail` and its exit code is lost: read the output.

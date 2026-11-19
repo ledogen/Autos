@@ -1,9 +1,11 @@
 ---
 id: BUG-222
 type: bug
-status: open
+status: done
 severity: minor
 opened: 2026-11-18
+closed: 2026-11-19
+resolution: "Owner chose A (DEC-445): keep the nearest-spot rule; the defect (a sibling leg cancelling spots) was fixed on main; the gate checks the nearest spot to the truck."
 source: FEAT-292 agent, 2026-11-18
 relates: FEAT-154, FEAT-292, BUG-128, src/poi.js, test/expedition-camp.mjs
 ---
@@ -53,9 +55,10 @@ returns 49 m off on the sibling, 46 m from the truck against 48 m. That is "near
 - [x] Cause found: rows dropped return spots on other roads (5 of 24); the other 19 are geometry under the 2390 m rule
 - [x] Fix in `_returnSpots` and a gate: 2611481022 pinned in expedition-camp (51 m on a sibling before, within 40 m now)
 - [x] 400-seed no-throw sweep
-- [ ] Owner: the rule for roads that run along the wall (Open questions)
+- [x] Owner: the rule for roads that run along the wall (Open questions)
 
 ## Decisions
+- 2026-11-19, owner (card bug222-edge-return-rule): "A: keep nearest spot (recommended by the agent)". Recorded as DEC-445. The test is changed to check exactly the nearest-spot rule; B and C are not built.
 
 ## Open questions
 - On a road that runs along the wall for 100–450 m, no spot ≤ 2390 m is near its row, so the fade puts the truck on the
@@ -75,3 +78,4 @@ src/poi.js (`build`, `_edgeRows`, `_returnSpots`), test/expedition-camp.mjs
   Affected gates 30/30 green serially (wip/bug-222/run-all.log); cdp-smoke PASS 40 steps, zero console errors; pad-e2e
   ALL OK; fingerprint-world ALL IDENTICAL to main (it hashes no rows or returns); tutorial-seed passes. 400-seed sweep 0 throws.
   Unverified: a drive at a shallow-crossing row in the browser.
+- 2026-11-19: owner answered A on the owed card (DEC-445). Closed: no further code change beyond the test the agent already landed (nearest spot to the truck wins).

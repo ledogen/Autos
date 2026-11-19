@@ -79,6 +79,7 @@ Worth its own ticket; not touched here.
 - [ ] Owner has played a run
 
 ## Decisions
+- 2026-11-19, owner (card feat292-camp-crossing-play): chose "Change" but the note box holds only tutorial notes (see FEAT-305); nothing about the camp. FEAT-292 is already on main. Whether any change to the camp rule is wanted is unanswered (FEAT-305 Open questions).
 DEC-424.
 
 ## Open questions
@@ -96,3 +97,4 @@ src/poi.js, src/offer-board.js, test/expedition-camp.mjs
 - 2026-11-18 main merged in (6a153fe3); affected gates 91/91 green serially (wip/feat-292/run-all.log); cdp-smoke 38
   steps, zero console errors; pad-e2e all ok (LB/RB paging unchecked this run: no plain giver with two offers).
   Unverified: an owner drive; browser-side cost of the check (measured headless in node).
+- 2026-11-19: owner answered "Change" with 16 lines of tutorial feedback and none about the camp; moved to FEAT-305. Card moved to answered/.

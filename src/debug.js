@@ -1087,7 +1087,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
 
   // ── Paper Route (FEAT-61 Phase F) ─────────────────────────────────────────────────
   // The feel-tuned constants of the round, dialled. All live-read at their use sites — a throw
-  // integrates THROW_PARAMS when F lands, scoreRoute reads PAPER_PARAMS at settlement, the
+  // reads THROW_PARAMS when it leaves the truck, scoreRoute reads PAPER_PARAMS at settlement, the
   // re-plan poll reads RR_PARAMS four times a second — so no onChange plumbing. Deliberately
   // absent: the tier tables (arrays, and an owner-ratified ladder shape) and poiHouse* (placement
   // is baked at story-mode entry, so a live dial would silently do nothing until the next run).
@@ -1097,6 +1097,10 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const paperFolder = gui.addFolder('Paper Route (FEAT-61)')
   paperFolder.add(THROW_PARAMS, 'throwSpeed', 8, 30, 0.5).name('Throw Speed (m/s)')
   paperFolder.add(THROW_PARAMS, 'dragK', 0, 0.1, 0.001).name('Throw Drag K (1/m)')
+  // FEAT-277: the paper body's contact, read by the next paper thrown (debris.js getters).
+  paperFolder.add(THROW_PARAMS, 'friction', 0.5, 5, 0.1).name('Paper Friction μ')
+  paperFolder.add(THROW_PARAMS, 'restitution', 0, 0.5, 0.01).name('Paper Restitution')
+  paperFolder.add(THROW_PARAMS, 'rollingResistance', 0, 3, 0.05).name('Paper Rolling Resistance')
   paperFolder.add(PAPER_PARAMS, 'paperTip', 0.0, 1.0, 0.05).name('Accuracy Pool (× unit)')
   paperFolder.add(RR_PARAMS, 'offM', 20, 120, 1).name('Re-plan Off-line (m)')
   paperFolder.add(RR_PARAMS, 'offS', 0.5, 5, 0.1).name('Re-plan Off-line (s)')
