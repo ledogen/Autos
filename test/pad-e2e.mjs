@@ -518,6 +518,7 @@ check(s.hb, `VH: A held is the handbrake (hb=${s.hb})`)
 if (!(await vs()).parked) await press(A)
 await keysSeen()
 // RB held: the side menu, D-pad ↓ walks it, release opens the pick. Parked, so the park zone's icons are on it.
+await js(`window.__inv.grant('chiliDog')`)   // a slot for A to select (free roam's inventory is empty)
 await js('__fp.b[5] = 1'); await sleep(250)
 const vhPick = await pick(), vhOn = await menuOn()
 await js('__fp.b[13] = 1'); await sleep(150); await js('__fp.b[13] = 0'); await sleep(150)
@@ -533,6 +534,7 @@ await press(A); s = await vs()
 check(await inv() && s.parked && !/ /.test(await keysSeen()), `VH inventory: A on a slot selects it and stays a select (open ${await inv()}, parked ${s.parked}, on ${await js('document.querySelector("#inv-screen .nav-focus")?.className')})`)
 await js('__fp.b[1] = 1'); await sleep(300); await js('__fp.b[1] = 0'); await sleep(300)   // held past the close: the drive layout comes up under it
 check(!await inv() && (await vs()).parked && !/\be\b/.test(await keysSeen()), 'VH inventory: B closes it, the truck still parked, and that back never upshifts')
+await js(`window.__inv.consume('chiliDog')`)
 const rolls = async (what) => {
   await js('__fp.b[7] = 0.6'); await sleep(1200); s = await vs(); await js('__fp.b[7] = 0'); await sleep(200)
   check(!s.parked && s.v > 0.5, `VH ${what}: after B the gas lets the parking brake go and rolls the truck (parked ${s.parked}, v ${s.v.toFixed(2)})`)
