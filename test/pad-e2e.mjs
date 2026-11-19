@@ -504,9 +504,10 @@ await js(`(async () => { const m = ${appMod('/src/gamepad.js')}; window.__padMod
 await sleep(200)
 check(await js('__padMod.PAD_PARAMS.padLayout') === 'Ventura Highway', 'the free-roam boot reads the saved layout')
 const keysSeen = () => js('__vhKeys.splice(0).join()')
-const reset = async () => { await js('__fp.b[7] = 0; __fp.b[15] = 1'); await sleep(1300); await js('__fp.b[15] = 0'); await sleep(2500) }
+// The reset's seat latches the brake once the drop has settled; under load that outlasts 2.5 s, so wait for it.
+const waitParked = async (want, n = 20) => { for (let t = 0; t < n && (await vs()).parked !== want; t++) await sleep(100) }
+const reset = async () => { await js('__fp.b[7] = 0; __fp.b[15] = 1'); await sleep(1300); await js('__fp.b[15] = 0'); await sleep(2500); await waitParked(true, 50) }
 // Back at rest after a roll-away: the reset, then parked as a player does it — A lets the reset's latch go, A sets it.
-const waitParked = async (want) => { for (let t = 0; t < 20 && (await vs()).parked !== want; t++) await sleep(100) }
 const repark = async () => { await reset(); await press(A); await waitParked(false); await press(A); await waitParked(true); await sleep(300)
   check((await vs()).parked, `VH: re-parked with A after the roll-away (keys "${await js('__vhKeys.join()')}")`) }
 const zone = () => js('JSON.stringify({ menu: document.body.classList.contains("hud-menu-on"), zone: document.getElementById("park-zone").className, parked: __vs.parked, inv: document.querySelector("#inv-screen.open") !== null })')
