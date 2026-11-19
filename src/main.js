@@ -3452,16 +3452,17 @@ function _rebuildPoiMarkers () {
   // target on it (owner-reported). Asking by tag is the whole point of having tags.
   const tr = POI_PARAMS.poiHouseTargetR
   for (const h of poiSystem.customers()) {
+    const y = h.house?.floorY ?? h.y   // FEAT-295: at a route house the halo stands on its porch floor
     const ring = new THREE.Mesh(_ringGeo, _targetRingMat)
     ring.scale.set(tr, _TARGET_RING_H, tr)
-    ring.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_RING_H * 0.5, h.z)
+    ring.position.set(h.x, y - _TARGET_RING_SINK + _TARGET_RING_H * 0.5, h.z)
     ring.renderOrder = 5
     ring.visible = false      // lit only by _updateCustomerRings, and only on a live round
     _poiGroup.add(ring)
 
     const pip = new THREE.Mesh(_ringGeo, _targetPipMat)
     pip.scale.set(_TARGET_PIP_R, _TARGET_PIP_H, _TARGET_PIP_R)
-    pip.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_PIP_H * 0.5, h.z)
+    pip.position.set(h.x, y - _TARGET_RING_SINK + _TARGET_PIP_H * 0.5, h.z)
     pip.renderOrder = 5
     pip.visible = false
     _poiGroup.add(pip)
@@ -3475,6 +3476,21 @@ function _rebuildPoiMarkers () {
     _poiGroup.add(g)
     _poiYards.push(g)
     _clutter.add(sat.x, sat.z, () => _spawnSatellite(sat, g)); clutterKeys.add(sat.key)
+  }
+  // FEAT-295: each route stop's house (poi.js routeHouses()), queued like the yards; its colliders are already up
+  // (_syncPoiPhysics), so a paper thrown before the model streams in still lands on the porch.
+  for (const r of poiSystem.routeHouses()) {
+    const g = new THREE.Group()
+    g.userData.x = r.modelX; g.userData.z = r.modelZ
+    _poiGroup.add(g)
+    _poiYards.push(g)
+    _clutter.add(r.modelX, r.modelZ, () => {
+      const m = spawnModel(r.key, { castShadow: true, receiveShadow: true })
+      m.position.set(r.modelX, r.baseY, r.modelZ)
+      m.rotation.y = r.modelYaw
+      g.add(m)
+    })
+    clutterKeys.add(r.key)
   }
   void _clutter.openWhen(Promise.all([...clutterKeys].map(getModel)))   // FEAT-278: no clone waits on a fetch
 }
@@ -3605,10 +3621,10 @@ function _updatePoiPresence (force = false) {
   }
   _syncPoiPhysics()
 }
-/** MESH == PHYSICS for the markers AND their yards' solid things (FEAT-149: poi.js satSolid). */
+/** MESH == PHYSICS for the markers AND their yards' solid things (FEAT-149: poi.js satSolid), and the route houses (FEAT-295). */
 function _syncPoiPhysics () {
   const shown = poiSystem.list().filter(q => !q.hidden)
-  poiPhysics.sync([...shown, ...shown.flatMap(q => (q.satellites ?? []).map(satSolid).filter(Boolean))], POI_PARAMS.poiCubeSize)
+  poiPhysics.sync([...shown, ...shown.flatMap(q => (q.satellites ?? []).map(satSolid).filter(Boolean)), ...poiSystem.routeHouses()], POI_PARAMS.poiCubeSize)
 }
 const POI_REAPPEAR_CLEAR_M = 15   // m — truck-to-marker distance a hidden marker waits for before it returns
 
@@ -9842,8 +9858,8 @@ const storySystem = new StorySystem({
     const mainNodes = storySystem.region()?.nodes ?? null
     poiSystem.build(center, radius, mainNodes)
     // FEAT-61: AFTER build() — mom is a newspaper customer, and she is a roster POI, so the roster
-    // has to exist before customers() can be asked who receives a paper. Houses carve nothing and
-    // touch no pads, so unlike build() this needs no re-bake behind it.
+    // has to exist before customers() can be asked who receives a paper. FEAT-295: it adds the route houses' pads to
+    // the roster's, so the re-bake below (storyPadReach) carves both.
     poiSystem.buildHouses(center, radius, mainNodes)
     // FEAT-67: the mission board — AFTER build() (it reads the roster) and AFTER daySystem.start()
     // (it starts on the run's clock). A new run, a new board: nothing survives from the last one.
@@ -9877,9 +9893,10 @@ const storySystem = new StorySystem({
     // chunks a pad touches so they re-scatter against the finished ground — a handful, not a rebuild.
     if (propSystem) {
       const S = CHUNK_SIZE
-      for (const q of poiSystem.list()) {
-        const c0x = Math.floor((q.x - q.halfLen) / S), c1x = Math.floor((q.x + q.halfLen) / S)
-        const c0z = Math.floor((q.z - q.halfLen) / S), c1z = Math.floor((q.z + q.halfLen) / S)
+      for (const q of [...poiSystem.list(), ...poiSystem.routeHouses().map(r => r.pad)]) {   // FEAT-295: house pads too
+        const e = Math.max(q.halfLen, q.halfWid)
+        const c0x = Math.floor((q.x - e) / S), c1x = Math.floor((q.x + e) / S)
+        const c0z = Math.floor((q.z - e) / S), c1z = Math.floor((q.z + e) / S)
         for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) propSystem.releaseChunk(cx, cz)
       }
     }

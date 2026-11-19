@@ -949,6 +949,9 @@ export class PoiSystem {
         const road = this._d.getRoad()
         if (!road || !center) return this._houses
         const P = { ...POI_PARAMS, ...this._d.getParams() }
+        // FEAT-295: every site is judged on the ground with the roster's pads alone (the last build's house pads off),
+        // so a rebuild sees what the first build saw.
+        road.setPoiPads(this._list)
 
         // Same canonical edge order as build(), for the same reason: the Map's order is a streaming
         // artifact, and ids have to be stable across windows.
@@ -1046,8 +1049,7 @@ export class PoiSystem {
             if (mb) this._mailboxes.push({ ...mb, id: h.id })   // id: the house it serves
         }
         // FEAT-295: a house at each stop, on its own pad, in stop order (the first to claim ground keeps it). The stop
-        // does not move. The ground is measured with the roster's pads alone, so a rebuild sees what the first build saw.
-        road.setPoiPads(this._list)
+        // does not move.
         const rosterPads = this._list.filter(q => q.halfLen)
         this._routeHouses = []
         for (const h of picked) {
