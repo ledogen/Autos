@@ -3373,11 +3373,15 @@ const STEPS = [
       if (!await js('window.__vs.parked')) await btn(0)
       check(await js('window.__vs.parked'), 'Ventura Highway: the pad could not park the truck (LT, A held, A tap)')
     }
+    // The gas lets the latch and the lock go (the handbrake off). Rolling is not asked: a giver's seat can face its
+    // building (world 4044776284/K: let go, 0 m/s against the wall); mom's door and pad-e2e show the truck moving.
     const rollOff = async (what) => {
       await js('__fp.b[7] = 0.6')
-      const ok = await until(() => js('!window.__vs.parked && window.__vs.velocity.length() > 0.5'), 4000)
+      const ok = await until(() => js('!window.__vs.parked && !window.__vs.handbrake'), 4000)
+      const v = await js('window.__vs.velocity.length().toFixed(2)')
       await js('__fp.b[7] = 0'); await frames(3, 100)
-      check(ok, `Ventura Highway, ${what}: after B the gas did not let the brake go and roll the truck (parked ${await js('window.__vs.parked')})`)
+      check(ok, `Ventura Highway, ${what}: after B the gas did not let the brake go (parked ${await js('window.__vs.parked')}, handbrake ${await js('window.__vs.handbrake')})`)
+      console.log(`  pad: Ventura Highway, ${what}: B, then the gas let the brake go (${v} m/s)`)
     }
     await seatPoi("q => q.type === 'momsHouse'"); await vhPark(); await readCards()
     check(await until(() => js('document.getElementById("camp-panel").style.display === "block"'), 3000), 'Ventura Highway: parking at mom\'s with A opened no card')
