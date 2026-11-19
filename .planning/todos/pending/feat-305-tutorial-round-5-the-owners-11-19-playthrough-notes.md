@@ -1,0 +1,56 @@
+---
+id: FEAT-305
+type: feature
+status: open
+severity: major
+opened: 2026-11-19
+source: owner, 2026-11-19 (owed card FEAT-292, note box) — "sixteen lines of tutorial feedback typed in the note box of the FEAT-292 owed card (every line quoted in the Tracker)"
+relates: FEAT-184, FEAT-217, FEAT-288, FEAT-292, DEC-151, DEC-359, DEC-422, DEC-442, DEC-443, DEC-444, DEC-337, DEC-431, DEC-165, DEC-246, src/main.js, src/tut-gate.js, data/dialogue.js
+---
+lane: SM-1 tutorial (scribe: the FEAT-184 / FEAT-288 lane; Sonnet at medium effort for most items, Opus for 8 and 12 where the gating logic is)
+
+# FEAT-305: Tutorial round 5: the owner's 2026-11-19 playthrough notes
+
+## Next steps
+A lane works the 16 numbered items below in order of their Tracker. Items 8, 14 and 16 are rulings with decision records (DEC-443, DEC-444, DEC-442). Items 1, 9 and 10 need the owner's confirmation of which scene / which word (Open questions).
+
+## Summary
+The owner played the tutorial on 2026-11-19 and typed 16 lines of feedback into the box of the FEAT-292 card (`owed/feat292-camp-crossing-play`, choice "Change"). They are tutorial notes, not about the camp. Each is quoted exactly below as one Tracker item, with the scribe's reading and the files likely involved. His dialogue is his words; nothing in the quotes was corrected.
+
+## Description
+Reading all 16 together: a theme of the round is that tutorial lessons should let the player move through the whole UI freely (items 8 and 15), that hints must name the right button in the right place (2, 4, 6, 7, 13), that the dialogue stays casual (9, 10), three small bugs in the scene transitions (11, 12, and the card slide in 1), and one hard rule (16).
+
+## Tracker
+- [ ] **1.** "her card slides out left and his slides in from the right. flip this" — Scribe's reading: two cards in the camp call/scene (Katie and the player) slide the wrong way; Katie's card should leave to the right/enter the other way. Which scene is unclear (the note follows the camp crossing, so probably Katie's camp talk, DEC-347). Needs the owner to confirm the scene. Files: `src/dialogue.js`, `index.html` card CSS.
+- [ ] **2.** "Park next to it and press d-pad to pick up should say park in a different color" — Reading: the 'Park' word in the pickup hint is coloured (like a key name), as the other action words are. Files: `src/main.js` hint builders, `data/dialogue.js`.
+- [ ] **3.** "Grab us a bag of peanuts at the gas station on your way, would you? Park out the front of the store, not at the pumps. remove Park out the front of the store, not at the pumps." — Reading: the sentence 'Park out the front of the store, not at the pumps.' is removed from the peanuts errand text (his word: remove). The first sentence stays. Files: `data/dialogue.js` / the errand's card text.
+- [ ] **4.** "Switching to shopping is mislabeled. It should say X not B" — Reading: the shopping tab switch hint says B; the pad's tab switch is X (DEC-337, gamepad.js MAP_KEYS). Make the label X (per layout). Files: `src/gamepad.js`, the tutorial's shopping hint in `src/main.js`.
+- [ ] **5.** "For list items on the map. The highlighted one needs more contrast, so lighten it more." — Reading: the selected row in the map's list needs a lighter highlight (more contrast). Files: `src/map2d.js` list CSS/draw, UI-STYLE.md palette (no new hex outside the token palette).
+- [ ] **6.** "When I read the word view I don't associate it with the button on the controller even though it's highlighted can we change it to be a different variant maybe back with a little arrow would work better I call it the back button or select Just pick one and do a good job" — Reading: the pad hint calls the map button 'View'; the owner calls it back or select. Pick one label with a small back-arrow glyph (a 'back' icon) and use it everywhere the hint prints View. 'Just pick one and do a good job.' Files: `src/gamepad.js` (`View (tap)`, line ~117), `src/main.js` hints.
+- [ ] **7.** "Release the handbrake to pay should have an RB on the gas pump display Hint." — Reading: the gas pump's hint 'release the handbrake to pay' needs the handbrake button's name in it (RB in Professor, A in Ventura Highway, DEC-431), as a keycap. Files: `src/main.js` ~6254-6257 (fuel stop hints).
+- [ ] **8.** "For tutorial missions about interacting with the UI. We should always allow the player to navigate the entire UI and not constrain where their cursor can go. If they try to interact with the wrong option, nothing should happen. If they try to interact with the correct option, then it will let them through. The quest UI element should have a different outline." — RULING (DEC-443): tutorial lessons about the UI never restrict the cursor; the player may move all over the UI; the wrong option does nothing, the right option goes through. The lesson's quest element gets a different outline. Files: `src/tut-gate.js`, `src/menu-nav.js`, `src/main.js` tutorial gates.
+- [ ] **9.** "should be "say, i hear theres an expedition camp up at the old east road"" — Reading: a dialogue line's wording. His line, exactly: say, i hear theres an expedition camp up at the old east road. The code has two copies (`I hear there's an expedition camp up at the old {dir} road. I think they're looking to make a new supply route.`, Katie's, and Larry's `Speaking of work, I hear there's...`). Scribe: the owner means Katie's line; keep the `{dir}` placeholder. He writes dialogue: his words win; confirm whether the second sentence stays. Files: `data/dialogue.js` ~46 and ~289.
+- [ ] **10.** "Hearing Katie talk about clients is pretty jarring since the conversation seems so casual at first. Maybe change wording so they're not clients but their jobs or customers is a little more casual." — Reading: Katie's lines say 'clients'; reword to 'customers' or 'jobs' so the talk stays casual. Needs the owner's pick of the word; he offered both. Files: `data/dialogue.js` (Katie's cards).
+- [ ] **11.** "After Katie heads home, my inventory screen was still open. And I was clicking through all of Katie's cards with my inventory screen open, trying to press B but it wouldn't let it go back because the presses were captured. Make sure the inventory screen closes in time so that you don't see it. It's distracting while you're reading the rest of the messages." — Reading (BUG): when Katie leaves, the inventory screen is still open under the cards and it captures the B presses, so the player cannot go back. Close the inventory when Katie's scene starts, before the first card. Files: `src/main.js`, `src/inventory-screen.js`, `src/dialogue.js`.
+- [ ] **12.** "Mom's spare tire lesson allows you to put the spare on the wrong corner." — Reading (BUG, DEC-151): mom's spare-tire lesson lets the spare go on the wrong corner. The trap rule (DEC-151: the tutorial traps the player) says only the corner the lesson names acts. Files: `src/main.js` tutorial gates, `src/service-screen.js`.
+- [ ] **13.** "There's zero direction in the service-center-fixing-your-tire mission. It should show you what buttons to click like any other menu. It should direct you to fix the tire with the patch and then show you that there's (rb) a shop where you can pick up some tire plugs or even get a new tire." — Reading: the tutorial's service-center 'fix your tire' step shows no direction. It needs a button hint at each menu step like any other menu: first the patch, then the shop tab on RB (tire plugs, a new tire). Files: `src/main.js` tutorial beats, `src/service-screen.js`, `data/dialogue.js`.
+- [ ] **14.** "Instead of having the service menu centered on the right, can we align it to the top? Then when sections open, it won't change where the entry is vertically on the screen. It's a lot to track with your eyes." — RULING (DEC-444): the service menu is aligned to the top of the screen, not centred on the right, so an opening section does not move the entry the player is looking at. Files: `src/service-screen.js`, `index.html` CSS; DEC-165 / DEC-166 / DEC-246 hold the menu's look.
+- [ ] **15.** "It's a little difficult to differentiate the selector outline from the quest UI element outline. This was especially the case when mom was telling you to set your alarm clock because of how small and clustered the UI is. I think it will get a lot better when we let the player move around the whole UI instead of forcing the button but maybe tone down the quest UI element a little" — Reading: tone down the quest element's outline so it is not confused with the selector outline (clearly in mom's alarm-clock step, small and clustered UI). Goes with item 8. Files: `src/tut-gate.js`, CSS for the lesson outline, UI-STYLE.md.
+- [ ] **16.** "The bar up top is the clock on the shop, keep it in the good part and you'll earn the tip. This showed up after my tutorial. It is not acceptable to interrupt gameplay with tutorial tips once you're in the actual game, it all has to be in the tutorial." — RULING (DEC-442): no tutorial tip may interrupt play once the player is in the actual game; every tip is in the tutorial. The tip named in the note is the 'bar up top is the clock on the shop' tip, which showed after his tutorial. Files: `src/main.js` first-use cards (`DLG`, `_tut`), the shop-clock tip's trigger (find: grep `good part`/`tip` in `data/dialogue.js` and `src/offer-board.js`).
+
+## Open questions
+- FEAT-292's OWN ANSWER IS UNKNOWN: he chose "Change" but wrote nothing about the camp crossing in the note (every line is tutorial). So "is the camp crossing good to land?" is open; FEAT-292 is already on main, so the owner says whether any change to the camp's 22 km rule is wanted.
+- Item 1: which scene slides the wrong way (Katie's camp talk, her phone call, or another)? The note starts with a lowercase fragment ("her card slides out left...") that looks cut off.
+- Item 9: his line is `say, i hear theres an expedition camp up at the old east road`. The code has the line twice (Katie's card ~289 and Larry's ~46, with a `{dir}` placeholder that picks the compass word). Does "east" mean the placeholder stays dynamic (the camp's direction varies per world) or is it literal? The scribe assumes it stays `{dir}`.
+- Item 10: "customers" or "jobs"? He offered both.
+- CONFLICT, DEC-359 / DEC-151 / DEC-422 and DEC-443: DEC-359 says a card that tells the player to do something waits for the action and the game runs under it; DEC-151 traps the player in the tutorial so it cannot be broken (the wrong option does nothing is consistent, but "never constrain where the cursor can go" removes some of the trapping mechanism). DEC-443 is written as the owner's rule; the builder lists which existing traps change.
+- DEC-165 / DEC-166 / DEC-246 give the shop menu's look and row pitch; aligning it to the top (DEC-444) changes where rows sit, not their look. Not a conflict; the builder checks the pad highlight rule (DEC-246).
+
+## Links
+DEC-442, DEC-443, DEC-444.
+
+## Files
+`src/main.js` · `src/tut-gate.js` · `src/menu-nav.js` · `src/gamepad.js` · `src/service-screen.js` · `src/inventory-screen.js` · `src/map2d.js` · `src/dialogue.js` · `data/dialogue.js` · `index.html`
+
+## Log
+- 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
