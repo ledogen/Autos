@@ -1284,11 +1284,13 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
     // the junction pass reads it as an at-grade X and FEAT-19's lift eases one pass onto the other,
     // which shipped 97-224 % ramps on 5 traced seeds. One of the five (661772743) was not a lattice
     // loop at all — simplifyRDP's 32 m chord cut across a near-loop — so only the fitted line is a
-    // sound test. A looping rung falls through like a wet one (the unpinned rung was clean in 4 of
-    // 5). When EVERY rung loops (400290281: a 4-cell descending helix round one point, pinned or
-    // not), ONE retry of the unpinned rung with a one-cell no-go disc on the crossing makes the
-    // search spend the length elsewhere. A looping line is still kept, below a wet one, as the very
-    // last resort — the network never disconnects.
+    // sound test. A looping rung is retried ONCE on the same rung, pin kept, with a one-cell (32 m)
+    // no-go disc on its crossing, so the search spends the length elsewhere. Only if that still
+    // loops does it fall through like a wet one. Pins are kept on purpose: on 3237493602 the
+    // unpinned rung was clean but left its node along a sibling edge and crossed it three times,
+    // so the plan layer's crossing delete (BUG-57) dropped the edge — a lost link. The pinned
+    // uncapped rung was clean and clear of the sibling (order below). A looping line is still
+    // kept, below a wet one, as the very last resort — the network never disconnects.
     const XSEP = 30                          // two hits closer than this in arc are one bend, not a loop
     const selfCrossing = (cl2) => {
         const L = cl2.length, pts = []
@@ -1306,27 +1308,28 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
         }
         return null
     }
-    let cl = null, first = null, wet = null, loop = null, loopAt = null
+    let cl = null, first = null, wet = null, loop = null
     const tryRung = (p, extra) => {
-        const c = attempt(p, extra)
+        let c = attempt(p, extra)
         if (!c || !(c.length > 1e-6)) return false
         if (!clearsDiscs(c)) { wet ??= c; return false }
         const x = selfCrossing(c)
-        if (x) { if (!loop) { loop = c; loopAt = x } return false }
+        if (x) {
+            loop ??= c
+            c = attempt(p, { ...extra, blockedDiscs: [...(blockedDiscs ?? []), x.x, x.z, 32] })
+            if (!c || !(c.length > 1e-6) || !clearsDiscs(c) || selfCrossing(c)) return 'loop'
+        }
         if (!first) first = c
         if (profileFeasible(c, yA, yB, hCoarse, { costs })) { cl = c; return true }
         return false
     }
-    for (const [p, extra] of rungs) if (tryRung(p, extra)) break
-    if (!cl && !first && loopAt) {
-        const discs2 = [...(blockedDiscs ?? []), loopAt.x, loopAt.z, 32]
-        const c = corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, {
-            margin, blockedDiscs: discs2, costs, occupied, hCoarse, ...(sib ?? {}) })
-        const c2 = c ? corridorCenterline(c.path, {}) : null
-        if (c2 && c2.length > 1e-6 && clearsDiscs(c2) && !selfCrossing(c2)) {
-            first = c2
-            if (profileFeasible(c2, yA, yB, hCoarse, { costs })) cl = c2
-        }
+    // A helix is the search buying GRADE with length under the structure cap, so when the pinned rung
+    // loops, the pinned UNCAPPED rung (2) comes before the unpinned one (1): spend structure, keep the pin.
+    const order = rungs.map((_, i) => i)
+    for (let n = 0; n < order.length; n++) {
+        const r = tryRung(...rungs[order[n]])
+        if (r === true) break
+        if (r === 'loop' && pin && order[n] === 0) order.splice(1, 2, 2, 1)
     }
     return { cl: cl ?? first ?? wet ?? loop ?? new Centerline([]) }
 }
