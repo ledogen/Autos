@@ -3362,6 +3362,61 @@ const STEPS = [
     check(await until(() => js(`+document.getElementById("cp-hours").value > ${h0}`), 2000), 'D-pad → did not step the sleep slider')
     await btn(1); await btn(1)
     check(await until(() => js('document.getElementById("camp-panel").style.display !== "block"'), 2000), 'B twice did not back out of the camp card')
+    // FEAT-294 (DEC-431): Ventura Highway at the story's parked screens. A is the handbrake (park: A held to rest, A tap),
+    // B is back on every screen, and after it the gas lets the parking brake go and rolls the truck away. At the pump A
+    // pumps and the gas pays. The giver's offer, the shop and mom's card; the free-roam screens are test/pad-e2e.mjs's.
+    await js(`(async () => { const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => /\\/src\\/gamepad\\.js(\\?|$)/.test(n))); m.PAD_PARAMS.padLayout = 'Ventura Highway' })()`)
+    const vhPark = async () => {
+      if (await js('window.__vs.parked')) { await btn(0); await frames(4, 200) }
+      if (await js('window.__vs.velocity.length() > 1.2')) { await js('__fp.b[6] = 1'); await until(() => js('window.__vs.velocity.length() < 1.2'), 15000); await js('__fp.b[6] = 0') }
+      await js('__fp.b[0] = 1'); await until(() => js('window.__vs.velocity.length() < 0.4'), 15000); await frames(2, 60); await js('__fp.b[0] = 0'); await frames(3, 100)
+      if (!await js('window.__vs.parked')) await btn(0)
+      check(await js('window.__vs.parked'), 'Ventura Highway: the pad could not park the truck (LT, A held, A tap)')
+    }
+    const rollOff = async (what) => {
+      await js('__fp.b[7] = 0.6')
+      const ok = await until(() => js('!window.__vs.parked && window.__vs.velocity.length() > 0.5'), 4000)
+      await js('__fp.b[7] = 0'); await frames(3, 100)
+      check(ok, `Ventura Highway, ${what}: after B the gas did not let the brake go and roll the truck (parked ${await js('window.__vs.parked')})`)
+    }
+    await seatPoi("q => q.type === 'momsHouse'"); await vhPark(); await readCards()
+    check(await until(() => js('document.getElementById("camp-panel").style.display === "block"'), 3000), 'Ventura Highway: parking at mom\'s with A opened no card')
+    await padTo('cp-sleep'); await btn(0)
+    check(await until(() => js('!!document.getElementById("cp-hours")?.offsetParent'), 2000) && await js('window.__vs.parked'), 'Ventura Highway: A on mom\'s "sleep" did not select it (or let the brake go)')
+    await btn(1); await btn(1)
+    check(await until(() => js('document.getElementById("camp-panel").style.display !== "block"'), 2000) && await js('window.__vs.parked'), 'Ventura Highway: B twice did not back out of mom\'s card, parked')
+    await rollOff("mom's card")
+    // The giver (its offers may be spent by the job above): A places the card's highlight, B declines, the gas rolls.
+    const vhGiver = await js(`(() => { const m = window.__map2d(), b = m._getBoard()
+      return m._getPois().find(q => !q.hidden && b.status(q.id)?.source && !${JSON.stringify(['larrysHouse', ...SHOP_TYPES])}.includes(q.type) && !q.pumpZones?.length && !q.drop && (b.view(q.id, 0)?.count ?? 0) > 0)?.id ?? null })()`)
+    if (vhGiver) {
+      await seatPoi(`q => q.id === ${JSON.stringify(vhGiver)}`)
+      if (await until(offerUp, 1500)) { await btn(1); await until(async () => !await offerUp(), 2000) }
+      await vhPark()
+      check(await until(offerUp, 6000), 'Ventura Highway: parking at a giver with A opened no offer card')
+      await btn(0)
+      check(await offerUp() && await js('window.__vs.parked && !window.__mission().isOnJob()'), 'Ventura Highway: A on the offer card took a job or let the brake go (its first press places the highlight)')
+      await btn(1)
+      check(await until(async () => !await offerUp(), 2000) && await js('window.__vs.parked'), 'Ventura Highway: B did not decline the offer, parked')
+      await rollOff('the offer card')
+    } else console.log(`  pad: no giver with an offer left in ${await js('window.__worldCode?.()')}; Ventura Highway's offer card unchecked this run`)
+    // The shop (an auto shop's lift): B closes it, the gas rolls.
+    await seatPoi("q => q.type === 'autoShop'"); await vhPark(); await readCards()
+    const svcUp = () => js('document.getElementById("svc-screen").checkVisibility()')
+    check(await until(svcUp, 3000), 'Ventura Highway: parking at the auto shop with A opened no shop')
+    await btn(1)
+    check(await until(async () => !await svcUp(), 2000) && await js('window.__vs.parked'), 'Ventura Highway: B did not close the shop, parked')
+    await rollOff('the shop')
+    // The pump: A held pumps; the gas pays and rolls (the pump is not a card: no B needed, the gas is its way out).
+    await js('window.__vs.fuel.gal = 4')
+    await seatRead(pz.x, pz.z, pz.heading); await vhPark()
+    check(await until(() => js('document.getElementById("pump-display").classList.contains("on")'), 3000), 'Ventura Highway: parking at the pump with A opened no pump')
+    const vg0 = await js('window.__vs.fuel.gal'), vm0 = await js('window.__econ.money')
+    await hold(0, 2500)
+    check(await js('window.__vs.fuel.gal') - vg0 > 1, 'Ventura Highway: A held 2.5 s at the pump did not pump')
+    await rollOff('the pump')
+    check(await until(() => js(`window.__econ.money < ${vm0} - 0.01`), 2000), 'Ventura Highway: the gas at the pump did not pay')
+    await js(`(async () => { const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => /\\/src\\/gamepad\\.js(\\?|$)/.test(n))); m.PAD_PARAMS.padLayout = 'Professor' })()`)
     await padOff()
   }],
 ]
