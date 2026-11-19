@@ -505,6 +505,9 @@ await sleep(200)
 check(await js('__padMod.PAD_PARAMS.padLayout') === 'Ventura Highway', 'the free-roam boot reads the saved layout')
 const keysSeen = () => js('__vhKeys.splice(0).join()')
 const reset = async () => { await js('__fp.b[7] = 0; __fp.b[15] = 1'); await sleep(1300); await js('__fp.b[15] = 0'); await sleep(2500) }
+// Back at rest after a roll-away: the reset, then parked as a player does it — A lets the reset's latch go, A sets it.
+const repark = async () => { await reset(); await press(A); await press(A); if (!(await vs()).parked) await press(A) }
+const zone = () => js('JSON.stringify({ menu: document.body.classList.contains("hud-menu-on"), zone: document.getElementById("park-zone").className, parked: __vs.parked, inv: document.querySelector("#inv-screen.open") !== null })')
 await js('__fp.b[7] = 0.5'); await sleep(400); await js('__fp.b[7] = 0'); await sleep(200)   // the pad drives; the boot's latch let go
 await reset()
 s = await vs(); check(s.parked && s.v < 0.2, `VH: D-pad → hold parks the truck at rest (parked=${s.parked})`)
@@ -539,11 +542,11 @@ const rolls = async (what) => {
   await js('__fp.b[7] = 0.6'); await sleep(1200); s = await vs(); await js('__fp.b[7] = 0'); await sleep(200)
   check(!s.parked && s.v > 0.5, `VH ${what}: after B the gas lets the parking brake go and rolls the truck (parked ${s.parked}, v ${s.v.toFixed(2)})`)
 }
-await rolls('inventory'); await reset(); await keysSeen()
+await rolls('inventory'); await repark(); await keysSeen()
 // An A press that CLOSES a screen is the screen's: the inventory's back button, held past the close, never pulls the handbrake.
-await js('__fp.b[5] = 1'); await sleep(250); await js('__fp.b[5] = 0'); await sleep(500)
+await js('__fp.b[5] = 1'); await sleep(250); const z1 = await zone(); await js('__fp.b[5] = 0'); await sleep(500)
 for (let i = 0; i < 14 && !await js('!!document.querySelector("#inv-screen .nav-focus[data-act=close]")'); i++) await press(DOWN)
-check(await js('!!document.querySelector("#inv-screen .nav-focus[data-act=close]")'), `VH: the D-pad reaches the inventory's back button (open ${await inv()}, on ${await js('(e => e && (e.dataset.act || e.className))(document.querySelector(".nav-focus"))')}, parked ${(await vs()).parked}, items ${await js('JSON.stringify(window.__inv.list())')})`)
+check(await js('!!document.querySelector("#inv-screen .nav-focus[data-act=close]")'), `VH: the D-pad reaches the inventory's back button (open ${await inv()}, on ${await js('(e => e && (e.dataset.act || e.className))(document.querySelector(".nav-focus"))')}, parked ${(await vs()).parked}, mid-hold ${z1})`)
 await keysSeen()
 await js('__fp.b[0] = 1'); await sleep(400); await js('__fp.b[0] = 0'); await sleep(300)
 s = await vs()
@@ -556,14 +559,14 @@ await press(DOWN); await press(A)
 check(await dmgOpen() && (await vs()).parked && !/ /.test(await keysSeen()), 'VH damage screen: A selects, the screen stays, no handbrake')
 await press(B)
 check(!await dmgOpen() && (await vs()).parked && !/\be\b/.test(await keysSeen()), 'VH damage screen: B closes it, parked, no upshift')
-await rolls('damage screen'); await reset(); await keysSeen()
+await rolls('damage screen'); await repark(); await keysSeen()
 // The map opened at rest (FEAT-194: it holds the truck): A selects (Enter), B closes it, the gas rolls away.
 await js('__fp.b[8] = 1'); await sleep(200); await js('__fp.b[8] = 0'); await sleep(500)
 await press(A); await js('__fp.b[7] = 0.5'); await sleep(300); s = await vs(); await js('__fp.b[7] = 0'); await sleep(100)
 check(await mapShown() && s.parked && /Enter/.test(await keysSeen()), `VH map at rest: A is Enter, the gas does not release it (parked ${s.parked})`)
 await press(B)
 check(!await mapShown() && (await vs()).parked, 'VH map: B closes it, still parked')
-await rolls('map'); await reset(); await keysSeen()
+await rolls('map'); await repark(); await keysSeen()
 // RB while aiming (throwReady forced): a tap throws (F, no menu); held past the tap it is the side menu, not the handbrake.
 await js('window.__tr0 = __padMod.pad.throwReady; __padMod.pad.throwReady = () => true')
 await js('__fp.b[5] = 1'); await sleep(100); await js('__fp.b[5] = 0'); await sleep(200)
