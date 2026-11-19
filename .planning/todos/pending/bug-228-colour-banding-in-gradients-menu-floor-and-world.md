@@ -12,7 +12,7 @@ lane: Engine & world
 # BUG-228: Colour banding in smooth gradients (menu floor, sky, lit ground); the bands move with the exposure
 
 ## Next steps
-Built on `land/bug-228-banding` (not landed). Owner's look on the Mac Air (card `bug228-banding-look`); then land.
+Owner said "Good: land it" (2026-11-19). Merged main into `land/bug-228-banding`, proof green; orchestrator lands it after the PERF-40 A/B bench.
 The GPU-cost bench (PERF-40, active cycles) is owed on a quiet machine.
 
 ## Summary
@@ -33,7 +33,7 @@ instructions per pixel. Our custom-shader materials (terrain, sky, road, water) 
 - [x] Before | after captures of the menu floor, a dusk sky, a lit hillside and fog, magnified (`wip/bug-228/sheet.jpg`).
 - [ ] Cost measured (GPU by active cycles, PERF-40 bench) and shown. Instruction delta only so far (below); the bench
       needs a quiet machine (load 11–14 on 11-18).
-- [ ] Owner's look on the Mac Air.
+- [x] Owner's look on the Mac Air: "Good: land it" (2026-11-19).
 
 ## Decisions
 - Where the bands are born: at the final 8-bit write only. Checked every intermediate: the sky LUT and fog cube are
@@ -66,3 +66,4 @@ instructions per pixel. Our custom-shader materials (terrain, sky, road, water) 
   already hid it). The leftover runs are chance runs in the grain, no edge. Cost: ~30 scalar ALU ops incl. 2 sin per
   pixel (estimate from the GLSL, not a compiled count). Bench owed. Affected gates 19/19, cdp-smoke 40/40 and pad-e2e
   green (load 10–11). Pattern static: 0 of 560 000 floor pixels change between two still frames 1 s apart.
+- 2026-11-19: owner "Good: land it". main merged in clean (no conflicts). Affected gates 19/19; cdp-smoke green on retry (first run: rockslide opacity 0.5 vs < 0.5, load 12, timing); pad-e2e ALL OK; build OK. Undithered ShaderMaterials: exposure.js:59 and props/prop-shadow-bake.js:153, both offscreen (no final colour). Bench A/B still owed (orchestrator).
