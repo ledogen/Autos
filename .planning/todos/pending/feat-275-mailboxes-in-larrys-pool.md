@@ -12,7 +12,7 @@ lane: Places and Missions
 # FEAT-275: Add the mailboxes to Larry's pool
 
 ## Next steps
-Owner look (card `mailboxes-look-2`): the mailboxes moved out to the road per DEC-429. "Good: land it" → land `land/feat-275-280-mailboxes`. Residence boxes are yard satellites; the route houses' are `poiSystem.mailboxes()`, drawn by a small main.js hook (`_spawnSatellite`).
+Owner: "Good: land it" (card `mailboxes-look-2`, 2026-11-19). The orchestrator lands `land/feat-275-280-mailboxes` FIRST, then FEAT-278's `land/feat-278-clutter-stream` (which carries this branch; there the route-house mailboxes stream in through `_clutter`). After landing: close this ticket; the halo-on-mailbox box moves to FEAT-276's follow-up.
 
 ## Summary
 Put the mailbox models (ASSET-22, built, unplaced) into Larry's pool, so a paper route has a mailbox to aim at.
@@ -35,7 +35,7 @@ Paper-route juice, one owner message (inbox 20261118013250-sf5w) split into four
 - [x] DEC-429: no lone roadside mailboxes (FEAT-280 withdrawn, code deleted; the gate asserts zero)
 - [x] Every paper-route house has one on the shoulder in front of its target (orchestrator's reading; owner to confirm)
 - [x] DEC-429: knocked down costs nothing and it stands again the next run / reload (nothing saved)
-- [ ] Owner look (card mailboxes-look-2)
+- [x] Owner look (card mailboxes-look-2): "Good: land it", 2026-11-19
 - [ ] The target halo (FEAT-276) sits on a mailbox (the route-house boxes are there for it)
 
 ## Decisions
@@ -61,3 +61,4 @@ src/poi.js · data pools · assets/models/mailbox*.glb
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118013250-sf5w).
 - 2026-11-18 proof: test/mailbox-census.mjs 12 seeds PASS (120 route + 1904 random mailboxes, 1.88/km); affected gates 49/49 green after two fixes (dist-assets tag consumer, census seed); fingerprint-world vs main: only `poi` differs (seed6 + seed11 origin story windows); cdp-smoke PASS (39 steps) and pad-e2e ALL OK; sheet wip/mailboxes/sheet.jpg (Larry's, a yard house, mom's). Unverified: the roadside ones in the browser (needs the main.js hook).
 - 2026-11-18 DEC-429 rework (land/feat-275-280-mailboxes, 1111342b..230aba97 + main merged 625eb5b0): lone boxes deleted; residence box on the shoulder at the pad end; route houses keep one in front of the target; RV none; main.js `_spawnSatellite` draws the route ones. Gate mailbox-census rewritten; census on 12 random seeds (wip/mailboxes/census-random12.log): 93/93 non-RV residences, 119/120 route houses (one on a hairpin), 27 RVs none. Affected gates 57/57 green; tutorial-seed PASS; fingerprint-world vs main: only `poi` differs (the list carries the mailbox satellites), network/surface/carve/tiles/water/props identical. Sheet wip/mailboxes/sheet2.jpg. 400-seed sweep detached (sweep-a/-b.log).
+- 2026-11-19 landing prep after the owner's "Good: land it": main merged twice (d72a56f4, e32d0422 on main 01f3ea28, no conflicts). Affected gates 58/58 green; fingerprint-world vs main: only `poi` differs (seed6 + seed11 origin story), network/profiles/junctions/surface/carve/tiles/water/props identical; tutorial seed 1872706826 (one-window copy at its spawn): only `poi`, and only `satellites` (+1 mailbox on each of its 9 residences, every other satellite unchanged). 400-seed sweep 400/400 no throw (wip/mailboxes/sweep-1119.log). cdp-smoke PASS 41 steps, pad-e2e ALL OK.
