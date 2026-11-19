@@ -393,6 +393,7 @@ export class PropImpostors {
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           #include <fog_fragment>
+          #include <dithering_fragment>   // BUG-228: last, after fog (main.js)
         }`,
       transparent: false,
       alphaToCoverage: true,         // smooth cutout edges via MSAA coverage (opaque pass, depth intact)
