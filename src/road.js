@@ -12072,12 +12072,12 @@ export class RoadSystem {
                     // first-chord kink. BUG-90's bank run-off is for that connector's inside apex; at a BARE join (no
                     // connector) it ran ONE leg's bank off while the other kept it — a 0.27 m step at the edge.
                     const kinkMin = (this._params.roadJunctionKinkDeg ?? 0) * Math.PI / 180
+                    // the other leg at this node (BUG-230's bank mean at a bare join; BUG-236's shared run-off at a connector)
+                    const oth = strands[0].key === runKey ? strands[1] : strands[0], oe = this._network.get(oth.key)
+                    const other = oe && oth.key !== runKey ? { key: oth.key, isStart: this._proto.graph.key(oe.cellA) === this._proto.graph.key(id) } : null
                     if (kink >= DEG2_PLANE_KINK) flatCamber = true
-                    else if (kinkMin > 0 && kink > kinkMin) inside = { x: strands[0].wx + strands[1].wx, z: strands[0].wz + strands[1].wz }
-                    else {
-                        const oth = strands[0].key === runKey ? strands[1] : strands[0], oe = this._network.get(oth.key)
-                        if (oe && oth.key !== runKey) join = { key: oth.key, isStart: this._proto.graph.key(oe.cellA) === this._proto.graph.key(id) }
-                    }
+                    else if (kinkMin > 0 && kink > kinkMin) inside = { x: strands[0].wx + strands[1].wx, z: strands[0].wz + strands[1].wz, other }
+                    else join = other
                     const rEff = kink > PAR_REF.junctionDeadband ? PAR_REF.junctionRadius / Math.min(1, kink / (Math.PI / 2)) : Infinity
                     vNode2 = Math.min(PAR_REF.vMax * PAR_REF.vMax, PAR_REF.mu * PAR_REF.g * rEff)
                 }
@@ -12519,16 +12519,29 @@ export class RoadSystem {
         // node there, handed over in ~5 m. Such a leg runs its bank off to flat at the node like a
         // ≥3-way leg (a reverse-curve crossover); a leg banked INTO the bend keeps it. The sign is read
         // a cutback out, where the fillet apex projects, from this run's own pre-blend camber.
-        const bankCrest = (j, fromStart) => {
-            if (!j.inside || !camberRad || !havePts) return false
-            const cut = this.junctionCutbackDist()
-            let i = fromStart ? 0 : N - 1
-            while (fromStart ? (i < N - 1 && arcPos[i] - aStart < cut) : (i > 0 && aEnd - arcPos[i] < cut)) i += fromStart ? 1 : -1
-            const th = camberRad[i]
-            const s = this._strandAtEnd(pts, fromStart)
+        // BUG-236: the NODE decides, not the leg. The two legs share one start bank (the P4 chain), but each read the
+        // sign at its OWN cutback, where a leg that slews to its own bank is already flat — so one leg ran off to 0°
+        // while the other kept 10.7° at the node, and the connector blended the 0.95 m edge disagreement into a hump,
+        // a dip and a crease (seed 1225608752 (−766, 223)). Both legs now test BOTH legs' pre-blend banks (the other
+        // leg's from the same routines its own profile build calls), so both answer alike: either is crest-side,
+        // both run off.
+        const crestSide = (j, fromStart, cam, P, ap) => {
+            const M = ap.length, a0 = ap[0], aM = ap[M - 1], cut = this.junctionCutbackDist()
+            let i = fromStart ? 0 : M - 1
+            while (fromStart ? (i < M - 1 && ap[i] - a0 < cut) : (i > 0 && aM - ap[i] < cut)) i += fromStart ? 1 : -1
+            const th = cam[i]
+            const s = this._strandAtEnd(P, fromStart)
             if (!s || Math.abs(th) < 1e-4) return false
             const tx = fromStart ? s.wx : -s.wx, tz = fromStart ? s.wz : -s.wz   // +arc direction
             return Math.sign(th) * (tz * j.inside.x - tx * j.inside.z) > 0     // high edge = sign·(tz, −tx)
+        }
+        const bankCrest = (j, fromStart) => {
+            if (!j.inside || !camberRad || !havePts) return false
+            if (crestSide(j, fromStart, camberRad, pts, arcPos)) return true
+            const o = j.inside.other, oe = o && this._network.get(o.key)
+            if (!oe || !(oe.points?.length >= 2)) return false
+            const pre = this._computeCamberArrays(oe.points, oe.arcOrigin, this._runStartCamber(o.key))
+            return crestSide(j, o.isStart, pre.camberRad, oe.points, pre.arcPos)
         }
         const flatS = ej.jStart.flatCamber || bankCrest(ej.jStart, true)
         const flatE = ej.jEnd.flatCamber || bankCrest(ej.jEnd, false)
