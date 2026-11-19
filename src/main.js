@@ -73,7 +73,7 @@ import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the pla
 import { createFrameCap } from './frame-cap.js'   // PERF-48 / BUG-169: the render cap skip decision (pure, gated)
 import { putRun, putTruck, loadTruck, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
-import { pad, PAD_PARAMS, BINDINGS, steerCurve } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
+import { pad, PAD_PARAMS, BINDINGS, steerCurve, padOf, padRoleName } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
 import { initTutGate, stepFor, allows, refuse, BETWEEN } from './tut-gate.js'   // FEAT-288 P2: the tutorial's lock and highlight
@@ -1276,6 +1276,13 @@ function _closeMenus (except = null) {
   if (except) return   // BUG-187: the map opening shuts the cards but is no transition: a tow's owed answer stands
   _towOwed = _shopAfterCard = false   // BUG-178's owed answer belongs to the seat it was owed at
 }
+/** THE MAP TOGGLE (all three entry points: the M tap, the M key, the cockpit button). BUG-237 (owner, 2026-11-19): opening
+ *  the map shuts every menu through its own close, and the pump's close is the CHECKOUT: so the map does not open over an
+ *  open pump. Closing an open map is always allowed. */
+function _toggleMap (closeMenus = false) {
+  if (!map2d.isOpen()) { if (fuelStop.isOpen) return; if (closeMenus) _closeMenus('map') }   // BUG-187: a card at the POI would sit on the map's own
+  map2d.toggle()
+}
 window.__openMenus = () => _menus.filter(m => m.isOpen()).map(m => m.name)   // dev handle — test/cdp-smoke.mjs skipMenus
 
 // ── "spawn point set" toast (feature/teleport) ────────────────────────────────────────────
@@ -1560,7 +1567,7 @@ document.getElementById('ss-start')?.addEventListener('click', () => _startStory
 // Both pages draw their ◂ value ▸ rows from this one table, keyed by the settings key.
 const _settings = loadSettings()
 const _LIVE = { steerAssist: PAD_PARAMS, steerShape: PAD_PARAMS, clutchAssist: RANGER_PARAMS, abs: RANGER_PARAMS,
-  throttleAssist: RANGER_PARAMS, tractionControl: RANGER_PARAMS, stickDeadzone: PAD_PARAMS, vibration: RUMBLE_PARAMS }
+  throttleAssist: RANGER_PARAMS, tractionControl: RANGER_PARAMS, stickDeadzone: PAD_PARAMS, vibration: RUMBLE_PARAMS, padLayout: PAD_PARAMS }
 for (const [k, o] of Object.entries(_LIVE)) o[k] = _settings[k]
 const _STOCK_BOX = RANGER_PARAMS.transmission   // 'auto' = the truck's own automatic
 // `difficulty` is not stored: it names the preset the three knobs match ("custom" when none), and
@@ -1593,6 +1600,7 @@ const SELECTORS = {
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
   stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
   vibration:    { name: 'controller vibration', opts: [[0, 'off'], [0.5, 'low'], [1, 'normal'], [1.5, 'high']] },   // FEAT-247 (src/pad-rumble.js)
+  padLayout:    { name: 'pad layout', opts: [['Professor', 'Professor'], ['Ventura Highway', 'Ventura Highway']] },   // DEC-431 (gamepad.js PAD_LAYOUTS)
   uiScale:      { name: 'UI size', opts: [['small', 'small'], ['big', 'big']] },   // FEAT-248: index.html `html[data-ui-scale=big]`
   frameCap:     { name: 'frame rate',      opts: [[60, '60 fps'], [30, '30 fps'], [90, '90 fps'], [120, '120 fps'], [0, 'display rate']] },   // PERF-48, DEC-185
 }
@@ -1639,6 +1647,7 @@ function _cycleSelector (b, dir) {
   saveSettings(_settings)
   if (_LIVE[key]) _LIVE[key][key] = _settings[key]
   if (key === 'uiScale') document.documentElement.dataset.uiScale = next
+  if (key === 'padLayout') _syncPadLayout()
   _renderSelectors()
 }
 for (const b of document.querySelectorAll('button.mm-sel')) {
@@ -1729,13 +1738,17 @@ document.getElementById('su-seed')?.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape') { e.preventDefault(); e.target.blur(); document.getElementById('main-menu')?.classList.remove('setup') }
   e.stopPropagation()   // keep WASD/M/Esc out of the world while typing a seed (menu-nav.js sees arrows first: it listens in capture)
 })
-// The binding chart, generated from gamepad.js's own table.
-{
+/** DEC-431: what names the pad layout's buttons outside a keycap — the binding chart, generated from gamepad.js's own
+ *  table, and the side menu's "hold B" line (index.html #hud-b-hint). Run at boot and when the layout changes. */
+function _syncPadLayout () {
   const t = document.getElementById('cs-bindings')
   const keyName = (k) => k === ' ' ? 'Space' : k.length === 1 ? k.toUpperCase() : k
-  if (t) t.innerHTML = '<tr><td></td><td>keyboard</td><td>pad</td></tr>'
-    + BINDINGS.map(b => `<tr><td>${b.action}</td><td>${keyName(b.key)}</td><td>${b.pad}</td></tr>`).join('')
+  if (t) t.innerHTML = `<tr><td></td><td>keyboard</td><td>pad (${PAD_PARAMS.padLayout})</td></tr>`
+    + BINDINGS.map(b => `<tr><td>${b.action}</td><td>${keyName(b.key)}</td><td>${padOf(b)}</td></tr>`).join('')
+  const m = padRoleName('menu'), hint = document.querySelector('#hud-b-hint > .kc-pad')
+  if (hint) { hint.textContent = m; hint.className = m.length > 1 ? 'kc-pad keycap' : 'kc-pad kc-round' }   // a bumper is a keycap, A–Y round
 }
+_syncPadLayout()
 /** Settings, from the main menu (a page) or the pause menu (reparented into its box). */
 function _openSettings (fromPause) {
   const panel = document.getElementById('mm-settings-panel')
@@ -4157,6 +4170,7 @@ function _renderDialogue () {
     // pad has ONE button for: A / D (the stick steers) and F (the stick aims, RB throws) need the card's own pad words,
     // and a grade or a phrase (B, "ten good deeds") is emphasis, never a key.
     for (const k of tx.querySelectorAll('.dlg-key')) if (_DLG_PAD_KEYS.has(k.textContent.trim().toLowerCase())) k.innerHTML = keycap(k.textContent.trim())
+    for (const k of tx.querySelectorAll('[data-pad]')) k.textContent = padRoleName(k.dataset.pad)   // DEC-431: a pad half's driving button, in the layout
     clearInterval(_dlg.timer)
     Object.assign(_dlg, { card, words: _hideWords(tx), n: 0, t0: performance.now() + _dlg.delay })   // P8: streams as it slides in
     _dlg.timer = setInterval(() => _dlgShow(Math.floor((performance.now() - _dlg.t0) / DLG_WORD_MS) + 1), DLG_WORD_MS / 2)
@@ -5248,7 +5262,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keyup', e => {
   if ((e.key !== 'm' && e.key !== 'M') || !_skipRelease()) return
   // A tap: the map, as M always is — unless a card owns the screen.
-  if (!dialogueSystem.holding && !document.body.classList.contains('stage-on')) { if (!map2d.isOpen()) _closeMenus('map'); map2d.toggle() }
+  if (!dialogueSystem.holding && !document.body.classList.contains('stage-on')) _toggleMap(true)
 }, { capture: true })
 window.addEventListener('blur', _skipRelease)   // a key let go in another window never comes back up here
 pad.skipHold = () => _tutDrive()
@@ -5702,9 +5716,10 @@ function _haulPick (offer) {
   const hardN = Math.floor((massLimits(TRUCK).hardKg - _carriedKg()) / HAUL_BUNDLE_KG)
   const afford = price > 0 ? Math.floor(economySystem.money() / price + 1e-9) : sp.stock
   const max = Math.max(0, Math.min(sp.stock, hardN, afford))
+  const limit = max >= sp.stock ? null : afford <= hardN ? 'wallet' : 'truck'   // BUG-237 B: which cap binds, for the note line
   const n = Math.max(1, Math.min(max, parseInt(document.getElementById('mp-count')?.value, 10) || max))
   const range = payRange(j.par, payTier, sp.payMult * n)   // FEAT-199: a bonus haul tips in cash too
-  return { sp, offerId: offer.id, price, max, n, cost: Math.round(n * price * 100) / 100,
+  return { sp, offerId: offer.id, price, max, limit, n, cost: Math.round(n * price * 100) / 100,
            base: range.base, maxPay: range.max,
            need: sp.bonus ? rankTable('haul', region, sp.thingId)[sp.bonus.gate] : null,
            deedNeed: rankTable('haul', region, sp.thingId).B }
@@ -5733,7 +5748,9 @@ function _syncHaulPick (pick) {
   // value, dropped the warning — a stutter loop. They live on their OWN fixed-height line now (CSS
   // #mp-pick-note), so nothing the readout says can move the slider. No letter (owner, 2026-10-23):
   // the count is the threshold.
+  // BUG-237 B (owner: "why can I only take 11? It says 30 available"): the note names the cap that binds. [DEFAULT] wording.
   if (note) note.innerHTML = pick.max < 1 ? '' : [
+    pick.limit === 'wallet' ? `you can afford ${pick.max} of ${pick.sp.stock}` : pick.limit === 'truck' ? `the truck carries ${pick.max} of ${pick.sp.stock}` : '',
     pick.need != null && pick.n < pick.need ? `too few for the ${pick.sp.bonus.name}` : '',
     pick.n < pick.deedNeed ? `deed: ${pick.n < rankTable('haul', economySystem.terms().region, pick.sp.thingId).C ? '0' : '1/2'} at this count` : '',
   ].filter(Boolean).join(' &middot; ')
@@ -7449,11 +7466,12 @@ function _renderCampUI () {
   show('cp-sleep-back', isSleep)
   show('cp-sleep-panel', isSleep)
   // The backs Space / RB presses wear its keycap (owner, 2026-10-27; the keydown rule below). Break camp
-  // has none: Space never breaks a made camp.
+  // has none: Space never breaks a made camp. RB is named outright: on a card RB is Space in every pad layout
+  // (gamepad.js CARD_KEYS), while the drive's handbrake moves (DEC-431: A in Ventura Highway).
   const html = (id, h) => { const e = document.getElementById(id); if (e) e.innerHTML = h }
-  html('cp-break', st.moms || st.truck ? `${keycap('Space')}leave` : 'break camp')
-  html('cp-cancel', `${keycap('Space')}abandon`)
-  html('cp-sleep-back', `${keycap('Space')}back`)
+  html('cp-break', st.moms || st.truck ? `${keycap('Space', 'RB')}leave` : 'break camp')
+  html('cp-cancel', `${keycap('Space', 'RB')}abandon`)
+  html('cp-sleep-back', `${keycap('Space', 'RB')}back`)
   show('cp-vibe',        isConfirm)
   show('cp-vibe-legend', isConfirm)
   if (isConfirm) _renderVibeBar(st.site, document.getElementById('cp-vibe'))
@@ -7582,7 +7600,7 @@ document.getElementById('cp-light')?.addEventListener('click', (e) => {
   _renderCampUI()
 })
 // FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
-document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
+document.getElementById('cp-map')?.addEventListener('click', (e) => { _toggleMap(); e.currentTarget.blur() })
 // FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
 document.getElementById('cp-item')?.addEventListener('click', (e) => { inventoryScreen.request(); e.currentTarget.blur() })
 document.getElementById('cp-hours')?.addEventListener('input', _syncSleepRow)
@@ -9087,8 +9105,7 @@ document.addEventListener('keydown', e => {
     // of opening or re-targeting the map — mission framing is the live one — left the map's cap at
     // the free-roam 2000 m, short of a 2500 m region, so the region lock never engaged and panning
     // re-streamed around the cursor. The map now covers its own region whoever opened it.
-    if (!map2d.isOpen()) _closeMenus('map')   // BUG-187: a card at the POI would sit on the map's own
-    map2d.toggle()
+    _toggleMap(true)
     // Freecam pointer-lock swallows the mouse for FPS look — release it so the map is
     // interactive. The canvas click handler in camera.js re-locks it on return to freecam.
     if (document.pointerLockElement) document.exitPointerLock()
@@ -9675,7 +9692,9 @@ function _exitScenario () {
 let _paperSizeIdx = 0   // the rung the scenario re-opens on: the owner's rated 4 first, then whatever was last driven
 
 function _startPaperScenario (def) {
-  _paperSizeIdx = 0
+  // BUG-231: this button is live while main.js is still evaluating (the menu is wired early, see _worldReady), where
+  // `_paperSizeIdx` below is still in its temporal dead zone. So touch no later binding here: the rung resets in
+  // _startStory, after its `await _worldReady`, like every other menu entry's state.
   void _startStory(def.seed, WORLD_PRESETS.classic, _settings.gearbox, null, 0, def)
 }
 
@@ -10161,6 +10180,7 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   _seedRerolls = rerolls
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
   _paperScenario = scenario   // FEAT-62: every entry sets it too — a scenario never outlives its own entry
+  if (scenario) _paperSizeIdx = 0   // a scenario re-opens on the owner's rated rung (BUG-231: reset here, after _worldReady)
   _returnSeed = resume?.returnSeed ?? returnSeed   // FEAT-184 (DEC-158): likewise; a resume carries its own
   _runEnded = false
   _playedS = 0                       // FEAT-146 (a resume puts the saved playtime back in _restoreRun)
@@ -10280,7 +10300,7 @@ document.getElementById('job-cancel')?.addEventListener('click', (e) => {
     b.classList.add('armed')
     // FEAT-96: say the clean-up cost. FEAT-195: armed, the pad's confirm is a plain B (the armed abandon is the B
     // menu's pre-selection, BUG-120), so its keycap reads B, not the arming's B + ↑.
-    b.innerHTML = keycap('J', 'B') + (_strappedJob() ? `confirm? <small>· takes ${CLEANUP_H} hour</small>` : 'confirm?')
+    b.innerHTML = keycap('J', padRoleName('menu')) + (_strappedJob() ? `confirm? <small>· takes ${CLEANUP_H} hour</small>` : 'confirm?')
     return
   }
   _disarmJobCancel()
@@ -11682,8 +11702,11 @@ function loop (t) {
     // Story mode (beta): the countdown digit and the elapsed/distance readout are live values,
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step. ('staging' is a
     // static line, but it costs one string write and keeps the state→HUD mapping in one place.)
+    // BUG-235: never while a result card is up ('done'). A waypoint (or the tutorial's drive) is live again the moment the
+    // job ends, and this repaint would rewrite the card at 10 Hz, replaying its reveal: the first coin, the deed's fade-in.
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
-                          || missionSystem.state === 'running' || missionSystem.state === 'loading' || _tutDrive() || _waypointOn())) _renderMissionUI()
+                          || missionSystem.state === 'running' || missionSystem.state === 'loading'
+                          || (missionSystem.state !== 'done' && (_tutDrive() || _waypointOn())))) _renderMissionUI()
     // FEAT-88: a load whose job is gone (cancelled, exited, a new run) leaves with it.
     if (_haul && (!missionSystem?.isOnJob() || missionSystem.mission !== _haul.mission)) _haulClear()
     // FEAT-96: …and so does a freight load, on delivery, clean-up or a new run. (A debug load has no

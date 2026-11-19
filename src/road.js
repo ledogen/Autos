@@ -227,6 +227,7 @@ const XS_OFF_FADE = 4.0
 // Measured over 91 connectors (seeds 6, 3, 7, 20, 11 + 477662008): no connector whose crest unloads the
 // wheels below 12 m/s is left; at 0° (every deg-2 node) it also flattened the owner's "fair" dip 3.
 const DEG2_PLANE_KINK = 60 * Math.PI / 180
+const _BJ_RP = { gradeY: 0, tx: 1, tz: 0 }   // BUG-230: _bareJoinFrame's scratch profile sample
 const _xsOffFade = (d) => { const u = Math.min(1, Math.max(0, d / XS_OFF_FADE)); return 1 - u * u * (3 - 2 * u) }
 // Reusable sinks for the connector design-surface path (carve hot path — no per-query allocation).
 const _CD_A = { grade: 0, gap: 0, xs: 0, off: 0 }
@@ -8461,8 +8462,52 @@ export class RoadSystem {
             const sa = _interpArcTable(e.polyCum, e.clArc, a) - hit.s, sb = _interpArcTable(e.polyCum, e.clArc, b) - hit.s
             if (sa >= 0) hi = Math.min(hi, sa); else if (sb <= 0) lo = Math.max(lo, sb)
         }
-        return { fx: hit.x, fz: hit.z, tx: hit.tangent.x, tz: hit.tangent.z, k: hit.curvature, lo, hi,
-                 arcS: _interpArcTable(e.clArc, e.polyCum, hit.s) - arcOrigin }
+        const f = { fx: hit.x, fz: hit.z, tx: hit.tangent.x, tz: hit.tangent.z, k: hit.curvature, lo, hi,
+                    arcS: _interpArcTable(e.clArc, e.polyCum, hit.s) - arcOrigin }
+        return this._bareJoinFrame(e, f, wx, wz)
+    }
+
+    /**
+     * BUG-230: near a BARE degree-2 join (no connector) the ribbon's sections are framed on FEAT-10's weld (runFrameAt:
+     * the analytic tangent eased to the join's bisector over roadJoinWeldLength), so the two runs' end sections
+     * coincide. Physics projected the same point perpendicular to the analytic tangent instead: on a kink the two runs'
+     * sections then overlapped on its inside, the surface stepped where ownership flipped by overlap × edge grade
+     * (0.10 m at 4.6°) and the drawn ribbon sat up to 8 cm under it. Here the frame is re-solved on the ribbon's own
+     * section: the arc s whose welded normal line passes through (wx, wz) (a few fixed-point steps; the weld turns
+     * slowly). So physics and the mesh share one cross-section by construction. Joins a connector covers keep the
+     * analytic frame (the strip is what is drawn there). The reused-hint window closes (lo = hi = 0): the frame is not
+     * the primitive's own, so a neighbour re-solves rather than offsets it.
+     */
+    _bareJoinFrame(e, f, wx, wz) {
+        const key = this._entryKeyOf(e)
+        if (!key) return f
+        let pc = this._runProfileCache?.get(key)
+        if (!pc || pc.rev !== this._networkRev) { this.runProfile(f.arcS, key, _BJ_RP); pc = this._runProfileCache.get(key) }
+        const w = pc?.weld
+        if (!w || !((w.wS?.bare && f.arcS - w.aS < w.Rw) || (w.wE?.bare && w.aE - f.arcS < w.Rw))) return f
+        const ao = e.arcOrigin ?? 0
+        let s = f.arcS, q = null
+        for (let it = 0; it < 4; it++) {
+            q = e.centerline.pointAt(_interpArcTable(e.polyCum, e.clArc, s + ao))
+            this._ribbonTangentAt(s, key, _BJ_RP)
+            const along = (wx - q.x) * _BJ_RP.tx + (wz - q.z) * _BJ_RP.tz
+            const sN = Math.max(w.aS, Math.min(w.aE, s + along))
+            if (Math.abs(sN - s) < 1e-4) break
+            s = sN
+        }
+        q = e.centerline.pointAt(_interpArcTable(e.polyCum, e.clArc, s + ao))
+        this._ribbonTangentAt(s, key, _BJ_RP)
+        return { fx: q.x, fz: q.z, tx: _BJ_RP.tx, tz: _BJ_RP.tz, k: f.k, lo: 0, hi: 0, arcS: s }
+    }
+
+    // BUG-230: network entry → its run key (memoised per network revision).
+    _entryKeyOf(e) {
+        if (this._entryKeyRev !== this._networkRev || !this._entryKeys) {
+            this._entryKeys = new Map()
+            for (const [k, v] of this._network) this._entryKeys.set(v, k)
+            this._entryKeyRev = this._networkRev
+        }
+        return this._entryKeys.get(e)
     }
 
     /**
@@ -11388,6 +11433,12 @@ export class RoadSystem {
      * road footprint (caller falls back to nodeY).
      */
     sampleRoadTopY(wx, wz) {
+        // BUG-233: inside a ringed (≥ 3-leg) pad the drawn pad and the physics overlay both ride padTopY
+        // (_nodeSurfaceTop + apron lift, _sampleCarveWorld's on-pad branch). The free resolve below picks one leg and,
+        // at a pad's tear line, a different one: it read up to 0.86 m under the pad, so a truck seated there
+        // (_groundSampleY's four corners) or a paper landing there sat inside the asphalt. padTopY needs no raw height.
+        const pad = this._junctionPadCarve(wx, wz, 0)
+        if (pad?.padTopY != null) return pad.padTopY
         const nr = this._resolveRoadSurface(wx, wz)
         const clearanceMargin = this._params.roadClearanceMargin ?? 0.25
         let runTop = null
@@ -12011,13 +12062,22 @@ export class RoadSystem {
             // hold must fit the speed the run allows, not an 18 m corner's.
             let vNode2 = PAR_REF.mu * PAR_REF.g * PAR_REF.junctionRadius
             let inside = null   // BUG-90: a gentle deg-2 kink's inside direction (see _applyJunctionBlend)
+            let join = null     // BUG-230: a BARE deg-2 join's other leg (see _applyJunctionBlend's bank mean)
             if (d === 2) {
                 const strands = this._graphNodeStrands(id)
                 if (strands && strands.length === 2) {
                     const dot = strands[0].wx * strands[1].wx + strands[0].wz * strands[1].wz
                     const kink = Math.PI - Math.acos(Math.max(-1, Math.min(1, dot)))
+                    // BUG-230: _detectNodeJunctions builds a connector only above roadJunctionKinkDeg, on the same
+                    // first-chord kink. BUG-90's bank run-off is for that connector's inside apex; at a BARE join (no
+                    // connector) it ran ONE leg's bank off while the other kept it — a 0.27 m step at the edge.
+                    const kinkMin = (this._params.roadJunctionKinkDeg ?? 0) * Math.PI / 180
                     if (kink >= DEG2_PLANE_KINK) flatCamber = true
-                    else inside = { x: strands[0].wx + strands[1].wx, z: strands[0].wz + strands[1].wz }
+                    else if (kinkMin > 0 && kink > kinkMin) inside = { x: strands[0].wx + strands[1].wx, z: strands[0].wz + strands[1].wz }
+                    else {
+                        const oth = strands[0].key === runKey ? strands[1] : strands[0], oe = this._network.get(oth.key)
+                        if (oe && oth.key !== runKey) join = { key: oth.key, isStart: this._proto.graph.key(oe.cellA) === this._proto.graph.key(id) }
+                    }
                     const rEff = kink > PAR_REF.junctionDeadband ? PAR_REF.junctionRadius / Math.min(1, kink / (Math.PI / 2)) : Infinity
                     vNode2 = Math.min(PAR_REF.vMax * PAR_REF.vMax, PAR_REF.mu * PAR_REF.g * rEff)
                 }
@@ -12040,7 +12100,7 @@ export class RoadSystem {
             // distance × slope along the leg's own departure) only approximates on a curving leg.
             // part (BUG-200): where this leg's pavement really parts from every sibling's, past the plane's hold cap — the
             // design-maximum recovery may not climb out of pavement a sibling still shares. Lazy: only that recovery reads it.
-            return { is, flatCamber, y, slopeAway, plane: plane || null, vNode2, inside, hold: is ? this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_PLANE) : 0,
+            return { is, flatCamber, y, slopeAway, plane: plane || null, vNode2, inside, join, hold: is ? this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_PLANE) : 0,
                      part: is ? () => this._junctionHoldReach(runKey, e, isStart, id, JN_HOLD_MAX_SURFACE) : null }
         }
         return { jStart: nodeInfo(e.cellA, this._strandAtEnd(e.points, true), true), jEnd: nodeInfo(e.cellB, this._strandAtEnd(e.points, false), false) }
@@ -12472,6 +12532,20 @@ export class RoadSystem {
         }
         const flatS = ej.jStart.flatCamber || bankCrest(ej.jStart, true)
         const flatE = ej.jEnd.flatCamber || bankCrest(ej.jEnd, false)
+        // BUG-230: at a BARE deg-2 join (no connector) both legs ease their bank to the MEAN of the two at the node —
+        // the grade's own rule (owner 2026-10-12): each leg takes half the disagreement, so the two end sections bank
+        // alike by construction. The camber predecessor chain links only a head to a tail; an end-end or start-start
+        // join had two independent banks (0° meeting 3.01°: a 0.23 m step at the edge). Both legs read both PRE-blend
+        // node banks from the same routines (_runStartCamber / _runEndCamber), so they agree on the mean exactly.
+        // Banks in each leg's AWAY-from-node frame: a continuous bank reads a and −a.
+        const joinCam = (j, fromStart) => {
+            if (!j.join || !camberRad || (fromStart ? flatS : flatE)) return null
+            const node = (k, st) => st ? this._runStartCamber(k) : this._runEndCamber(k)
+            const aOwn = (fromStart ? 1 : -1) * node(runKey, fromStart), aOth = (j.join.isStart ? 1 : -1) * node(j.join.key, j.join.isStart)
+            return (fromStart ? 1 : -1) * (aOwn - aOth) / 2
+        }
+        const Rjn = Math.max(1, Math.min(this._params?.roadJoinWeldLength ?? 6, span * 0.45))
+        const jcS = ej.jStart.is ? joinCam(ej.jStart, true) : null, jcE = ej.jEnd.is ? joinCam(ej.jEnd, false) : null
         // BUG-200 (DEC-409): the run's own solved profile, before the hold bends it — the recovery's grade cap reads it.
         const own = gradeY ? gradeY.slice() : null
         for (let i = 0; i < N; i++) {
@@ -12484,12 +12558,14 @@ export class RoadSystem {
                 const fs = w(d, hS, RgS)
                 if (gradeY && fs > fG) { fG = fs; ny = target(ej.jStart, i, d) }
                 if (camberRad && flatS) { const fc = w(d, hS, RcS); if (fc > fC) { fC = fc; nc = planeCam(ej.jStart, i) } }
+                if (jcS !== null) { const fc = w(d, 0, Rjn); if (fc > fC) { fC = fc; nc = jcS } }
             }
             if (ej.jEnd.is) {
                 const d = aEnd - arcPos[i]
                 const fs = w(d, hE, RgE)
                 if (gradeY && fs > fG) { fG = fs; ny = target(ej.jEnd, i, d) }
                 if (camberRad && flatE) { const fc = w(d, hE, RcE); if (fc > fC) { fC = fc; nc = planeCam(ej.jEnd, i) } }
+                if (jcE !== null) { const fc = w(d, 0, Rjn); if (fc > fC) { fC = fc; nc = jcE } }
             }
             if (gradeY && fG > 0)    gradeY[i] += (ny - gradeY[i]) * fG
             if (camberRad && fC > 0) camberRad[i] += (nc - camberRad[i]) * fC
@@ -12818,7 +12894,11 @@ export class RoadSystem {
                 const own = st.find(s => s.key === runKey), oth = st[0] === own ? st[1] : st[0]
                 if (!own || own.wx * oth.wx + own.wz * oth.wz > 0.5) return null   // kink > 120°: pad elbow
                 const ax = own.wx - oth.wx, az = own.wz - oth.wz, L = Math.hypot(ax, az), sg = isStart ? 1 : -1
-                return { x: sg * ax / L, z: sg * az / L }
+                // BUG-230: `bare` = no connector covers this join (the BUG-90 `inside` / bank-mean test in
+                // _runEndpointJunctions); physics then frames on this weld too (_refineFrame), as the ribbon does.
+                const kink = Math.PI - Math.acos(Math.max(-1, Math.min(1, own.wx * oth.wx + own.wz * oth.wz)))
+                const kinkMin = (p.roadJunctionKinkDeg ?? 0) * Math.PI / 180
+                return { x: sg * ax / L, z: sg * az / L, bare: kink < DEG2_PLANE_KINK && !(kinkMin > 0 && kink > kinkMin) }
             }
             const wS = Rw > 0 ? weldDir(netEntry.cellA, true) : null
             const wE = Rw > 0 ? weldDir(netEntry.cellB, false) : null
