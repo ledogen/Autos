@@ -3405,9 +3405,10 @@ const STEPS = [
       await rollOff('the offer card')
     } else console.log(`  pad: no giver with an offer left in ${await js('window.__worldCode?.()')}; Ventura Highway's offer card unchecked this run`)
     // The shop (an auto shop's lift): B closes it, the gas rolls.
-    // Not one in another giver's reach: its offer card owns the brake there (world 3813079118/K: "park to see the offer").
+    // Not one in another job source's reach: its offer card owns the brake there (worlds 3813079118/K, 3934971317/K:
+    // "park to see the offer").
     await seatPoi(`q => q.type === 'autoShop' && !q.hidden && window.__map2d()._getPois().every(o => o === q || Math.hypot(o.x - q.x, o.z - q.z) > 40
-      || !(window.__map2d()._getBoard().view(o.id, 0)?.count > 0))`); await vhPark(); await readCards()
+      || !window.__map2d()._getBoard().status(o.id)?.source)`); await vhPark(); await readCards()
     const svcUp = () => js('document.getElementById("svc-screen").checkVisibility()')
     check(await until(svcUp, 3000), 'Ventura Highway: parking at the auto shop with A opened no shop: ' + await js(`JSON.stringify({ parked: __vs.parked,
       prompt: document.getElementById('poi-prompt')?.innerText.slice(0, 60), clock: document.querySelector('#run-hud .rh-clock')?.textContent,
