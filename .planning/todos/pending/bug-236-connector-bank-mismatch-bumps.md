@@ -156,5 +156,5 @@ CarGame-machine (git-ignored): `walk2.mjs` (deck walk), `census.mjs`, `sheet.mjs
   moved > 1 mm in the three story windows lies within 61 m of a connector node.
 - 2026-11-19 (lane b): owner picked option 4. Option 1 landing proofs stopped (400-seed sweep: 169 seeds done, 0 throws;
   smokes not run). Whole-deck diagnosis: classes 1–4 = 6 / 60 / 21 / 35 of the 82 (3 unexplained); design experiment
-  (scratchpad expdeck, toggles BUG236_T2/T3/T4 on the branch) 82 → 4 bends over 15 cm, worst 55.2 → 21.6 cm, none
+  (`wip/bug-236/design-exp.patch` on the branch, env toggles BUG236_T2/T3/T4) 82 → 4 bends over 15 cm, worst 55.2 → 21.6 cm, none
   worse. Scripts: census2.mjs, c7-cls.mjs, sitepro.mjs, sheet-deck.mjs. Sheet `wip/bug-236/sheet-deck.jpg`.
