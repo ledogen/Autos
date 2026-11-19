@@ -224,6 +224,7 @@ run behind it.
 - [ ] At least one recorded multi-day run backing the ramp (owner drive, about 1–2 h).
 
 ## Decisions
+- 2026-11-19, owner (card feat69-freight-r2-look): "Good" on the freight round 2 (DEC-406: every freight job under 300 kg is kept; twelve sheets of plywood added; propane share 43.4 to 21.4 %). The goal of 45-55 % at or above 300 kg is NOT met (8.5 to 11.7 %): it needs the art-bound items. The card offered "approve recolours of the existing pallet models as the next step"; the owner picked only "Good" and wrote no note, so the recolours are not approved by this answer.
 - 2026-11-06, owner: "S 10% more forgiving. D 30% more forgiving. interpolate between." (built, above).
 - 2026-11-06, owner: "12 days includes the expedition camp missions. keep the spread you just built" (DEC-120: 6 deeds).
 
@@ -322,3 +323,4 @@ PAY: it already scales with weight. Pay = (the route's par x (1 + 0.0007 x kg)) 
   51 recorded drives under today's par (41 S) and models jobs, days and runs from the real offer board. The 11-06
   re-grade missed mu 0.80 → 0.72 (0021 is B, not C). Dive written; no game number changed. Unverified: every
   `ASSUME` value (jobs a day, engine load, fuel per km, crashes, fragile/demolition letters).
+- 2026-11-19: owner answered "Good" on freight R2. Freight lists stay open for the art-bound items (recolours or new models: ASSET tickets owed by the lane); not closing.
