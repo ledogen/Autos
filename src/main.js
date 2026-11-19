@@ -3300,13 +3300,13 @@ const _STAGE_RING_SINK = 3.0   // m
 // down into, just tall enough to break the horizon line from a moving truck.
 // FEAT-276 (DEC-414, owner 2026-11-17): "change the paper halo to green. leave the center white", and the centre
 // is a SPIKE marking the bullseye, "about .5m smaller dia but slightly taller" than the old 1 m × 0.5 m pip:
-// 0.5 m across, 1 m tall. The green is UI-STYLE's --money (#8ce99a, "a hit, good news"); the centre stays paper
+// 0.5 m across, 3 m tall (1 m until the owner's 2026-11-19 look: "the spike should be even taller"). The green is UI-STYLE's --money (#8ce99a, "a hit, good news"); the centre stays paper
 // white, the one ink that never occurs in the landscape (owner, 2026-08-15).
 const _targetRingMat = _ringMat(0x8ce99a, 0.52)
 const _targetPipMat = _ringMat(0xffffff, 0.52)
 const _TARGET_RING_H = 2.4      // m
 const _TARGET_RING_SINK = 0.5   // m
-const _TARGET_PIP_H = 1.0       // m — the spike, 0.5 m of it above the sink; low enough never to mask a landing
+const _TARGET_PIP_H = 3.0       // m — the spike, 2.5 m above ground: 0.6 m over the ring's top (owner, 2026-11-19: "even taller"; was 1.0)
 const _TARGET_PIP_R = 0.25      // m — 0.5 m across
 let _stageRing = null
 // poi.id → its orange ring, so the accepted marker's ring can step aside for the green one while
