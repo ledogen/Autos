@@ -74,5 +74,12 @@ outright (RB is Space on a card in both layouts).
 ## Decisions
 DEC-431.
 
+## Files
+`src/gamepad.js` (PAD_LAYOUTS, padOf, padRoleName, context-owned `held`) · `src/park-badge.js` · `src/main.js` · `src/settings.js` ·
+`index.html` · `data/dialogue.js` · `src/hud-menu.js` (comment) · `test/pad-e2e.mjs` · `test/cdp-smoke.mjs`
+
 ## Log
 - 2026-11-18 minted by the orchestrator from the owner's ruling.
+- 2026-11-18 built on land/feat-294-pad-layouts (lane u). pad-e2e ALL OK 136 checks (Professor unchanged + the Ventura
+  pass; wip/feat-294/pad-e2e-7.log). Its earlier reds were the test's own reset racing the seat's latch under load (fixed in
+  the test). Smoke and gate results: the lane report.
