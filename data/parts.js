@@ -337,8 +337,8 @@ export const REPAIRS = {
 /** Every repair starts with this before the clock on the gap runs (owner, 2026-10-23): the shop's
  *  minimum charge, and the time to get at the part (half an hour to reach a damper before revalving
  *  it). It keeps the shop from being a pit stop that tops everything up to the cap. A part already off
- *  the truck, in the inventory, pays the charge but not the access time. [DEFAULT] $5 / 30 min. */
-export const REPAIR_SETUP = { price: 5, hours: 0.5 }
+ *  the truck, in the inventory, pays the charge but not the access time. owner $2 (2026-11-19, DEC-432; was $5) / 30 min [DEFAULT]. */
+export const REPAIR_SETUP = { price: 2, hours: 0.5 }
 /** FEAT-162 (owner, 2026-11-06): a SEIZED engine (its track at exactly 0) rebuilds at this × the price
  *  of a full-wear repair — a placeholder until FEAT-69's re-price. A collapsed wheel is not repaired at
  *  all: it is scrap, replaced at the shop's wheel price (src/service.js repairTargets). */

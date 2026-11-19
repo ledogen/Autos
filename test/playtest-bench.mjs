@@ -215,7 +215,7 @@ const PAGE = String.raw`(async () => {
         else if (!seating && vs.parked && rbCool <= 0) { rbHold = 4; rbCool = 40; settle = Math.max(settle, 0.5) }
       } else {
         const c = ap.step(vs, dt)
-        if (c.trouble) seat(c.trouble)
+        if (c.trouble) { seat(c.trouble); c.trouble = null }   // autopilot.js reuses its controls object and, with recover off, never clears .trouble: it would re-seat every 2.5 s for ever
         else {
           setPad(Math.max(-1, Math.min(1, -c.steer / c.steerLimit)), c.throttle, c.brake)   // the game steers −stick (vehicle.js)
           // One edge leg, a quarter of the way through the minimum distance: 60 s with the centre 5 m off the line (the
@@ -409,6 +409,13 @@ async function session (build, seed, rep) {
       await Promise.race([c.resume(), wait(1000)]); const t = c.currentTime; await wait(1000); const d = c.currentTime - t; c.close(); return d })()`)
     if (!(audioS > 0.5)) throw new Error(`the host's audio clock is stalled (${(audioS ?? 0).toFixed(3)} s per 1 s wall): restart coreaudiod, then rerun`)
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
+    for (let i = 0; i < 30 && await dlg(); i++) { await tap('Enter'); await sleep(300) }
+    // FEAT-184/289: the firing ends on the tutorial card, which holds the sim; a player who skips clicks skip (twice on a
+    // fresh profile: "are you sure?"), which lands at 07:00 day 0 with Larry's call to close.
+    const tut = 'getComputedStyle(document.getElementById("tut-card")).display !== "none"'
+    for (let i = 0; i < 5 && await js(tut); i++) { await js('document.getElementById("tc-skip").click()'); await sleep(1000) }
+    if (await js(tut)) throw new Error('the tutorial card would not skip')
+    await sleep(1000)
     for (let i = 0; i < 30 && await dlg(); i++) { await tap('Enter'); await sleep(300) }
     await sleep(2000)
     if (await js('window.__vs.ignition?.state') !== 'running') { await key('i', true); await until(() => js('window.__vs.ignition?.state === "running"'), 8000); await key('i', false) }
