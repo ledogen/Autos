@@ -410,6 +410,13 @@ async function session (build, seed, rep) {
     if (!(audioS > 0.5)) throw new Error(`the host's audio clock is stalled (${(audioS ?? 0).toFixed(3)} s per 1 s wall): restart coreaudiod, then rerun`)
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
     for (let i = 0; i < 30 && await dlg(); i++) { await tap('Enter'); await sleep(300) }
+    // FEAT-184/289: the firing ends on the tutorial card, which holds the sim; a player who skips clicks skip (twice on a
+    // fresh profile: "are you sure?"), which lands at 07:00 day 0 with Larry's call to close.
+    const tut = 'getComputedStyle(document.getElementById("tut-card")).display !== "none"'
+    for (let i = 0; i < 5 && await js(tut); i++) { await js('document.getElementById("tc-skip").click()'); await sleep(1000) }
+    if (await js(tut)) throw new Error('the tutorial card would not skip')
+    await sleep(1000)
+    for (let i = 0; i < 30 && await dlg(); i++) { await tap('Enter'); await sleep(300) }
     await sleep(2000)
     if (await js('window.__vs.ignition?.state') !== 'running') { await key('i', true); await until(() => js('window.__vs.ignition?.state === "running"'), 8000); await key('i', false) }
     if (await js('!!window.__vs.parked')) await tap(' ')
