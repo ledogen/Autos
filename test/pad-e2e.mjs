@@ -506,7 +506,9 @@ check(await js('__padMod.PAD_PARAMS.padLayout') === 'Ventura Highway', 'the free
 const keysSeen = () => js('__vhKeys.splice(0).join()')
 const reset = async () => { await js('__fp.b[7] = 0; __fp.b[15] = 1'); await sleep(1300); await js('__fp.b[15] = 0'); await sleep(2500) }
 // Back at rest after a roll-away: the reset, then parked as a player does it — A lets the reset's latch go, A sets it.
-const repark = async () => { await reset(); await press(A); await press(A); if (!(await vs()).parked) await press(A) }
+const waitParked = async (want) => { for (let t = 0; t < 20 && (await vs()).parked !== want; t++) await sleep(100) }
+const repark = async () => { await reset(); await press(A); await waitParked(false); await press(A); await waitParked(true); await sleep(300)
+  check((await vs()).parked, `VH: re-parked with A after the roll-away (keys "${await js('__vhKeys.join()')}")`) }
 const zone = () => js('JSON.stringify({ menu: document.body.classList.contains("hud-menu-on"), zone: document.getElementById("park-zone").className, parked: __vs.parked, inv: document.querySelector("#inv-screen.open") !== null })')
 await js('__fp.b[7] = 0.5'); await sleep(400); await js('__fp.b[7] = 0'); await sleep(200)   // the pad drives; the boot's latch let go
 await reset()
