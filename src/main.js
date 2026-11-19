@@ -84,7 +84,7 @@ import { MissionSystem, REGION_MARGIN, secPerGameH, routeLeftM } from './mission
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, knockMass, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, poiTopY, dropZoneWorld, overDropZone, satSolid, knockMass, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS, LINE_SUPPLY } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
@@ -1486,6 +1486,24 @@ installShadowEdgeFade({ fadeStart: 0.82 })
 // shadow dropping to the near light's 40 % share; and ground the far map shades ignores the near map, so
 // the near map's box and its clipped casters never show as a brightness edge (equations in shadow-fade.js).
 installNearShadowCoupling()
+// BUG-228: dither at the output. The canvas holds 8 bits per channel, so a smooth, dark ramp (the menu floor, a
+// dusk sky, distance fog) shows as visible steps, and the exposure meter slides them across the scene. A static
+// screen-space noise of about one 8-bit level, added just before the 8-bit write (after tone mapping, the sRGB
+// encode and fog), dissolves each step into a grain the eye averages. Triangular noise in ±1 level (the sum of two
+// of three's `rand` hashes), not three's own uniform ±0.5: measured on the dusk sky, the uniform one leaves values
+// near a level's centre unrounded, so flat patches up to 25 px long survive and slide with the exposure just as the
+// bands did; the triangular one keeps the grain even at every level. Channels shifted R+, G−, B+ as three does, so
+// the grain is mostly colour, not brightness. Installed here, unconditionally, instead of `material.dithering =
+// true` at ~40 creation sites plus every GLB and clone: every built-in lit/basic material includes this chunk; the
+// custom output shaders (sky, moon, dust, impostors, lab floor) include it by hand, last. Self-contained, so a
+// ShaderMaterial without <common> can use it. The bake shaders return before it (terrain-bake.js); depth/shadow
+// materials never include it.
+THREE.ShaderChunk.dithering_fragment = /* glsl */`{
+  highp vec2 ditherP = gl_FragCoord.xy;
+  highp float ditherA = fract(sin(mod(dot(ditherP, vec2(12.9898, 78.233)), 3.141592653589793)) * 43758.5453);
+  highp float ditherB = fract(sin(mod(dot(ditherP + vec2(0.5, 17.25), vec2(12.9898, 78.233)), 3.141592653589793)) * 43758.5453);
+  gl_FragColor.rgb += (ditherA + ditherB - 1.0) * vec3(1.0, -1.0, 1.0) / 255.0;
+}`
 // PERF-16: stop re-rendering the sun's whole shadow pass every frame. Three defaults autoUpdate=true,
 // so the 1536²/2048² shadow map is re-rendered each frame even parked under a static sun (measured
 // ~9 pp renderer-main, ~3 pp GPU). We drive needsUpdate on-demand from the shadow-follow block in
@@ -5467,6 +5485,9 @@ gpsSystem = new GpsSystem(scene, {
   // par oracle's elevation instead, which is a different pipeline stage and disagrees by up to
   // 27 m — see gps.js bakeRoute's ELEVATION SOURCE note.
   getRoad: () => roadSystem,
+  // FEAT-297: the POI an objective stands for (matched by its x, z), so the route-end arrow can hover over its roof.
+  getCamera: () => camera.position,
+  getObjectiveTopY: (o) => { const q = poiSystem.list().find(p => Math.hypot(p.x - o.x, p.z - o.z) < 1); return q ? poiTopY(q) : null },
 })
 
 // ── FEAT-31: the testing lab ─────────────────────────────────────────────────
@@ -8266,30 +8287,25 @@ function _updateEnergyMeter () {
   }
   // FEAT-198 (owner, 2026-11-11): hunger mirrors energy — its word in its colour, then its own scrolling bar.
   // Hidden with hunger switched off (the debug toggle: hungerWord() is null).
-  const hw = daySystem.hungerWord()
+  const hLeft = _hmPreviewH ?? daySystem.fedLeftH()
+  const hw = daySystem.hungerWord(hLeft)
   if (hw !== _hmWord) {
     _hmWord = hw
     _emEls.hTitle.style.display = _emEls.hView.style.display = hw ? '' : 'none'
     if (hw) { _emEls.hStage.textContent = hw; _emEls.hStage.style.color = HUNGER_COLOR[hw] }
   }
   if (hw) {
-    const top = _emEls.hTop, left = Math.min(top, Math.max(-DAY_PARAMS.hungryRampH, daySystem.fedLeftH()))
+    const top = _emEls.hTop, left = Math.min(top, Math.max(-DAY_PARAMS.hungryRampH, hLeft))
     const hx = Math.round((EM_VIEW_W / 2 - (top - left) * EM_PX_PER_H) * dpr) / dpr
     if (hx !== _hmX) { _hmX = hx; _emEls.hStrip.style.transform = `translateX(${hx}px)` }
   }
 }
-/** FEAT-283: hovering "eat" paints the hunger the meal recovers on the hunger bar — a green box from the pointer to the
- *  post-meal level (DaySystem.eat: holds ADD up to the cap, FEAT-250; the gain is mealGainH). `id` null clears it. */
+/** FEAT-301 (DEC-438, replacing FEAT-283's green box, which ran off the strip on a big meal): hovering "eat" draws the
+ *  hunger strip and its word at the level the meal leaves (DaySystem.leftAfterMeal: the one rule eat() applies). `id` null clears it. */
+let _hmPreviewH = null
 function _previewEat (id) {
-  const box = document.getElementById('hm-preview'), it = id && ITEMS[id]
-  if (!box) return
-  if (!it || it.kind !== 'food' || it.satiety == null) { box.style.display = 'none'; return }
-  const left = daySystem.fedLeftH(), top = _hmTopH()
-  // post-meal level = what eat() leaves (additive, capped: mealGainH), from the pointer (which sits below 0 when hungry)
-  const dh = Math.max(0, left) + daySystem.mealGainH(foodSatietyH(id, _kitAtCamp())) - Math.min(top, left)
-  box.style.display = dh > 0 ? 'block' : 'none'
-  box.style.width = `${dh * EM_PX_PER_H}px`
-  box.style.left = `${EM_VIEW_W / 2 - dh * EM_PX_PER_H}px`
+  const it = id && ITEMS[id]
+  _hmPreviewH = it?.kind === 'food' && it.satiety != null ? daySystem.leftAfterMeal(foodSatietyH(id, _kitAtCamp())) : null
 }
 let _hmWord, _emX, _hmX   // the strips' last written translateX (PERF-48)
 /** The hunger strip's full end: the satiety cap (FEAT-250: foods stack up to it — DaySystem.eat). */
@@ -9071,6 +9087,7 @@ const _labFloorMaterial = new THREE.ShaderMaterial({
       gl_FragColor = vec4(col, 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
+      #include <dithering_fragment>
     }`,
 })
 const _gridGroundPlane = new THREE.Mesh(

@@ -30,6 +30,8 @@ export const GATES = [
     desc: 'BUG-169/PERF-48: the render frame cap draws cap fps (display rate when 0) fed synthetic rAF timestamps at 60/90/120/144/240 Hz, for caps 30/60/90/120/display' },
   { file: 'leg-overlap-tear.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-179 (DEC-366): two legs of one node never tear on shared pavement — the capture seed whose chained fork the merge plan used to drop (6.12 m)' },
+  { file: 'self-crossing.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
+    desc: 'BUG-232: a road never crosses itself in plan. On the five traced seeds (story region as built): no run\'s shipped polyline crosses itself (main: one each, a routed helix 16-37 m apart that FEAT-19\'s at-grade lift made a 97-224 % ramp), and every run within 60 m of the old crossing is at or under the 38 % ceiling over its steepest 10 m.' },
   { file: 'junction-recovery-grade.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-200 (DEC-409): a junction recovery is held to the design maximum grade — seed 688224244\'s hairpin ≤ 25 % (38.8 % before), and ceilings on runs at the 38 % ceiling / over 30 % on three seeds' },
   { file: 'road-minradius.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
