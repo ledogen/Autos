@@ -40,4 +40,4 @@ None.
 `src/main.js` (`_toggleMap`, `_haulPick`, `_syncHaulPick`) · `test/cdp-smoke.mjs` (pad pump step)
 
 ## Log
-- 2026-11-19: minted; fixed.
+- 2026-11-19: minted; fixed. Smoke (pad pump step, M + View at an open pump): FAIL on main (pump checked out, $10 to $7.88, menus empty), pass with the fix. Gates 12 green, cdp-smoke clean, pad-e2e ALL OK. The smoke opens no haul offer, so B's note wording has no automated check.
