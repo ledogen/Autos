@@ -24,6 +24,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { PROP_MODELS } from '../data/prop-models.js'
 
 const _records = new Map()   // key → Promise<record>; the promise IS the dedup + cache
+const _loaded = new Map()    // key → record, once its load resolved (FEAT-278: spawnModel clones those synchronously)
 
 /**
  * Build the curated recolour pool declared by spec.palette (data/prop-models.js).
@@ -139,6 +140,7 @@ export function getModel (key) {
     })
   })
   _records.set(key, promise)
+  promise.then((rec) => { _loaded.set(key, rec) })
   return promise
 }
 
@@ -155,8 +157,9 @@ export function instantiate (rec, variant = 0) {
 
 /**
  * Spawn an instance of a registered model.
- * Returns a Group synchronously (empty until the shared load resolves, then backfilled — clones
- * share geometry/materials with the template, so per-spawn cost is scene-graph nodes only).
+ * Returns a Group synchronously (dressed at once when the model is already loaded, else empty until the shared load
+ * resolves, then backfilled — clones share geometry/materials with the template, so per-spawn cost is scene-graph
+ * nodes only).
  * @param {string} key — a key of PROP_MODELS
  * @param {{castShadow?: boolean, receiveShadow?: boolean, variant?: number}} [opts]
  *   `onReady(inst)` runs once the clone is in the group (the spawn itself is async). Shadow flags are per-spawn (default cast, don't receive: right for small items; a static POI
@@ -171,7 +174,9 @@ export function spawnModel (key, opts = {}) {
   const { castShadow = true, receiveShadow = false, variant = 0, onReady = null } = opts
   const root = new THREE.Group()
   root.name = `model:${key}`
-  getModel(key).then((rec) => {
+  // FEAT-278: an already-loaded model clones NOW, inside the caller's frame budget (the clutter stream), never as a
+  // microtask burst after it.
+  const dress = (rec) => {
     const inst = instantiate(rec, variant)
     inst.traverse((o) => {
       if (o.isMesh) { o.castShadow = castShadow; o.receiveShadow = receiveShadow }
@@ -180,6 +185,9 @@ export function spawnModel (key, opts = {}) {
     root.userData.collision = rec.collision
     root.userData.failed = rec.failed
     onReady?.(inst)   // FEAT-214: callers that need the model's materials (night lamps) hook here
-  })
+  }
+  const rec = _loaded.get(key)
+  if (rec) dress(rec)
+  else getModel(key).then(dress)
   return root
 }

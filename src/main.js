@@ -139,6 +139,7 @@ import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
 import { StreamMotion } from './stream-priority.js'         // PERF-33: travel direction + jump detection for streaming order
 import { StreamBudget } from './stream-budget.js'           // PERF-33: one shared per-frame streaming budget
+import { ClutterQueue } from './clutter.js'                // FEAT-278: world clutter streams in after the loading screen
 import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read-only tree re-roll (camp shade score)
 import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
 import { TerrainBake } from './terrain-bake.js'   // PERF-48 lever 6: far terrain baked into an atlas (DEC-234)
@@ -146,7 +147,7 @@ import { installShadowEdgeFade, installNearShadowCoupling } from './shadow-fade.
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { lampsOn, homeLamps, shopLamps, setGlow } from './poi-night.js'   // FEAT-214: POI night lights
 import { PumpFaces } from './pump-face.js'   // FEAT-233: the pump in use shows the sale on its own face
-import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
+import { spawnModel, getModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
 import { siteTargets, siteStops, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
@@ -3337,6 +3338,10 @@ const _poiMeshes = new Map()
 // still owed a paper — see _updateCustomerRings.
 const _customerRings = new Map()
 const _ornaments = []   // FEAT-149: [{ kind, mesh, lift, body }] — knockable yard ornaments, rebuilt with the markers
+// FEAT-278: world clutter goes in after the loading screen, nearest the truck first, inside the PERF-33 streaming budget
+// (src/clutter.js). Its own ceiling per frame: a yard piece is one clone, ~0.1–0.3 ms.
+const _clutter = new ClutterQueue()
+const CLUTTER_MS = 1
 // BUG-164: one Group per POI holding its model (or cube) and its yard, culled as a unit past the drawn terrain
 // (_updateMissionRings). Before this every building in the region drew at any range: past the terrain edge it hung
 // in the sky as a fog-coloured silhouette, and the far ones cost ~28 draw calls and ~15 ms/s of render() CPU.
@@ -3362,6 +3367,8 @@ function _rebuildPoiMarkers () {
   _dropMarks.clear()
   _customerRings.clear()
   _pumpZoneMarks.length = 0
+  _clutter.reset()
+  const clutterKeys = new Set()
   const half = POI_PARAMS.poiCubeSize * 0.5
   const r = POI_PARAMS.poiInteractR
   for (const q of poiSystem.list()) {
@@ -3397,11 +3404,8 @@ function _rebuildPoiMarkers () {
       yard.add(cube)
       _poiMeshes.set(q.id, cube)
     }
-    // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
-    // in poi.js (deterministic in the seed); this only dresses them. FEAT-149/251: a knockable one
-    // (every lawn item but the fire pit; the farm's drums and crates, FEAT-268) becomes a body near the truck (_updateOrnaments); the rest
-    // are solid in place (poi.js satSolid, synced with the markers).
-    for (const sat of q.satellites ?? []) _spawnSatellite(sat, yard)
+    // FEAT-71 the yard (_spawnSatellite). FEAT-278: queued, not spawned — the yard streams in after the loading screen (_clutter, drained in the frame loop).
+    for (const sat of q.satellites ?? []) { _clutter.add(sat.x, sat.z, () => _spawnSatellite(sat, yard)); clutterKeys.add(sat.key) }
 
     // FEAT-50: a pump island's two zones — the store lot's box curtain, in fuel blue rather than
     // job orange, because the brake there opens the pump, never an offer.
@@ -3464,17 +3468,25 @@ function _rebuildPoiMarkers () {
     _customerRings.set(h.id, [ring, pip])
   }
   // FEAT-275 (DEC-429): each route house's mailbox, on the shoulder in front of its target (poi.js mailboxes()).
-  // A yard of its own, so it hides with its terrain chunk like the markers' yards.
+  // A yard of its own, so it hides with its terrain chunk like the markers' yards. FEAT-278: queued like the yards.
   for (const sat of poiSystem.mailboxes()) {
     const g = new THREE.Group()
     g.userData.x = sat.x; g.userData.z = sat.z
     _poiGroup.add(g)
     _poiYards.push(g)
-    _spawnSatellite(sat, g)
+    _clutter.add(sat.x, sat.z, () => _spawnSatellite(sat, g)); clutterKeys.add(sat.key)
   }
+  void _clutter.openWhen(Promise.all([...clutterKeys].map(getModel)))   // FEAT-278: no clone waits on a fetch
 }
 
-/** FEAT-71: one satellite (yard prop or mailbox) into `parent`; a knockable one also joins _ornaments. */
+
+/**
+ * FEAT-71: one satellite — lawn furniture at a residence, clutter at a farm, a route house's mailbox (FEAT-275). Its
+ * position is solved in poi.js (deterministic in the seed); this only dresses it. FEAT-149/251: a knockable one (every
+ * lawn item but the fire pit; the farm's drums and crates, FEAT-268) becomes a body near the truck (_updateOrnaments);
+ * the rest are solid in place (poi.js satSolid, synced with the markers, so a fire pit's collider stands before its
+ * model streams in).
+ */
 function _spawnSatellite (sat, parent) {
   const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
   m.position.set(sat.x, sat.y, sat.z)
@@ -11422,6 +11434,8 @@ function loop (t) {
   if (propSystem && !_labActive) propSystem.update(streamCenter.x, streamCenter.z, _propRing, vehicleState.position.x, vehicleState.position.z, _bbRing, _streamMotion, _streamBudget)
   // BUG-71 / PERF-33: pay down the owed road-intrusion pass (see owePropSweep).
   if (_propSweepOwed > 0 && !_labActive && _streamBudget.remaining() > 0) { sweepPropIntrusions(PROP_SWEEP_PER_FRAME); _propSweepOwed -= PROP_SWEEP_PER_FRAME }
+  // FEAT-278: the clutter, once the loading screen is gone (_simHeld: the stage owns the screen).
+  if (!_simHeld && !_labActive) _clutter.drain(vehicleState.position.x, vehicleState.position.z, _streamBudget.deadline(CLUTTER_MS))
   perfAdd('frame.props.update', performance.now() - _pt)   // D-arc
   // PERF-07: bake freshly-committed chunks' prop shadows into the world atlas (sliced; no-op when the
   // queue is empty, i.e. the steady state). Off the frame's shadow pass entirely once baked.
