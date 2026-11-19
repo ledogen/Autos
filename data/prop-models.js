@@ -1064,7 +1064,9 @@ export const PROP_MODELS = {
   // ASSET-91 — three small HOUSES whose porch floor is a paper-route target (FEAT-295): a paper thrown
   // at the wall or door drops onto it, and one landing on it rests there. Kit generator
   // assets/models/src/porch-houses.py; 7 materials each, no images. NOT tagged 'residence' yet: placing
-  // them is FEAT-295 (owner rule: an asset ticket closes when the .glb ships).
+  // them is FEAT-295 (owner rule: an asset ticket closes when the .glb ships). FEAT-295: tagged 'routeHouse' — the
+  // pool a paper-route stop draws its house from (src/poi.js ROUTE_HOUSE_POOL); `porch` is the index in
+  // collision.boxes of the porch floor, whose centre is put on the stop's target.
   // Two boxes each: the BODY (walls + foundation to the eave) and the PORCH FLOOR (ground to floor top,
   // wall to front edge; the board crowns sit on its top). Steps, stair, posts, porch roof and the main
   // roof are left soft, so a paper on a roof sinks to the body box's top at the eave.
@@ -1085,6 +1087,8 @@ export const PROP_MODELS = {
       ],
     },
     seat: 1.2,
+    tags: ['routeHouse'],
+    porch: 1,
   },
   ranchDeck: {
     url: 'assets/models/ranch-deck.glb',
@@ -1096,6 +1100,8 @@ export const PROP_MODELS = {
       ],
     },
     seat: 0.85,
+    tags: ['routeHouse'],
+    porch: 1,
   },
   cabinLanding: {
     url: 'assets/models/cabin-landing.glb',
@@ -1107,6 +1113,8 @@ export const PROP_MODELS = {
       ],
     },
     seat: 0.63,
+    tags: ['routeHouse'],
+    porch: 1,
   },
 
   // ASSET-73 — the COUNTRY SCHOOL, 1141 tris, 7 materials, one 512x512 atlas (the SCHOOL plaque + the
