@@ -82,4 +82,5 @@ DEC-431.
 - 2026-11-18 minted by the orchestrator from the owner's ruling.
 - 2026-11-18 built on land/feat-294-pad-layouts (lane u). pad-e2e ALL OK 136 checks (Professor unchanged + the Ventura
   pass; wip/feat-294/pad-e2e-7.log). Its earlier reds were the test's own reset racing the seat's latch under load (fixed in
-  the test). Smoke and gate results: the lane report.
+  the test). cdp-smoke PASS 40 steps incl. the pad step's Ventura tail (mom's card, offer, shop, pump; smoke-12.log; three
+  earlier runs hit the listed opening flakes FEAT-217 / DEC-357). Affected gates 17/17 green (run-all-1.log).

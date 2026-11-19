@@ -3385,8 +3385,8 @@ const STEPS = [
       const ok = await until(() => js('!window.__vs.parked && !window.__vs.handbrake'), 4000)
       const v = await js('window.__vs.velocity.length().toFixed(2)')
       await js('__fp.b[7] = 0'); await frames(3, 100)
-      check(ok, `Ventura Highway, ${what}: after B the gas did not let the brake go (parked ${await js('window.__vs.parked')}, handbrake ${await js('window.__vs.handbrake')})`)
-      console.log(`  pad: Ventura Highway, ${what}: B, then the gas let the brake go (${v} m/s)`)
+      check(ok, `Ventura Highway, ${what}: the gas did not let the brake go (parked ${await js('window.__vs.parked')}, handbrake ${await js('window.__vs.handbrake')})`)
+      console.log(`  pad: Ventura Highway, ${what}: the gas let the brake go (${v} m/s)`)
     }
     await seatPoi("q => q.type === 'momsHouse'"); await vhPark(); await readCards()
     check(await until(() => js('document.getElementById("camp-panel").style.display === "block"'), 3000), 'Ventura Highway: parking at mom\'s with A opened no card')
