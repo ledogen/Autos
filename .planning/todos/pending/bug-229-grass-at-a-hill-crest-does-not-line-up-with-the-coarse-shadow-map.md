@@ -41,3 +41,4 @@ while the coarse map draws the terrain's, and the two do not quite meet: "a litt
 - 2026-11-18 minted by the orchestrator from the owner's card note.
 - 2026-11-18 fixed on land/bug-229-crest-seam (e86af7d2, src/main.js): crest edge 1.75 → 0.25 m inside the true shadow.
   TEMP `?b229fnb=0.5` = the old look for the owner's A/B. Tools + sheet: wip/bug-229/ (shots, ray, prof, sheet).
+  Merged main (6464c7aa). Affected gates 14/14 green (run-all exit 0); cdp-smoke PASS 40 steps; pad-e2e ALL OK. Logs wip/bug-229/. Card owed/bug229-crest-seam-look.json.
