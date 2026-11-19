@@ -69,3 +69,4 @@ Four bolt-on parts the player can see on the truck, wanted before the alpha: a l
   Masses (sourced, data/parts.js): rack 16 → 13, bull bar 22 → 16, light bar 8 → 10 kg; `boltOnKg` → params.fittedKg → chassis
   mass, suspension, hi-lift, tire load cap and the job load check (at the CG: the ~2 cm CG shift is not modelled, physics.js).
   Toolbox: no part existed; its notes removed, the .glb stays. bolt-ons gate §7 green. Night look not re-shot.
+- 2026-11-19: owner's inbox note: "Another visual mod idea: running boards that are purely aesthetic." Ticketed as ASSET-92 (model) beside this set; not part of the alpha set unless the owner says so.

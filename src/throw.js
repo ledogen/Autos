@@ -1,18 +1,16 @@
 // FEAT-61 — aiming and the thrown newspaper.
 //
-// Deliberately its own module and deliberately NOT in the mission. The roll is a projectile with a
-// launch state and a landing point; the paper route is a scoring system that happens to consume
-// landing points. Keeping them apart is what makes the box-physics upgrade a later ticket with one
-// obvious place to land instead of a rewrite of the mission.
+// Deliberately its own module and deliberately NOT in the mission. The roll is a body with a launch
+// state and a rest point; the paper route is a scoring system that happens to consume rest points.
+// FEAT-277 made the roll a real engine body (it used to be a ballistic solver with no bounce).
 //
-// THREE-free and DOM-free on purpose — the ballistics are the part worth gating headlessly, and a
-// gate should not have to construct a renderer to ask where a paper lands.
+// THREE-free and DOM-free on purpose — the throw is the part worth gating headlessly, and a gate
+// should not have to construct a renderer to ask where a paper comes to rest.
 
 export const THROW_PARAMS = {
     throwSpeed:  16,      // m/s along the aim direction. Roughly a hard overarm throw; the truck's
                           // own velocity is added on top, so a paper thrown forward at 20 m/s lands
                           // a long way down the road and one thrown backward barely leaves your hand.
-    gravity:     9.81,    // m/s²
     // Quadratic air drag: a = −dragK·|v|·v. REVERSED FROM THE ORIGINAL RULING (owner, 2026-08-07 —
     // "it would feel better with some drag"); the first pass was gravity-only.
     //
@@ -22,97 +20,118 @@ export const THROW_PARAMS = {
     // which puts terminal velocity at √(g/dragK) ≈ 17 m/s — a dense little paper log, which is what
     // it is. At the 16 m/s launch it takes about as much speed out of the throw as gravity does,
     // so the arc drops off instead of sailing.
-    //
-    // A bounce is still deliberately absent: the landing point is the scoring point, and a bounce
-    // would move it away from where the player watched it hit.
+    // SIMPLIFIED: orientation-averaged (a real roll shows 0.006 m² end-on to 0.038 m² broadside) and no
+    // lift or Magnus force from the spin. Applied as a force on the engine body each step (debris.js).
     dragK:       0.033,   // 1/m
-    maxFlightS:  8,       // s — integration bail-out. A throw off a cliff must terminate; it also
-                          // stops a NaN ground sample from spinning the loop forever.
-    stepS:       1 / 120, // s — fixed integration step, half the physics tick. Fine enough that the
-                          // landing point does not depend on frame rate, which it must not: two
-                          // players throwing identically have to score identically.
+    // ── FEAT-277: the paper is a rigid body (debris.js 'paper'); it scores where it comes to REST ──────────
+    massKg:      0.25,    // kg — the mass dragK was derived on. A weekday paper rolled and banded.
+    scale:       2,       // the collider AND the mesh at the drawn 2× (main.js has drawn it at 2× since 2026-08-05
+                          // for readability): 180 × 132 × 840 mm, the asset's flattened oval section. MESH ==
+                          // PHYSICS, so the roll you watch hit the wall is the one that stops there.
+    // Contact, owner 2026-11-17: "almost no rebound … very high friction on the ground … prevent it from rolling".
+    // The engine mixes a pair as μ = √(μa·μb) and e = max(ea, eb); ground and POI solids are μ 0.8 / road 0.9,
+    // e 0 (terrain-physics.js), and below 1 m/s approach the engine makes every contact plastic.
+    friction:    3,       // → pair μ 1.55 on grass and house walls, 1.64 on asphalt. Real paper on dry grass or
+                          // concrete is ~0.5–0.7; the rest is a LUMP standing in for a soft roll ploughing into
+                          // the turf (the owner asked for very high friction, not for paper's). At μ 1 the mean
+                          // slide after landing measured 1.6 m (max 3.1) on flat grass, at 3 it is 0.9 m (max 1.6).
+    restitution: 0,       // a soft paper log is near-perfectly plastic: it thuds, it does not bounce
+    rollingResistance: 1, // the engine's rolling-resistance coefficient (Box3D, per contact): a soft roll flattens
+                          // under its weight and its layers slip, so it stops rather than rolls. Measured: at 0 a
+                          // paper set down on a 20° bank rolled 2.9 m in 8 s (30°: 8 m); at 1 it stays (1–3 cm).
+    restV:       0.1,     // m/s  — "at rest": centre speed below this …
+    restW:       1.0,     // rad/s — … and spin below this (a 74 mm half-section rolling at 1 rad/s creeps 7 cm/s) …
+    restS:       0.25,    // s    — … for longer than this (owner: "more than a quarter second")
+    maxFlightS:  8,       // s — hard timeout: a paper still moving 8 s after it left the truck (down a long hill,
+                          // off a cliff) is scored where it is then.
+    hullSides:   8,       // the collider's section, an octagon inscribed in the asset's oval
+    liveCap:     8,       // papers simulated at once; a ninth throw settles the oldest where it is (see PaperThrows)
 }
 
 /**
- * Integrate one throw to the ground and return where it lands.
- *
- * @param {{x,y,z}} p0        launch position (world)
- * @param {{x,y,z}} v0        launch velocity (world) — aim × speed, plus the truck's velocity
- * @param {(x:number,z:number)=>number} groundY  surface height; road where there is road, terrain
- *                                               otherwise. Must be finite over the flight path.
- * @param {object}  P         THROW_PARAMS override
- * @returns {{x,y,z,t,steps,path}|null}  landing point, flight time, and the flown path as a flat
- *                                      [x,y,z, x,y,z, …] at stepS intervals; null if it never
- *                                      came down
- *
- * THE PATH IS RETURNED SO THE RENDERER CAN REPLAY IT. Before drag the flight was a parabola and the
- * visual could be evaluated in closed form; with drag there is no closed form, and the only way for
- * the drawn arc to be the SAME arc that produced the score is to draw the one that was integrated.
- * A second integrator running alongside this one would agree to within a frame or two, which is
- * exactly the kind of nearly-right that goes wrong quietly.
- *
- * The landing point is the SEGMENT/GROUND intersection, not the first sample under the surface —
- * linear interpolation across the step that crossed. At 1/120 s and ~16 m/s a step is 13 cm, and
- * scoring reads distance-from-centre in metres against a 3 m circle, so a whole step of error is
- * 4% of the target radius. Interpolating costs one divide and removes the question.
+ * FEAT-277: the paper's collider at the asset's own size (debris.js scales it with the mesh): a prism along Z of
+ * the news-roll.glb envelope, 90 × 66 × 420 mm, its section an n-gon inscribed in that oval. The asset's own 186
+ * vertices are past the engine's hull limit, and an authored hull is the same shape with no thinning pass.
  */
-export function simulateThrow (p0, v0, groundY, P = THROW_PARAMS) {
-    let x = p0.x, y = p0.y, z = p0.z
-    let vx = v0.x, vy = v0.y, vz = v0.z
-    const dt = P.stepS
-    const maxSteps = Math.ceil(P.maxFlightS / dt)
-    const path = [x, y, z]
-
-    let gy = groundY(x, z)
-    if (!isFinite(gy)) return null
-    // Launched already below ground (thrown into a bank at point-blank range): land immediately
-    // rather than integrate away from the surface and pretend it flew.
-    if (y <= gy) return { x, y: gy, z, t: 0, steps: 0, path }
-
-    const k = P.dragK ?? 0
-    for (let i = 1; i <= maxSteps; i++) {
-        const px = x, py = y, pz = z
-        // RK2 (midpoint) on velocity, trapezoid on position. Drag makes acceleration depend on the
-        // state, so the exact per-step form the parabola had is gone — but first-order Euler is not
-        // the fallback to settle for: measured, it moved the landing point 17 cm between dt = 1/120
-        // and dt = 1/480, which is 5% of the target radius and would mean the score depended on the
-        // integrator's step. RK2 costs one extra acceleration evaluation over ~150 steps and brings
-        // that back under a millimetre, so two identical throws score identically.
-        const s1 = Math.hypot(vx, vy, vz)
-        const a1x = -k * s1 * vx, a1y = -P.gravity - k * s1 * vy, a1z = -k * s1 * vz
-        const hx = vx + a1x * dt * 0.5, hy = vy + a1y * dt * 0.5, hz = vz + a1z * dt * 0.5
-        const s2 = Math.hypot(hx, hy, hz)
-        const a2x = -k * s2 * hx, a2y = -P.gravity - k * s2 * hy, a2z = -k * s2 * hz
-        const nvx = vx + a2x * dt, nvy = vy + a2y * dt, nvz = vz + a2z * dt
-        x += (vx + nvx) * 0.5 * dt
-        y += (vy + nvy) * 0.5 * dt
-        z += (vz + nvz) * 0.5 * dt
-        vx = nvx; vy = nvy; vz = nvz
-        path.push(x, y, z)
-
-        const g = groundY(x, z)
-        if (!isFinite(g)) return null
-        if (y <= g) {
-            // Interpolate the crossing. f is where in THIS step the paper met the ground, solving
-            // (py − pgy) + f·((y − g) − (py − pgy)) = 0 with the surface itself linearised across
-            // the step — which is what makes this exact on a flat pad and honest on a slope.
-            const pg = groundY(px, pz)
-            const h0 = py - (isFinite(pg) ? pg : g)
-            const h1 = y - g
-            const f = h0 === h1 ? 1 : Math.min(1, Math.max(0, h0 / (h0 - h1)))
-            const lx = px + (x - px) * f, lz = pz + (z - pz) * f
-            const ly = groundY(lx, lz)
-            const land = { x: lx, y: isFinite(ly) ? ly : g, z: lz }
-            // Replace the overshooting last sample with the landing point itself, so the path ENDS
-            // where the score was taken. Replaying it can then never put the paper anywhere the
-            // number did not come from.
-            path[path.length - 3] = land.x
-            path[path.length - 2] = land.y
-            path[path.length - 1] = land.z
-            return { ...land, t: (i - 1 + f) * dt, steps: i, path }
-        }
+export function paperHull (n = THROW_PARAMS.hullSides, a = 0.045, b = 0.033, hz = 0.21) {
+    const out = []
+    for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) * 2 * Math.PI / n
+        out.push(a * Math.cos(t), b * Math.sin(t), -hz, a * Math.cos(t), b * Math.sin(t), hz)
     }
-    return null   // still airborne after maxFlightS — off a cliff, or aimed at the sky
+    return out
+}
+
+/**
+ * FEAT-277: the thrown papers, simulated by the engine through the debris path and settled where they REST.
+ *
+ * Owner 2026-11-17: "detect when the paper has come to rest for more than a quarter second, and then count the
+ * shot scored where it lies" — on a lawn, against a wall, or on top of a POI. At rest = centre speed < restV and
+ * spin < restW, held for > restS; a paper still moving maxFlightS after the throw is settled where it is then.
+ * Settling ends the simulation (debris.js detach): the body goes, the mesh stays on the lawn where it scored and
+ * is the caller's. So the live count is the papers between the throw and their rest, at most liveCap.
+ *
+ * Engine-free and THREE-free like the rest of this module: the debris system is handed in (main.js's, or a
+ * gate's), and step() runs once per physics step, AFTER the engine steps.
+ */
+const _l = { x: 0, y: 0, z: 0 }, _a = { x: 0, y: 0, z: 0 }
+export class PaperThrows {
+    constructor (debris, P = THROW_PARAMS) { this._d = debris; this._P = P; this.live = []; this._forced = [] }
+
+    /**
+     * A paper leaves the truck at p0 with velocity v0 (launchVelocity), lying flat. Returns the flight { body, t, contactT, stillS } or null when the
+     * model has not loaded yet (the first seconds of a cold boot): then no throw happened.
+     */
+    throw (p0, v0) {
+        // Past liveCap the OLDEST is settled where it is now, flagged timedOut, and reported by the next step().
+        if (this.live.length >= this._P.liveCap) this._forced.push(this._settle(0, true))
+        // BROADSIDE, NO SPIN. Model −Z is the long axis; yaw θ puts it at (−sinθ, 0, −cosθ), across the heading.
+        // Measured on a wall: broadside, the plastic hit stops the whole roll at once and it drops 0.1–0.6 m off
+        // the wall; flown end-on (a javelin) the end sticks, the roll pivots on it and lands up to 2.4 m out.
+        // No spin: the drag acts at the centre, so the roll lands exactly as it left, which is what makes the
+        // landing predictable (a spin about the vertical turns it through a flight-time-dependent angle; a
+        // backspin about the long axis measured no shorter slide). The flight is a pure function of p0 and v0.
+        const th = Math.atan2(v0.z, -v0.x) / 2
+        const body = this._d.spawn('paper', p0, v0, { pinned: true,
+            quaternion: { x: 0, y: Math.sin(th), z: 0, w: Math.cos(th) }, spin: { x: 0, y: 0, z: 0 } })
+        if (body == null) return null
+        const f = { body, t: 0, contactT: null, stillS: 0 }
+        this.live.push(f)
+        return f
+    }
+
+    /**
+     * Advance the rest clocks by one physics step of dt seconds. Returns this step's events, oldest flight
+     * first: { type: 'contact', f } the first time a paper touches anything (the slap), and
+     * { type: 'rest', f, x, y, z, mesh, timedOut } when one settles — x/z/y is its centre, where it scores.
+     */
+    step (dt) {
+        const P = this._P, out = this._forced.splice(0)
+        for (let i = 0; i < this.live.length;) {
+            const f = this.live[i]
+            if (!this._d.velocity(f.body, _l, _a)) { this.live.splice(i, 1); continue }   // reclaimed under us (clear)
+            f.t += dt
+            if (f.contactT == null && this._d.touching(f.body)) { f.contactT = f.t; out.push({ type: 'contact', f }) }
+            const still = Math.hypot(_l.x, _l.y, _l.z) < P.restV && Math.hypot(_a.x, _a.y, _a.z) < P.restW
+            f.stillS = still ? f.stillS + dt : 0
+            if (f.stillS > P.restS || f.t >= P.maxFlightS) out.push(this._settle(i, f.t >= P.maxFlightS))
+            else i++
+        }
+        return out
+    }
+
+    _settle (i, timedOut) {
+        const f = this.live.splice(i, 1)[0]
+        const mesh = this._d.detach(f.body)
+        return { type: 'rest', f, x: mesh.position.x, y: mesh.position.y, z: mesh.position.z, mesh, timedOut }
+    }
+
+    /** Drop every paper still moving, unscored (leaving the region, putting a round down). Returns the meshes of
+     *  papers already settled but not yet reported, which the caller now owns (to take off the lawn). */
+    clear () {
+        this._d.remove(this.live.map(f => f.body)); this.live.length = 0
+        return this._forced.splice(0).map(e => e.mesh)
+    }
 }
 
 /**
