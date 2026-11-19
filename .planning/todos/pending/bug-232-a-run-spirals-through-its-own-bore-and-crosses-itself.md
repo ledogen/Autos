@@ -89,8 +89,9 @@ within 40 m of the crossing. BUG-230's "decks 0.9–2.0 m apart" was the shipped
 - [x] Owner picks a fix option: orchestrator 2026-11-18, options 1 + 2 (no spiral tunnels, no grade separation).
 - [x] Built: routeEdgeV2 rejects a self-crossing fitted line (next rung); all-rungs-loop gets one unpinned retry with a 32 m no-go disc on the crossing. Gate `self-crossing` fails 10/10 on main, passes 10/10 on the branch (5 seeds: 0 self-crossings, site steepest 10 m 18.1-24.9 %, main 90-202 %).
 - [x] Fingerprint main vs branch: all six windows identical in every component (no loop in seed 6/11/7/3 windows).
-- [ ] 300-seed census before/after (self, run × run, edges/junctions/components/tallies) and 400-seed no-throw sweep: main side running, branch side not started.
-- [ ] Affected gates (76, serial) running; cdp-smoke, pad-e2e, sheet-fix.jpg not done.
+- [x] Census main vs branch, 302 seeds (300 random + tutorial 1872706826 + 948023748): self 5 -> 0, near-self 3 -> 0, run × run no-junction 30 -> 30 (none up). Components unchanged on all 302; 15 seeds differ (runs +1..+9 on 13, infeasible 15->14 on one, runs -1 on 3237493602). 400-seed no-throw sweep: 402 rows, 0 failures.
+- [x] Affected gates: run-all 93 selected, all 91 run green. cdp-smoke PASS (41 steps, 0 console errors); pad-e2e ALL OK (104 checks, no console errors); wip/bug-232/sheet-fix.jpg made (both loops gone from the top-down).
+- [ ] Owner look at 3237493602 (the one seed where connectivity went down by one link): edges 170->169, junctions 71->70, dead ends 26->27, nodes/components/largest unchanged.
 - [ ] Run × run no-junction crossings (30 sites / 21 seeds) ticketed separately.
 
 ## Open questions
@@ -111,3 +112,7 @@ Sheet `wip/bug-232/sheet.jpg` (567993018 and 2283335151, top-down + driver view)
 - 2026-11-18 lane agent: fix af2da589 (src/corridor-router.js), gate df410c55 (test/self-crossing.mjs). 5 seeds clean, run × run on them unchanged
   (400290281 keeps its one pre-existing cross). Fingerprint 6/6 windows identical. Census/sweep/gates were mid-run at handback:
   logs in the session scratchpad b232/ (census-main.log, gates.log); probe wip/bug-232/census2.mjs [--sweep]; sheet prep sheet-fix.{html,mjs}, cases-views.json.
+- 2026-11-18 lane agent, proofs closed (branch af2da589+df410c55, based on main 60411652). Gates 91/91 green; smoke + pad-e2e green first try; census/sweep numbers in the Tracker.
+  Run counts: 661772743 163->172 (edges 162->171, nodes 144->151, junctions 62->65, dead ends 27->26, 1 component both); 2283335151 161->162 (edges 159->160, +1 node, dead ends 29 both, 1 comp);
+  948023748 184->185 (+1 edge, +1 node, 3 comps both, dead ends 32 both). Tutorial 1872706826: stats identical. Worse: 3237493602 (-1 edge, -1 junction, +1 dead end); 3882596942 refused edges 5->8 but +1 edge.
+  Not checked: dead ends on the other 12 differing seeds; driver-view shots on the branch look at the old camera height, so they show sky/terrain not road.
