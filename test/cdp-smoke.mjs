@@ -3375,6 +3375,10 @@ const STEPS = [
     }
     // The gas lets the latch and the lock go (the handbrake off). Rolling is not asked: a giver's seat can face its
     // building (world 4044776284/K: let go, 0 m/s against the wall); mom's door and pad-e2e show the truck moving.
+    // A park box (the shop's lift, a pump's bay) is tight: the seat lands latched, so let go and set it again at once (A, A)
+    // rather than roll out of the box to a full stop. World 2899767923/K: the roll left the lift, a job source's offer won.
+    const vhRepark = async () => { if (!await js('window.__vs.parked')) return vhPark(); await btn(0); await btn(0)
+      check(await until(() => js('window.__vs.parked'), 1000), 'Ventura Highway: A, A did not re-set the parking brake') }
     const rollOff = async (what) => {
       await js('__fp.b[7] = 0.6')
       const ok = await until(() => js('!window.__vs.parked && !window.__vs.handbrake'), 4000)
@@ -3405,10 +3409,7 @@ const STEPS = [
       await rollOff('the offer card')
     } else console.log(`  pad: no giver with an offer left in ${await js('window.__worldCode?.()')}; Ventura Highway's offer card unchecked this run`)
     // The shop (an auto shop's lift): B closes it, the gas rolls.
-    // Not one in another job source's reach: its offer card owns the brake there (worlds 3813079118/K, 3934971317/K:
-    // "park to see the offer").
-    await seatPoi(`q => q.type === 'autoShop' && !q.hidden && window.__map2d()._getPois().every(o => o === q || Math.hypot(o.x - q.x, o.z - q.z) > 40
-      || !window.__map2d()._getBoard().status(o.id)?.source)`); await vhPark(); await readCards()
+    await seatPoi(`q => q.type === 'autoShop' && !q.hidden`); await vhRepark(); await readCards()
     const svcUp = () => js('document.getElementById("svc-screen").checkVisibility()')
     check(await until(svcUp, 3000), 'Ventura Highway: parking at the auto shop with A opened no shop: ' + await js(`JSON.stringify({ parked: __vs.parked,
       prompt: document.getElementById('poi-prompt')?.innerText.slice(0, 60), clock: document.querySelector('#run-hud .rh-clock')?.textContent,
@@ -3418,7 +3419,7 @@ const STEPS = [
     await rollOff('the shop')
     // The pump: A held pumps; the gas pays and rolls (the pump is not a card: no B needed, the gas is its way out).
     await js('window.__vs.fuel.gal = 4')
-    await seatRead(pz.x, pz.z, pz.heading); await vhPark()
+    await seatRead(pz.x, pz.z, pz.heading); await vhRepark()
     check(await until(() => js('document.getElementById("pump-display").classList.contains("on")'), 3000), 'Ventura Highway: parking at the pump with A opened no pump')
     const vg0 = await js('window.__vs.fuel.gal'), vm0 = await js('window.__econ.money')
     await hold(0, 2500)
