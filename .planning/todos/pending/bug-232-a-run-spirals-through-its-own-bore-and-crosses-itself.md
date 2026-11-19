@@ -86,9 +86,12 @@ within 40 m of the crossing. BUG-230's "decks 0.9–2.0 m apart" was the shipped
 ## Tracker
 - [x] Reproduced and measured on 13+ random seeds: 300 random seeds, 4 self-crossings in-region (1.3 %), all ship 97–201 % ramps.
 - [x] Cause named in the code: corridorSearch's 2.5D lattice (4/5) or simplifyRDP tol 32 (1/5) makes the loop; FEAT-19 `_addCrossingByRun` lifts it into a wall (toggle-proven).
-- [ ] Owner picks a fix option (Description § Fix options).
+- [x] Owner picks a fix option (Description § Fix options).
 - [ ] Fixed with a gate, fingerprint and a 400-seed no-throw sweep.
 - [ ] Run × run no-junction crossings (30 sites / 21 seeds) ticketed separately.
+
+## Decisions
+- 2026-11-19, owner (card bug232-spiral-tunnels): "No spirals: refuse the loop". Recorded as DEC-446: the router refuses a path that crosses itself; no grade separation (no tunnel under, no bridge over) is added for spirals or for BUG-234's no-junction crossings.
 
 ## Open questions
 - May a road spiral over itself when the two passes are ≥ 14 m apart (a spiral tunnel, option 3)? Or should routing refuse every self-crossing (options 1–2)?
@@ -105,3 +108,4 @@ Sheet `wip/bug-232/sheet.jpg` (567993018 and 2283335151, top-down + driver view)
   (2 × 150, ~27 s/seed): self 4 sites/4 seeds, run × run 30/21, 0 throws. Trace on all 5 cases plus flatten toggle (numbers above).
   Probes in wip/bug-232/ (census, trace, toggle, prof, clsfind, xlist, shots, sheet). Not checked: the run × run class's cause;
   whether option 1 changes connectivity or T placement (no build was run with it).
+- 2026-11-19: owner answered "No spirals: refuse the loop" (DEC-446). Option 3 (spiral tunnels) is dropped. The plain fix stands: refuse a self-crossing path, take the next candidate; the fifth known case needs the retry search.
