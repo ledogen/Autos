@@ -1569,10 +1569,20 @@ const STEPS = [
     // The letter is TIME (courier's and the paper round's rule), not the share: burn the job's clock to ~0.85 par (a game
     // minute is a second of it; the camp's line has no deadline), then fell the rest — the line settles with every target
     // down, lettered on its par ratio.
+    const wp235 = await js(`(() => { for (const q of window.__poi().list()) if (window.__map2d()._onWaypoint({ x: q.x, z: q.z })) return true; return false })()`)
+    check(wp235 && await js('!!window.__map2d()._getWaypoint()'), 'BUG-235: no waypoint could be set during the job')
     await js('(m => window.__day().advanceMinutes(Math.max(0, Math.ceil(0.85 * m.mission.par - m.elapsed))))(window.__mission())')
     check(await js('window.__mission().state') === 'running', 'the line settled before its last target fell')
     await js('window.__site().targets.forEach(t => { t.smashed = true })')
     check(await until(() => js('window.__mission().state === "done"'), 5000), `felling the last target did not settle the line: ${await js('window.__mission().state')}`)
+    // BUG-235: a waypoint set during the job is live again the moment it ends; the HUD poll must not rewrite the card
+    // (it replayed the reveal at 10 Hz). Count #mp-body rewrites over 1.5 s once the first render is in.
+    await sleep(500)
+    await js(`window.__rw235 = 0; new MutationObserver(m => { window.__rw235 += m.length })
+      .observe(document.getElementById('mp-body'), { childList: true, subtree: true, characterData: true })`)
+    await sleep(1500)
+    const rw = await js('window.__rw235')
+    check(rw === 0, `BUG-235: the result card's body was rewritten ${rw} times in 1.5 s with a waypoint set`)
     const res = await js(`(m => { const r = m.result, th = m.mission.terms?.thresholds ?? { S: 0.652, A: 0.707, B: 0.794, C: 1 }
       return { letter: r.letter, want: 'SABC'.split('').find(l => r.ratio <= th[l]) ?? 'D', ratio: r.ratio } })(window.__mission())`)
     check(res.letter === res.want && res.letter !== 'S', `the line is not lettered on time: ${JSON.stringify(res)}`)
@@ -1580,6 +1590,8 @@ const STEPS = [
       `the result card does not count every target smashed: "${await js('document.getElementById("mp-body")?.textContent')}"`)
     check(await js('window.__econ.money') === w0, `the requisition line paid for its targets: $${w0} → $${await js('window.__econ.money')}`)
     await js('document.getElementById("mp-accept").click()')
+    check(await until(() => js('/to the waypoint/.test(document.querySelector("#mission-hud .hud-text")?.textContent ?? "")'), 3000), `BUG-235: after continue the waypoint's HUD line is gone: "${await js('document.querySelector("#mission-hud .hud-text")?.textContent')}"`)
+    await js('window.__map2d()._onWaypoint(null)')
     await tap(' ')   // brake off: the next step parks fresh
     await sleep(300)
     // DEC-403: a BOARD demolition job (a farm's or a work site's, wherever one is live, the way the save step takes its
