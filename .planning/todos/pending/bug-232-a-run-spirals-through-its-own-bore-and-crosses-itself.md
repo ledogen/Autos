@@ -92,6 +92,7 @@ within 40 m of the crossing. BUG-230's "decks 0.9–2.0 m apart" was the shipped
 - [x] Census main vs branch, 302 seeds (300 random + tutorial 1872706826 + 948023748): self 5 -> 0, near-self 3 -> 0, run × run no-junction 30 -> 30 (none up). Components unchanged on all 302; 15 seeds differ (runs +1..+9 on 13, infeasible 15->14 on one, runs -1 on 3237493602). 400-seed no-throw sweep: 402 rows, 0 failures.
 - [x] Affected gates: run-all 93 selected, all 91 run green. cdp-smoke PASS (41 steps, 0 console errors); pad-e2e ALL OK (104 checks, no console errors); wip/bug-232/sheet-fix.jpg made (both loops gone from the top-down).
 - [x] Lost link on 3237493602 traced and fixed: edges/junctions/nodes now equal main (see Log 2026-11-19). Re-census 302 seeds: edges up on 12, equal on 290, down on 0.
+- [x] Re-proof on merged head c50466bb (2026-11-19): 402-row no-throw sweep 0 errors; tutorial stats identical; dead ends checked on the 12 differing seeds; smoke + pad-e2e + self-crossing gate green.
 - [ ] Run × run no-junction crossings (30 sites / 21 seeds) ticketed separately.
 
 ## Open questions
@@ -127,3 +128,4 @@ Sheet `wip/bug-232/sheet.jpg` (567993018 and 2283335151, top-down + driver view)
   Proofs: gate self-crossing PASS (5 seeds, 0 self-crossings, sites 18.1-29.4 %); census 302 (branch re-run, main log kept): self 5→0, near 3→0,
   run × run 30→30, engine self-crossings in the warm window 17→0 (so no looping fallback ships), components equal on all 302, edges up 12 / down 0.
   Gates (run-all --serial --changed=src/corridor-router.js): 93 selected, 91/91 green. Fingerprint-world vs main: ALL IDENTICAL (6 windows). Not re-run: smoke, pad-e2e, 400-seed sweep.
+- 2026-11-19 lane agent, proof-only re-run on c50466bb (main merged; no road code moved). Sweep 402 seeds (400 + 1872706826 + 948023748, 2 procs): 402 ok, 0 errors/failures, 0 engine self-crossings. Tutorial 1872706826 branch: 187 runs, 186 edges, 156 nodes, 81 junctions, 1 comp = main. Differing seeds vs main census: 12 (edges +1..+3 on all, comps equal). Dead ends main->branch (degree-1 graph nodes): up +1 on 3715981284 (29->30, edges 194->196) and 1927274698 (26->27, edges 172->173); down 1 on 1257139844, 2465745196; equal on 8. Edges down on none. cdp-smoke PASS (41 steps), pad-e2e ALL OK (136 ok lines) first try, test/self-crossing PASS. Not checked: dead ends via the old 15-seed list (now 12 differ).
