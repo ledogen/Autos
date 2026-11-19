@@ -47,5 +47,6 @@ FEAT-266, FEAT-187, FEAT-282, FEAT-277
 the paper target halo (src/paper-route.js and its mesh)
 
 ## Log
+- 2026-11-18 lane s: night look checked: ring (Lambert + headlights, FEAT-180) is readable with the low beams on, near-black with lights off like every prop; no src change. White spike is drawn (_targetPipMat, 0.25 m radius), thin at distance.
 - 2026-11-18 lane s, land/feat-276-277-paper-throw: ring green (UI-STYLE --money #8ce99a, Lambert-lit like every ring), centre a white 0.5 × 1.0 m spike; the demolition halo keeps the old white ring and pip (DEC-414 names the paper's only). Sheet wip/paper-throw/sheet.jpg.
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118013250-sf5w).

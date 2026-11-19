@@ -50,5 +50,6 @@ FEAT-266, FEAT-64, FEAT-276, ASSET-91, FEAT-282, src/physics-engine.js
 src/paper-route.js · the thrown-paper body (physics-engine.js adapter only) · terrain-physics.js (POI colliders)
 
 ## Log
+- 2026-11-18 lane s: look sheet redone (wip/paper-throw/sheet.mjs). Night panel was black because the truck's lights spawn OFF (default mode 0) and the first shot used the free camera; with low beams on the ring and spike read. Cyan beam = the free camera's Teleport-here cursor, not the halo. Aimed throw at the ring centre lands 0.28 m off (bullseye). `_paperSizeIdx` TDZ on early scenario click exists on main too: not touched, see report. No src change.
 - 2026-11-18 lane s, land/feat-276-277-paper-throw: throw.js PaperThrows + debris.js 'paper' (authored hull, quadratic drag, rest clock); simulateThrow retired. Gate test/paper-throw.mjs; smoke papers step now waits for the paper to rest and score. 413-throw census (12 seeds, wip/paper-throw/measure.mjs): tiers before/after bullseye 3.9/5.3, great 44.1/42.9, ok 46.7/45.3, bad 5.3/6.1, miss 0/0.5 %; rest point vs old landing median 0.46 m, p90 1.70 m. fingerprint-physics identical to main.
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118013250-sf5w).
