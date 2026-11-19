@@ -571,6 +571,16 @@ export function dressYard (q, seed, yard) {
 }
 
 /**
+ * FEAT-297: world Y of the top of marker `q`'s solid — its tallest collision box on the carved ground it stands on
+ * (the same boxes queryContact tests), or the placeholder cube. The route-end arrow hovers just over it.
+ */
+export function poiTopY (q) {
+    const c = q.collision, cube = POI_PARAMS.poiCubeSize
+    const boxes = c?.boxes ?? [{ c: null, s: c?.size ?? [cube, cube, cube] }]
+    return (q.baseY ?? q.y) + Math.max(...boxes.map(b => (b.c ? b.c[1] : b.s[1] * 0.5) + b.s[1] * 0.5))
+}
+
+/**
  * ASSET-32: a model's collision plus the vehicles its roster slot parks on the pad (`parked`, each
  * { key, x, z, yaw } in the model's frame). A collider box carries no yaw of its own, so a parked
  * vehicle stands at a quarter turn to the model: its boxes then stay axis-aligned, x and z swapped.

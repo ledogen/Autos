@@ -1276,15 +1276,62 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
         }
         return true
     }
-    let cl = null, first = null, wet = null
-    for (const [p, extra] of rungs) {
-        const c = attempt(p, extra)
-        if (!c || !(c.length > 1e-6)) continue
-        if (!clearsDiscs(c)) { wet ??= c; continue }
-        if (!first) first = c
-        if (profileFeasible(c, yA, yB, hCoarse, { costs })) { cl = c; break }
+    // BUG-232 — A ROAD MUST NOT CROSS ITSELF IN PLAN, and that test is on the FITTED line too.
+    //
+    // The lattice state is (cell, deck bin): nothing in it remembers the plan view, so where a node
+    // sits low under a ridge the grade price buys length as a HELIX — the path passes over its own
+    // earlier pass 16-37 m higher. Nothing downstream can build that (bridges are de-scoped, QUAL-27):
+    // the junction pass reads it as an at-grade X and FEAT-19's lift eases one pass onto the other,
+    // which shipped 97-224 % ramps on 5 traced seeds. One of the five (661772743) was not a lattice
+    // loop at all — simplifyRDP's 32 m chord cut across a near-loop — so only the fitted line is a
+    // sound test. A looping rung is retried ONCE on the same rung, pin kept, with a one-cell (32 m)
+    // no-go disc on its crossing, so the search spends the length elsewhere. Only if that still
+    // loops does it fall through like a wet one. Pins are kept on purpose: on 3237493602 the
+    // unpinned rung was clean but left its node along a sibling edge and crossed it three times,
+    // so the plan layer's crossing delete (BUG-57) dropped the edge — a lost link. The pinned
+    // uncapped rung was clean and clear of the sibling (order below). A looping line is still
+    // kept, below a wet one, as the very last resort — the network never disconnects.
+    const XSEP = 30                          // two hits closer than this in arc are one bend, not a loop
+    const selfCrossing = (cl2) => {
+        const L = cl2.length, pts = []
+        for (let s = 0; s < L + DISC_STEP; s += DISC_STEP) pts.push(cl2.pointAt(Math.min(s, L)))
+        // ponytail: O(n²) segment pairs — ~1 ms on a 1 km edge (250 segments); grid-bucket them if edges grow 10×
+        for (let i = 0; i < pts.length - 1; i++) {
+            const a = pts[i], b = pts[i + 1], ex = b.x - a.x, ez = b.z - a.z
+            for (let j = i + Math.ceil(XSEP / DISC_STEP); j < pts.length - 1; j++) {
+                const c = pts[j], d = pts[j + 1], fx = d.x - c.x, fz = d.z - c.z
+                const den = ex * fz - ez * fx
+                if (Math.abs(den) < 1e-10) continue
+                const t = ((c.x - a.x) * fz - (c.z - a.z) * fx) / den, u = ((c.x - a.x) * ez - (c.z - a.z) * ex) / den
+                if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return { x: a.x + t * ex, z: a.z + t * ez }
+            }
+        }
+        return null
     }
-    return { cl: cl ?? first ?? wet ?? new Centerline([]) }
+    let cl = null, first = null, wet = null, loop = null
+    const tryRung = (p, extra) => {
+        let c = attempt(p, extra)
+        if (!c || !(c.length > 1e-6)) return false
+        if (!clearsDiscs(c)) { wet ??= c; return false }
+        const x = selfCrossing(c)
+        if (x) {
+            loop ??= c
+            c = attempt(p, { ...extra, blockedDiscs: [...(blockedDiscs ?? []), x.x, x.z, 32] })
+            if (!c || !(c.length > 1e-6) || !clearsDiscs(c) || selfCrossing(c)) return 'loop'
+        }
+        if (!first) first = c
+        if (profileFeasible(c, yA, yB, hCoarse, { costs })) { cl = c; return true }
+        return false
+    }
+    // A helix is the search buying GRADE with length under the structure cap, so when the pinned rung
+    // loops, the pinned UNCAPPED rung (2) comes before the unpinned one (1): spend structure, keep the pin.
+    const order = rungs.map((_, i) => i)
+    for (let n = 0; n < order.length; n++) {
+        const r = tryRung(...rungs[order[n]])
+        if (r === true) break
+        if (r === 'loop' && pin && order[n] === 0) order.splice(1, 2, 2, 1)
+    }
+    return { cl: cl ?? first ?? wet ?? loop ?? new Centerline([]) }
 }
 
 // ── Stage 3: curve generation ──────────────────────────────────────────────────────────────────

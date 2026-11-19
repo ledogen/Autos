@@ -341,7 +341,14 @@ export class DaySystem {
      */
     eat (satietyH) {
         runLog.on && runLog.event('eat', { satietyH, fedLeftH0: this.fedLeftH(), hungry: this.hungry() })
-        this._fedUntilH = Math.max(this._fedUntilH, this.clockH() + Math.max(0, this.fedLeftH()) + this.mealGainH(satietyH))
+        this._fedUntilH = this.clockH() + this.leftAfterMeal(satietyH)
+    }
+
+    /** FEAT-301 (DEC-438): what fedLeftH() reads right after a meal of `satietyH` — eat()'s own result, so the hover
+     *  preview of the post-meal state can never disagree with it. */
+    leftAfterMeal (satietyH) {
+        const left = this.fedLeftH()
+        return Math.max(left, Math.max(0, left) + this.mealGainH(satietyH))
     }
 
     /**
@@ -368,9 +375,8 @@ export class DaySystem {
     /** FEAT-169: the energy meter's hunger word — stuffed / full / content / peckish / hungry — or null with hunger
      *  off. A word, never a number; since FEAT-198 (owner, 2026-11-11) it sits over its own scrolling bar, like energy.
      *  'hungry' exactly when hungry() is. */
-    hungerWord () {
+    hungerWord (left = this.fedLeftH()) {
         if (!DAY_PARAMS.hungerOn) return null
-        const left = this.fedLeftH()
         return DAY_PARAMS.hungerWords.find(([h]) => left >= h)?.[1] ?? 'hungry'
     }
 

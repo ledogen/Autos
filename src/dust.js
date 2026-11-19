@@ -284,6 +284,7 @@ export class DustSystem {
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           #include <fog_fragment>
+          #include <dithering_fragment>   // BUG-228: last, after fog (main.js)
         }`)
     this._mesh = mesh
     this._aPos = aPos; this._aParam = aParam; this._aColor = aColor; this._aShape = aShape
