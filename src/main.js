@@ -11674,8 +11674,11 @@ function loop (t) {
     // Story mode (beta): the countdown digit and the elapsed/distance readout are live values,
     // so they repaint on the HUD's ~10 Hz cadence rather than per physics step. ('staging' is a
     // static line, but it costs one string write and keeps the state→HUD mapping in one place.)
+    // BUG-235: never while a result card is up ('done'). A waypoint (or the tutorial's drive) is live again the moment the
+    // job ends, and this repaint would rewrite the card at 10 Hz, replaying its reveal: the first coin, the deed's fade-in.
     if (missionSystem && (missionSystem.state === 'countdown' || missionSystem.state === 'staging'
-                          || missionSystem.state === 'running' || missionSystem.state === 'loading' || _tutDrive() || _waypointOn())) _renderMissionUI()
+                          || missionSystem.state === 'running' || missionSystem.state === 'loading'
+                          || (missionSystem.state !== 'done' && (_tutDrive() || _waypointOn())))) _renderMissionUI()
     // FEAT-88: a load whose job is gone (cancelled, exited, a new run) leaves with it.
     if (_haul && (!missionSystem?.isOnJob() || missionSystem.mission !== _haul.mission)) _haulClear()
     // FEAT-96: …and so does a freight load, on delivery, clean-up or a new run. (A debug load has no
