@@ -12,9 +12,10 @@ lane: unplaced
 # BUG-236: a degree-2 connector bend meets two different banks — hump, dip and a crease at the node
 
 ## Next steps
-Owner: pick a fix on the card `bug236-bumps-kink` (recommended: X2, the node decides the BUG-90 run-off for both legs,
-plus a follow-up diagnosis of connector-bend bumps in general). Then a road lane builds it with a gate on this site
-plus the census sites, and looks at the one site X2 makes worse.
+Option 1 is BUILT on land/bug-236-bumps-kink (lane b) as a plain defect fix; the card `bug236-bumps-kink` is still the
+owner's (his pick can add to it or reverse it; no decision record until he answers). Next: land it once the 400-seed
+sweep, the affected gates and the smokes are green (see Log), then a separate diagnosis of matched-bank connector-bend
+bumps (the wider class, 79 of 203 bends over 15 cm after this fix).
 
 ## Summary
 Two runs meet at a degree-2 node with a 42° kink; a connector arc (R ≈ 24 m) carries the road round it. BUG-90 runs
@@ -78,8 +79,13 @@ this one has a connector).
 - [x] Cause named and proven by experiment; today's landings cleared
 - [x] Census over 60 random seeds
 - [x] Screenshot sheet (`/Users/ledogen/CodeShit/CarGame/wip/bug-236/sheet.jpg`)
-- [ ] Owner picks a fix
-- [ ] Fix + gate (this site, plus the census sites), road gates green
+- [ ] Owner picks a fix (option 1 built meanwhile)
+- [x] Fix: the node decides the BUG-90 run-off (`_applyJunctionBlend` · `bankCrest` tests both legs' pre-blend banks)
+- [x] Gate `connector-bank-runoff` (capture site + 7 census sites): red on main (14 checks), green on the branch
+- [x] Census main vs branch: 7 of 7 same-cause bends now agree at the node; capture site 28.2 → 4.2 cm
+- [x] Fingerprint: network/profiles/junctions/POIs identical everywhere; deck changes only within 61 m of a connector node
+- [x] Before/after sheet (`/Users/ledogen/CodeShit/CarGame/wip/bug-236/sheet-fix.jpg`)
+- [ ] 400-seed no-throw sweep, affected gates, cdp-smoke + pad-e2e (running, see Log)
 
 ## Open questions
 - Which fix (card `bug236-bumps-kink`). Is the "small kink" the crease or the dash stub at the node?
@@ -94,3 +100,16 @@ CarGame-machine (git-ignored): `walk2.mjs` (deck walk), `census.mjs`, `sheet.mjs
 ## Log
 - 2026-11-19: diagnosis on land/bug-236-bumps-kink (lane b). No src change. Experiments X1/X2/X3 in scratch copies only.
   Not checked: an in-game drive at speed; story-mode pruning (census used the free-roam network; this site matches).
+- 2026-11-19 (lane b): option 1 built (0487cef0), gate `connector-bank-runoff` (0b096f51): capture 28.2 → 4.2 cm wheel-track,
+  node banks 10.73° → 0° mismatch; ribbon vs physics ≤ 0.6 cm at all 8 sites. Census (203 bends, identical to X2): the 7
+  same-cause bends all agree at the node; 5 better (16.3→7.1, 5.7→4.4, 29.6→15.1, 6.4→4.3, 21.7→15.0 cm), 2 worse:
+  3245191168 (285.1, 223.1) 15.4→22.5 and 3075315200 (550.4, 7) 16.2→16.7. Other worse (> 1 mm): 4184160384 (−953.5,
+  −38.9) 8.8→9.4, 2798042624 (−176.8, −344.7) 8.3→10.3, 611829248 (−477.6, 155.9) 20.4→21.2, 2395778304 (277, −743.9)
+  14.2→15.2. Why 3245191168: main's leg kept the inherited crest-side 3.65° over its first 2.4 m (this bug, smaller); its
+  high inside edge part-filled a matched-bank sag at the node (centre −10 → −17 cm). Both legs flat, the wider-class sag
+  shows in full; keeping that bank would restore the capture hump, so no option-1 rule avoids it. Wider class > 15 cm:
+  82 → 79 (> 25 cm 19 → 18, summed bumps 29.56 → 29.09 m). 3 mismatches left have no crest-side leg (not this cause).
+  Fingerprint: 6 windows: seed6/seed11 story differ in surface/carve/tiles (+water seed6), 4 play windows identical;
+  tutorial 1872706826 (r 1400): network/profiles/junctions/POIs identical, surface/carve/tiles/water differ at 5 of 19
+  connector bends (bank run-off on the pavement; earthwork slopes 13–21 m out up to 1.44 m). Every 2 m deck cell that
+  moved > 1 mm in the three story windows lies within 61 m of a connector node.
