@@ -1276,6 +1276,13 @@ function _closeMenus (except = null) {
   if (except) return   // BUG-187: the map opening shuts the cards but is no transition: a tow's owed answer stands
   _towOwed = _shopAfterCard = false   // BUG-178's owed answer belongs to the seat it was owed at
 }
+/** THE MAP TOGGLE (all three entry points: the M tap, the M key, the cockpit button). BUG-237 (owner, 2026-11-19): opening
+ *  the map shuts every menu through its own close, and the pump's close is the CHECKOUT: so the map does not open over an
+ *  open pump. Closing an open map is always allowed. */
+function _toggleMap (closeMenus = false) {
+  if (!map2d.isOpen()) { if (fuelStop.isOpen) return; if (closeMenus) _closeMenus('map') }   // BUG-187: a card at the POI would sit on the map's own
+  map2d.toggle()
+}
 window.__openMenus = () => _menus.filter(m => m.isOpen()).map(m => m.name)   // dev handle — test/cdp-smoke.mjs skipMenus
 
 // ── "spawn point set" toast (feature/teleport) ────────────────────────────────────────────
@@ -5237,7 +5244,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keyup', e => {
   if ((e.key !== 'm' && e.key !== 'M') || !_skipRelease()) return
   // A tap: the map, as M always is — unless a card owns the screen.
-  if (!dialogueSystem.holding && !document.body.classList.contains('stage-on')) { if (!map2d.isOpen()) _closeMenus('map'); map2d.toggle() }
+  if (!dialogueSystem.holding && !document.body.classList.contains('stage-on')) _toggleMap(true)
 }, { capture: true })
 window.addEventListener('blur', _skipRelease)   // a key let go in another window never comes back up here
 pad.skipHold = () => _tutDrive()
@@ -5691,9 +5698,10 @@ function _haulPick (offer) {
   const hardN = Math.floor((massLimits(TRUCK).hardKg - _carriedKg()) / HAUL_BUNDLE_KG)
   const afford = price > 0 ? Math.floor(economySystem.money() / price + 1e-9) : sp.stock
   const max = Math.max(0, Math.min(sp.stock, hardN, afford))
+  const limit = max >= sp.stock ? null : afford <= hardN ? 'wallet' : 'truck'   // BUG-237 B: which cap binds, for the note line
   const n = Math.max(1, Math.min(max, parseInt(document.getElementById('mp-count')?.value, 10) || max))
   const range = payRange(j.par, payTier, sp.payMult * n)   // FEAT-199: a bonus haul tips in cash too
-  return { sp, offerId: offer.id, price, max, n, cost: Math.round(n * price * 100) / 100,
+  return { sp, offerId: offer.id, price, max, limit, n, cost: Math.round(n * price * 100) / 100,
            base: range.base, maxPay: range.max,
            need: sp.bonus ? rankTable('haul', region, sp.thingId)[sp.bonus.gate] : null,
            deedNeed: rankTable('haul', region, sp.thingId).B }
@@ -5722,7 +5730,9 @@ function _syncHaulPick (pick) {
   // value, dropped the warning — a stutter loop. They live on their OWN fixed-height line now (CSS
   // #mp-pick-note), so nothing the readout says can move the slider. No letter (owner, 2026-10-23):
   // the count is the threshold.
+  // BUG-237 B (owner: "why can I only take 11? It says 30 available"): the note names the cap that binds. [DEFAULT] wording.
   if (note) note.innerHTML = pick.max < 1 ? '' : [
+    pick.limit === 'wallet' ? `you can afford ${pick.max} of ${pick.sp.stock}` : pick.limit === 'truck' ? `the truck carries ${pick.max} of ${pick.sp.stock}` : '',
     pick.need != null && pick.n < pick.need ? `too few for the ${pick.sp.bonus.name}` : '',
     pick.n < pick.deedNeed ? `deed: ${pick.n < rankTable('haul', economySystem.terms().region, pick.sp.thingId).C ? '0' : '1/2'} at this count` : '',
   ].filter(Boolean).join(' &middot; ')
@@ -7572,7 +7582,7 @@ document.getElementById('cp-light')?.addEventListener('click', (e) => {
   _renderCampUI()
 })
 // FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
-document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
+document.getElementById('cp-map')?.addEventListener('click', (e) => { _toggleMap(); e.currentTarget.blur() })
 // FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
 document.getElementById('cp-item')?.addEventListener('click', (e) => { inventoryScreen.request(); e.currentTarget.blur() })
 document.getElementById('cp-hours')?.addEventListener('input', _syncSleepRow)
@@ -9077,8 +9087,7 @@ document.addEventListener('keydown', e => {
     // of opening or re-targeting the map — mission framing is the live one — left the map's cap at
     // the free-roam 2000 m, short of a 2500 m region, so the region lock never engaged and panning
     // re-streamed around the cursor. The map now covers its own region whoever opened it.
-    if (!map2d.isOpen()) _closeMenus('map')   // BUG-187: a card at the POI would sit on the map's own
-    map2d.toggle()
+    _toggleMap(true)
     // Freecam pointer-lock swallows the mouse for FPS look — release it so the map is
     // interactive. The canvas click handler in camera.js re-locks it on return to freecam.
     if (document.pointerLockElement) document.exitPointerLock()

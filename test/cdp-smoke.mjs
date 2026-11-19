@@ -3379,6 +3379,12 @@ const STEPS = [
     await hold(0, 2500)
     const g1 = await js('window.__vs.fuel.gal')
     check(g1 - g0 > 1, `A held 2.5 s pumped ${(g1 - g0).toFixed(2)} gal`)
+    // BUG-237: the map shuts every menu through its own close, and the pump's close is the checkout; so M (and the pad's
+    // View, a tap) does not open the map over an open pump: the pump stays up and the wallet is untouched.
+    await key('m', true); await sleep(100); await key('m', false); await sleep(300)
+    await btn(8); await sleep(300)
+    check(!await js('window.__map2d().isOpen()') && await js('document.getElementById("pump-display").classList.contains("on")') && await js('window.__openMenus().includes("pump")') && await js('window.__econ.money') === m0,
+      `BUG-237: M / View at an open pump: ${JSON.stringify(await js('({ map: window.__map2d().isOpen(), menus: window.__openMenus(), money: window.__econ.money })'))} (money was ${m0})`)
     await btn(5)
     check(await until(() => js(`window.__econ.money < ${m0} - 0.01`), 2000), 'RB at the pump did not pay')
     // Mom's doorstep: its camp card on the D-pad, the sleep timer's slider on ←/→, B back out of both.
