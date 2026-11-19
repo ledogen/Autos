@@ -1276,15 +1276,59 @@ export function routeEdgeV2(spec, hTrunc, hCoarse) {
         }
         return true
     }
-    let cl = null, first = null, wet = null
-    for (const [p, extra] of rungs) {
-        const c = attempt(p, extra)
-        if (!c || !(c.length > 1e-6)) continue
-        if (!clearsDiscs(c)) { wet ??= c; continue }
-        if (!first) first = c
-        if (profileFeasible(c, yA, yB, hCoarse, { costs })) { cl = c; break }
+    // BUG-232 — A ROAD MUST NOT CROSS ITSELF IN PLAN, and that test is on the FITTED line too.
+    //
+    // The lattice state is (cell, deck bin): nothing in it remembers the plan view, so where a node
+    // sits low under a ridge the grade price buys length as a HELIX — the path passes over its own
+    // earlier pass 16-37 m higher. Nothing downstream can build that (bridges are de-scoped, QUAL-27):
+    // the junction pass reads it as an at-grade X and FEAT-19's lift eases one pass onto the other,
+    // which shipped 97-224 % ramps on 5 traced seeds. One of the five (661772743) was not a lattice
+    // loop at all — simplifyRDP's 32 m chord cut across a near-loop — so only the fitted line is a
+    // sound test. A looping rung falls through like a wet one (the unpinned rung was clean in 4 of
+    // 5). When EVERY rung loops (400290281: a 4-cell descending helix round one point, pinned or
+    // not), ONE retry of the unpinned rung with a one-cell no-go disc on the crossing makes the
+    // search spend the length elsewhere. A looping line is still kept, below a wet one, as the very
+    // last resort — the network never disconnects.
+    const XSEP = 30                          // two hits closer than this in arc are one bend, not a loop
+    const selfCrossing = (cl2) => {
+        const L = cl2.length, pts = []
+        for (let s = 0; s < L + DISC_STEP; s += DISC_STEP) pts.push(cl2.pointAt(Math.min(s, L)))
+        // ponytail: O(n²) segment pairs — ~1 ms on a 1 km edge (250 segments); grid-bucket them if edges grow 10×
+        for (let i = 0; i < pts.length - 1; i++) {
+            const a = pts[i], b = pts[i + 1], ex = b.x - a.x, ez = b.z - a.z
+            for (let j = i + Math.ceil(XSEP / DISC_STEP); j < pts.length - 1; j++) {
+                const c = pts[j], d = pts[j + 1], fx = d.x - c.x, fz = d.z - c.z
+                const den = ex * fz - ez * fx
+                if (Math.abs(den) < 1e-10) continue
+                const t = ((c.x - a.x) * fz - (c.z - a.z) * fx) / den, u = ((c.x - a.x) * ez - (c.z - a.z) * ex) / den
+                if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return { x: a.x + t * ex, z: a.z + t * ez }
+            }
+        }
+        return null
     }
-    return { cl: cl ?? first ?? wet ?? new Centerline([]) }
+    let cl = null, first = null, wet = null, loop = null, loopAt = null
+    const tryRung = (p, extra) => {
+        const c = attempt(p, extra)
+        if (!c || !(c.length > 1e-6)) return false
+        if (!clearsDiscs(c)) { wet ??= c; return false }
+        const x = selfCrossing(c)
+        if (x) { if (!loop) { loop = c; loopAt = x } return false }
+        if (!first) first = c
+        if (profileFeasible(c, yA, yB, hCoarse, { costs })) { cl = c; return true }
+        return false
+    }
+    for (const [p, extra] of rungs) if (tryRung(p, extra)) break
+    if (!cl && !first && loopAt) {
+        const discs2 = [...(blockedDiscs ?? []), loopAt.x, loopAt.z, 32]
+        const c = corridorSearch(ax, az, yA, bx, bz, yB, hTrunc, {
+            margin, blockedDiscs: discs2, costs, occupied, hCoarse, ...(sib ?? {}) })
+        const c2 = c ? corridorCenterline(c.path, {}) : null
+        if (c2 && c2.length > 1e-6 && clearsDiscs(c2) && !selfCrossing(c2)) {
+            first = c2
+            if (profileFeasible(c2, yA, yB, hCoarse, { costs })) cl = c2
+        }
+    }
+    return { cl: cl ?? first ?? wet ?? loop ?? new Centerline([]) }
 }
 
 // ── Stage 3: curve generation ──────────────────────────────────────────────────────────────────
