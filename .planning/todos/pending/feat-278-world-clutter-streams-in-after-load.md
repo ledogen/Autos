@@ -12,9 +12,9 @@ lane: Engine & world
 # FEAT-278: World clutter: add it after the loading screen, streamed in slowly
 
 ## Next steps
-Built on `land/feat-278-clutter-stream` (the system + its streaming rule, carrying today's clutter: the POI yards). Owner
-looks (owed card `feat278-clutter-look`). Signs (FEAT-279's dive) and mailboxes (FEAT-280, branch
-`land/feat-275-280-mailboxes`, held) come in through the same `_clutter.add()` once he says go.
+Owner: "Good" (card `feat278-clutter-look`, 2026-11-19). The orchestrator lands `land/feat-275-280-mailboxes` first, then this
+branch (it already carries main + mailboxes; the route-house mailboxes come in through `_clutter.add()` here). Signs
+(FEAT-279's dive, DEC-430 own pool) come in through the same queue later.
 
 ## Summary
 Add world clutter so the world feels more interesting. It goes in after the initial loading screen: the player does not see it all at once, so it streams in slowly right after a new game starts.
@@ -28,7 +28,8 @@ Owner's words, verbatim (inbox 20261118013441-v9hd):
 One owner message (inbox 20261118013441-v9hd) split into three tickets: FEAT-278 (the clutter system and its streaming), FEAT-279 (the sign-system proposal), FEAT-280 (random mailboxes).
 
 ## Tracker
-- [ ] World clutter exists as one system, signs and mailboxes included: the system exists (src/clutter.js) and carries the yards; signs and mailboxes wait on FEAT-279 / FEAT-280
+- [ ] World clutter exists as one system, signs and mailboxes included: src/clutter.js carries the yards and (merged 2026-11-19) the route-house mailboxes; signs wait on FEAT-279
+- [x] Owner look (card feat278-clutter-look): "Good", 2026-11-19
 - [x] It is built after the loading screen and streams in after a new game starts, nearest the truck first (2026-11-18)
 - [x] The loading screen (cold-load budget) does not get longer: rebuild 13.4 / 13.3 ms vs main 14.1 / 13.6 ms (go-live 14.0 s both)
 
@@ -59,3 +60,4 @@ src/ (a new clutter module) · src/main.js load path
   the 10 s after load 54.8 / 56.3 ms vs main 48.8 / 62.9 (box at load 6–9: same). No 2 km drive bench: nothing of this runs after those 2 frames.
 - 2026-11-18 on main 24929f9b merged: affected gates 24/24; smoke 1 failed at the known DEC-357 blink flake, re-run PASS
   40/40; pad-e2e ALL OK. Sheet wip/feat-278/sheet.jpg (seeds 4182, 77031, 1018248781; main | branch identical).
+- 2026-11-19 landing prep after the owner's "Good": merged land/feat-275-280-mailboxes (with main 01f3ea28): 900dc1f3 resolved 2 main.js hunks (yards keep `_clutter.add`; the route-house mailbox loop now also queues through `_clutter` and its key joins the prefetch), b8a11803 clean. Affected gates 63/63 green; fingerprint-world vs main: only `poi` (seed6/seed11 origin story, the mailbox satellites), rest identical; tutorial seed 1872706826: only `poi` satellites (+1 mailbox per residence). Sweep: none of this branch's files reach the headless build, so the mailboxes sweep (400/400) covers it. cdp-smoke PASS 41 steps, pad-e2e ALL OK.
