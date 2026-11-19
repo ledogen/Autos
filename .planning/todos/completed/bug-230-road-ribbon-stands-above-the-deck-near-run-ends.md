@@ -1,7 +1,7 @@
 ---
 id: BUG-230
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-18
 source: BUG-221 census (wip/bug-221/census.mjs), 2026-11-18
@@ -78,7 +78,7 @@ one 124° elbow (0.146 m, the straight walk leaves the road). The mesh shares th
       bores need no fix. Bare-join class: option A built (both legs ease to the mean bank): worst step 0.267 -> 0.035 m,
       none over 5 cm, connector joins unchanged. Gate `test/bare-join.mjs`.
 - [x] Close-out proofs on the branch: 90 affected gates green, world fingerprint vs main, before/after sheet, smoke, pad, 400-seed sweep (Log).
-- [ ] Landed on main (orchestrator).
+- [x] Landed on main (orchestrator).
 
 ## Decisions
 - DEC-068 (pads weld), DEC-190 (2.5 cm seam bar), DEC-260 (fix by construction) govern this. None conflicts with the options.

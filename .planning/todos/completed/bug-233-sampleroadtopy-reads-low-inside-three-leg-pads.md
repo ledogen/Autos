@@ -1,7 +1,7 @@
 ---
 id: BUG-233
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-18
 source: BUG-230 census, 2026-11-18
@@ -21,7 +21,7 @@ Inside pads with 3 or more legs the drawn mesh and the physics collider both rid
 - [x] Reproduced and measured on 13+ random seeds.
 - [x] Cause named in the code.
 - [x] Fixed with a gate, fingerprint and a 400-seed no-throw sweep (below).
-- [ ] Landed on main (orchestrator).
+- [x] Landed on main (orchestrator).
 
 ## Log
 - 2026-11-18 minted by the orchestrator from the BUG-230 census.

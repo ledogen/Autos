@@ -1,7 +1,7 @@
 ---
 id: BUG-229
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-18
 source: owner, 2026-11-18 (card bug217-shadow-seam-look) — "Now when the near map draws grass at the crest of a hill, the course map terrain doesn't quite line up with it so there's a little seam, a little disconnect. Same place in the tutorial world around the same time you can see this."
