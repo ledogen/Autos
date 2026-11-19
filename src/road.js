@@ -12012,16 +12012,12 @@ export class RoadSystem {
             let vNode2 = PAR_REF.mu * PAR_REF.g * PAR_REF.junctionRadius
             let inside = null   // BUG-90: a gentle deg-2 kink's inside direction (see _applyJunctionBlend)
             if (d === 2) {
-                const strands = this._graphNodeStrands(id), kinkMin = (this._params.roadJunctionKinkDeg ?? 0) * Math.PI / 180
+                const strands = this._graphNodeStrands(id)
                 if (strands && strands.length === 2) {
                     const dot = strands[0].wx * strands[1].wx + strands[0].wz * strands[1].wz
                     const kink = Math.PI - Math.acos(Math.max(-1, Math.min(1, dot)))
                     if (kink >= DEG2_PLANE_KINK) flatCamber = true
-                    // BUG-230: only where a connector is BUILT (_detectNodeJunctions admits a deg-2 node above
-                    // roadJunctionKinkDeg, on the same first-chord kink): the bank run-off is for the fillet's inside
-                    // apex. Below it the two ribbons meet bare, and running ONE leg's bank off (the other keeps it,
-                    // seeded from the raw end, _runEndCamber) left a camber step at the join, 0.27 m at the edge.
-                    else if (kink > kinkMin && kinkMin > 0) inside = { x: strands[0].wx + strands[1].wx, z: strands[0].wz + strands[1].wz }
+                    else inside = { x: strands[0].wx + strands[1].wx, z: strands[0].wz + strands[1].wz }
                     const rEff = kink > PAR_REF.junctionDeadband ? PAR_REF.junctionRadius / Math.min(1, kink / (Math.PI / 2)) : Infinity
                     vNode2 = Math.min(PAR_REF.vMax * PAR_REF.vMax, PAR_REF.mu * PAR_REF.g * rEff)
                 }
