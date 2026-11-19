@@ -1,7 +1,7 @@
 ---
 id: BUG-200
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-17
 source: owner, 2026-11-17 — "ticket #9 for voilating max grade significantly. id like to find a fix which might end up being to drop it all together."
