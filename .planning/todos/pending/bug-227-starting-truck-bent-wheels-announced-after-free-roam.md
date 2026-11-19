@@ -37,4 +37,4 @@ baseline). Seen in /Users/ledogen/CodeShit/CarGame-spare-base/wip/feat-288-p6/sh
 - 2026-11-18 minted by the orchestrator from the P6 and P8 agents' findings.
 - 2026-11-18 f7295c10: fix in src/alerts.js pollWords + gate block. Siblings: every machine-word slot (filter, oil, tire,
   engine) shared the stale-steps path, all covered; damage-screen drop detector already rebaselined (BUG-184).
-  Gates (affected 2/2) green; smoke + pad in wip/bug-227/.
+  Gates (affected 2/2) green; cdp-smoke PASS 40/40, pad-e2e ALL OK (logs wip/bug-227/).
