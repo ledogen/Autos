@@ -1,7 +1,7 @@
 ---
 id: BUG-227
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-18
 source: lane agents (FEAT-288 P6 strip, P8 check), 2026-11-18

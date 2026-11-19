@@ -1,7 +1,7 @@
 ---
 id: BUG-231
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-18
 source: paper-throw sheet script, 2026-11-18
