@@ -7,7 +7,7 @@
  *
  * ── QUAL-18: smooth fade at the shadow-map edge instead of a hard cutoff ─────────────────────────
  *
- * The near directional light (`sun`) renders a tight ±20 m ortho shadow box that follows the view
+ * The near directional light (`sun`) renders a tight ±40 m ortho shadow box that follows the view
  * centre (main.js; the terrain cascade `sunFar` is a second light with its own box).
  * Everything past the box edge is simply unshadowed, so driving shows a hard
  * moving line where the world's shadows end. This patches THREE.ShaderChunk so the shadow
@@ -26,8 +26,8 @@
  *
  * @param {object} [opts]
  * @param {number} [opts.fadeStart=0.72] — 0..1 fraction of the half-extent where the fade
- *   begins (0.72 ≈ the outer 28 % of the box). main.js passes 0.82: full shadows to ~16 m of
- *   the ±20 m near frustum, gone by 20 m.
+ *   begins (0.72 ≈ the outer 28 % of the box). main.js passes 0.82: full shadows to ~33 m of
+ *   the ±40 m near frustum, gone by 40 m.
  */
 import * as THREE from 'three'
 
@@ -51,35 +51,49 @@ export function installShadowEdgeFade(opts = {}) {
 }
 
 /**
- * BUG-78: couple the far cascade to the near map's shadow.
+ * BUG-78 + BUG-217: couple the two sun lights' shadows so they act as ONE shadow.
  *
- * main.js lights the world with two directional lights that SPLIT the key intensity (near `sun`
- * 40 %, far `sunFar` 60 % — SHADOW_FAR_SPLIT). In three a shadow only removes ITS OWN light's
- * share, so a caster had to sit in BOTH maps to throw a full-strength shadow. The truck did — and
- * the far map is only re-rendered every 64 m / on streaming (PERF: see the far-follow in loop()),
- * so its copy of the truck's shadow stayed pinned at the last re-render while the truck drove on:
- * a stale blob left behind on the road at speed until the next far pass wiped it.
+ * main.js lights the world with two directional lights that SPLIT the key intensity K (near `sun`
+ * n = 40 %, far `sunFar` f = 60 % — SHADOW_FAR_SPLIT). In three a shadow only removes ITS OWN light's
+ * share. Per receiver pixel let s_n be the near map's verdict (0 shadow … 1 lit, already faded to 1
+ * over QUAL-18's edge band and outside the box) and s_f the far map's. Direct sun then is:
  *
- * The fix takes the truck out of the far map (the far pass now renders with the vehicle hidden —
- * see renderFarShadowPass in main.js) and, here, makes the NEAR map's shadow factor multiply the
- * far light too. Net effect per receiver pixel:
- *   · truck shadow: near map says shadowed → both lights removed → full strength, from one crisp map.
- *   · terrain / POIs: in both maps as before; where the maps agree nothing changes, where the finer
- *     near map catches an edge the coarse far map missed, the near map now wins (full strength).
- *   · beyond the near box: near factor is 1 (QUAL-18 fade + out-of-frustum), far unchanged — the
- *     mountain-scale shadows keep their 60 % share exactly as authored.
- * One-directional on purpose: the far map never darkens the near light, so nothing outside ±20 m
- * changes and the look stays the one that was tuned.
+ *   near light · mix(1, s_n, s_f)  +  far light · s_f · s_n
+ *   = K · ( n + f·s_f )                      wherever s_n = 1 (outside the near box, its fade, clipped casters)
+ *   = K · s_n                                on far-lit ground (s_f = 1): the near map's crisp detail
+ *   = K · n                                  on far-shadowed ground (s_f = 0), WHATEVER the near map says
+ *
+ * So the radiance is the same function of the far map's verdict inside and outside the near map, and
+ * the near map can only add detail (the truck, props, fine terrain) on ground the far map calls lit.
+ *
+ * BUG-78 (the far term's × s_n): the truck is kept OUT of the far map (it is re-rendered only every
+ * 64 m, so its copy of the truck's shadow stayed pinned on the road — see the wrapped shadow pass in
+ * main.js). The near map alone throws the truck's shadow, at full strength because s_n gates both lights.
+ *
+ * BUG-217 (the near term's mix): BUG-78 first shipped as `near · s_n + far · s_f · s_n`. On ground
+ * the far map shades, that is K·n outside the near map but 0 inside it wherever the near map ALSO sees
+ * the caster: a patch 35 % darker that travelled with the truck. And the near map sees a hill only
+ * partly — its shadow camera sits 200 m up-sun of the truck, so casters further than that are behind
+ * its near plane, and the ±40 m box ends — so the patch's edge slid as the truck moved (owner,
+ * 2026-11-18: an edge ~20 m ahead and behind; a hill-shadow edge moving with the truck under a frozen
+ * sun). Far-shadowed ground now ignores the near verdict, so neither edge exists.
+ *
+ * Cost: the far map is sampled in the near light's iteration and reused in the far light's — the same
+ * two lookups as before, a mix and a multiply more.
  *
  * Index 0 is the near light because main.js adds `sun` before `sunFar` and three's light sort is
  * stable — the same assumption the terrain shader's `UNROLLED_LOOP_INDEX == 1` patch already leans
- * on (terrain.js). The terrain inlines this chunk at compile time, so it inherits the patch.
+ * on (terrain.js). The terrain inlines this chunk at compile time, so it inherits the patch. With a
+ * single shadowed light (NUM_DIR_LIGHT_SHADOWS 1) s_f stays 1 and this is three's stock shadow.
  */
 export function installNearShadowCoupling() {
     const chunk = THREE.ShaderChunk.lights_fragment_begin
     if (!chunk || chunk.includes('rsNearShadow')) return   // already patched (idempotent)
 
     const decl  = 'DirectionalLightShadow directionalLightShadow;'
+    const shadowOf = (k) => 'getShadow( directionalShadowMap[ ' + k + ' ], directionalLightShadows[ ' + k + ' ].shadowMapSize, ' +
+        'directionalLightShadows[ ' + k + ' ].shadowIntensity, directionalLightShadows[ ' + k + ' ].shadowBias, ' +
+        'directionalLightShadows[ ' + k + ' ].shadowRadius, vDirectionalShadowCoord[ ' + k + ' ] )'
     const apply = 'directLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( ' +
         'directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, ' +
         'directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, ' +
@@ -92,13 +106,16 @@ export function installNearShadowCoupling() {
         return
     }
     THREE.ShaderChunk.lights_fragment_begin = chunk
-        .replace(decl, decl + '\n\tfloat rsNearShadow = 1.0;\n\tfloat rsDirShadow = 1.0;')
+        .replace(decl, decl + '\n\tfloat rsNearShadow = 1.0;\n\tfloat rsFarShadow = 1.0;')
         .replace(apply,
-            'rsDirShadow = ' + apply.slice('directLight.color *= '.length) + '\n' +
-            '\t\t#if UNROLLED_LOOP_INDEX == 0\n' +
-            '\t\trsNearShadow = rsDirShadow;\n' +
-            '\t\t#else\n' +
-            '\t\trsDirShadow *= rsNearShadow;\n' +
+            '#if UNROLLED_LOOP_INDEX == 0\n' +
+            '\t\trsNearShadow = receiveShadow ? ' + shadowOf(0) + ' : 1.0;\n' +
+            '\t\t#if NUM_DIR_LIGHT_SHADOWS > 1\n' +
+            '\t\trsFarShadow = receiveShadow ? ' + shadowOf(1) + ' : 1.0;\n' +
             '\t\t#endif\n' +
-            '\t\tdirectLight.color *= rsDirShadow;')
+            '\t\tdirectLight.color *= mix( 1.0, rsNearShadow, rsFarShadow );\n' +
+            '\t\t#elif UNROLLED_LOOP_INDEX == 1\n' +
+            '\t\tdirectLight.color *= rsFarShadow * rsNearShadow;\n' +
+            '\t\t#else\n\t\t' + apply + '\n' +
+            '\t\t#endif')
 }

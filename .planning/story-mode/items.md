@@ -1241,7 +1241,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
   pump refill, an A–S gas-station reward).
 - **The mounted tire is 21 kg** (§1): the 12 kg tire plus the 9 kg wheel — *"whichever is the realistic
   one"*. Reverses 10-22's 18 kg.
-- **Shop part swaps off the tires** (springs, shocks and the rest) **pay the shop's $5 minimum charge**
+- **Shop part swaps off the tires** (springs, shocks and the rest) **pay the shop's $2 minimum charge (DEC-432)**
   (owner; built on feature/parts).
 
 ### Kept, but blocked or needs a mechanism

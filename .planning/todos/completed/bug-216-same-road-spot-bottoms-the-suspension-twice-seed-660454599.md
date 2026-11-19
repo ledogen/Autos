@@ -1,7 +1,7 @@
 ---
 id: BUG-216
 type: bug
-status: open
+status: done
 opened: 2026-11-17
 severity: major
 source: owner run log autos-run-660454599 (Logs/run-660454599/run.jsonl)
@@ -175,3 +175,4 @@ src/road.js (`_v2GradePts`, the near-bore BOUND), test/vertical-curvature.mjs, L
 - 2026-11-18 fix 1 built (4df08e26, 7b54cb8b, ff64bd61; drive-soak 98df2bfc). road-tunnel, bore-junction-clearance,
   vertical-curvature and tutorial-seed are green. Structural diff: topology identical. Affected serial run 84/84
   green; cdp-smoke (39 steps, zero console errors) and pad-e2e green first try.
+- 2026-11-18 CLOSED. Spot A (tunnel profile corner) fixed on main. Spot B (junction ramp foot): owner on card `bug216-bottoming-spots` chose option 1, leave them; a feel call, no standing ruling wanted.

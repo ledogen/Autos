@@ -426,8 +426,9 @@ export class Map2D {
      *        already formatted ("18 min") — main.js owns the one duration format.
      * @param {(delta:number)=>void} [o.onCycle] — FEAT-67: Q/E pressed while a card is up over the map —
      *        main.js steps the parked offer panel (the map is open behind it).
-     * @param {() => ?{x:number, z:number, poly:?{x,z}[]}} [o.getWaypoint] — FEAT-211: the player's waypoint and the line
-     *        the GPS guides along to it (poly null while a job has the guide: the pin only), or null
+     * @param {() => ?{x:number, z:number, poly:?{x,z}[], fixed?:boolean}} [o.getWaypoint] — FEAT-211: the player's waypoint and the line
+     *        the GPS guides along to it (poly null while a job has the guide: the pin only), or null. `fixed`: a pin that
+     *        is not the player's (the tutorial's leg, FEAT-288 P4) — a press on it drops a waypoint there, never clears
      * @param {(p:?{x:number,z:number}) => boolean} [o.onWaypoint] — FEAT-211: drop the waypoint at world p, or clear it
      *        (null); true if it acted (main.js snaps it to a road and plans the line)
      * @param {() => boolean} [o.hoverLocked] — true while the player is parked at a giver browsing its
@@ -964,6 +965,9 @@ export class Map2D {
         if (k === 'Escape' && this._listId) { take(); this._leaveList() }
     }
 
+    /** The list's tab, 'missions' | 'shopping' (FEAT-288 P3b: the tutorial's map lesson waits on it). */
+    get tab() { return this._tab }
+
     /** FEAT-211: Missions ↔ Shopping. The new list starts with nothing highlighted, the map where it is. */
     _swapTab() {
         this._tab = this._tab === 'missions' ? 'shopping' : 'missions'
@@ -988,7 +992,7 @@ export class Map2D {
     _waypointAt(sx = this._hoverX ?? this._sheet().cx, sy = this._hoverY ?? this._sheet().cy) {
         const w = this._getWaypoint(), s = this._sheet()
         // On the pin = within WAYPOINT_HIT_PX of its head's centre (13 px over the point: _drawWaypoint), which takes in the tip.
-        if (w && Math.hypot(this._sx(w.x) - sx, this._sy(w.z) - 13 - sy) <= WAYPOINT_HIT_PX) return this._onWaypoint(null)
+        if (w && !w.fixed && Math.hypot(this._sx(w.x) - sx, this._sy(w.z) - 13 - sy) <= WAYPOINT_HIT_PX) return this._onWaypoint(null)
         return this._onWaypoint({ x: (sx - s.cx) / this._zoom + this._panX, z: (sy - s.cy) / this._zoom + this._panZ })
     }
 

@@ -147,6 +147,10 @@ console.log('§1 the lawn furniture pool')
     if (key === 'firePit') check('firePit: not knockable, a fixed collider (satSolid)', !PROP_MODELS.firePit.knockable && satSolid(sat(key)) != null)
     else check(`${key}: knockable at ${MASS[key]} kg, no fixed collider`, PROP_MODELS[key].knockable?.massKg === MASS[key] && satSolid(sat(key)) == null)
   }
+  // FEAT-275/280 (DEC-394): the eleven mailboxes (pool 'mailbox', not lawn furniture) knock like the rest: a mass, no fixed collider.
+  const mail = modelsTagged('mailbox')
+  check(`the mailbox pool is ASSET-22's eleven, each knockable with a mass and no fixed collider (${mail.length})`,
+    mail.length === 11 && mail.every(k => PROP_MODELS[k].knockable?.massKg > 0 && satSolid(sat(k)) == null))
   const { engine, debris } = await world()
   const rows = []
   for (const key of Object.keys(MASS)) {

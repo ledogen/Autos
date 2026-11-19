@@ -138,6 +138,7 @@ export const POI_PARAMS = {
                               // have reached lat 7, back onto the shoulder, and that invariant is
                               // the reason the offset exists at all.
     poiHouseTargetR:  5,      // m — the delivery circle (owner: 3 → 5 on 2026-08-07)
+    poiMailboxInset:  0.5,    // m — FEAT-275 (DEC-429): a residence's mailbox post stands on the shoulder, this far inside its outer edge
     poiHouseMaxDrop:  1.5,    // m — max height spread across the target circle's rim. A circle
                               // draped over a cliff edge reads as broken, and you could not land a
                               // paper in it anyway. The light stand-in for the pad's earthwork cap.
@@ -387,6 +388,18 @@ export function overDropZone (q, x, z, slack = 0, box = q?.drop) {
     const wx = x - (q.modelX ?? q.x), wz = z - (q.modelZ ?? q.z)
     const dx = cs * wx - sn * wz, dz = sn * wx + cs * wz
     return Math.abs(dx - b.x) <= b.halfX + slack && Math.abs(dz - b.z) <= b.halfZ + slack
+}
+
+/**
+ * FEAT-275 (DEC-429): every residence but an RV has a mailbox, and it stands OUT AT THE ROAD, on the shoulder
+ * where the pad meets it, not beside the house. The flavour is a pure function of (seed, POI id), drawn from the
+ * 'mailbox' pool of data/prop-models.js (ASSET-22's eleven). Not 'lawnFurniture': the yard scatter must not draw
+ * eleven of them. Placed by PoiSystem._residenceMailbox from the road geometry, cold from the seed, never saved.
+ */
+export const MAILBOX_POOL = 'mailbox'
+export function mailboxKey (seed, id) {
+    const pool = modelsTagged(MAILBOX_POOL)
+    return pool[hash32(`poi-mailbox:${seed}:${id}`) % pool.length]
 }
 
 /**
@@ -646,6 +659,7 @@ export class PoiSystem {
         this._list = []
         this._pool = []         // every viable pad the last build saw; see pool()
         this._houses = []       // FEAT-61 newspaper customers; see houses()
+        this._mailboxes = []    // FEAT-275 the paper-route houses' mailboxes; see mailboxes()
         this._built = null      // {x,z,r,seed} the current list was built for
     }
 
@@ -687,6 +701,9 @@ export class PoiSystem {
      * `houses().concat(list().filter(hasTag('newsCustomer')))`, which is what customers() returns.
      */
     houses () { return this._houses }
+
+    /** FEAT-275 (DEC-429): the paper-route houses' mailboxes, on the shoulder: satellite records plus `id` (the house), built with the houses. */
+    mailboxes () { return this._mailboxes }
 
     /** Every POI or house carrying `tag`. The tag-driven query systems ask instead of type-matching. */
     tagged (tag) {
@@ -805,24 +822,79 @@ export class PoiSystem {
         out.forEach((q, i) => { q.index = i })
         // FEAT-154: the barricade rows (the camp's at its pad, then one at every road out) and the
         // edge fade's return spots. Deterministic in (seed, network, centre), like the camp.
-        this._barricades = [
-            ...(camp ? this._barrierRow(road, road.edgeParData(camp.aId, camp.bId), camp.rowS, Math.sign(camp.s - camp.rowS), P) : []),
-            ...this._edgeRows(road, canon, r, wall, adj, camp?.edge, P),
-        ]
-        this._returns = this._returnSpots(road, canon, r, wall - P.poiEdgeReturnM, adj, this._barricades, P)
+        const campRow = camp ? this._barrierRow(road, road.edgeParData(camp.aId, camp.bId), camp.rowS, Math.sign(camp.s - camp.rowS), P) : []
+        const rowsOf = new Map(camp ? [[camp.edge, campRow]] : [])   // road key → the barricades standing on that road
+        this._barricades = [...campRow, ...this._edgeRows(road, canon, r, wall, adj, camp?.edge, P, rowsOf)]
+        this._returns = this._returnSpots(road, canon, r, wall - P.poiEdgeReturnM, adj, rowsOf, P)
 
         this._list = out
         this._pool = pool
         this._built = { x: center.x, z: center.z, r: radius, seed }
+        // FEAT-275 (DEC-429): each residence's mailbox, out on the shoulder. BEFORE the pads are handed over, so
+        // padReachNodes() is the junction ground _evaluate sited against, not these pads themselves; the shoulder's
+        // height is the road's and no pad reaches inside the shoulder edge (road.js POI_ROAD_FEATHER).
+        const junctions = road.padReachNodes()
+        for (const q of out) {
+            const mb = this._residenceMailbox(road, q, P, seed, junctions)
+            if (mb) q.satellites.push(mb)
+        }
         road.setPoiPads(out)
         // FEAT-71: stand the yard on the CARVED ground, which only exists now the pads are handed
         // over. It is not q.y: the bench sits roadClearanceMargin under the pad's design top, and
         // the road-side strip blends with the shoulder by a few cm.
         const ground = this._d.getTerrain?.()
         if (ground?.analyticHeight) {
-            for (const q of out) for (const sat of q.satellites) sat.y = ground.analyticHeight(sat.x, sat.z) + sat.lift
+            for (const q of out) for (const sat of q.satellites) if (!sat.onRoad) sat.y = ground.analyticHeight(sat.x, sat.z) + sat.lift
         }
         return out
+    }
+
+    /**
+     * FEAT-275 (DEC-429): a residence's mailbox, on the road SHOULDER at one end of its pad, where the pad meets the
+     * road: "bring larrys and mom's boxes out to the road ... It's okay if they don't sit on the pad, just align them
+     * to the earthwork ... they should be on the shoulder. Every residence that is not an RV". At the pad end the
+     * seed picks; a blocked end tries the other, then slides along the road. Null for an RV (the model's `rv`
+     * flag), a non-residence, or no viable spot. `junctions`: padReachNodes() before the POI pads are handed over.
+     */
+    _residenceMailbox (road, q, P, seed, junctions) {
+        if (!q.tags?.includes('residence') || !q.halfLen || PROP_MODELS[q.modelKey]?.rv) return null
+        const end = hash32(`poi-mailbox-end:${seed}:${q.id}`) & 1 ? 1 : -1
+        const arcs = [0, 1.5, 3, -1.5, 4.5, -3].flatMap(du => [end, -end].map(sg => q.s + sg * (q.halfLen + du)))
+        return this._shoulderMailbox(road, q, arcs, P, seed, junctions)
+    }
+
+    /**
+     * FEAT-275 (DEC-429): a mailbox on the road SHOULDER beside `site` ({ id, aId, bId, side }), at the first arc of
+     * `arcs` that passes. The post stands poiMailboxInset inside the shoulder's outer edge (7.0 m off the centreline;
+     * the lane ends at 5.0), door (-Z) to the road. Rejected: a bore, junction ground (`junctions`), any road nearer
+     * than this offset (another road, or a hairpin of its own), water. Its height is sampleRoadTopY: inside the road footprint that IS the surface the
+     * truck drives on (main.js _groundSampleY), so the base sits on it (`onRoad`: the yard's analyticHeight
+     * re-seat, the carved dirt 0.25 m under it, leaves it alone). A knockable satellite like the lawn furniture:
+     * knocked, it lies where it fell until the markers are rebuilt (the next run or reload); nothing is saved.
+     */
+    _shoulderMailbox (road, site, arcs, P, seed, junctions) {
+        const ed = site.aId != null && road.edgeParData(site.aId, site.bId)
+        if (!ed?.centerline) return null
+        const cl = ed.centerline, water = this._d.getWater?.()
+        const lat = (P.roadHalfWidth ?? 5) + (P.roadShoulderWidth ?? 2.5) - P.poiMailboxInset
+        for (const s of arcs) {
+            if (road.tunnelSpanAt?.(ed.key, s)) continue
+            const cp = cl.pointAt(s), ct = cl.tangentAt(s)
+            const tl = Math.hypot(ct.x, ct.z) || 1
+            const nx = ct.z / tl * site.side, nz = -ct.x / tl * site.side
+            const x = cp.x + nx * lat, z = cp.z + nz * lat
+            if (junctions.some(nd => Math.hypot(nd.x - x, nd.z - z) <= nd.reach)) continue
+            // The nearest road must be THIS one at THIS offset: another road, or the own run doubling back (a
+            // hairpin shares the run key, so _otherRoadNear passes it), would put the box on that road's lane.
+            const nr = road.queryNearest(x, z, lat + 2.5)
+            if (!nr?.point || Math.abs(Math.hypot(nr.point.x - x, nr.point.z - z) - lat) > 0.5) continue
+            if (water && (water.isRoadNoGo(x, z) || water.streamChannelAt?.(x, z)?.inChannel)) continue
+            const y = road.sampleRoadTopY(x, z)
+            if (y == null || !isFinite(y)) continue
+            return { key: mailboxKey(seed, site.id), x, y, z, lift: 0, yaw: Math.atan2(nx, nz), onRoad: true,
+                     variant: hash32(`poi-mailbox-paint:${seed}:${site.id}`) & 0x7fffffff }
+        }
+        return null
     }
 
     // ── newspaper customers (FEAT-61) ───────────────────────────────────────────────────────
@@ -897,7 +969,7 @@ export class PoiSystem {
         for (const q of roster) delete q.paperTier
         const dist = larry ? roadDistFromLarry(road, larry, [...cands, ...roster],
             { x: center.x, z: center.z, r: radius, nodes }, REGION_MARGIN) : null
-        if (!dist) { this._houses = []; return this._houses }
+        if (!dist) { this._houses = []; this._mailboxes = []; return this._houses }
         let picked = []
         for (const rung of houseRungs()) {
             const inBand = (q) => (dist.get(q.id) ?? Infinity) <= rung.d
@@ -926,6 +998,17 @@ export class PoiSystem {
 
         picked.forEach((q, i) => { q.index = i; q.type = 'house'; q.tags = ['newsCustomer'] })
         this._houses = picked
+        // FEAT-275 (DEC-429, the orchestrator's reading of "About 30% can remain just boxes"): every route house keeps
+        // a box, on the shoulder in front of its target, like a residence's. Junction ground only: the POI pads are
+        // in padReachNodes() by now, and a route house is not one of them.
+        const story = road.storyPadReach()
+        const junctions = road.padReachNodes().filter(nd => !story.some(p => p.x === nd.x && p.z === nd.z))
+        const seed = this._d.getSeed()
+        this._mailboxes = []
+        for (const h of picked) {
+            const mb = this._shoulderMailbox(road, h, [0, 1.5, -1.5, 3, -3].map(d => h.s + d), P, seed, junctions)
+            if (mb) this._mailboxes.push({ ...mb, id: h.id })   // id: the house it serves
+        }
         return picked
     }
 
@@ -1359,6 +1442,7 @@ export class PoiSystem {
         this._list = []
         this._pool = []
         this._houses = []
+        this._mailboxes = []
         this._barricades = []   // FEAT-154
         this._returns = []
         this._built = null
@@ -1678,8 +1762,9 @@ export class PoiSystem {
      * poiRowNodeClearM from both its ends (a junction mouth) — so past a junction just inside the wall
      * a leg's row can stand a few metres beyond the edge fade's line (owner, 2026-10-31: accepted). The
      * camp's edge is skipped: its row stands at the pad. BUG-63's parallel runs are roads out too (_wallRoads).
+     * Each road's rows are also filed under its key in `rowsOf` (read by _returnSpots).
      */
-    _edgeRows (road, canon, r, wall, adj, campEdge, P) {
+    _edgeRows (road, canon, r, wall, adj, campEdge, P, rowsOf) {
         const rows = []
         for (const w of this._wallRoads(road, canon)) {
             if (w.ek === campEdge || (adj.has(w.ka) && adj.has(w.kb))) continue
@@ -1692,7 +1777,9 @@ export class PoiSystem {
                 const tt = Math.min(t, L), out = r(ed.centerline.pointAt(off + tt)) > wall
                 if (out !== prev) {
                     const sc = off + tt, s0 = off + Math.min(Math.max(tt - 2.5, clear), L - clear), win = P.poiRowSlideM
-                    rows.push(...this._rowOnPlane(road, ed, s0, Math.max(off + clear, sc - win), Math.min(off + L - clear, sc + win), out ? -1 : 1, P))
+                    const row = this._rowOnPlane(road, ed, s0, Math.max(off + clear, sc - win), Math.min(off + L - clear, sc + win), out ? -1 : 1, P)
+                    rows.push(...row)
+                    rowsOf.set(w.ek, [...(rowsOf.get(w.ek) ?? []), ...row])
                 }
                 prev = out
             }
@@ -1709,18 +1796,24 @@ export class PoiSystem {
      * the camp's row stands at its pad, ~30 m inside the wall, so the return put the truck just past
      * the barricades and it crashed back through them). A row's back axis (poi.js _barrierRow: +Z =
      * (sin yaw, cos yaw)) points out, so a spot is "past" a row when it lies along that axis from it.
+     *
+     * BUG-222 (2026-11-18): only a row on the spot's OWN road can put it past (`rowsOf`: road key → its barricades).
+     * A row's half-plane reaches 60 m sideways, so tested against every row it dropped the inside stretch of a
+     * neighbouring road (a sibling leg off a junction just outside the wall): on 5 of 24 far returns over 60 worlds
+     * the fade then skipped a spot 13–32 m inside the truck's own row for one 41–62 m away, once 454 m.
      */
-    _returnSpots (road, canon, r, rIn, adj, barricades, P) {
+    _returnSpots (road, canon, r, rIn, adj, rowsOf, P) {
         const out = [], keep = P.poiEdgeReturnM
-        const past = (p) => barricades.some(b => Math.hypot(p.x - b.x, p.z - b.z) < 60 && (p.x - b.x) * Math.sin(b.yaw) + (p.z - b.z) * Math.cos(b.yaw) > -keep)
+        const past = (p, bars) => bars.some(b => Math.hypot(p.x - b.x, p.z - b.z) < 60 && (p.x - b.x) * Math.sin(b.yaw) + (p.z - b.z) * Math.cos(b.yaw) > -keep)
         for (const w of this._wallRoads(road, canon)) {
             if (!adj.has(w.ka) && !adj.has(w.kb)) continue
+            const bars = rowsOf.get(w.ek) ?? []
             const ed = w.ed()
             if (!ed?.centerline) continue
             const off = ed.arcOffset ?? 0, L = ed.arcLength ?? ed.centerline.length
             for (let t = 0; t <= L; t += 10) {
                 const p = ed.centerline.pointAt(off + t)
-                if (r(p) > rIn || past(p)) continue
+                if (r(p) > rIn || past(p, bars)) continue
                 const ct = ed.centerline.tangentAt(off + t), tl = Math.hypot(ct.x, ct.z) || 1
                 out.push({ x: p.x, z: p.z, tx: ct.x / tl, tz: ct.z / tl })
             }

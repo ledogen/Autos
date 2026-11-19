@@ -48,7 +48,25 @@ export const PAD_PARAMS = {
   // FEAT-133 pad throw: while aiming on a paper route an RB press shorter than throwTapMs throws;
   // held longer it is the handbrake, from that moment.
   throwTapMs: 200,        // ms
+  // DEC-431: the named layout the drive table reads (PAD_LAYOUTS) — the settings page's "pad layout", saved with the rest.
+  padLayout: 'Professor',
 }
+
+// DEC-431 (owner, 2026-11-18): two fixed, named layouts. Each is a swap table: physical button → the Professor button
+// whose DRIVING role it plays. Ventura Highway: A the handbrake / park tap (Professor's RB), B the upshift (Professor's
+// A), RB the side menu (Professor's B, held). It is applied to the drive table only (and the two that drive through it,
+// the pump and the result card): a menu, a card and the map read the physical buttons in every layout, so A selects
+// and B backs. RB's tap still throws while aiming (FEAT-133); held past throwTapMs it is RB's drive role — the
+// handbrake in Professor, the side menu in Ventura Highway.
+export const PAD_LAYOUTS = { 'Professor': {}, 'Ventura Highway': { 0: 5, 1: 0, 5: 1 } }
+const NAMES = ['A', 'B', 'X', 'Y', 'LB', 'RB']
+const swap = () => PAD_LAYOUTS[PAD_PARAMS.padLayout] ?? {}
+/** The physical button that plays Professor button `r`'s driving role in the chosen layout. */
+function roleBtn (r) { const s = swap(); for (const i in s) if (s[i] === r) return +i; return r }
+/** The pad label of a BINDINGS row in the chosen layout: a row with a `role` names the button that now plays it. */
+export const padOf = (b) => b.role == null ? b.pad : b.pad.replace(new RegExp(`\\b${NAMES[b.role]}\\b`, 'g'), NAMES[roleBtn(b.role)])
+/** The button name of a driving role in the chosen layout — 'menu' (the side menu) or 'brake' (handbrake / park tap). */
+export const padRoleName = (role) => NAMES[roleBtn({ menu: 1, brake: 5 }[role])]
 
 // menuActive: set by src/menu-nav.js — true while a menu owns the screen (the pad then speaks MENU_KEYS).
 // cardActive: set by src/menu-nav.js — true while an in-game card is up (the pad then speaks CARD_KEYS).
@@ -78,16 +96,17 @@ export const pad = { active: false, mouseLive: true, throttle: 0, brake: 0, stee
 // action. Their rows carry `B (…)` so every key tab reads "B". The pump left B for A, at the pump only.
 // The D-pad drives three actions (owner, 2026-11-03, FEAT-144): ↓ picks up / loads lost bed cargo, ←
 // sets the spawn (free roam), → held resets the truck. Home (16) is unbound.
+// `role` (DEC-431): the row names the Professor button of a role a layout can move (padOf relabels it).
 export const BINDINGS = [
   { action: 'throttle',              key: 'W',         pad: 'RT' },
   { action: 'brake / reverse',       key: 'S',         pad: 'LT' },
   { action: 'steer',                 key: 'A / D',     pad: 'left stick' },
   { action: 'look around',           key: 'mouse',     pad: 'right stick' },
   { action: 'map: pan',              key: 'WASD / mouse drag', pad: 'left stick (map open)' },
-  { action: 'handbrake / park (tap)', key: ' ',        pad: 'RB', button: 5 },
+  { action: 'handbrake / park (tap)', key: ' ',        pad: 'RB', button: 5, role: 5 },
   { action: 'throw paper (aiming)',  key: 'F (hold, release)', pad: 'right stick aims, RB tap' },
   { action: 'clutch (manual)',       key: 'Shift',     pad: 'LB', button: 4 },
-  { action: 'upshift (manual)',      key: 'e',         pad: 'A',  button: 0 },
+  { action: 'upshift (manual)',      key: 'e',         pad: 'A',  button: 0, role: 0 },
   { action: 'downshift (manual)',    key: 'q',         pad: 'X',  button: 2 },
   { action: 'ignition (hold)',       key: 'i',         pad: 'Y',  button: 3 },
   { action: 'pump (hold)',           key: 'f',         pad: 'A (pump open)' },
@@ -108,14 +127,14 @@ export const BINDINGS = [
   { action: 'reset truck',           key: 'r',         pad: 'D-pad → (hold 1 s)' },
   { action: 'pick up / load lost cargo (parked)', key: 'g', pad: 'D-pad ↓', button: 13 },
   { action: 'set spawn here (free roam)', key: 'Shift+R', pad: 'D-pad ←', button: 14 },
-  { action: 'inventory',             key: 'Tab',       pad: 'B (hold, ↑/↓, release)' },
-  { action: 'damage screen',         key: 'v',         pad: 'B (hold, ↑/↓, release)' },
-  { action: 'camp',                  key: 'z',         pad: 'B (hold, ↑/↓, release)' },
-  { action: 'recovery',              key: 'x',         pad: 'B (hold, ↑/↓, release)' },
+  { action: 'inventory',             key: 'Tab',       pad: 'B (hold, ↑/↓, release)', role: 1 },
+  { action: 'damage screen',         key: 'v',         pad: 'B (hold, ↑/↓, release)', role: 1 },
+  { action: 'camp',                  key: 'z',         pad: 'B (hold, ↑/↓, release)', role: 1 },
+  { action: 'recovery',              key: 'x',         pad: 'B (hold, ↑/↓, release)', role: 1 },
   // FEAT-125 pad audit [DEFAULT]: the job's two-press abandon button, mouse-only until now — the B menu's
   // last entry (never pre-selected, hud-menu.js) and J on the keyboard. FEAT-195 (owner, 2026-11-11): its pad
   // binding is B held + ↑ — ↑ from the pre-selection (the top) wraps straight to it — and the keycap says so.
-  { action: 'abandon job (parked; twice)', key: 'j',  pad: 'B + ↑ (hold B, ↑, release)' },
+  { action: 'abandon job (parked; twice)', key: 'j',  pad: 'B + ↑ (hold B, ↑, release)', role: 1 },
 ]
 const BUTTON_KEYS = Object.fromEntries(BINDINGS.filter(b => b.button != null).map(b => [b.button, b.key]))
 // While a menu owns the screen (pad.menuActive, from src/menu-nav.js) the pad speaks the menu's keys
@@ -149,11 +168,17 @@ const CARD_MAP_KEYS = { ...CARD_KEYS, 4: 'q', 5: 'e' }
 const CARD_TAB_KEYS = CARD_MAP_KEYS
 // BUG-109: a RESULT card has no tabs and nothing to pick until the D-pad puts its highlight on it, so
 // the pad drives through it — A / X shift, LB clutch, RB handbrake — and B is back (pad.cardDrive).
-// Its D-pad is the card's highlight, never the drive layout's actions.
-const RESULT_KEYS = { ...BUTTON_KEYS, 1: 'Escape' }
-for (const i of [12, 13, 14, 15]) delete RESULT_KEYS[i]
+// Its D-pad is the card's highlight, never the drive layout's actions. Built per layout below (LAYOUT_KEYS).
 // The pump is open (pad.pumpActive): A is F, held to pump — parked at the pump, A has nothing to shift.
-const PUMP_KEYS = { ...BUTTON_KEYS, 0: 'f' }
+// DEC-431: each layout's drive table is Professor's (BUTTON_KEYS) through its swap table; the pump and the result card
+// drive through it, so they are built from it. The result card's RB is Space in every layout, as on every other card.
+// The menu, card and map tables above are physical and the same in both layouts.
+const LAYOUT_KEYS = Object.fromEntries(Object.entries(PAD_LAYOUTS).map(([name, s]) => {
+  const drive = Object.fromEntries(Object.keys({ ...BUTTON_KEYS, ...s }).map(i => [i, BUTTON_KEYS[s[i] ?? i]]).filter(([, k]) => k != null))
+  const result = { ...drive, 1: 'Escape', 5: ' ' }
+  for (const i of [12, 13, 14, 15]) delete result[i]
+  return [name, { drive, pump: { ...drive, 0: 'f' }, result }]
+}))
 const NAV = [['ArrowUp', 12], ['ArrowDown', 13], ['ArrowLeft', 14], ['ArrowRight', 15]]
 const NAV_DELAY_MS = 400, NAV_REPEAT_MS = 120, NAV_STICK = 0.5
 const navNext = new Map()   // arrow key → performance.now() of its next repeat, while held
@@ -162,17 +187,19 @@ const navNext = new Map()   // arrow key → performance.now() of its next repea
 const VIEW = 8, VIEW_HOLD_MS = 1000
 let viewDownAt = -1      // performance.now() of the press, -1 while up
 // RB, FEAT-133: while pad.throwReady() a press is HELD BACK — released under throwTapMs it throws (F
-// down + up: main.js's own throw path), held past it it becomes the handbrake. Otherwise RB is
-// plain Space at once, so a handbrake turn off the aim costs no latency at all. Drive layout only.
+// down + up: main.js's own throw path), held past it it becomes RB's drive role (Professor: the handbrake;
+// Ventura Highway, DEC-431: the side menu). Otherwise RB is that role at once, so a handbrake turn off the aim
+// costs no latency at all. Drive layout only.
 const RB = 5
 let rbAt = -1            // performance.now() of a held-back press, -1 when none
-let rbBrake = false      // Space is down for RB
+let rbHeld = false       // RB's drive role is held: Space down (Professor), the side menu (Ventura Highway)
 // B in the drive layout holds the icon menu (src/hud-menu.js via pad.hudMenu): press opens it, D-pad
 // ↑/↓ edges walk it, release opens the pick. A B press that began in a menu, card or the map was a
 // "back" and stays one: it can never open the icon menu when the layout drops to drive under it.
-const B = 1, UP = 12, DOWN = 13, RIGHT = 15
+// DEC-431: "B" here is the layout's menu button — RB in Ventura Highway, where physical B is the upshift.
+const UP = 12, DOWN = 13, RIGHT = 15
 let bMenu = false        // the icon menu is open on this B press
-let bSpent = false       // this B press belongs to something else (it was a back)
+let bSpent = false       // this menu-button press belongs to something else (it was a back)
 let dPrev = 0            // last frame's D-pad ↑ (1) / ↓ (2) bits, for edges
 // FEAT-170: while pad.skipHold() (the opening can be skipped) View is M itself — down on the press, up on
 // the release — so main.js times the hold (skip) and a tap (the map) exactly as it does the key's.
@@ -181,7 +208,11 @@ let viewSkip = false     // this press is the skip's M
 // so a mid-drive tap does nothing. Drive layout only.
 let rightAt = -1, rightReset = false
 
-const held = new Map()   // button index → the key whose keydown was sent and keyup has not been
+// DEC-431: A PRESS BELONGS TO THE CONTEXT IT BEGAN IN, for every button. `held` maps a pressed button to the key it
+// went down with — null when that context gave it none — until it is let go, whatever layout comes up under it: a
+// press that selected or backed in a screen never acts as a driving button when the screen closes, and a button
+// pressed where it was silent stays silent. The one exception is BUG-193's (below).
+const held = new Map()   // button index → the key whose keydown was sent and keyup has not been (null: silent)
 let padShown = false     // body.pad-on, as last written
 
 /** Center softening: sign(x)·|x|^(1+k). Shared with the settings page's plot (main.js). */
@@ -213,23 +244,26 @@ function poll () {
   // picking one — two pads on the desk both work. Per-player pads would need a real assignment.
   let thr = 0, brk = 0, steer = 0, lookX = 0, lookY = 0, panX = 0, panY = 0, any = false, viewDown = false, rbDown = false
   const menu = pad.menuActive(), card = !menu && pad.cardActive(), map = !menu && pad.mapActive()
+  const L = LAYOUT_KEYS[PAD_PARAMS.padLayout] ?? LAYOUT_KEYS.Professor
+  const menuBtn = roleBtn(1), rbMenu = menuBtn === RB   // DEC-431: the side menu's button; RB's drive role is the menu
   let keys = menu ? MENU_KEYS
-    : card ? (pad.cardDrive() ? RESULT_KEYS : pad.cardTabs() ? CARD_TAB_KEYS : map ? CARD_MAP_KEYS : CARD_KEYS)
-    : map ? MAP_KEYS : BUTTON_KEYS
-  const drive = keys === BUTTON_KEYS
-  if (drive && pad.pumpActive()) keys = PUMP_KEYS
+    : card ? (pad.cardDrive() ? L.result : pad.cardTabs() ? CARD_TAB_KEYS : map ? CARD_MAP_KEYS : CARD_KEYS)
+    : map ? MAP_KEYS : L.drive
+  const drive = keys === L.drive
+  if (drive && pad.pumpActive()) keys = L.pump
   // BUG-193 (owner, 2026-11-17): LB held in the map (ArrowLeft) and the map closed — the button is down but its held key
-  // is the map's, so the clutch never engaged. Back in the drive layout a held clutch / handbrake (LB, RB) lets go of
-  // the key it went down with and is read afresh as the drive's. Not the other buttons: A / Y / L3 held through a
-  // close would fire a shift, the ignition or the lights nobody asked for.
-  if (drive) for (const i of [4, RB]) if (held.has(i) && held.get(i) !== keys[i]) { sendKey('keyup', held.get(i)); held.delete(i) }
+  // is the map's, so the clutch never engaged. Back in the drive layout a held clutch / handbrake lets go of the key it
+  // went down with and is read afresh as the drive's. Not the other buttons: A / Y / L3 held through a close would fire
+  // a shift, the ignition or the lights nobody asked for — and never A or B (DEC-431: Ventura Highway's handbrake is A),
+  // which select and back on every screen, so their presses are always the screen's.
+  if (drive) for (const i of [4, roleBtn(5)]) if (i > 1 && held.has(i) && held.get(i) !== keys[i]) { if (held.get(i) != null) sendKey('keyup', held.get(i)); held.delete(i) }
   const down = new Set(), nav = new Set()
-  let bDown = false, dpad = 0, rightDown = false
+  let bDown = false, dpad = 0, rightDown = false   // bDown: the layout's menu button is physically down
   // A press keeps the meaning it went down with until it is let go (as `held` does for every other button).
   // RB is the drive layout's own (Space, or a held-back throw) when it went down there — rbOwned — and
   // the generic key path's when it went down under a menu or card (held). Parking at mom's opens her
   // sleep card mid-press: the card layout re-sent RB's Space, and the park brake latched and let go again.
-  const rbOwned = rbBrake || rbAt >= 0, rbGeneric = (!drive && !rbOwned) || held.has(RB)
+  const rbOwned = rbHeld || rbAt >= 0, rbGeneric = (!drive && !rbOwned) || held.has(RB)
   for (const gp of navigator.getGamepads()) {
     if (!gp || gp.mapping !== 'standard') continue
     any = true
@@ -241,15 +275,15 @@ function poll () {
     if (Math.hypot(s, py) > Math.hypot(panX, panY)) { panX = s; panY = py }
     const lx = deadzone(gp.axes[2], PAD_PARAMS.stickDeadzone), ly = deadzone(gp.axes[3], PAD_PARAMS.stickDeadzone)
     if (Math.hypot(lx, ly) > Math.hypot(lookX, lookY)) { lookX = lx; lookY = ly }
-    for (const i in keys) if (gp.buttons[i]?.pressed && (+i !== RB || rbGeneric)) down.add(+i)
+    gp.buttons.forEach((b, i) => { if (b.pressed && (i !== RB || rbGeneric)) down.add(i) })
     if (gp.buttons[RB]?.pressed) rbDown = true
     if (gp.buttons[VIEW]?.pressed) viewDown = true
-    if (gp.buttons[B]?.pressed) bDown = true
+    if (gp.buttons[menuBtn]?.pressed) bDown = true
     if (gp.buttons[UP]?.pressed) dpad |= 1
     if (gp.buttons[DOWN]?.pressed) dpad |= 2
     // FEAT-254 (owner, 2026-11-17): the left stick walks the B menu too — only with B held; the edge test below
     // makes a held deflection one step, as the D-pad's is.
-    if (gp.buttons[B]?.pressed) { if (gp.axes[1] < -NAV_STICK) dpad |= 1; if (gp.axes[1] > NAV_STICK) dpad |= 2 }
+    if (gp.buttons[menuBtn]?.pressed) { if (gp.axes[1] < -NAV_STICK) dpad |= 1; if (gp.axes[1] > NAV_STICK) dpad |= 2 }
     if (gp.buttons[RIGHT]?.pressed) rightDown = true
     const mapOnly = map && !card   // FEAT-239: the map's own layout leaves D-pad ← / → spare (the shoulders flip)
     if (menu || card || map) for (const [k, b] of NAV) if (!(mapOnly && (b === 14 || b === 15)) && gp.buttons[b]?.pressed) nav.add(k)
@@ -259,7 +293,6 @@ function poll () {
       if (ax < -NAV_STICK) nav.add('ArrowLeft'); if (ax > NAV_STICK) nav.add('ArrowRight')
     }
   }
-  if (drive && bDown) down.delete(DOWN)   // B held: D-pad ↓ walks the icon menu, it picks nothing up
   pad.panX = map ? panX : 0
   pad.panY = map ? panY : 0
   pad.zoom = map ? -lookY : 0
@@ -272,27 +305,32 @@ function poll () {
   pad.lookX = lookX   // camera.js reads these; looking around never takes the driving away from
   pad.lookY = lookY   // the keyboard, so they do not set pad.active
 
-  // A button keeps the key it went down with, so a press that opens or closes a menu still releases
-  // the key it sent.
-  for (const i of down) if (!held.has(i)) { held.set(i, keys[i]); sendKey('keydown', keys[i]); pad.active = true; pad.mouseLive = false }
-  for (const [i, k] of held) if (!down.has(i)) { held.delete(i); sendKey('keyup', k) }
-  if (thr > 0 || brk > 0 || steer !== 0) pad.active = true
-  if (map && (pad.zoom || pad.panX || pad.panY)) pad.active = true   // the map's cursor is the pad's, unlike the camera
-
   const now = performance.now()
   if (rbDown && !rbGeneric) {
     if (!rbOwned) {
       pad.active = true
       if (pad.throwReady()) rbAt = now
-      else { rbBrake = true; sendKey('keydown', ' ') }
-    } else if (rbAt >= 0 && (!drive || now - rbAt >= PAD_PARAMS.throwTapMs)) { rbAt = -1; rbBrake = true; sendKey('keydown', ' ') }
-    // ↑ a held-back press that can no longer throw (a card came up under it) is the handbrake it would have been
+      else { rbHeld = true; if (!rbMenu) sendKey('keydown', ' ') }
+    } else if (rbAt >= 0 && (!drive || now - rbAt >= PAD_PARAMS.throwTapMs)) { rbAt = -1; rbHeld = true; if (!rbMenu) sendKey('keydown', ' ') }
+    // ↑ a held-back press that can no longer throw (a card came up under it) is the role it would have been
   } else if (!rbDown) {
     if (drive && rbAt >= 0 && any) { sendKey('keydown', 'f'); sendKey('keyup', 'f') }   // a tap: throw
-    else if (rbAt >= 0 && any) { sendKey('keydown', ' '); sendKey('keyup', ' ') }      // …or, off the drive layout, a brake tap
-    if (rbBrake) sendKey('keyup', ' ')
-    rbAt = -1; rbBrake = false
+    else if (rbAt >= 0 && any && !rbMenu) { sendKey('keydown', ' '); sendKey('keyup', ' ') }      // …or, off the drive layout, a brake tap
+    if (rbHeld && !rbMenu) sendKey('keyup', ' ')
+    rbAt = -1; rbHeld = false
   }
+  if (rbMenu) bDown = rbHeld   // Ventura Highway: the menu is RB's role once the press is past any throw hold-back
+  // A button keeps the key it went down with, so a press that opens or closes a menu still releases
+  // the key it sent. D-pad ↓ pressed under the held menu button walks the icon menu: silent for the rest of its press.
+  for (const i of down) if (!held.has(i)) {
+    const k = keys[i] == null || (drive && bDown && i === DOWN) ? null : keys[i]
+    held.set(i, k)
+    if (k != null) { sendKey('keydown', k); pad.active = true; pad.mouseLive = false }
+  }
+  for (const [i, k] of held) if (!down.has(i)) { held.delete(i); if (k != null) sendKey('keyup', k) }
+  if (thr > 0 || brk > 0 || steer !== 0) pad.active = true
+  if (map && (pad.zoom || pad.panX || pad.panY)) pad.active = true   // the map's cursor is the pad's, unlike the camera
+
   // FEAT-288 (DEC-422, owner: "press any key should override holding B for the B menu"): over a press-any-key card B is
   // that key — one press, one card — and the B menu stays shut until B is let go.
   if (drive && bDown && !bSpent && !bMenu && pad.cardHolds()) { sendKey('keydown', 'Escape'); sendKey('keyup', 'Escape'); bSpent = true }

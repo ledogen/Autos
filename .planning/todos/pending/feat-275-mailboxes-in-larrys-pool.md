@@ -12,7 +12,7 @@ lane: Places and Missions
 # FEAT-275: Add the mailboxes to Larry's pool
 
 ## Next steps
-A lane registers the mailboxes in Larry's pool.
+Owner look (card `mailboxes-look-2`): the mailboxes moved out to the road per DEC-429. "Good: land it" → land `land/feat-275-280-mailboxes`. Residence boxes are yard satellites; the route houses' are `poiSystem.mailboxes()`, drawn by a small main.js hook (`_spawnSatellite`).
 
 ## Summary
 Put the mailbox models (ASSET-22, built, unplaced) into Larry's pool, so a paper route has a mailbox to aim at.
@@ -30,13 +30,25 @@ Owner's words, verbatim (inbox 20261118013250-sf5w):
 Paper-route juice, one owner message (inbox 20261118013250-sf5w) split into four tickets: ASSET-91 (houses), FEAT-275 (mailboxes in Larry's pool), FEAT-276 (halo), FEAT-277 (thrown-paper physics). He said it follows FEAT-266, which landed 2026-11-17.
 
 ## Tracker
-- [ ] Mailbox models are in Larry's pool and appear as paper-route targets or beside them
-- [ ] The target halo (FEAT-276) sits on a mailbox
+- [x] Mailbox models are in Larry's pool (tag `mailbox`, ASSET-22's eleven, knockable)
+- [x] DEC-429: every residence that is not an RV has one, on the road shoulder at its pad's end, door to the road, base on the drive surface (gate `mailbox-census`)
+- [x] DEC-429: no lone roadside mailboxes (FEAT-280 withdrawn, code deleted; the gate asserts zero)
+- [x] Every paper-route house has one on the shoulder in front of its target (orchestrator's reading; owner to confirm)
+- [x] DEC-429: knocked down costs nothing and it stands again the next run / reload (nothing saved)
+- [ ] Owner look (card mailboxes-look-2)
+- [ ] The target halo (FEAT-276) sits on a mailbox (the route-house boxes are there for it)
 
 ## Decisions
+- Read "Larry's pool" as the residence pool Larry's house is dressed from: a new pool tag `mailbox` (11 flavours, uniform draw per place), NOT `lawnFurniture` (eleven of them would swamp the yard scatter). Agent's reading.
+- Knockable, DEC-394: each flavour has a mass (8 kg classic .. 150 kg masonry pillar).
+- 2026-11-18, owner (DEC-429): "remove the random clutter boxes ... bring larrys and mom's boxes out to the road. It's okay if they don't sit on the pad, just align them to the earthwork ... they should be on the shoulder. No penalty if the player knocks them down, they just respawn next time. Every residence that is not an RV should also get mailboxes."
+- As built for DEC-429: post 0.5 m inside the shoulder's outer edge (7.0 m off the centreline; the lane ends at 5.0), at the pad end the seed picks (a blocked end tries the other, then slides along the road up to 4.5 m), height = sampleRoadTopY there (the drive surface). Residences = POIs tagged `residence` (mom's, Larry's, the five `residence` slots, the three farms: two barns and the produce stall, a farm is a residence per the 2026-10-07 ruling); RV = the model's `rv` flag (the Winnebago). Paper-route houses KEEP a box each, on the shoulder in front of the target (within 3 m along the road): the orchestrator's reading of "About 30% can remain just boxes wherever" (2026-11-18), on the owner's card to overrule. A spot whose nearest road is another stretch (a hairpin of its own run) is rejected.
+- "Respawn next time" read as: standing again the next time the markers are built (a new run, a reload, re-entering story mode), like the lawn furniture; nothing is saved. It does NOT reset when you drive away and come back in the same session.
 
 ## Open questions
-- How the mailboxes sit with the houses: one per recipient house, or standalone? He did not say.
+- Owner's aspiration (DEC-429), future work, nothing built: turn most of Larry's delivery targets into residence models with pads ("About 30% can remain just boxes wherever").
+- Owner's aspiration (DEC-429), future work, nothing built: when Larry's mission is rebuilt, the objective is to throw the mail onto the PORCH of every residence on the route. Larry's current scoring is untouched.
+- Respawn reading: should a knocked mailbox also stand again when you leave and come back in the same run? (A small main.js change if yes.)
 
 ## Links
 FEAT-266, FEAT-276, FEAT-72, FEAT-71, ASSET-22
@@ -45,4 +57,7 @@ FEAT-266, FEAT-276, FEAT-72, FEAT-71, ASSET-22
 src/poi.js · data pools · assets/models/mailbox*.glb
 
 ## Log
+- 2026-11-18 land/feat-275-280-mailboxes: pool tag + knock masses (data/prop-models.js), poi.js mailboxKey / dressYard pad mailbox / _mailboxAt route-house mailboxes, test/mailbox-census.mjs. Roadside draw needs the main.js hook (wip/mailboxes/main-hook.txt).
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118013250-sf5w).
+- 2026-11-18 proof: test/mailbox-census.mjs 12 seeds PASS (120 route + 1904 random mailboxes, 1.88/km); affected gates 49/49 green after two fixes (dist-assets tag consumer, census seed); fingerprint-world vs main: only `poi` differs (seed6 + seed11 origin story windows); cdp-smoke PASS (39 steps) and pad-e2e ALL OK; sheet wip/mailboxes/sheet.jpg (Larry's, a yard house, mom's). Unverified: the roadside ones in the browser (needs the main.js hook).
+- 2026-11-18 DEC-429 rework (land/feat-275-280-mailboxes, 1111342b..230aba97 + main merged 625eb5b0): lone boxes deleted; residence box on the shoulder at the pad end; route houses keep one in front of the target; RV none; main.js `_spawnSatellite` draws the route ones. Gate mailbox-census rewritten; census on 12 random seeds (wip/mailboxes/census-random12.log): 93/93 non-RV residences, 119/120 route houses (one on a hairpin), 27 RVs none. Affected gates 57/57 green; tutorial-seed PASS; fingerprint-world vs main: only `poi` differs (the list carries the mailbox satellites), network/surface/carve/tiles/water/props identical. Sheet wip/mailboxes/sheet2.jpg. 400-seed sweep detached (sweep-a/-b.log).
