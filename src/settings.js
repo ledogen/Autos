@@ -21,6 +21,7 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   tractionControl: false,   // RANGER_PARAMS.tractionControl — brake + torque traction control (FEAT-159; owner: off)
   stickDeadzone: 0.08,      // PAD_PARAMS.stickDeadzone — keep equal to gamepad.js's default
   steerShape: 0,            // PAD_PARAMS.steerShape — likewise (0 linear … 1 parabolic … 1.5)
+  padLayout: 'Professor',   // PAD_PARAMS.padLayout — DEC-431: 'Professor' · 'Ventura Highway' (gamepad.js PAD_LAYOUTS)
   vibration: 1,             // RUMBLE_PARAMS.vibration — controller vibration master: 0 off · 0.5 low · 1 normal · 1.5 high (FEAT-247)
   uiScale: 'small',         // FEAT-248: the 2D layer's size — 'small' (today's, the default) · 'big' (a TV): index.html `html[data-ui-scale=big]` zooms it
   frameCap: 60,             // PERF-48 (DEC-185): render frames per second — 60 · 30 · 90 · 120 · 0 = the display's own rate (BUG-169, DEC-224). Physics is not capped

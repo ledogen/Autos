@@ -15,18 +15,18 @@
  * goes through these, never player- or world-supplied strings.
  */
 
-import { BINDINGS } from './gamepad.js'
+import { BINDINGS, padOf } from './gamepad.js'
 
 // key (lower case) → the pad's short name for it, as a keycap reads: "View (tap)" → "View",
-// "B (hold, ↑/↓, release)" → "B". Space is the binding table's ' '.
-const PAD_CAP = new Map(BINDINGS.map(b => [b.key.toLowerCase(), b.pad.replace(/ \(.*\)$/, '')]))
-PAD_CAP.set('space', PAD_CAP.get(' '))
+// "B (hold, ↑/↓, release)" → "B". Space is the binding table's ' '. Looked up at each call, in the chosen pad
+// layout (DEC-431: Ventura Highway's handbrake reads A); the last row for a key wins.
+const padCap = (k) => { const b = BINDINGS.findLast(b => b.key.toLowerCase() === (k === 'space' ? ' ' : k)); return b && padOf(b).replace(/ \(.*\)$/, '') }
 
 // Face buttons and stick clicks are drawn round, as they are on the pad (owner, 2026-10-21): A / B /
 // X / Y in a circle, a stick as L or R in a circle. Bumpers, triggers, Start and View stay keycaps.
 const STICK = { 'left stick': 'L', 'right stick': 'R', 'left stick click': 'L', 'right stick click': 'R' }
 function padLabel (pad) {
-  const combo = /^([ABXY]) \+ (.+)$/.exec(pad)   // FEAT-195: "B + ↑" — hold the round button, press the other
+  const combo = /^([ABXY]|RB) \+ (.+)$/.exec(pad)   // FEAT-195: "B + ↑" — hold the button (RB in Ventura Highway), press the other
   if (combo) return `${padLabel(combo[1])}<span class="kc-pad">+${combo[2]}</span>`
   const round = /^[ABXY]$/.test(pad) ? pad : STICK[pad]
   return round ? `<span class="kc-pad kc-round">${round}</span>` : `<span class="kc-pad">${pad}</span>`
@@ -36,7 +36,7 @@ function padLabel (pad) {
  *  a number: the inventory's quick-slot keys 1–4. `pad` overrides the binding table's button where the
  *  moment rebinds it (FEAT-170: in the opening View is the skip, so R's pad half is the D-pad alone);
  *  `false` is a key the pad has no button for (the quick slots): it hides while the pad drives. */
-export function keycap (label, pad = PAD_CAP.get(String(label).toLowerCase())) {
+export function keycap (label, pad = padCap(String(label).toLowerCase())) {
   if (pad === false) return `<span class="keycap kc-kb">${label}</span>`   // keyboard-only: hidden while the pad drives
   return pad
     ? `<span class="keycap"><span class="kc-kb">${label}</span>${padLabel(pad)}</span>`
@@ -48,8 +48,8 @@ export function keycap (label, pad = PAD_CAP.get(String(label).toLowerCase())) {
  *  handler answers its data-act="close". */
 export const BACK_BUTTON = `<div class="card-foot"><button class="card-back" data-act="close">${keycap('Esc')}back</button></div>`
 
-/** PARK and the handbrake's key. Read as "park first". */
-export const PARK_BADGE = `<span class="park-badge" aria-label="park">PARK${keycap('Space')}</span>`
+/** PARK and the handbrake's key. Read as "park first". A function: the pad's half follows the layout (DEC-431). */
+const parkBadge = () => `<span class="park-badge" aria-label="park">PARK${keycap('Space')}</span>`
 
 /** "Park first": pulse the park zone's PARK stencil (index.html .pz-badge.hint) — what V and Tab do
  *  while driving. Restarts a pulse already in flight: drop the class, force a reflow, re-add. */
@@ -64,5 +64,5 @@ export function hintPark () {
 /** A "park to …" line: the badge says the "park", so a leading "park" in the text is dropped. */
 export function parkPrompt (text) {
   const rest = text.replace(/^park /, '')
-  return `${PARK_BADGE}${rest === text ? '&middot; ' : ''}${rest}`
+  return `${parkBadge()}${rest === text ? '&middot; ' : ''}${rest}`
 }
