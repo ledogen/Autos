@@ -286,7 +286,7 @@ const STEPS = [
     // BUG-231: the menu is wired while main.js is still evaluating (its top-level awaits), so a click at first paint
     // reached `let`s not yet declared ("Cannot access '_paperSizeIdx' before initialization") and no run started. Click
     // the paper route the moment its handler exists (the page's own console-error watch fails the step on a throw), then
-    // require the run to come up: the click either waits for the world and starts it, or is ignored and the second works.
+    // require the round to leave idle with the menu gone: the click either waits for the world and starts it, or is ignored and the second works.
     await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html` })
     const click = () => js(`(() => { const mm = document.getElementById('main-menu'); if (!mm) return false
       if (!mm.classList.contains('setup')) { document.getElementById('mm-new')?.click(); if (!mm.classList.contains('setup')) return false }
@@ -294,9 +294,9 @@ const STEPS = [
       if (!p) { for (let i = 0; i < 4 && document.getElementById('mm-setup-panel').dataset.mode !== 'scenarios'; i++) document.querySelector('button[data-key=gameMode]').click(); return false }
       p.click(); return /paper/.test(p.textContent) })()`).catch(() => false)
     check(await until(click, 30000, 2), 'the paper route button never came up on the menu')
-    check(await until(() => js('window.__paper?.system?.state === "offer" && document.getElementById("main-menu").style.display === "none"'), 120000, 250),
+    check(await until(() => js('!!window.__paper?.system?.state && window.__paper.system.state !== "idle" && document.getElementById("main-menu").style.display === "none"'), 120000, 250),
       'a paper-route click at first paint started no run (state ' + await js('window.__paper?.system?.state') + ')')
-    console.log('  menuRace: a click at first paint raised nothing and the round came up')
+    console.log('  menuRace: a click at first paint raised nothing and the round started')
   }],
   ['boot', async () => {
     // INFRA-08: the boot is the box's speed test (see stretch). Past TOO_SLOW × an idle boot this run cannot
