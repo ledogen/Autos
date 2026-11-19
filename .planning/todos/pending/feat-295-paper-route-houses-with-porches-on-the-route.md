@@ -26,7 +26,7 @@ Cold generation only: which target gets which house is a pure function of the se
 - [ ] ASSET-91's three houses ship (merged into this branch; their look is on card asset91-porch-houses-look).
 - [x] Houses stand at route targets, each on a pad, porch facing the road, the halo on the porch floor (src/poi.js _routeHouse;
   95 % of stops on 12 seeds, the rest keep today's bare target + mailbox). Gates route-houses, porch-throw.
-- [ ] 400-seed no-throw sweep, fingerprint, gates, smoke.
+- [x] 400-seed no-throw sweep (0 errors, 3843/4002 stops housed), fingerprint, gates (61/62 + dist-assets fixed), smoke, pad-e2e.
 - [ ] Owner's card: the look of the houses AND the porch throw (a paper thrown at the wall or door drops into the circle; one landing on the porch scores).
 - [ ] Landed on main (orchestrator).
 
@@ -52,3 +52,5 @@ ASSET-91, FEAT-275, FEAT-277, DEC-429, DEC-414.
   the back eave, flat at the shoulder's top; natural ground fitted 1 stop in 30). Fallback: today's bare target + mailbox.
   Halo at the porch floor's top; colliders via PoiPhysics; model via the _clutter queue. Fingerprint: only story windows'
   poi / surface / carve differ (the pads); road deck bit-identical (gate).
+- 2026-11-19: route-houses on 50 random seeds PASS (479/501 housed); porch-throw 45/78 throws rest on a porch, all
+  great/bullseye; smoke PASS on retry (first run: opening's off-road auto-reset timed out once); pad-e2e ALL OK.
