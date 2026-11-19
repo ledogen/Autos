@@ -86,8 +86,11 @@ within 40 m of the crossing. BUG-230's "decks 0.9–2.0 m apart" was the shipped
 ## Tracker
 - [x] Reproduced and measured on 13+ random seeds: 300 random seeds, 4 self-crossings in-region (1.3 %), all ship 97–201 % ramps.
 - [x] Cause named in the code: corridorSearch's 2.5D lattice (4/5) or simplifyRDP tol 32 (1/5) makes the loop; FEAT-19 `_addCrossingByRun` lifts it into a wall (toggle-proven).
-- [ ] Owner picks a fix option (Description § Fix options).
-- [ ] Fixed with a gate, fingerprint and a 400-seed no-throw sweep.
+- [x] Owner picks a fix option: orchestrator 2026-11-18, options 1 + 2 (no spiral tunnels, no grade separation).
+- [x] Built: routeEdgeV2 rejects a self-crossing fitted line (next rung); all-rungs-loop gets one unpinned retry with a 32 m no-go disc on the crossing. Gate `self-crossing` fails 10/10 on main, passes 10/10 on the branch (5 seeds: 0 self-crossings, site steepest 10 m 18.1-24.9 %, main 90-202 %).
+- [x] Fingerprint main vs branch: all six windows identical in every component (no loop in seed 6/11/7/3 windows).
+- [ ] 300-seed census before/after (self, run × run, edges/junctions/components/tallies) and 400-seed no-throw sweep: main side running, branch side not started.
+- [ ] Affected gates (76, serial) running; cdp-smoke, pad-e2e, sheet-fix.jpg not done.
 - [ ] Run × run no-junction crossings (30 sites / 21 seeds) ticketed separately.
 
 ## Open questions
@@ -105,3 +108,6 @@ Sheet `wip/bug-232/sheet.jpg` (567993018 and 2283335151, top-down + driver view)
   (2 × 150, ~27 s/seed): self 4 sites/4 seeds, run × run 30/21, 0 throws. Trace on all 5 cases plus flatten toggle (numbers above).
   Probes in wip/bug-232/ (census, trace, toggle, prof, clsfind, xlist, shots, sheet). Not checked: the run × run class's cause;
   whether option 1 changes connectivity or T placement (no build was run with it).
+- 2026-11-18 lane agent: fix af2da589 (src/corridor-router.js), gate df410c55 (test/self-crossing.mjs). 5 seeds clean, run × run on them unchanged
+  (400290281 keeps its one pre-existing cross). Fingerprint 6/6 windows identical. Census/sweep/gates were mid-run at handback:
+  logs in the session scratchpad b232/ (census-main.log, gates.log); probe wip/bug-232/census2.mjs [--sweep]; sheet prep sheet-fix.{html,mjs}, cases-views.json.
