@@ -1901,10 +1901,17 @@ sunFar.shadow.camera.right = sunFar.shadow.camera.top   =  SHADOW_FAR_EXTENT
 sunFar.shadow.camera.near = 1
 sunFar.shadow.camera.far  = 2600            // spans the standoff + the world's height range
 // Terrain is a huge, gently-sloped, low-poly heightfield lit at grazing angles at exactly the hours
-// this feature is for — the classic shadow-acne case. normalBias offsets the lookup along the
-// surface normal, which is the right tool for a heightfield (a flat depth bias would peter-pan the
-// mountain shadows off their ridges). ~2 far-texels.
-sunFar.shadow.normalBias = 0.5
+// this feature is for — the classic shadow-acne case. The depth bias handles it: −0.0005 of the
+// 2600 m depth range is 1.3 m along the sun ray, so a surface never shadows itself, and at a crest
+// the ray's depth below the hill grows by metres within centimetres of the true edge, so the edge
+// does not move.
+// BUG-229: NO normal bias. It used to be 0.5 m, which lifts every lookup 0.5 m off the ground; just past
+// a crest the sun ray grazes the slope (~15°), so the lifted point stays above the hill's shadow for
+// ~0.5 / tan 15° ≈ 1.9 m. Measured against analytic sun rays at the owner's crest (capture 2, hour 8):
+// the coarse shadow's half-dark line sat 1.75 m inside the true shadow, while the near map's grass
+// shadows sit at true geometry: the crest seam. At 0 it sits at 0.25 m (one far texel); no acne at
+// 6.2 / 6.9 / 8 / 12.5 / 17.8 h. Map size does not move it (4096 and 8192 measured 1.5 m).
+sunFar.shadow.normalBias = 0
 sunFar.shadow.bias = -0.0005
 // PERF: opt out of the global on-demand shadow trigger. Its needsUpdate is never armed directly —
 // the far-follow in loop() raises _farShadowPending and the wrapped shadow pass below draws it.
