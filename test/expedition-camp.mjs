@@ -45,12 +45,14 @@ import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 
-const PINNED = ['1', '6', '2167923713', '3109505264', '3873008110', '398411380', '660454599']
+const PINNED = ['1', '6', '2167923713', '3109505264', '3873008110', '398411380', '660454599', '2611481022']
 const SEEDS = process.argv.length > 2 ? process.argv.slice(2) : PINNED   // a census: node test/expedition-camp.mjs <seed…>
 // 2167923713: a BUG-63 parallel crosses the wall (FEAT-154). BUG-128: 3109505264, a road bowing past the wall lay on the fuel
 // line's shortest path; 3873008110, the one gas station stood on such a road. 398411380: a row 20 m from a junction stood on
 // its steep leg's vertical knee, 18 cm off its plane, until rows moved to fit one (poi.js _rowOnPlane) (2026-11-07).
 // 660454599: the owner's lost run (FEAT-292), a 32 km requisition at today's crossing — its camp moves.
+// 2611481022 (BUG-222): a sibling leg's row dropped the spots on the inside stretch of its neighbour, so the fade from
+// that neighbour's row returned 51 m off on the sibling; a spot is now dropped only by a row on its own road.
 const kept = { n: 0, moved: 0 }
 let fails = 0
 const check = (label, ok, detail = '') => {

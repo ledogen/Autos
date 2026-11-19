@@ -1,7 +1,7 @@
 ---
 id: BUG-221
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-18
 source: FEAT-293 driving-AI soak, 2026-11-18
@@ -11,7 +11,7 @@ lane: engine & world
 # BUG-221: A truck climbing into a tunnel portal at about 37 % stops dead and cannot reverse out
 
 ## Next steps
-Orchestrator: land `land/bug-221-portal-shelf` (fix + gate, proofs in the Log).
+Done. Landed on main 2026-11-18 (fix + portal-clear gate; smoke 40 steps). Follow-on: BUG-230.
 
 ## Summary
 Seed 1830183820 at (125, -42): 8.5 m/s to 0 in 1 s on a roughly 37 % climb at a tunnel portal; reversing does not free the truck. The one intervention in 40 km of AI driving.

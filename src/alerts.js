@@ -55,8 +55,10 @@ export function pollWords (alerts, expiry, st, now, steps, isCrit, texts, nowMs,
   // real change is read against them.
   if (held) return
   now.forEach((l, i) => {
+    // BUG-227: a null `levels` is a new baseline (a new run nulls it), so the steps go with it; read against the last
+    // truck's steps, a New game after free roam announced every wheel the jalopy rolled bent.
     const prev = st.levels?.[i] ?? l, crit = isCrit(i, l), id = 'w' + i
-    const act = wordAction(prev, l, steps[i], st.steps?.[i] ?? steps[i], crit)
+    const act = wordAction(prev, l, steps[i], st.levels ? st.steps[i] : steps[i], crit)
     if (act !== 'none') { alerts.close(id); expiry.delete(id) }
     if (act === 'show') {
       alerts.open(id, texts[i][l], l === 2)

@@ -7,6 +7,8 @@
 // put player input or a formatted number through this field — the renderer sets innerHTML.
 // A line that differs by input says it once per input: <span class="kc-kb">…</span><span class="kc-pad">…</span>,
 // and CSS shows the half for the device driving now (body.pad-on), switching live (FEAT-174). Never both in words.
+// A pad half's driving button that a pad layout moves carries data-pad="menu" (the side menu) or "brake" (the
+// handbrake): main.js writes the chosen layout's button over it (DEC-431; Professor's B / RB as authored).
 
 /** The uncle's one-time briefing, played the first time a paper route is accepted in a run. */
 export const PAPER_ROUTE_INTRO = [
@@ -202,7 +204,7 @@ export const TUT = {
     // back out; then the inventory and the spare only, onto a corner in the picker; then the recovery menu's tow to the shop
     // (main.js _TUT_TOW). The pad's halves name hold B (kc-pad, FEAT-174).
     'tut-flat': [{ speaker: 'Mom', until: 'damage', allow: ['damage screen'], hi: ['#hud-b-hint', '#dmg-icon'], text: `Was that a bang? That's a flat, honey. Pull over, come to a full stop, set the handbrake, `
-        + `and <span class="kc-kb">press <span class="dlg-key">V</span></span><span class="kc-pad">hold <span class="dlg-key">B</span> and pick vehicle condition</span> to look at it.` }],
+        + `and <span class="kc-kb">press <span class="dlg-key">V</span></span><span class="kc-pad">hold <span class="dlg-key" data-pad="menu">B</span> and pick vehicle condition</span> to look at it.` }],
     'tut-damage': [
         { speaker: 'Mom', until: 'diagback', allow: ['damage screen', '.ds-row', '.ds-part'],
             hi: ['#dmg-screen .ds-row[data-track="tireFL"]', '#dmg-screen .ds-part[data-track="tireFL"]', '#dmg-screen [data-act="close"]'],
@@ -210,10 +212,10 @@ export const TUT = {
             + `Back out with <span class="kc-kb"><span class="dlg-key">Esc</span></span><span class="kc-pad"><span class="dlg-key">B</span></span>.` },
         { speaker: 'Mom', until: 'spare', allow: ['inventory', '.inv-slot[data-id="spareTire"]', '#inv-screen:has(.inv-slot.sel[data-id="spareTire"]) :is([data-act="use"], [data-act="action"])', '#dmg-screen.picking'],
             hi: ['#hud-b-hint', '#inv-icon', '.inv-slot[data-id="spareTire"]', '#dmg-screen.picking .ds-pbtn[data-track="tireFL"]'],
-            text: `Now put your spare on: <span class="kc-kb"><span class="dlg-key">Tab</span></span><span class="kc-pad">hold <span class="dlg-key">B</span> and pick the inventory</span>, then the mounted tire.` },
+            text: `Now put your spare on: <span class="kc-kb"><span class="dlg-key">Tab</span></span><span class="kc-pad">hold <span class="dlg-key" data-pad="menu">B</span> and pick the inventory</span>, then the mounted tire.` },
     ],
     'tut-spareflat': [{ speaker: 'Mom', until: 'recovery', allow: ['recovery'], hi: ['#hud-b-hint', '#recovery-icon'], text: `The spare's flat too? Of course it is. Call a tow: `
-        + `<span class="kc-kb"><span class="dlg-key">X</span> is</span><span class="kc-pad">hold <span class="dlg-key">B</span> and pick</span> the recovery menu.` }],
+        + `<span class="kc-kb"><span class="dlg-key">X</span> is</span><span class="kc-pad">hold <span class="dlg-key" data-pad="menu">B</span> and pick</span> the recovery menu.` }],
     'tut-tow': [{ speaker: 'Mom', text: `The tow takes you to the nearest auto shop. It's on me this time.` }],
     // FEAT-184 (DEC-151): the tire is on mom — one mounted tire and its fitting, paid at the cart's check out (FEAT-212). PLACEHOLDER words.
     'tut-shopfix': [{ speaker: 'Mom', text: `Get a good tire on that corner &mdash; that one's on me. Check out at the counter, then come home, it's late.` }],
@@ -227,7 +229,7 @@ export const TUT = {
         + `are the gas and the brake; steer with <span class="kc-kb"><span class="dlg-key">A</span> and <span class="dlg-key">D</span></span>`
         + `<span class="kc-pad">the <span class="dlg-key">left stick</span></span>. Follow the line home.` }],   // FEAT-174: kc-kb / kc-pad, one per input
     'tut-park': [{ speaker: 'Mom', until: 'park', allow: [], hi: ['#poi-prompt'], text: `Pull over and park out front, in the marked spot. Come to a full stop, then `
-        + `<span class="kc-kb">tap <span class="dlg-key">Space</span></span><span class="kc-pad">tap <span class="dlg-key">RB</span></span> to set the handbrake.` }],
+        + `<span class="kc-kb">tap <span class="dlg-key">Space</span></span><span class="kc-pad">tap <span class="dlg-key" data-pad="brake">RB</span></span> to set the handbrake.` }],
     // At hers that night, when her sleep card opens: glad you're home safe (DEC-325), then hunger and energy (DEC-315: the
     // owner's words; true of day.js — past the last meal's hold energy drains faster than an hour per hour, and low energy
     // is sleepy, tired, exhausted), then her bed.
@@ -268,7 +270,7 @@ export const TUT = {
     // the line through the hunt (`holds`) and the vibe cards hang up. The vibe cards are PLACEHOLDER words.
     'tut-ranch': [
         { speaker: KATIE, phone: true, text: `Oh, you're already there? I'm just a couple minutes out. Go ahead and find a good spot. I'll just pull over where I see your truck.` },
-        { speaker: KATIE, phone: true, holds: true, until: 'campmenu', allow: ['camp'], hi: ['#hud-b-hint', '#camp-icon'], text: `<span class="kc-kb">Press <span class="dlg-key">Z</span></span><span class="kc-pad">Hold <span class="dlg-key">B</span> and select the camping menu</span> `
+        { speaker: KATIE, phone: true, holds: true, until: 'campmenu', allow: ['camp'], hi: ['#hud-b-hint', '#camp-icon'], text: `<span class="kc-kb">Press <span class="dlg-key">Z</span></span><span class="kc-pad">Hold <span class="dlg-key" data-pad="menu">B</span> and select the camping menu</span> `
             + `to look for a campsite. Then drive slowly down the road to find the best site nearby. Anything flat enough will do!` },
     ],
     'tut-vibe': [

@@ -1,5 +1,6 @@
 /**
- * The controller's icon menu (owner, 2026-10-21): hold B and the HUD icon column becomes a menu.
+ * The controller's icon menu (owner, 2026-10-21): hold B (RB in the Ventura Highway pad layout, DEC-431 — gamepad.js
+ * drives it either way) and the HUD icon column becomes a menu.
  * D-pad ↑/↓ walks it, releasing B opens the highlighted icon, and a quick tap opens the pre-selected
  * one. gamepad.js drives it through pad.hudMenu (open / move / select / cancel). The keyboard never
  * does: Tab / V / Z / X stay direct.
