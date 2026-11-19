@@ -73,6 +73,7 @@ a mid-span crossing blend?), 74 % / 60 % where the solver itself built 85–89 %
 - [x] Fix options shown to the owner with before/after screenshots; "drop the road" among them
 - [x] The owner's pick (E) built, with a gate that fails before and passes after (`test/junction-recovery-grade.mjs`; #9 24.2 %)
 - [x] Affected gates 79/79 + post-merge 47/47 green, deg2-leg-trim, tutorial-seed, cdp-smoke boot+story 38 steps
+- [x] Close-out proofs on the landing branch (main merged): gates 88 green, cdp-smoke 40 steps, pad-e2e ALL OK, 400-seed no-throw sweep 0 throws
 - [ ] Owner's look and cost call (`bug200-e-look`), then landing
 
 ## Decisions
@@ -109,3 +110,4 @@ BUG-179, DEC-366, DEC-064, DEC-065, DEC-047, DEC-070, DEC-396, FEAT-82, QUAL-13
 - 2026-11-18, Lane B: E built (rule above); perf 9e8984a7 (bit-identical on 4 seeds); main merged clean. Affected gates 79/79
   (`gates-final.log`), post-merge 47/47, junction-recovery-grade, deg2-leg-trim, tutorial-seed, cdp-smoke boot+story 38 steps green.
 - 2026-11-18: final census and cost above; 35-site measure worst deck step 0.90 m @ (-1637, 1691), #13 0.39 m. Card `bug200-e-look` owed.
+- 2026-11-18, close-out: main (FEAT-288 P8) merged clean; gates 88 green (`gates-land.log`); cdp-smoke PASS 40 steps zero console errors (`smoke.log`); pad-e2e ALL OK, 104 ok lines, no console errors (`pad.log`); 400-seed no-throw sweep (seeds 1-200 and 201-400): 400 lines, 0 `ok:false`, 0 nonzero `bad`, 0 thrown errors (no main baseline sweep exists). Fingerprint (`fp-main`/`fp-branch`): network and poi identical; profiles/surface/carve/tiles differ as expected; water differs only in the ribbon-geometry half of the hash (ponds/streams half identical, so heights only); junctions (pad/ring heights) and props (seed 6 fork play) not separable from the combined hash.
