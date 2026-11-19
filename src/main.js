@@ -9656,7 +9656,9 @@ function _exitScenario () {
 let _paperSizeIdx = 0   // the rung the scenario re-opens on: the owner's rated 4 first, then whatever was last driven
 
 function _startPaperScenario (def) {
-  _paperSizeIdx = 0
+  // BUG-231: this button is live while main.js is still evaluating (the menu is wired early, see _worldReady), where
+  // `_paperSizeIdx` below is still in its temporal dead zone. So touch no later binding here: the rung resets in
+  // _startStory, after its `await _worldReady`, like every other menu entry's state.
   void _startStory(def.seed, WORLD_PRESETS.classic, _settings.gearbox, null, 0, def)
 }
 
@@ -10142,6 +10144,7 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   _seedRerolls = rerolls
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
   _paperScenario = scenario   // FEAT-62: every entry sets it too — a scenario never outlives its own entry
+  if (scenario) _paperSizeIdx = 0   // a scenario re-opens on the owner's rated rung (BUG-231: reset here, after _worldReady)
   _returnSeed = resume?.returnSeed ?? returnSeed   // FEAT-184 (DEC-158): likewise; a resume carries its own
   _runEnded = false
   _playedS = 0                       // FEAT-146 (a resume puts the saved playtime back in _restoreRun)
