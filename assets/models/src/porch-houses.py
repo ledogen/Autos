@@ -75,10 +75,10 @@ MATS = {
     "CottageBrick":   ((0.240, 0.075, 0.045, 1.0), 0.95),   # foundation, porch skirt, chimney
     "CottageCurtain": ((0.820, 0.740, 0.560, 1.0), 0.95),
 
-    "RanchSiding":    ((0.700, 0.300, 0.200, 1.0), 0.85),   # coral
+    "RanchSiding":    ((0.420, 0.360, 0.260, 1.0), 0.85),   # putty tan (owner 2026-11-20: coral was too eccentric; the bank in data/prop-models.js recolours it)
     "RanchTrim":      ((0.780, 0.770, 0.730, 1.0), 0.70),
     "RanchRoof":      ((0.110, 0.090, 0.075, 1.0), 0.85),   # brown-grey shingle
-    "RanchDoor":      ((0.030, 0.260, 0.270, 1.0), 0.60),   # door + shutters, turquoise
+    "RanchDoor":      ((0.200, 0.070, 0.040, 1.0), 0.60),   # door + shutters, brick brown
     "RanchDeck":      ((0.300, 0.180, 0.095, 1.0), 0.90),   # deck, steps, rails
     "RanchStone":     ((0.260, 0.255, 0.245, 1.0), 0.95),   # foundation + chimney
     "RanchCurtain":   ((0.800, 0.780, 0.700, 1.0), 0.95),

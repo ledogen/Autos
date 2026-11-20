@@ -62,6 +62,8 @@ const OBJ_SPIN      = 2.0   // rad/s about the vertical: one turn in 3.1 s
 const OBJ_BOB       = 0.25  // m amplitude of the bob, at 2.4 rad/s
 const OBJ_GROW_M    = 45    // m of CAMERA distance per metre of scale: the marker keeps one apparent size (3 m / 45 m, ~7 % of the screen) from 9 m to 157 m, so it never swells as you close in
 const OBJ_MIN_D     = 14    // m: closest the marker stands to the truck
+const OBJ_PROBE_STEP = 1.0  // m: the camera-ray walk that keeps the marker out of a POI's walls
+const OBJ_PROBE_R    = 1.2  // m: the marker's half-width when it is tested against the POI's boxes
 const OBJ_SIDE      = 0.4   // rad: close in, the marker slides to within this bearing of the truck's heading, so it stays in the chase camera's frame
 const TAN_SPAN     = 20     // m of route averaged into the exit direction at a junction
 const REACQUIRE_M  = 40     // lateral error that forces a full-route re-scan
@@ -379,7 +381,7 @@ export class GpsSystem {
    *   getRoad returns the RoadSystem, read ONLY at bake time (not per frame) for the design
    *   profile the carve actually uses — see bakeRoute's ELEVATION SOURCE note.
    */
-  constructor (scene, { getRoute, getCar, getFwd = null, getRoad = null, getObjectiveTopY = null, getCamera = null }) {
+  constructor (scene, { getRoute, getCar, getFwd = null, getRoad = null, getObjectiveTopY = null, getCamera = null, getBlocked = null }) {
     this._scene = scene
     this._getRoute = getRoute
     this._getCar = getCar
@@ -390,6 +392,7 @@ export class GpsSystem {
     this._getRoad = getRoad
     this._getCamera = getCamera   // FEAT-297: the camera's world position, to hold the marker's apparent size
     this._getObjectiveTopY = getObjectiveTopY   // FEAT-297: (objective) -> world Y of its roof, or null when it is no POI
+    this._getBlocked = getBlocked   // FEAT-297: (x, y, z, r) -> truthy inside a POI's solid; the marker is depth-tested, so close in it stands in front of the walls, not inside them
     this._route = null
     this._src = null          // the mission object the current bake came from (identity compare)
     this._bakeRev = -1        // road._networkRev the current bake was taken at
@@ -439,7 +442,6 @@ export class GpsSystem {
     this.group.add(this._arrow)
 
     this._objMat = mat()
-    this._objMat.depthTest = false   // FEAT-297: close in, the tip sits inside the POI's walls (its marker is the model's centre); it still has to show
     this._objArrow = new THREE.Group()   // FEAT-218 / FEAT-297: the down arrow over an off-road objective
     for (const g of _markerGeometry()) {
       const m = new THREE.Mesh(g, this._objMat)
@@ -739,9 +741,20 @@ export class GpsSystem {
         x = car.x + (dx * cs - dz * sn) * m
         z = car.z + (dx * sn + dz * cs) * m
       }
-      this._objArrow.position.set(x, nearY + (roofY - nearY) * k + Math.sin(this._t * 2.4) * OBJ_BOB, z)
-      this._objArrow.rotation.y = this._t * OBJ_SPIN
+      const y = nearY + (roofY - nearY) * k + Math.sin(this._t * 2.4) * OBJ_BOB
       const cam = this._getCamera?.() ?? car
+      // The marker is depth-tested (owner, 2026-11-20: never through walls or props). Close in its point is the POI's centre, so walk it
+      // back along the camera's ray to the first solid on it: it stands in front of the wall the chase camera looks at.
+      if (this._getBlocked && k < 1) {
+        const dx = x - cam.x, dz = z - cam.z, L = Math.hypot(dx, dz)
+        for (let t = OBJ_PROBE_STEP; t <= L; t += OBJ_PROBE_STEP) {
+          if (this._getBlocked(cam.x + dx / L * t, y + OBJ_ARROW_H * 0.5, cam.z + dz / L * t, OBJ_PROBE_R)) {
+            const b = Math.max(0, t - OBJ_PROBE_STEP - OBJ_PROBE_R); x = cam.x + dx / L * b; z = cam.z + dz / L * b; break
+          }
+        }
+      }
+      this._objArrow.position.set(x, y, z)
+      this._objArrow.rotation.y = this._t * OBJ_SPIN
       this._objArrow.scale.setScalar(Math.min(3.5, Math.max(0.25, Math.hypot(cam.x - x, cam.y - car.y, cam.z - z) / OBJ_GROW_M)))
       this._objMat.opacity = fade
       this._objArrow.visible = true
