@@ -1,7 +1,7 @@
 ---
 id: FEAT-300
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-19
 source: owner, 2026-11-19 (inbox) — "When you're at the joint. It should show your hunger. And sleep. and the time."
