@@ -1602,6 +1602,14 @@ export class PoiSystem {
                 if (h) return h
             }
         }
+        // BUG-246: and the route houses (FEAT-295). Their boxes were engine colliders only (main.js _syncPoiPhysics), so
+        // the body met a porch floor but the tires — this query — rolled through it: the 0.40 m deck and the 0.50 m porch
+        // stand at or under the bumper blade's bottom edge, the chamfer slid the body up onto them, and the truck crept on
+        // with its front wheels inside the porch until the house wall stopped it. Both halves of MESH == PHYSICS here too.
+        for (const h of this._routeHouses) {
+            const hit = this._boxesContact(h, cube, cx, cy, cz, r)
+            if (hit) return hit
+        }
         return null
     }
 
