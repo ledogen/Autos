@@ -61,3 +61,4 @@ FEAT-293.
 
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
+- 2026-11-20: built on land/gearbox-1120 (lane agent). shift-hunt red on main / green, drive-ai-manual green, cdp-smoke green on retry (save-step flake once), pad-e2e ALL OK; affected gates (133, --serial) 48 run, 0 red at hand-off, log /private/tmp/claude-501/-Users-ledogen-CodeShit-CarGame/bd00ae91-7bd8-4224-8f6d-35255cd45e4a/scratchpad/runall2.log. Fingerprint differs from step 93 (1.55 s, main's spin-read 1-2); identical before.
