@@ -38,3 +38,4 @@ the distance to the last house in parentheses, then the existing count and paper
 
 ## Log
 - 2026-11-20: ec9d806d. paper-guide-keep PASS (0 rises over 1.54 km, 3 switches, last-house number moved 3 m at a switch).
+- 2026-11-20: smoke papers step reads "0.64 km (2.10 km) · 0 / 4 delivered   8 papers · due in 5h 16m"; frame at wip/route-houses-2/hud.jpg (main checkout). Gates 47/47, smoke 42/42.

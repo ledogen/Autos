@@ -54,3 +54,4 @@ throttle held at 30° the truck scrapes along the face. `fingerprint-physics` id
 
 ## Log
 - 2026-11-20: 5ae0ff54 fix + gate (main 30/45 FAIL, branch 45/45). fingerprint-physics ALL IDENTICAL to main 38e9bc50.
+- 2026-11-20: proofs: affected gates 47/47 green (run-all --serial), cdp-smoke PASS 42 steps (one CDP socket flake in "runlog" on the first run, green on retry). Branch land/route-houses-2, served at http://m4air:8127. Not verified: an owner drive.
