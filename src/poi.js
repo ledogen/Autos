@@ -1115,7 +1115,7 @@ export class PoiSystem {
             }
             if (!ok) continue
             const baseY = topY - (P.roadClearanceMargin ?? 0.25)
-            return { id: h.id, key, modelX: X0, modelZ: Z0, baseY, modelYaw: h.yaw, collision: col,
+            return { id: h.id, key, variant: hash32(`poi-route-house-paint:${seed}:${h.id}`) & 0x7fffffff, modelX: X0, modelZ: Z0, baseY, modelYaw: h.yaw, collision: col,
                      floorY: baseY + pc.c[1] + pc.s[1] / 2, pad, rect }
         }
         return null
