@@ -17,7 +17,7 @@
 
 import { BINDINGS, padOf } from './gamepad.js'
 
-// key (lower case) → the pad's short name for it, as a keycap reads: "View (tap)" → "View",
+// key (lower case) → the pad's short name for it, as a keycap reads: "◂ Back (tap)" → "◂ Back",
 // "B (hold, ↑/↓, release)" → "B". Space is the binding table's ' '. Looked up at each call, in the chosen pad
 // layout (DEC-431: Ventura Highway's handbrake reads A); the last row for a key wins.
 const padCap = (k) => { const b = BINDINGS.findLast(b => b.key.toLowerCase() === (k === 'space' ? ' ' : k)); return b && padOf(b).replace(/ \(.*\)$/, '') }
