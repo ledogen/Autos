@@ -2,7 +2,7 @@
 id: DEC-454
 status: standing
 decided: 2026-11-20
-area: art
+area: assets
 governs: FEAT-313, ASSET-91, FEAT-295, data/prop-models.js, assets/models/src/porch-houses.py, route houses
 supersedes: 
 ---
