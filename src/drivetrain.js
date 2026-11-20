@@ -210,6 +210,7 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // ── Mode: reverse only when the S-pedal is down, no throttle, and stopped/rolling back ──────────
   const reverse = autoReverse(vehicleState, vForward)
   st.shiftTimer = Math.max(0, (st.shiftTimer || 0) - dt)
+  if (st.upDwell) st.upDwell = Math.max(0, st.upDwell - dt)   // BUG-244, see the downshift below
 
   // Clamp forward gear index into range.
   if (st.gear < 1) st.gear = 1
@@ -323,8 +324,11 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   const Tair = pedalEff * engineTorqueAt(engineRPM, curve) * tune
   // FEAT-50: the low-fuel sputter — a stumble takes torque for a fraction of a second (src/fuel.js
   // stepSputter publishes it; absent fuel state → 1, which every headless gate relies on).
-  let Teng = pedalEff * engineTorqueAt(engineRPM, curve) * (tune * (params._engineDamageScale ?? 1.0)) * (vehicleState.fuel?.torqueScale ?? 1)
-  if (engineRPM > redline) Teng *= Math.max(0, 1 - (engineRPM - redline) / 200)
+  const engineOut = (rpm) => {
+    const t = pedalEff * engineTorqueAt(rpm, curve) * (tune * (params._engineDamageScale ?? 1.0)) * (vehicleState.fuel?.torqueScale ?? 1)
+    return rpm > redline ? t * Math.max(0, 1 - (rpm - redline) / 200) : t
+  }
+  const Teng = engineOut(engineRPM)
 
   // FEAT-51: the power the FUEL is paying for [W] — the ENGINE HEAT signal (damage.js _stepTemp). The
   // fuel TANK does not read it: it burns off the rpm × pedal fuel map (src/fuel.js, FEAT-50), which
@@ -335,7 +339,8 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   st.fuelPowerW = Math.max(params.engineIdlePowerW ?? 7000, Tair * engineRPM / RPM_PER_RAD)
 
   // ── Converter output → gearbox → final drive → axle → rear wheels ───────────────────────────────
-  splitRearAxle(T, dir * TR * Teng * totalRatio, vehicleState, params)
+  const axleTorque = TR * Teng * totalRatio
+  splitRearAxle(T, dir * axleTorque, vehicleState, params)
 
   // ── Automatic shift schedule (forward only), keyed on the ROAD-SPEED proxy `coupled` ─────────────
   // CRITICAL: shifts key off `coupled` (= turbineRPM / couplingSR, the locked/no-slip engine speed for
@@ -379,21 +384,40 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
     const holdTime      = params.shiftHoldTime || 0.6
     const hystWot       = params.shiftHysteresis ?? 800
     const hysteresis    = (params.shiftHysteresisLight ?? hystWot) + load * (hystWot - (params.shiftHysteresisLight ?? hystWot))
-    if (st.gear < nGears && coupled > shiftUp) {
+    // BUG-244: where a gear is GOING is judged by Newton, not by carrying today's acceleration over. The road's
+    // load is what the axle torque we make now does not turn into acceleration: F_load = F_now − m·a. In another
+    // gear at this pedal the engine sits at that gear's coupled rpm (or the converter's stall speed), the
+    // converter multiplies by that gear's speed ratio, and the axle acceleration follows from the SAME load:
+    // α_g = α_now + (T_g − T_now) / (m_eff · r²). The old projection scaled today's acceleration by the ratio
+    // step — it never paid the road load, so on a 15 % grade at half pedal it saw 2nd "accelerating" and took it,
+    // then 2nd fell back to 1st 4 s later, for ever (a 7.3 s 1-2-1 cycle, 30 ↔ 36 km/h).
+    // ponytail: rigid tyres (no slip change across the shift), a steady converter (no engineRpmLag), driveline
+    // inertia ahead of the wheels ignored (the converter decouples the engine's), stowed kit's mass included.
+    const toCoupled = RPM_PER_RAD / couplingSR
+    const lookahead = params.shiftLookahead ?? 4
+    const mEffR2    = (params.mass + (params.stowedKg || 0) + (params.fittedKg || 0)) * wheelR * wheelR + 4 * (params.wheelInertia || 1.22)
+    // The coupled rpm gear ratio g gains over the lookahead, at today's speed and road load.
+    const gain = (g) => {
+      const turb = axleAbs * g * finalDrive * RPM_PER_RAD
+      const eng  = Math.min(redline + 200, Math.max(idle, stallRPM, turb / couplingSR))
+      const trG  = 1 + (stallTR - 1) * Math.max(0, 1 - Math.min(1, turb / eng) / couplingSR)
+      return ((st.axleAcc ?? 0) + (trG * engineOut(eng) * g * finalDrive - axleTorque) / mEffR2) * g * finalDrive * toCoupled * lookahead
+    }
+    if (st.gear < nGears && coupled > shiftUp && (!st.upDwell || coupled >= shiftUpWot)) {
       // Anti-hunt (the key hysteresis lever): only upshift if the higher gear can HOLD — its coupled rpm
       // must stay a `hysteresis` band above the point where it would shift back down. FEAT-150: judged on
       // where the next gear is GOING, not where it lands: its rpm projected `shiftLookahead` s ahead at
-      // the road's current acceleration carried into that gear (rpm scaled by the step, wheel torque by
-      // the step again). Accelerating on the flat it clears at once; barely holding speed on a grade it
-      // does not, and the box stays down — the case the band exists for. Judged on the landing rpm alone,
+      // the acceleration that gear would make against today's road load (BUG-244, `gain` above).
+      // Accelerating on the flat it clears at once; on a grade the next gear cannot pull, it does not,
+      // and the box stays down — the case the band exists for. Judged on the landing rpm alone,
       // the band written for the 2→3 and 3→4 steps (×0.68, ×0.71) held 1st to ~4400 rpm at 70 % pedal
       // on the flat, because the 1→2 step (×0.595) lands lowest (owner 2026-10-25: "struggles to get out
       // of first").
       const step        = gears[st.gear] / gears[st.gear - 1]
       const nextRatio   = gears[st.gear] * finalDrive
-      const toCoupled   = RPM_PER_RAD / couplingSR
       const nextCoupled = Math.abs(axleOmega * nextRatio) * toCoupled
-      const nextProj    = nextCoupled + Math.max(0, st.axleAcc ?? 0) * step * nextRatio * toCoupled * (params.shiftLookahead ?? 1)
+      // At the redline the projection is waived with the band (see `band` below).
+      const nextProj    = coupled >= shiftUpWot ? nextCoupled : nextCoupled + gain(gears[st.gear])
       // The next gear's effective downshift point: the rule below never drops into a gear that would
       // land within the band of the upshift point, so from the next gear back into this one that is
       // min(shiftDownEff, (shiftUp − band) · step).
@@ -408,9 +432,14 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
       // FEAT-150: the mirror of the upshift rule — never drop into a gear that would land within the band
       // of its own upshift point (it would only shift straight back). That makes the kickdown point
       // per-gear: floored in 3rd the box drops to 2nd below kickdownRPM, while 2nd → 1st waits until 1st
-      // has room to pull.
+      // has room to pull. BUG-244: a drop made on a part pedal holds off the upshift back for the lookahead
+      // (st.upDwell): at a steady half pedal on 12 % the lower gear is the one that can pull, so it reaches its
+      // upshift point fast — 1st was back at it 3.1 s after the drop, a 2-1-2 every 17.7 s. A real TCM's
+      // "time since downshift" inhibit; a calibration, not physics. A floored pedal (the floorTime threshold)
+      // sets none: it asks for every rpm the engine has, and its rev-out ends at the redline.
       st.gear--
       st.shiftTimer = holdTime
+      if (throttle > 0.02 && throttle < 0.95) st.upDwell = lookahead
     }
   }
 

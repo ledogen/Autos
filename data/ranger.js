@@ -193,10 +193,12 @@ export const RANGER_PARAMS = {
   shiftThrottleTau:     1.5,  // s — throttle-average time constant
   shiftHysteresisLight: 300,  // rpm(coupled) — anti-hunt headroom at a light foot
   kickdownDelay:        0.4,  // s — pedal held ≥ 95 % this long = kickdown (a feathered tap is not one)
-  // FEAT-150: the upshift's anti-hunt test projects the next gear this far ahead at the road's current
-  // acceleration (smoothed over shiftAccelTau): accelerating, the higher gear clears the band at once;
-  // barely holding speed on a grade, it does not.
-  shiftLookahead:       1.0,  // s
+  // FEAT-150 / BUG-244: the box's minimum stay in a gear at a steady pedal. The upshift test projects the next
+  // gear this far ahead at the acceleration Newton gives it against today's road load (drivetrain.js `gain`;
+  // the road's acceleration smoothed over shiftAccelTau): accelerating, the higher gear clears the band at
+  // once; on a grade it cannot pull, it does not. A part-pedal downshift holds off the upshift back as long.
+  // A calibration (a TCM's shift-busyness window), not physics: 1 s let 2nd fall back to 1st 3.3 s later.
+  shiftLookahead:       4.0,  // s
   shiftAccelTau:        0.25, // s
   // FEAT-126 manual gearbox (only read when the fitted box is transmissionType 'manual').
   clutchAssist:    true,   // the clutch assistant (src/clutch-assist.js) stands between input and sim

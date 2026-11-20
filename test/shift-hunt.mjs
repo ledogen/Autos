@@ -7,8 +7,10 @@
 // REVERSE_S. A reversal at steady inputs is a hunt: the inputs did not change, so the box changed its
 // mind about the same road.
 //
-// Starting speed is set with the truck already in the gear whose coupled rpm sits nearest 2000, so the
-// opening shifts are the box choosing, not the box being handed a silly gear.
+// Starting speed is set with the truck already in the gear whose coupled rpm sits nearest 2000, and the box
+// held for its first second while its acceleration estimate warms up, so the opening shifts are the box
+// choosing on a measured road, not the harness handing it a state. An upshift at the WOT upshift point
+// (a kickdown revving out) is the engine out of rpm, not a change of mind, and is not counted.
 //
 // Run: node test/shift-hunt.mjs [--map]   (--map prints every cell; self-checking, exits non-zero on a hunt)
 
@@ -20,7 +22,9 @@ import { TRANSMISSIONS } from '../data/transmissions.js'
 import { makeEngineCtx } from './lib/engine-ctx.mjs'
 
 const DT = 1 / 60, RPM_PER_RAD = 60 / (2 * Math.PI)
-const RUN_S = 40, REVERSE_S = 6   // a reversal within 6 s of the shift it undoes counts as a hunt
+// A reversal within 4 s of the shift it undoes is a hunt. On main (2026-11-20) the hunting cells reversed every
+// 3.1–4.5 s (1-2-1 at 30 ↔ 36 km/h on 12–15 %); the fix's minimum stay (shiftLookahead) is 4 s.
+const RUN_S = 40, REVERSE_S = 4
 const MAP = process.argv.includes('--map')
 const GRADES = [0, 0.02, 0.04, 0.06, 0.08, 0.10, 0.12, 0.15]
 const PEDALS = [0.15, 0.25, 0.35, 0.5, 0.7, 1.0]
@@ -57,7 +61,7 @@ export async function runCell (box, grade, pedal, kmh, ctx, { runS = RUN_S, stop
     wheelDebug: [0, 1, 2, 3].map(() => ({ fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: 0 })),
     wheelOmega: [w0, w0, w0, w0], slipLong: [0, 0, 0, 0], slipLat: [0, 0, 0, 0],
     strutComp: [...eq.strutComp], strutCompVel: [0, 0, 0, 0], handbrake: false,
-    drivetrain: { engineRPM: 750, gear: g0, shiftTimer: 0, activeGear: g0, throttleAvg: pedal },
+    drivetrain: { engineRPM: 750, gear: g0, shiftTimer: 1, activeGear: g0, throttleAvg: pedal },   // 1 s: the box's acceleration estimate warms up before it may shift
   }
   const shifts = []
   let g = g0, rpm = 0, dist = 0, tStop = null
@@ -73,7 +77,8 @@ export async function runCell (box, grade, pedal, kmh, ctx, { runS = RUN_S, stop
   const hunts = []
   for (let i = 1; i < shifts.length; i++) {
     const a = shifts[i - 1], b = shifts[i]
-    if (b.to === a.from && b.t - a.t < REVERSE_S) hunts.push({ pair: `${Math.min(a.from, a.to)}-${Math.max(a.from, a.to)}`, dt: b.t - a.t })
+    // An upshift at the WOT upshift point is the engine out of rpm (a kickdown revving out), never a hunt.
+    if (b.to === a.from && b.t - a.t < REVERSE_S && !(b.to > b.from && b.rpm >= P.shiftUpRPM - 50)) hunts.push({ pair: `${Math.min(a.from, a.to)}-${Math.max(a.from, a.to)}`, dt: b.t - a.t })
   }
   return { g0, shifts, hunts, tStop, vEnd: vs.velocity.dot(fwd) * 3.6, gEnd: g }
 }
