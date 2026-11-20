@@ -7244,6 +7244,18 @@ function _makeCamp () {
 }
 
 /** A graded site's vibe with the packed gear's assist on top (camp.js vibeAssist — the chosen site only). */
+/** FEAT-312 (DEC-456): the packed gear's perks at a previewed site, as "<item>: +N % <stat>" lines. The numbers are the rules' own data: `rest`
+ *  is what restBonus() sums into the sleep rate (recoveryRate: x(1 + rest)), the shade/… share is vibeAssist's deficit on THIS site (0 on a site
+ *  already good at it, so nothing is listed). */
+function _campPerks (site) {
+  const assist = vibeAssist(site, inventorySystem.fills()), seen = new Set(), out = []
+  for (const id of inventorySystem.packed()) {
+    const it = ITEMS[id]
+    if (it.rest) out.push(`${it.name}: +${Math.round(it.rest * 100)} % sleep recovery`)
+    if (it.fills && !seen.has(it.fills)) { seen.add(it.fills); const a = assist[it.fills]; if (a > 0) out.push(`${it.name}: +${Math.round(a * 100)} % vibe (${it.fills})`) }
+  }
+  return out
+}
 const _siteVibe = (site) => site.vibe + Object.values(vibeAssist(site, inventorySystem.fills())).reduce((a, b) => a + b, 0)
 /** What a night here is worth, as day.js reads it: the site's vibe, mom's fixed 0.5, or 'truck'. */
 const _campVibe = (st) => st?.truck ? 'truck' : st?.moms ? 0.5 : st?.site ? _siteVibe(st.site) : 0.5
@@ -7457,6 +7469,7 @@ function _renderCampUI () {
         + ` &middot; <span class="cp-trees">${st.site.trees} trees</span>`
         // No water ⇒ the word is simply absent. A greyed "fishable" would read as a broken promise.
         + (st.site.waterFound ? ' &middot; <span class="cp-water">fishable</span>' : '')
+        + _campPerks(st.site).map(l => `<br><span class="cp-perk">${l}</span>`).join('')   // FEAT-312
     } else if (isSleep) {
       body.innerHTML = '<span class="cp-dim">how long?</span>' + (st.truck ? `<br>${TRUCK_SLEEP_NOTE}` : '')
     } else if (st.truck) {
