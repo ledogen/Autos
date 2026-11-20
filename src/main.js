@@ -104,7 +104,7 @@ import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, s
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, deedLine, stockPrice, itemCost } from './offer-board.js'   // FEAT-67: the mission board; R-17 the promise lines
-import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
+import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist, campFastLine } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem, cardSlide } from './dialogue.js'   // FEAT-61: sequential character cards; FEAT-288 P8: the speaker slide
@@ -6697,7 +6697,7 @@ function _updateParkTriggers (zParked = false) {
             : camp.cands === 0   ? 'no room off the road'
             :                      'not flat'
   _hudHtml(document.getElementById('camp-prompt-text'),
-      camp.fast ? (camp.fastZone ? 'camping area<br>slow down to look for a campsite' : 'no camping here')   // FEAT-308 [DEFAULT] copy
+      camp.fast ? campFastLine(camp.fastZone)
     : site      ? parkPrompt(parked ? 'park again to make camp' : 'park to make camp')
     : moms      ? why
     : onRoad    ? `${why}<br>park on the shoulder to sleep in the truck`

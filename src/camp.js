@@ -357,6 +357,10 @@ export function campReach (segs, zones) {
  * The dispersed-camping layer: zone generation, the region-scoped zone list the map and the
  * in-world queries read, and the road-adjacency half of the Phase-D eligibility test.
  */
+/** FEAT-308 (DEC-451): the camp card's line above the prompt speed — whether this is camping ground, and
+ *  only on it the nudge to slow down for the graded site. [DEFAULT] copy: the owner writes the words. */
+export const campFastLine = (inZone) => inZone ? 'camping area<br>slow down to look for a campsite' : 'no camping here'
+
 /**
  * FEAT-309: does siting ray `a` beat ray `b` (each a _gradeSide result)? By the score the prompt shows:
  * a flat site beats none; two flat sites, the higher vibe; neither flat, the flatter ground (spread),
