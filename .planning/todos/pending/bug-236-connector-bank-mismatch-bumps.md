@@ -12,9 +12,9 @@ lane: unplaced
 # BUG-236: a degree-2 connector bend meets two different banks — hump, dip and a crease at the node
 
 ## Next steps
-Owner (2026-11-19, card answer): diagnose the whole connector deck first; option 1 is NOT to land on its own. Done:
-four classes, a proposed deck design and its census below. Owner: pick on the card `bug236-bumps-kink` (build the
-design / build only class 1 / leave it). Option 1 stays as wip on land/bug-236-bumps-kink (0487cef0, gate 0b096f51).
+Owner picked "Build the proposed design" (2026-11-20). BUILT on land/bug-236-bumps-kink (lane b), not landed. Owner:
+drive it (card `bug236-built-drive`), then the orchestrator lands it. Open: 6 sharp bends worse than main by 0.6–2.7 cm
+(list in the Log); the ≥ 60° bends keep a shared plane (see Decisions).
 
 ## Summary
 Two runs meet at a degree-2 node with a 42° kink; a connector arc (R ≈ 24 m) carries the road round it. BUG-90 runs
@@ -125,8 +125,21 @@ height change against streams/causeways/POIs, gates, cost of the extra solved-pr
 - [x] Option 1 built as wip + gate `connector-bank-runoff` (0487cef0, 0b096f51); proofs in the Log; NOT for landing alone
 - [x] Whole-deck diagnosis: 4 classes with toggles, shares of the 82, 3 unexplained
 - [x] Proposed deck design + scratch census (82 → 4 over 15 cm, none worse); sheet `sheet-deck.jpg`
-- [ ] Owner picks: build the design / only class 1 / leave it (card `bug236-bumps-kink`)
-- [ ] Build the pick with gates; road gates green
+- [x] Owner picks: build the design (2026-11-20)
+- [x] Built: node vertical curve (gentle bends), fitted shared plane (sharp bends), connector core deck, option 1
+- [x] Gate `connector-bend-bumps` (all four classes + capture; red on main, green here)
+- [ ] Affected gates on the final commit: 71 of 96 rerun green (hold 2026-11-20); 25 left (handoff)
+- [x] Census 60 seeds; 400-seed sweep 0 throws (9cddcb10); node moves vs bores/streams/water
+- [ ] Owed: main topology baseline (143 of 400 seeds), fingerprints, smokes, sheet, card
+- [ ] Owner drive (card `bug236-built-drive`), then land
+
+## Decisions
+- Sharp bends (kink ≥ 60°) keep ONE shared plane while the legs' pavements overlap, now fitted to the two runs' own
+  grades through the node (`_deg2BendPlane`, cap 24 %). Replacing it by the curve broke junction-stitch (legs 2.3 m
+  apart where their pavements overlap). 7 % cap measured 10 bends > 15 cm against 5; 12 % / 16 % no better overall.
+- DEC-065 (no longitudinal grade smoother; crest priced by par's corner speed): the node curve is not a smoother (one
+  curve per node grade break, from the two solved grades, ≤ 45 % of either run). It does replace the corner-speed
+  recovery at connector nodes with the open-road rule (vMax 28 m/s) — the design the owner picked; a DEC may want writing.
 
 ## Open questions
 - Which fix (card `bug236-bumps-kink`). Is the "small kink" the crease or the dash stub at the node?
@@ -158,3 +171,9 @@ CarGame-machine (git-ignored): `walk2.mjs` (deck walk), `census.mjs`, `sheet.mjs
   smokes not run). Whole-deck diagnosis: classes 1–4 = 6 / 60 / 21 / 35 of the 82 (3 unexplained); design experiment
   (`wip/bug-236/design-exp.patch` on the branch, env toggles BUG236_T2/T3/T4) 82 → 4 bends over 15 cm, worst 55.2 → 21.6 cm, none
   worse. Scripts: census2.mjs, c7-cls.mjs, sitepro.mjs, sheet-deck.mjs. Sheet `wip/bug-236/sheet-deck.jpg`.
+- 2026-11-20 (lane b): BUILT (6fc35f8e…953a1618). Census 60 seeds, 204 bends, main → built: > 15 cm 82 → 5 (one is a
+  main router spike, 2146252800 (218.4, −761.6) 125.9 → 116.3, not the deck), > 10 cm 135 → 35, median 13.1 → 6.9, worst
+  connector 18.5 cm. Worse > 0.5 cm, all sharp: 1666431344 (24.8, −95) 10.0→12.7, (−493.2, −45.6) 9.0→10.4, 1168177514
+  (793.1, 372.3) 10.4→11.5, 3936696320 (−332.1, −557.2) 7.6→8.7, 4133490816 (−608.9, −394.6) 5.8→6.7, 3273639936 (578, −314.3) 8.4→9.0.
+  Node heights: 201 of 204 decks move; node median 0.12 m, 19 > 1 m, max 2.48 m. First gate run 95/96: bare-join's
+  connector-join step 6.8 cm (the core's deck extended 10 m sideways over a leg's pavement) → fixed 953a1618 (0.9 cm).
