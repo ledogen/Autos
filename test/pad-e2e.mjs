@@ -561,7 +561,6 @@ s = await vs()
 check(!await inv() && s.parked && !/ /.test(await keysSeen()), `VH: A on the back button closes the inventory and never toggles the handbrake (parked ${s.parked})`)
 // The damage screen: RB menu ↓, A selects a part, B closes, the gas rolls away.
 await js('__fp.b[5] = 1'); await sleep(250); await js('__fp.b[13] = 1'); await sleep(150); await js('__fp.b[13] = 0'); await sleep(150); await js('__fp.b[5] = 0'); await sleep(500)
-const dmgOpen = () => js('document.getElementById("dmg-screen").classList.contains("open")')
 check(await dmgOpen(), 'VH: RB menu ↓ release opens the damage screen')
 await press(DOWN); await press(A)
 check(await dmgOpen() && (await vs()).parked && !/ /.test(await keysSeen()), 'VH damage screen: A selects, the screen stays, no handbrake')
