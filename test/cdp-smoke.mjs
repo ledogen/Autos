@@ -743,8 +743,9 @@ const STEPS = [
     const kph = () => js('window.__vs.velocity.length() * 3.6')
     const atSpeed = async (q, name, label) => {
       await seat(q.x, q.z, q.h)
-      if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+      await crank()
       if (!await js('document.getElementById("camp-icon").classList.contains("on")')) await tap('z')
+      if (await js('window.__vs.parked')) await tap(' ')   // a teleport seats latched
       await key('w', true)
       const fast = await untilSim(async () => await kph() > 26, 15)
       await sleep(400)   // the 10 Hz poll
@@ -759,18 +760,19 @@ const STEPS = [
     const tOut = await atSpeed(s.outZ, '2-fast-no-zone', 'FEAT-308 outside every camping area at speed')
     check(tOut === 'no camping here', `outside the camping areas at speed the card is not "no camping here": "${tOut}"`)
     if (SHOTS) {
-      // Shoulder spots (7 m out: off the 5 m ribbon) inside zones, each side: the first with a site (slowed, from the
-      // chase cam), then two ≥ 300 m apart whose site is across the road (FEAT-309), framed from above.
+      // Truck spots in its own lane (3 m off the centreline) inside zones, each side: the first with a good site on its
+      // own side (slowed, from the chase cam), then two ≥ 300 m apart whose site is across the road (FEAT-309), from above.
       const spots = await js(`(() => { const cs = window.__campSys(), pois = window.__poi().list(), P = cs._P(), reach = cs.reachM()
-        let slow = null; const across = []
+        let slow = null; const across = [], tm = { one: 0, two: 0, n: 0 }
         for (const e of window.__roadSys()._network.values()) for (let i = 0; i + 1 < e.points.length; i += 3) {
           const q = e.points[i], n = e.points[i + 1]
           if (!cs.zoneAt(q.x, q.z) || pois.some(p => Math.hypot(p.x - q.x, p.z - q.z) < 120)) continue
           const tx = n.x - q.x, tz = n.z - q.z, l = Math.hypot(tx, tz) || 1
           for (const sd of [1, -1]) {
-            const x = q.x + tz / l * 7 * sd, z = q.z - tx / l * 7 * sd
-            cs._eval = null; const ev = cs.evaluate(x, z), nr = cs.nearRoadInfo(x, z)
-            if (!ev.flat || !ev.pad) continue
+            const x = q.x + tz / l * 3 * sd, z = q.z - tx / l * 3 * sd
+            cs._eval = null; let t = performance.now(); const ev = cs.evaluate(x, z); tm.two += performance.now() - t
+            const nr = cs.nearRoadInfo(x, z); t = performance.now(); cs._gradeSide(nr, P, reach); tm.one += performance.now() - t; tm.n++
+            if (!ev.flat || !ev.pad || ev.vibe < 0.3) continue
             const rec = { x, z, h: Math.atan2(-tx, -tz), px: ev.pad.x, pz: ev.pad.z, vibe: ev.vibe }
             if (!slow && ev.pad.nx * nr.nx + ev.pad.nz * nr.nz > 0) slow = rec
             if (ev.pad.nx * nr.nx + ev.pad.nz * nr.nz < 0 && across.every(a => Math.hypot(a.x - x, a.z - z) > 300)) {
@@ -778,23 +780,31 @@ const STEPS = [
               across.push({ ...rec, own: own.best ? +own.best.vibe.toFixed(2) : null })
             }
           }
-          if (slow && across.length >= 2) return { slow, across }
+          if (slow && across.length >= 2 && tm.n >= 60) return { slow, across, tm }
         }
-        return { slow, across } })()`)
+        return { slow, across, tm } })()`)
+      console.log(`  campCard: ms per grade in the page over ${spots.tm.n} spots: one ray ${(spots.tm.one / spots.tm.n).toFixed(2)}, both sides ${(spots.tm.two / spots.tm.n).toFixed(2)}`)
       check(spots.slow && spots.across.length >= 2, `CAMP_SHOTS: no slowed site or no two across-the-road sites: ${JSON.stringify(spots)}`)
+      // Hunt off while seating (a teleport seats latched, and that park edge would open a card), brake off, hunt on.
+      const seatHunting = async (a) => {
+        if (await js('document.getElementById("camp-icon").classList.contains("on")')) await tap('z')
+        await seat(a.x, a.z, a.h)
+        if (await js('window.__vs.parked')) await tap(' ')
+        await tap('z')
+        await sleep(800)
+      }
       if (spots.slow) {
-        await seat(spots.slow.x, spots.slow.z, spots.slow.h)
-        await sleep(600)
+        await seatHunting(spots.slow)
         await snap('3-slowed-in-zone', `FEAT-308 slowed in a camping area: card "${await text()}"`)
       }
       for (const [k, a] of spots.across.slice(0, 2).entries()) {
-        await seat(a.x, a.z, a.h)
-        await sleep(600)
+        await seatHunting(a)
+        const t = await text()
         await js(`(() => { const p = window.__vs.position, mx = (p.x + ${a.px}) / 2, mz = (p.z + ${a.pz}) / 2
-          const dx = Math.sin(${a.h}), dz = Math.cos(${a.h}), cx = mx + dx * 30, cz = mz + dz * 30, cy = p.y + 38
-          window.__view(cx, cy, cz, Math.atan2(cx - mx, cz - mz), -Math.atan2(cy - p.y, 30)) })()`)
+          const dx = Math.sin(${a.h}), dz = Math.cos(${a.h}), cx = mx + dx * 22, cz = mz + dz * 22, cy = p.y + 26
+          window.__view(cx, cy, cz, Math.atan2(cx - mx, cz - mz), -Math.atan2(cy - p.y, 22)) })()`)
         await frames(20, 1500)
-        await snap(`${4 + k}-across-${k + 1}`, `FEAT-309 site across the road: vibe ${a.vibe.toFixed(2)}; the truck's own side alone: ${a.own == null ? 'no site' : a.own.toFixed(2)}`)
+        await snap(`${4 + k}-across-${k + 1}`, `FEAT-309 site across the road: vibe ${a.vibe.toFixed(2)}; the truck's own side alone: ${a.own == null ? 'no site' : a.own.toFixed(2)}; card "${t}"`)
       }
     }
     await seat(s.outZ.x, s.outZ.z, s.outZ.h)   // a teleport drops the freecam
