@@ -21,10 +21,17 @@ import * as THREE from 'three'
 import { GROUP_DEBRIS } from './physics-engine.js'
 import { getModel } from './model-service.js'
 import { hash32, mulberry32 } from './seed.js'
+import { THROW_PARAMS as TP, paperHull } from './throw.js'
+
+// Getters, so the debug panel's throw sliders reach the next paper thrown.
+const PAPER_DEBRIS = { model: 'newsRoll', get scale () { return TP.scale }, get massKg () { return TP.massKg },
+  get friction () { return TP.friction }, get restitution () { return TP.restitution },
+  get rollingResistance () { return TP.rollingResistance }, get dragK () { return TP.dragK }, hull: paperHull() }
 
 // Scratch for beforeStep()/update() — no per-body allocation on the per-step path.
 const _cp = new THREE.Vector3(), _cq = new THREE.Quaternion(), _cqi = new THREE.Quaternion()
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion()
+const _vl = { x: 0, y: 0, z: 0 }, _va = { x: 0, y: 0, z: 0 }
 // How far outside the bed well a body still counts as cargo: a rock bouncing on the floor or
 // riding against a wall must not flicker in and out of the flag.
 const CARGO_MARGIN = 0.1     // m, round the floor, walls and tailgate
@@ -59,6 +66,12 @@ export const DEBRIS_TYPES = {
   // light enough to smash through and send flying (owner, 2026-10-31); main.js pins them and they do
   // no damage. Plastic feet on asphalt.
   roadBarrier: { model: 'roadBarrier', massKg: 10, friction: 0.5, restitution: 0.1 },
+  // FEAT-277: the thrown newspaper. The numbers and their sources are throw.js THROW_PARAMS' (one place);
+  // this row only hands them to the engine. `scale` = the hull and the mesh both at the drawn 2× (MESH ==
+  // PHYSICS: the roll you see is the roll that hits the wall). `dragK` = quadratic air drag, applied in
+  // beforeStep. `rollingResistance` = the engine's resistance to rolling (a soft, flattened roll squashes
+  // and does not roll like a bottle).
+  paper: PAPER_DEBRIS,
 }
 
 /** The three bundle variants, in a fixed order so a hash picks one deterministically. */
@@ -321,6 +334,8 @@ export class DebrisSystem {
     this._types[kind] = spec
     const p = this._template(spec).then(rec => {
       const proto = this._extractHull(rec.template)
+      if (proto && spec.hull) proto.hull = Float32Array.from(spec.hull)   // an authored collider, centred on the model's bbox
+      if (proto && spec.scale) { proto.hull = proto.hull.map(v => v * spec.scale); proto.center.multiplyScalar(spec.scale) }
       if (proto && !spec.box && !(this._hullVolume(proto.hull) > 0)) {
         // The engine could not build this hull (Box3D caps a hull at 255 half-edges, and a
         // densely faceted round asset — a tire, any detailed item model — exceeds it). Left alone it
@@ -451,6 +466,7 @@ export class DebrisSystem {
       density: opts.massKg ? opts.massKg / proto.volume : proto.density,
       friction: spec.friction,
       restitution: spec.restitution,
+      rollingResistance: spec.rollingResistance ?? 0,
       group: GROUP_DEBRIS,
     })
 
@@ -464,12 +480,13 @@ export class DebrisSystem {
       // tinting those would tint every copy. Disposed in _reclaim.
       if (opts.ownMaterials) m.traverse(o => { if (o.isMesh) o.material = o.material.clone() })
       m.traverse(o => { if (o.isMesh) o.receiveShadow = true })   // FEAT-223: bed cargo shades with the truck it rides in
+      if (spec.scale) m.scale.setScalar(spec.scale)
       m.position.set(-proto.center.x, -proto.center.y, -proto.center.z)
       spawned.add(m)
     })
     this._scene.add(spawned)
 
-    this._live.push({ body, mesh: spawned, kind, cargo: false, pinned: !!opts.pinned, ownMaterials: !!opts.ownMaterials,
+    this._live.push({ body, mesh: spawned, kind, cargo: false, dragK: spec.dragK ?? 0, mass: spec.dragK ? this._eng.getMass(body) : 0, pinned: !!opts.pinned, ownMaterials: !!opts.ownMaterials,
       prevP: new THREE.Vector3(position.x, position.y, position.z),
       prevQ: opts.quaternion ? new THREE.Quaternion(opts.quaternion.x, opts.quaternion.y, opts.quaternion.z, opts.quaternion.w)
         : new THREE.Quaternion() })
@@ -526,6 +543,30 @@ export class DebrisSystem {
     }
   }
 
+  /** FEAT-277: a live body's linear and angular velocity into `lin` / `ang` ({x,y,z}); false if not debris. */
+  velocity (body, lin, ang) {
+    if (!this._live.some(r => r.body === body)) return false
+    this._eng.getVelocity(body, lin, ang)
+    return true
+  }
+
+  /** FEAT-277: did `body` touch anything on the last step (any contact point with a normal impulse)? */
+  touching (body) { return this._eng.maxContactImpulse(body).impulse > 0 }
+
+  /**
+   * FEAT-277: end a body's simulation but keep what it looks like — the engine body is destroyed and its mesh,
+   * posed where the body last was, is handed to the caller, who now owns it (a scored paper lying on a lawn).
+   * @returns {THREE.Object3D|null}
+   */
+  detach (body) {
+    const i = this._live.findIndex(r => r.body === body)
+    if (i < 0) return null
+    const rec = this._live.splice(i, 1)[0]
+    this._eng.getTransform(rec.body, rec.mesh.position, rec.mesh.quaternion)
+    this._eng.destroyBody(rec.body)
+    return rec.mesh
+  }
+
   /** FEAT-26: take live bodies out of the world (no collider under them) or put them back. Unknown handles are ignored. */
   setEnabled (bodies, on) {
     for (const b of bodies) if (this._live.some(r => r.body === b)) this._eng.setEnabled(b, on)
@@ -574,6 +615,12 @@ export class DebrisSystem {
     }
     for (const rec of this._live) {
       this._eng.getTransform(rec.body, rec.prevP, rec.prevQ)
+      if (rec.dragK) {
+        // FEAT-277: quadratic air drag F = −m·k·|v|·v, held over the coming step (the engine clears forces after it).
+        this._eng.getVelocity(rec.body, _vl, _va)
+        const f = -rec.mass * rec.dragK * Math.hypot(_vl.x, _vl.y, _vl.z)
+        if (f) this._eng.applyForce(rec.body, { x: f * _vl.x, y: f * _vl.y, z: f * _vl.z })
+      }
       if (!bed) continue
       _p.copy(rec.prevP).sub(_cp).applyQuaternion(_cqi)
       const inBed = inBedWell(_p, bed, CARGO_MARGIN)

@@ -231,6 +231,18 @@ export const ITEMS = {
         .map(([id, p]) => [id, { name: p.name, kind: 'part', massKg: p.massKg, desc: p.desc, thumb: partIcon(id), rarity: p.rarity }])),
 }
 
+// FEAT-306 (DEC-448, owner 2026-11-19): spoiled food is not deleted, it is renamed. Every food with a `freshH` gets a
+// twin, `rotten<Id>` ("Rotten packed lunch"), that keeps its thumbnail, mass and stack and has no `use` (it cannot be
+// eaten), no `freshH` (it never changes again) and kind 'consumable' (so it stacks and is dropped like any item).
+// The fresh item names it in `rotten`; InventorySystem.tick swaps a unit for it at freshH. Desc is a [DEFAULT].
+for (const [id, it] of Object.entries(ITEMS)) {
+    if (it.kind !== 'food' || !it.freshH) continue
+    const rid = 'rotten' + id[0].toUpperCase() + id.slice(1)
+    ITEMS[rid] = { name: 'Rotten ' + it.name[0].toLowerCase() + it.name.slice(1), kind: 'consumable', massKg: it.massKg, stack: it.stack,
+                   thumb: it.thumb ?? id, desc: 'It sat too long.' }
+    it.rotten = rid
+}
+
 /** DEC-310: the cooking kit, deployed at the player's camp, gives food this much more satiety (+20 %). */
 export const COOKING_KIT_FOOD_MULT = 1.2
 /** Hours a food adds to the hunger counter: its `satiety`, times the kit's bonus when `kitAtCamp` (main.js _kitAtCamp). */

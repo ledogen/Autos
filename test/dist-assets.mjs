@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path'
 import { PROP_MODELS } from '../data/prop-models.js'
 import { VEHICLE_MODELS } from '../data/vehicle-models.js'
 import { ITEMS } from '../data/items.js'
-import { POI_ROSTER, YARD_POOLS } from '../src/poi.js'
+import { POI_ROSTER, YARD_POOLS, MAILBOX_POOL, ROUTE_HOUSE_POOL } from '../src/poi.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..')
@@ -54,7 +54,7 @@ for (const [url, keys] of urls) {
 // names is a shipped model the game can never place (the produce stall sat that way for two months).
 // ORPHANS are deliberate and say why; delete the line when the consumer lands.
 const ORPHANS = {}   // FEAT-50 retired the last one: the gas pump's 'gasPump' tag is the gasPump slot's pool
-const named = new Set([...POI_ROSTER.map((s) => s.modelPool), ...Object.values(YARD_POOLS)].filter(Boolean))
+const named = new Set([...POI_ROSTER.map((s) => s.modelPool), ...Object.values(YARD_POOLS), MAILBOX_POOL, ROUTE_HOUSE_POOL].filter(Boolean))
 for (const [key, spec] of Object.entries(PROP_MODELS)) {
   for (const tag of spec?.tags ?? []) {
     if (!named.has(tag) && !ORPHANS[tag]) fail(`PROP_MODELS.${key} carries tag '${tag}', which no roster modelPool or YARD_POOLS names — it can never spawn`)

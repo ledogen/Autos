@@ -28,6 +28,7 @@ BUG-232's census on 300 random seeds (main e4251ee1), inside the story region: 3
 - [ ] Landed on main (orchestrator).
 
 ## Decisions
+- 2026-11-19, owner (card bug232-spiral-tunnels): "No spirals: refuse the loop". Recorded as DEC-446: the router refuses a path that crosses itself; no grade separation (no tunnel under, no bridge over) is added for spirals or for BUG-234's no-junction crossings. The same card covered this ticket ("BUG-234 over/under passes"): no over/under passes.
 None yet.
 
 ## Open questions
@@ -41,3 +42,4 @@ BUG-232 (the same lift, one run crossing itself).
 
 ## Log
 - 2026-11-18: minted from BUG-232's census. Cause not traced.
+- 2026-11-19: owner answered "No spirals: refuse the loop" on the BUG-232 card (DEC-446), which blocked "BUG-234 over/under passes": no grade separation. Fix options for the no-junction crossings stay open (junction or refuse), simplest first.

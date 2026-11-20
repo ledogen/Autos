@@ -84,7 +84,7 @@ import { MissionSystem, REGION_MARGIN, secPerGameH, routeLeftM } from './mission
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, dropZoneWorld, overDropZone, satSolid, knockMass, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, poiTopY, dropZoneWorld, overDropZone, satSolid, knockMass, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS, LINE_SUPPLY } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
@@ -104,13 +104,13 @@ import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, s
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, deedLine, stockPrice, itemCost } from './offer-board.js'   // FEAT-67: the mission board; R-17 the promise lines
-import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
+import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist, campFastLine } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem, cardSlide } from './dialogue.js'   // FEAT-61: sequential character cards; FEAT-288 P8: the speaker slide
 import { PAPER_ROUTE_INTRO, RUN_INTRO, FIRING, MOM_CALL, LARRY_CALL, PAYCHECK, LARRY_PACK, BOSS_CHECK, TUT, DLG, COMPASS, MIDNIGHT, PHONE } from '../data/dialogue.js'
 import { TUTORIAL, PACK_TOSS, flatRadius, FIRING_CAM } from '../data/tutorial.js'   // FEAT-184: the tutorial seed (DEC-149); FEAT-288 P6: the firing's orbit
-import { simulateThrow, launchVelocity, THROW_PARAMS } from './throw.js'   // FEAT-61: the thrown roll
+import { launchVelocity, PaperThrows, THROW_PARAMS } from './throw.js'   // FEAT-61/277: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
          planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, TourGuide, accuracyTier } from './paper-route.js'
@@ -139,6 +139,7 @@ import { RoadNetworkClient } from './road-network-client.js'  // PERF-30: whole-
 import { PropSystem } from './props/prop-system.js'        // FEAT-06: procedural trees/rocks/bushes
 import { StreamMotion } from './stream-priority.js'         // PERF-33: travel direction + jump detection for streaming order
 import { StreamBudget } from './stream-budget.js'           // PERF-33: one shared per-frame streaming budget
+import { ClutterQueue } from './clutter.js'                // FEAT-278: world clutter streams in after the loading screen
 import { scatterTreePositions } from './props/prop-scatter.js'  // FEAT-45: read-only tree re-roll (camp shade score)
 import { ShadowBakeSystem, ATLAS_N, TILE_PX, shearFromSun } from './props/prop-shadow-bake.js'  // PERF-07: baked prop-shadow atlas
 import { TerrainBake } from './terrain-bake.js'   // PERF-48 lever 6: far terrain baked into an atlas (DEC-234)
@@ -146,7 +147,7 @@ import { installShadowEdgeFade, installNearShadowCoupling } from './shadow-fade.
 import { addPropGui } from './props/prop-debug.js'         // FEAT-06: live tuning folder (self-contained)
 import { lampsOn, homeLamps, shopLamps, setGlow } from './poi-night.js'   // FEAT-214: POI night lights
 import { PumpFaces } from './pump-face.js'   // FEAT-233: the pump in use shows the sale on its own face
-import { spawnModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
+import { spawnModel, getModel } from './model-service.js'            // FEAT-59: hand-modelled asset import service
 import { siteTargets, siteStops, DEMOLITION_PARAMS, TARGET_TYPES } from './demolition.js'   // FEAT-65: where a demolition job's targets stand
 import { FLORA_PARAMS } from '../data/flora.js'
 import { WaterSystem } from './water.js'                   // FEAT-22/17/18: ponds + streams detection (leaf, injected heightFn)
@@ -1088,7 +1089,7 @@ function _groundSampleY (x, z) {
   // REAL terrain/road height (~150 m over most of seed 6) and a lab teleport would drop the truck
   // out of the sky onto the plane.
   if (_labActive) return labSystem ? labSystem.groundHeight(x, z) : 0
-  // The asphalt top only ON the road's footprint (_resolveLanding's test): past it the sampler extrapolates the road's
+  // The asphalt top only ON the road's footprint (lateral ≤ half + shoulder): past it the sampler extrapolates the road's
   // grade sideways, out to ~35 m (camp.js nearRoadInfo), so a seat on a pad beside the road — FEAT-178's lift, ~10 m
   // out — sat up to 1 m under the pad floor and the truck was launched out of it onto its roof.
   if (roadSystem && typeof roadSystem.sampleRoadTopY === 'function') {
@@ -1275,6 +1276,13 @@ function _closeMenus (except = null) {
   for (const m of _menus) if (m.name !== except && m.isOpen()) m.close()
   if (except) return   // BUG-187: the map opening shuts the cards but is no transition: a tow's owed answer stands
   _towOwed = _shopAfterCard = false   // BUG-178's owed answer belongs to the seat it was owed at
+}
+/** THE MAP TOGGLE (all three entry points: the M tap, the M key, the cockpit button). BUG-237 (owner, 2026-11-19): opening
+ *  the map shuts every menu through its own close, and the pump's close is the CHECKOUT: so the map does not open over an
+ *  open pump. Closing an open map is always allowed. */
+function _toggleMap (closeMenus = false) {
+  if (!map2d.isOpen()) { if (fuelStop.isOpen) return; if (closeMenus) _closeMenus('map') }   // BUG-187: a card at the POI would sit on the map's own
+  map2d.toggle()
 }
 window.__openMenus = () => _menus.filter(m => m.isOpen()).map(m => m.name)   // dev handle — test/cdp-smoke.mjs skipMenus
 
@@ -1478,6 +1486,24 @@ installShadowEdgeFade({ fadeStart: 0.82 })
 // shadow dropping to the near light's 40 % share; and ground the far map shades ignores the near map, so
 // the near map's box and its clipped casters never show as a brightness edge (equations in shadow-fade.js).
 installNearShadowCoupling()
+// BUG-228: dither at the output. The canvas holds 8 bits per channel, so a smooth, dark ramp (the menu floor, a
+// dusk sky, distance fog) shows as visible steps, and the exposure meter slides them across the scene. A static
+// screen-space noise of about one 8-bit level, added just before the 8-bit write (after tone mapping, the sRGB
+// encode and fog), dissolves each step into a grain the eye averages. Triangular noise in ±1 level (the sum of two
+// of three's `rand` hashes), not three's own uniform ±0.5: measured on the dusk sky, the uniform one leaves values
+// near a level's centre unrounded, so flat patches up to 25 px long survive and slide with the exposure just as the
+// bands did; the triangular one keeps the grain even at every level. Channels shifted R+, G−, B+ as three does, so
+// the grain is mostly colour, not brightness. Installed here, unconditionally, instead of `material.dithering =
+// true` at ~40 creation sites plus every GLB and clone: every built-in lit/basic material includes this chunk; the
+// custom output shaders (sky, moon, dust, impostors, lab floor) include it by hand, last. Self-contained, so a
+// ShaderMaterial without <common> can use it. The bake shaders return before it (terrain-bake.js); depth/shadow
+// materials never include it.
+THREE.ShaderChunk.dithering_fragment = /* glsl */`{
+  highp vec2 ditherP = gl_FragCoord.xy;
+  highp float ditherA = fract(sin(mod(dot(ditherP, vec2(12.9898, 78.233)), 3.141592653589793)) * 43758.5453);
+  highp float ditherB = fract(sin(mod(dot(ditherP + vec2(0.5, 17.25), vec2(12.9898, 78.233)), 3.141592653589793)) * 43758.5453);
+  gl_FragColor.rgb += (ditherA + ditherB - 1.0) * vec3(1.0, -1.0, 1.0) / 255.0;
+}`
 // PERF-16: stop re-rendering the sun's whole shadow pass every frame. Three defaults autoUpdate=true,
 // so the 1536²/2048² shadow map is re-rendered each frame even parked under a static sun (measured
 // ~9 pp renderer-main, ~3 pp GPU). We drive needsUpdate on-demand from the shadow-follow block in
@@ -3283,22 +3309,24 @@ const PARK_SLACK = 0.3         // m the park box grows by for the trigger — a 
 const _stageRingMat = _ringMat(0x3ddc6b)   // green — cross this and you're running
 const _STAGE_RING_H = 8.0      // m
 const _STAGE_RING_SINK = 3.0   // m
-// FEAT-61 delivery target: the same ring in the same green at the customer's 3 m radius, plus a 1 m
-// centre ring as an aim point. The centre ring is DECORATION — scoring reads continuous distance
-// from the centre POINT, not which ring the paper is inside (owner, 2026-08-05).
+// FEAT-61 delivery target: the same ring at the customer's radius (POI_PARAMS.poiHouseTargetR, the SCORED
+// circle: scoring reads continuous distance from the centre POINT, owner 2026-08-05), plus a centre mark.
 //
 // Low, but not a kerb: _POI_RING_H's 4 m curtain at a 10 m radius reads as a wall you park inside,
 // and the same proportions at 3 m would be a chimney you cannot see your own throw land in. The
 // first pass went the other way and made it a 1.2 m kerb, which was too easy to blow straight past
 // at speed — DOUBLED to 2.4 m (owner, 2026-08-15). At 3 m radius that is still something you look
 // down into, just tall enough to break the horizon line from a moving truck.
-// WHITE, not the GPS cyan it wore before (owner, same pass): every ground colour out here is a
-// muted natural, so the one ink that never occurs in the landscape is paper white — it separates
-// from grass, gravel, wet ground and shadow alike without picking up a meaning from another system.
-const _targetRingMat = _ringMat(0xffffff, 0.52)
+// FEAT-276 (DEC-414, owner 2026-11-17): "change the paper halo to green. leave the center white", and the centre
+// is a SPIKE marking the bullseye, "about .5m smaller dia but slightly taller" than the old 1 m × 0.5 m pip:
+// 0.5 m across, 3 m tall (1 m until the owner's 2026-11-19 look: "the spike should be even taller"). The green is UI-STYLE's --money (#8ce99a, "a hit, good news"); the centre stays paper
+// white, the one ink that never occurs in the landscape (owner, 2026-08-15).
+const _targetRingMat = _ringMat(0x8ce99a, 0.52)
+const _targetPipMat = _ringMat(0xffffff, 0.52)
 const _TARGET_RING_H = 2.4      // m
 const _TARGET_RING_SINK = 0.5   // m
-const _TARGET_PIP_H = 0.5       // m — the centre pip is lower still; it must never mask the landing
+const _TARGET_PIP_H = 3.0       // m — the spike, 2.5 m above ground: 0.6 m over the ring's top (owner, 2026-11-19: "even taller"; was 1.0)
+const _TARGET_PIP_R = 0.25      // m — 0.5 m across
 let _stageRing = null
 // poi.id → its orange ring, so the accepted marker's ring can step aside for the green one while
 // every OTHER marker in the region keeps its own.
@@ -3310,6 +3338,10 @@ const _poiMeshes = new Map()
 // still owed a paper — see _updateCustomerRings.
 const _customerRings = new Map()
 const _ornaments = []   // FEAT-149: [{ kind, mesh, lift, body }] — knockable yard ornaments, rebuilt with the markers
+// FEAT-278: world clutter goes in after the loading screen, nearest the truck first, inside the PERF-33 streaming budget
+// (src/clutter.js). Its own ceiling per frame: a yard piece is one clone, ~0.1–0.3 ms.
+const _clutter = new ClutterQueue()
+const CLUTTER_MS = 1
 // BUG-164: one Group per POI holding its model (or cube) and its yard, culled as a unit past the drawn terrain
 // (_updateMissionRings). Before this every building in the region drew at any range: past the terrain edge it hung
 // in the sky as a fog-coloured silhouette, and the far ones cost ~28 draw calls and ~15 ms/s of render() CPU.
@@ -3335,6 +3367,8 @@ function _rebuildPoiMarkers () {
   _dropMarks.clear()
   _customerRings.clear()
   _pumpZoneMarks.length = 0
+  _clutter.reset()
+  const clutterKeys = new Set()
   const half = POI_PARAMS.poiCubeSize * 0.5
   const r = POI_PARAMS.poiInteractR
   for (const q of poiSystem.list()) {
@@ -3370,24 +3404,8 @@ function _rebuildPoiMarkers () {
       yard.add(cube)
       _poiMeshes.set(q.id, cube)
     }
-    // FEAT-71: the yard — lawn furniture at a residence, clutter at a farm. Positions are solved
-    // in poi.js (deterministic in the seed); this only dresses them. FEAT-149/251: a knockable one
-    // (every lawn item but the fire pit; the farm's drums and crates, FEAT-268) becomes a body near the truck (_updateOrnaments); the rest
-    // are solid in place (poi.js satSolid, synced with the markers).
-    for (const sat of q.satellites ?? []) {
-      const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
-      m.position.set(sat.x, sat.y, sat.z)
-      m.rotation.y = sat.yaw
-      yard.add(m)
-      const knock = PROP_MODELS[sat.key]?.knockable
-      if (knock) {
-        const kind = `ornament:${sat.key}`
-        // FEAT-268: a drum or crate loads at its empty mass; each one's own load is set at spawn (poi.js knockMass).
-        void debrisSystem.load(kind, { model: sat.key, massKg: knock.massKg ?? knock.emptyKg, friction: 0.6,
-          restitution: knock.restitution ?? 0.3, crushN: knock.crushN })
-        _ornaments.push({ kind, mesh: m, lift: sat.lift ?? 0, body: null, sat })
-      }
-    }
+    // FEAT-71 the yard (_spawnSatellite). FEAT-278: queued, not spawned — the yard streams in after the loading screen (_clutter, drained in the frame loop).
+    for (const sat of q.satellites ?? []) { _clutter.add(sat.x, sat.z, () => _spawnSatellite(sat, yard)); clutterKeys.add(sat.key) }
 
     // FEAT-50: a pump island's two zones — the store lot's box curtain, in fuel blue rather than
     // job orange, because the brake there opens the pump, never an offer.
@@ -3434,20 +3452,69 @@ function _rebuildPoiMarkers () {
   // target on it (owner-reported). Asking by tag is the whole point of having tags.
   const tr = POI_PARAMS.poiHouseTargetR
   for (const h of poiSystem.customers()) {
+    const y = h.house?.floorY ?? h.y   // FEAT-295: at a route house the halo stands on its porch floor
     const ring = new THREE.Mesh(_ringGeo, _targetRingMat)
     ring.scale.set(tr, _TARGET_RING_H, tr)
-    ring.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_RING_H * 0.5, h.z)
+    ring.position.set(h.x, y - _TARGET_RING_SINK + _TARGET_RING_H * 0.5, h.z)
     ring.renderOrder = 5
     ring.visible = false      // lit only by _updateCustomerRings, and only on a live round
     _poiGroup.add(ring)
 
-    const pip = new THREE.Mesh(_ringGeo, _targetRingMat)
-    pip.scale.set(0.5, _TARGET_PIP_H, 0.5)          // 1 m DIAMETER, so radius 0.5
-    pip.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_PIP_H * 0.5, h.z)
+    const pip = new THREE.Mesh(_ringGeo, _targetPipMat)
+    pip.scale.set(_TARGET_PIP_R, _TARGET_PIP_H, _TARGET_PIP_R)
+    pip.position.set(h.x, y - _TARGET_RING_SINK + _TARGET_PIP_H * 0.5, h.z)
     pip.renderOrder = 5
     pip.visible = false
     _poiGroup.add(pip)
     _customerRings.set(h.id, [ring, pip])
+  }
+  // FEAT-275 (DEC-429): each route house's mailbox, on the shoulder in front of its target (poi.js mailboxes()).
+  // A yard of its own, so it hides with its terrain chunk like the markers' yards. FEAT-278: queued like the yards.
+  for (const sat of poiSystem.mailboxes()) {
+    const g = new THREE.Group()
+    g.userData.x = sat.x; g.userData.z = sat.z
+    _poiGroup.add(g)
+    _poiYards.push(g)
+    _clutter.add(sat.x, sat.z, () => _spawnSatellite(sat, g)); clutterKeys.add(sat.key)
+  }
+  // FEAT-295: each route stop's house (poi.js routeHouses()), queued like the yards; its colliders are already up
+  // (_syncPoiPhysics), so a paper thrown before the model streams in still lands on the porch.
+  for (const r of poiSystem.routeHouses()) {
+    const g = new THREE.Group()
+    g.userData.x = r.modelX; g.userData.z = r.modelZ
+    _poiGroup.add(g)
+    _poiYards.push(g)
+    _clutter.add(r.modelX, r.modelZ, () => {
+      const m = spawnModel(r.key, { castShadow: true, receiveShadow: true })
+      m.position.set(r.modelX, r.baseY, r.modelZ)
+      m.rotation.y = r.modelYaw
+      g.add(m)
+    })
+    clutterKeys.add(r.key)
+  }
+  void _clutter.openWhen(Promise.all([...clutterKeys].map(getModel)))   // FEAT-278: no clone waits on a fetch
+}
+
+
+/**
+ * FEAT-71: one satellite — lawn furniture at a residence, clutter at a farm, a route house's mailbox (FEAT-275). Its
+ * position is solved in poi.js (deterministic in the seed); this only dresses it. FEAT-149/251: a knockable one (every
+ * lawn item but the fire pit; the farm's drums and crates, FEAT-268) becomes a body near the truck (_updateOrnaments);
+ * the rest are solid in place (poi.js satSolid, synced with the markers, so a fire pit's collider stands before its
+ * model streams in).
+ */
+function _spawnSatellite (sat, parent) {
+  const m = spawnModel(sat.key, { castShadow: true, variant: sat.variant })
+  m.position.set(sat.x, sat.y, sat.z)
+  m.rotation.y = sat.yaw
+  parent.add(m)
+  const knock = PROP_MODELS[sat.key]?.knockable
+  if (knock) {
+    const kind = `ornament:${sat.key}`
+    // FEAT-268: a drum or crate loads at its empty mass; each one's own load is set at spawn (poi.js knockMass).
+    void debrisSystem.load(kind, { model: sat.key, massKg: knock.massKg ?? knock.emptyKg, friction: 0.6,
+      restitution: knock.restitution ?? 0.3, crushN: knock.crushN })
+    _ornaments.push({ kind, mesh: m, lift: sat.lift ?? 0, body: null, sat })
   }
 }
 
@@ -3554,10 +3621,10 @@ function _updatePoiPresence (force = false) {
   }
   _syncPoiPhysics()
 }
-/** MESH == PHYSICS for the markers AND their yards' solid things (FEAT-149: poi.js satSolid). */
+/** MESH == PHYSICS for the markers AND their yards' solid things (FEAT-149: poi.js satSolid), and the route houses (FEAT-295). */
 function _syncPoiPhysics () {
   const shown = poiSystem.list().filter(q => !q.hidden)
-  poiPhysics.sync([...shown, ...shown.flatMap(q => (q.satellites ?? []).map(satSolid).filter(Boolean))], POI_PARAMS.poiCubeSize)
+  poiPhysics.sync([...shown, ...shown.flatMap(q => (q.satellites ?? []).map(satSolid).filter(Boolean)), ...poiSystem.routeHouses()], POI_PARAMS.poiCubeSize)
 }
 const POI_REAPPEAR_CLEAR_M = 15   // m — truck-to-marker distance a hidden marker waits for before it returns
 
@@ -4165,25 +4232,17 @@ function _renderDialogue () {
 // consumes the aim direction unprojects THROUGH this point, so the reticle cannot lie about where
 // the paper is going.
 const AIM_RETICLE_Y = 0.25
-const _flying = []               // rolls still in the air — see _updateThrownRolls
-const _thrownRolls = []          // live roll meshes, oldest first — see THROWN_ROLL_CAP
+const _thrownRolls = []          // papers lying where they came to rest, oldest first — see THROWN_ROLL_CAP
 const THROWN_ROLL_CAP = 40       // papers left lying around before the oldest is reclaimed. A route
                                  // is at most 15 customers plus spares, so this holds a whole route
                                  // and then some; the cap exists so a debug session throwing all
                                  // afternoon cannot leak meshes.
+// FEAT-277: the papers in the air or still settling are engine bodies (throw.js PaperThrows on the debris path);
+// stepped by _paperStep on the fixed step, each one leaves them for _thrownRolls when it comes to rest.
+const paperThrows = new PaperThrows(debrisSystem)
+let _aimHoldFlight = null        // the newest paper: the camera holds the aimed view until it rests
 const _aimDir = new THREE.Vector3()
-const AIM_HOLD_S = 0.5           // s the camera stays on the aimed angle AFTER the paper lands
-// The rolled paper is modelled at its real size — 90 × 420 mm (ASSETS.md keeps assets true to
-// life). At that size it is a smudge from the chase camera, so the THROWN one is drawn at 2×
-// (owner, 2026-08-05). A readability decision, deliberately made at the consumer rather than by
-// falsifying the asset: the .glb stays honest for every other use, and scoring never reads the
-// mesh — the landing point comes from the solver, so a bigger roll cannot make a throw score
-// better than it was.
-const THROWN_ROLL_SCALE = 2
-// Peak tumble rate, rad/s per axis, rolled per throw. Fast enough to read as end-over-end at a
-// glance, slow enough not to strobe against the 2× roll's stripe. Cosmetic only — the tumble never
-// feeds back into the path, so two identical throws land identically however differently they spin.
-const TUMBLE_MAX = 7
+const AIM_HOLD_S = 0.5           // s the camera stays on the aimed angle AFTER the paper comes to rest
 let _throwReadoutTimer = 0
 let _aimHoldTimer = 0
 // The cursor's last known position, so entering aim mode can seed the drag origin and the first
@@ -4191,53 +4250,6 @@ let _aimHoldTimer = 0
 // since the last real drag.
 let _lastCursorX = 0, _lastCursorY = 0
 document.addEventListener('mousemove', e => { _lastCursorX = e.clientX; _lastCursorY = e.clientY })
-
-/**
- * Surface height for the flight.
- *
- * ANALYTIC HEIGHT, NOT sampleRoadTopY (owner-reported 2026-08-07: papers sank into uphill banks and
- * floated over downhill slopes). This used to try the road sampler first, copying _groundSampleY —
- * but that sampler is the graded APRON sampler, and camp.js already documents the trap: it
- * extrapolates the road-top PLANE laterally well past the asphalt and returns a finite Y for
- * essentially every point out to ~35 m from the centerline. So a paper thrown at a cut bank stopped
- * at the road's height (metres below the hillside it visually passed through), and one thrown down
- * a fill slope stopped at the road's height too (metres above the ground it should have hit). It
- * looked right on the shoulder and around the pads because there the apron IS the ground.
- *
- * analyticHeight is the ROAD-CARVED terrain surface — it already contains the cut and fill
- * earthwork, which is exactly the ground a paper bounces off — so it is right everywhere off the
- * asphalt, and the ribbon itself is handled once at the landing point (see _resolveLanding).
- */
-function _throwGroundY (x, z) {
-  return terrainSystem ? terrainSystem.analyticHeight(x, z) : 0
-}
-
-/**
- * If a paper landed on the road, seat it on the ASPHALT rather than on the carved dirt beneath it.
- *
- * The terrain is carved to roadClearanceMargin (0.15–0.25 m) BELOW the ribbon so the mesh can armor
- * under it, so a paper landing on tarmac would otherwise sit a fifth of a metre sunk into it — which
- * at the roll's drawn size is plainly visible.
- *
- * Done once, at the landing point, rather than inside the integrator: the honest "is this asphalt"
- * test is queryNearest (camp.js's `lateral <= roadHalfWidth`, not the apron sampler), and that is
- * ~44 µs a call — fine once per throw, a dropped frame if run at all ~150 integration steps. The arc
- * itself is unaffected because the two surfaces differ by that clearance and nothing else.
- */
-function _resolveLanding (hit) {
-  const road = roadSystem
-  if (!road || typeof road.queryNearest !== 'function') return hit
-  const half = (RANGER_PARAMS.roadHalfWidth ?? 5) + (RANGER_PARAMS.roadShoulderWidth ?? 2.5)
-  const nr = road.queryNearest(hit.x, hit.z, half + 1)
-  if (!nr?.point) return hit
-  if (Math.hypot(nr.point.x - hit.x, nr.point.z - hit.z) > half) return hit
-  const ry = road.sampleRoadTopY(hit.x, hit.z)
-  if (ry == null || !isFinite(ry)) return hit
-  hit.y = ry
-  const n = hit.path.length
-  if (n >= 3) hit.path[n - 2] = ry     // keep the replayed path ending where the paper rests
-  return hit
-}
 
 /** Show the landing readout for a moment, then let it fade out of the way. */
 function _showThrowReadout (html) {
@@ -4250,12 +4262,13 @@ function _showThrowReadout (html) {
 }
 
 /**
- * Throw a roll from the truck along the camera's aim, and freeze it where it lands.
+ * Throw a roll from the truck along the camera's aim. FEAT-277: it is an engine body now (throw.js PaperThrows),
+ * so it hits walls, porches and props, slides, and scores where it comes to REST (_paperStep).
  *
  * The paper STAYS on the ground (owner, 2026-08-05). That is the feedback: a route you have driven
  * reads back as a trail of papers on porches and in ditches, and you can see the one you fluffed.
- * Nothing here simulates a bounce or a roll — the landing point is the scoring point, so the mesh
- * must sit exactly where the number came from or the readout would be contradicting the picture.
+ * The mesh left lying is the body's own, posed where it came to rest, so it sits exactly where the
+ * number came from. Returns the flight, or null when no paper flew (the model is still loading).
  */
 function _throwRoll () {
   // Aim THROUGH the reticle, not along the camera's own forward axis. The reticle sits a quarter of
@@ -4263,9 +4276,8 @@ function _throwRoll () {
   // made the throw land short of everything you were pointing at.
   _aimDir.set(0, 1 - 2 * AIM_RETICLE_Y, 0.5).unproject(camera).sub(camera.position).normalize()
 
-  // FEAT-36/FEAT-48: debug projectile selector. Barrels and rocks are DYNAMIC ENGINE BODIES —
-  // no ballistic solver, no landing point, no scoring: the engine flies them, bounces them and
-  // lets you drive over them (the whole point). Same aim, same launch pose as the paper.
+  // FEAT-36/FEAT-48: debug projectile selector. Barrels and rocks are DYNAMIC ENGINE BODIES too, with
+  // no scoring: the engine flies them, bounces them and lets you drive over them (the whole point).
   if ((RANGER_PARAMS.throwProjectile ?? 'paper') !== 'paper') {
     const pd = vehicleState.position
     const pd0 = { x: pd.x + _aimDir.x * 1.6, y: pd.y + 1.6, z: pd.z + _aimDir.z * 1.6 }
@@ -4277,85 +4289,31 @@ function _throwRoll () {
   // Launch from above the cab rather than the body origin: from the origin a flat throw clips the
   // truck's own roof on the first step and lands on the bonnet.
   const p = vehicleState.position
-  const p0 = new THREE.Vector3(p.x + _aimDir.x * 1.2, p.y + 1.5, p.z + _aimDir.z * 1.2)
-  const v0 = launchVelocity(_aimDir, vehicleState.velocity)
-  const hit0 = simulateThrow(p0, v0, _throwGroundY)
-  if (!hit0) return   // off a cliff or aimed at the sky — no landing, nothing to score
-  const hit = _resolveLanding(hit0)
-
-  const roll = spawnModel('newsRoll')
-  roll.scale.setScalar(THROWN_ROLL_SCALE)
-  roll.position.copy(p0)
-  scene.add(roll)
-  _thrownRolls.push(roll)
-  while (_thrownRolls.length > THROWN_ROLL_CAP) {
-    const old = _thrownRolls.shift()
-    scene.remove(old)
-    const i = _flying.findIndex(f => f.roll === old)
-    if (i >= 0) _flying.splice(i, 1)      // reclaimed mid-flight: stop integrating a removed mesh
-  }
-
-  // Play back the path the SOLVER flew, sample for sample. Before drag this was a parabola and the
-  // visual could be evaluated in closed form; with drag there is no closed form, and re-integrating
-  // here would put a second, nearly-identical arc on screen next to the one that produced the
-  // score. Replaying the recorded path makes "where it looks like it landed" and "where it scored"
-  // the same statement by construction.
-  //
-  // The tumble is per-throw random and purely cosmetic — it never touches the path, so two
-  // identical throws still land identically however differently they spin (owner: "a little bit of
-  // random rotation for visual flair").
-  _flying.push({
-    roll, path: hit.path, tEnd: hit.t, hit, tau: 0,
-    spin: {
-      x: (Math.random() * 2 - 1) * TUMBLE_MAX,
-      y: (Math.random() * 2 - 1) * TUMBLE_MAX,
-      z: (Math.random() * 2 - 1) * TUMBLE_MAX,
-    },
-    restYaw: Math.random() * Math.PI * 2,
-  })
-  return hit
+  const p0 = { x: p.x + _aimDir.x * 1.2, y: p.y + 1.5, z: p.z + _aimDir.z * 1.2 }
+  return paperThrows.throw(p0, launchVelocity(_aimDir, vehicleState.velocity))
 }
 
 /**
- * Fly the airborne rolls. Called from the frame loop with real seconds.
- *
- * This is the bit that was missing: the paper used to appear on the ground the instant F came up,
- * because the solver returns a landing point and nothing ever drew the arc between here and there.
+ * FEAT-277: the papers' fixed-step half, right after the engine step. The first touch plays the slap (FEAT-64);
+ * a paper at rest joins the trail on the lawn and is scored where it lies.
  */
-function _updateThrownRolls (dt) {
-  if (!_flying.length) return
-  const step = THROW_PARAMS.stepS
-  for (let i = _flying.length - 1; i >= 0; i--) {
-    const f = _flying[i]
-    f.tau = Math.min(f.tEnd, f.tau + dt)
-
-    // Sample the recorded path at the current time, lerping between the two straddling samples so
-    // the flight is smooth at any frame rate rather than stepping at the solver's 120 Hz.
-    const path = f.path
-    const last = path.length / 3 - 1
-    const u = Math.min(last, f.tau / step)
-    const i0 = Math.min(last, Math.floor(u)), i1 = Math.min(last, i0 + 1)
-    const a = u - i0
-    f.roll.position.set(
-      path[i0 * 3]     + (path[i1 * 3]     - path[i0 * 3])     * a,
-      path[i0 * 3 + 1] + (path[i1 * 3 + 1] - path[i0 * 3 + 1]) * a,
-      path[i0 * 3 + 2] + (path[i1 * 3 + 2] - path[i0 * 3 + 2]) * a,
-    )
-    f.roll.rotation.set(f.spin.x * f.tau, f.spin.y * f.tau, f.spin.z * f.tau)
-
-    if (f.tau >= f.tEnd) {
-      f.roll.position.set(f.hit.x, f.hit.y, f.hit.z)   // seat it exactly where it scored
-      // Settle flat, at a random yaw: a roll that came to rest should look dropped, and freezing
-      // it mid-tumble reads as a bug rather than as a paper on a lawn.
-      f.roll.rotation.set(0, f.restYaw, Math.PI / 2)
-      _flying.splice(i, 1)
-      _scoreLanding(f.hit)                              // the number arrives WITH the landing
+function _paperStep () {
+  if (!paperThrows.live.length) return
+  for (const e of paperThrows.step(PHYSICS_DT)) {
+    if (e.type === 'contact') { playPaperSlap(); continue }
+    _thrownRolls.push(e.mesh)
+    while (_thrownRolls.length > THROWN_ROLL_CAP) scene.remove(_thrownRolls.shift())
+    if (e.f === _aimHoldFlight) {
+      _aimHoldFlight = null
+      clearTimeout(_aimHoldTimer)
+      _aimHoldTimer = setTimeout(() => setAimMode(false), AIM_HOLD_S * 1000)
     }
+    _scoreLanding(e)
   }
 }
 
 /**
- * Score one landing and show it.
+ * Score one paper where it came to rest, and show it.
  *
  * ON A ROUTE, the paper route owns the answer: it credits a specific customer once, spends the
  * inventory, and decides whether that was the last paper. Off a route a practice throw reads nothing:
@@ -4393,9 +4351,8 @@ function _scoreLanding (hit) {
 function _clearThrownRolls () {
   for (const r of _thrownRolls) scene.remove(r)
   _thrownRolls.length = 0
-  // …including the ones still in the air. Without this their meshes leave the scene but the
-  // integrator keeps flying them, and each one still calls _scoreLanding when it "lands".
-  _flying.length = 0
+  // …including the ones still in the air or settling: they leave unscored.
+  for (const r of paperThrows.clear()) scene.remove(r)
 }
 
 // F is hold-to-aim. keydown repeats while held, and setAimMode is idempotent, so the repeat costs
@@ -4459,19 +4416,18 @@ document.addEventListener('keyup', e => {
     return
   }
   const hit = _throwRoll()
-  if (hit && throwingPaper) { playPaperThrow(); setTimeout(playPaperSlap, hit.t * 1000) }   // FEAT-64: whoosh now, slap at the landing
-  // No landing (off a cliff, or aimed at the sky) means the solver never produced a throw at all —
-  // nothing was drawn and nothing will ever score, so the paper goes back in the truck. Otherwise
-  // an aim at the horizon would silently eat inventory AND leave the route unable to end on it.
+  if (hit && throwingPaper) playPaperThrow()   // FEAT-64: whoosh now; the slap plays on the first touch (_paperStep)
+  // No flight (the model still loading in the first seconds of a cold boot) means no throw happened —
+  // nothing will ever score, so the paper goes back in the truck.
   if (onRound && !hit) paperRouteSystem.refundPaper()
   // HOLD THE VIEW (owner, 2026-08-05). Snapping back to the follow camera the instant F comes up
-  // yanks the throw out of frame before you can see where it went. Stay on the aimed angle for the
-  // whole flight plus a beat, then hand the camera back. Rearmed on every throw, so a quick second
-  // throw extends the hold rather than cutting the first one short.
+  // yanks the throw out of frame before you can see where it went. Stay on the aimed angle until the
+  // newest paper comes to rest, plus a beat (_paperStep rearms the timer then); the timeout here is the
+  // longest a paper can take. Rearmed on every throw, so a quick second throw extends the hold.
+  // Debris (barrel/rock) is not tracked to rest — hold ~1.5 s so the launch stays in frame.
   clearTimeout(_aimHoldTimer)
-  // Debris has no solver flight time (the engine flies it live) — hold ~1.5 s so the launch stays
-  // in frame, same reasoning as the paper's flight-long hold.
-  _aimHoldTimer = setTimeout(() => setAimMode(false), ((hit?.t ?? (throwingPaper ? 0 : 1.5)) + AIM_HOLD_S) * 1000)
+  _aimHoldFlight = throwingPaper ? hit : null
+  _aimHoldTimer = setTimeout(() => setAimMode(false), ((throwingPaper ? (hit ? THROW_PARAMS.maxFlightS : 0) : 1.5) + AIM_HOLD_S) * 1000)
 })
 
 // Press-any-key advances, and the key goes NOWHERE else. Capture phase on document, which runs
@@ -5237,7 +5193,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keyup', e => {
   if ((e.key !== 'm' && e.key !== 'M') || !_skipRelease()) return
   // A tap: the map, as M always is — unless a card owns the screen.
-  if (!dialogueSystem.holding && !document.body.classList.contains('stage-on')) { if (!map2d.isOpen()) _closeMenus('map'); map2d.toggle() }
+  if (!dialogueSystem.holding && !document.body.classList.contains('stage-on')) _toggleMap(true)
 }, { capture: true })
 window.addEventListener('blur', _skipRelease)   // a key let go in another window never comes back up here
 pad.skipHold = () => _tutDrive()
@@ -5545,6 +5501,9 @@ gpsSystem = new GpsSystem(scene, {
   // par oracle's elevation instead, which is a different pipeline stage and disagrees by up to
   // 27 m — see gps.js bakeRoute's ELEVATION SOURCE note.
   getRoad: () => roadSystem,
+  // FEAT-297: the POI an objective stands for (matched by its x, z), so the route-end arrow can hover over its roof.
+  getCamera: () => camera.position,
+  getObjectiveTopY: (o) => { const q = poiSystem.list().find(p => Math.hypot(p.x - o.x, p.z - o.z) < 1); return q ? poiTopY(q) : null },
 })
 
 // ── FEAT-31: the testing lab ─────────────────────────────────────────────────
@@ -5691,9 +5650,10 @@ function _haulPick (offer) {
   const hardN = Math.floor((massLimits(TRUCK).hardKg - _carriedKg()) / HAUL_BUNDLE_KG)
   const afford = price > 0 ? Math.floor(economySystem.money() / price + 1e-9) : sp.stock
   const max = Math.max(0, Math.min(sp.stock, hardN, afford))
+  const limit = max >= sp.stock ? null : afford <= hardN ? 'wallet' : 'truck'   // BUG-237 B: which cap binds, for the note line
   const n = Math.max(1, Math.min(max, parseInt(document.getElementById('mp-count')?.value, 10) || max))
   const range = payRange(j.par, payTier, sp.payMult * n)   // FEAT-199: a bonus haul tips in cash too
-  return { sp, offerId: offer.id, price, max, n, cost: Math.round(n * price * 100) / 100,
+  return { sp, offerId: offer.id, price, max, limit, n, cost: Math.round(n * price * 100) / 100,
            base: range.base, maxPay: range.max,
            need: sp.bonus ? rankTable('haul', region, sp.thingId)[sp.bonus.gate] : null,
            deedNeed: rankTable('haul', region, sp.thingId).B }
@@ -5722,7 +5682,9 @@ function _syncHaulPick (pick) {
   // value, dropped the warning — a stutter loop. They live on their OWN fixed-height line now (CSS
   // #mp-pick-note), so nothing the readout says can move the slider. No letter (owner, 2026-10-23):
   // the count is the threshold.
+  // BUG-237 B (owner: "why can I only take 11? It says 30 available"): the note names the cap that binds. [DEFAULT] wording.
   if (note) note.innerHTML = pick.max < 1 ? '' : [
+    pick.limit === 'wallet' ? `you can afford ${pick.max} of ${pick.sp.stock}` : pick.limit === 'truck' ? `the truck carries ${pick.max} of ${pick.sp.stock}` : '',
     pick.need != null && pick.n < pick.need ? `too few for the ${pick.sp.bonus.name}` : '',
     pick.n < pick.deedNeed ? `deed: ${pick.n < rankTable('haul', economySystem.terms().region, pick.sp.thingId).C ? '0' : '1/2'} at this count` : '',
   ].filter(Boolean).join(' &middot; ')
@@ -6096,7 +6058,7 @@ _menu('camp', () => !!_campUi, () => _closeCampUi())
  * What the tent and its card show, or null when neither should: story mode, mission idle,
  * dialogue closed. Not looking → { collapsed } (the tent alone). Looking → ALWAYS a card (owner,
  * 2026-10-19: Z is a true toggle, so a hunt left on at speed reads on screen instead of popping up
- * when you next slow down): { fast } above 20 kph, { truck } off camping ground, else the graded
+ * when you next slow down): { fast, fastZone } above 20 kph (FEAT-308: whether this is a camping area), { truck } off camping ground, else the graded
  * site. Outside the tether or on bad ground is NOT null — those are the card's failure copies, and
  * telling the player why they cannot camp here is the entire job of a prompt.
  */
@@ -6126,8 +6088,11 @@ function _campPromptState () {
   if (_inPoiRing()) return null
   // Collapsed: nothing is paid at all — no zone scan, no ray, no grading.
   if (!_campSeek) return { collapsed: true }
-  if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return { fast: true }
-  if (!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)) return { truck: true }
+  // FEAT-308 (DEC-451): at speed the card still says whether this is camping ground (the disc scan is
+  // cheap); only the grading ray waits for the slow-down.
+  const zone = !!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)
+  if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return { fast: true, fastZone: zone }
+  if (!zone) return { truck: true }
   const g = campSystem.evaluate(vehicleState.position.x, vehicleState.position.z)
   return g.inZone ? g : { truck: true }
 }
@@ -6424,8 +6389,14 @@ const _RC_LABEL = {
   towShop: (o) => `tow to service center · ${o.tow.km.toFixed(1)} km — $${formatMoney(o.tow.price)}`,
   tireService: (o) => `call a tire service — $${formatMoney(o.tow.price)}`,
 }
+// FEAT-307 (DEC-450): a tow is asked for twice. The card's tow buttons only name the tow (`_rcAsk`); the card then shows its
+// price and time with "tow" and "back", and only "tow" calls it. Closing the card forgets the ask.
+let _rcAsk = null
+const _RC_GO = { towFuel: _towToFuel, towShop: _towToShop }
 const _RC_ACT = {
-  towFuel: _towToFuel, towShop: _towToShop,
+  towFuel: () => { _rcAsk = 'towFuel'; _updateRecovery() }, towShop: () => { _rcAsk = 'towShop'; _updateRecovery() },
+  towGo: () => { const go = _RC_GO[_rcAsk]; _rcAsk = null; go?.() },
+  towBack: () => { _rcAsk = null; _updateRecovery() },
   tireService: () => {   // FEAT-162 amendment 5: fixed where it stands; the wait and the fitting on the clock
     const q = _recoveryState().tireService
     if (!q || !economySystem.spend(q.price)) return
@@ -6508,8 +6479,15 @@ function _updateRecovery () {
   const c = recoveryCard(st)
   icon?.classList.toggle('on', _recoveryOpen)
   card.style.display = _recoveryOpen ? 'block' : 'none'
-  if (!_recoveryOpen) return
-  const html = `<div class="rc-head">${c.head}</div>`
+  if (!_recoveryOpen) { _rcAsk = null; return }
+  const ask = c.opts.find(o => o.act === _rcAsk && o.enabled)   // a tow that stopped being affordable drops the ask
+  if (!ask) _rcAsk = null
+  const html = ask   // FEAT-307 [DEFAULT] wording
+    ? `<div class="rc-head">${c.head}</div><div class="rc-dim">${_RC_LABEL[ask.act](ask)}</div>`
+      + `<div class="rc-dim">${formatGameDuration(ask.tow.hours)} on the hook</div>`
+      + `<button class="rc-opt" data-act="towGo">call the tow &mdash; $${formatMoney(ask.tow.price)}</button>`
+      + `<button class="rc-opt" data-act="towBack">back</button><div class="rc-dim">you have $${formatMoney(money)}</div>`
+    : `<div class="rc-head">${c.head}</div>`
     + c.opts.filter(o => _RC_LABEL[o.act]).map(o => `<button class="rc-opt" data-act="${o.act}"${o.enabled ? '' : ' disabled'}>${_RC_LABEL[o.act](o)}</button>`
       + `<div class="rc-dim">${formatGameDuration(o.tow.hours)} ${o.act === 'tireService' ? 'to come out and fit it' : 'on the hook'}</div>`).join('')
     + (c.opts.length ? '' : '<div class="rc-dim">no tow can reach you here</div>')
@@ -6748,7 +6726,7 @@ function _updateParkTriggers (zParked = false) {
             : camp.cands === 0   ? 'no room off the road'
             :                      'not flat'
   _hudHtml(document.getElementById('camp-prompt-text'),
-      camp.fast ? 'slow down to look for a campsite'
+      camp.fast ? campFastLine(camp.fastZone)
     : site      ? parkPrompt(parked ? 'park again to make camp' : 'park to make camp')
     : moms      ? why
     : onRoad    ? `${why}<br>park on the shoulder to sleep in the truck`
@@ -7102,7 +7080,8 @@ function _placeSite (m, smashed = []) {
   m.siteDown = smashed.length
   // FEAT-187 (owner, 2026-11-07: "a paper delivery style halo on the center of the group of prop targets … on the shoulder
   // where the prop targets are"): one halo a cluster, at its members' centre (they stand on the shoulder), wide enough to
-  // hold them — never under the paper target's radius. The paper's ring and pip, in its white. Lit by _updateSite.
+  // hold them — never under the paper target's radius. The paper's ring and its old 1 m × 0.5 m pip, both in the
+  // white the paper's ring wore before FEAT-276 turned it green (DEC-414 names only the paper's). Lit by _updateSite.
   const groups = new Map()
   m.targets.forEach((t, i) => groups.set(t.g, [...(groups.get(t.g) ?? []), i]))
   _site.halos = [...groups.values()].map(members => {
@@ -7110,12 +7089,12 @@ function _placeSite (m, smashed = []) {
     const x = ts.reduce((a, t) => a + t.x, 0) / ts.length, z = ts.reduce((a, t) => a + t.z, 0) / ts.length
     const y = Math.min(...ts.map(t => t.y))
     const r = Math.max(POI_PARAMS.poiHouseTargetR, ...ts.map(t => Math.hypot(t.x - x, t.z - z) + SITE_HALO_PAD_M))
-    const ring = new THREE.Mesh(_ringGeo, _targetRingMat)
+    const ring = new THREE.Mesh(_ringGeo, _targetPipMat)
     ring.scale.set(r, _TARGET_RING_H, r)
     ring.position.set(x, y - _TARGET_RING_SINK + _TARGET_RING_H * 0.5, z)
-    const pip = new THREE.Mesh(_ringGeo, _targetRingMat)
-    pip.scale.set(0.5, _TARGET_PIP_H, 0.5)
-    pip.position.set(x, y - _TARGET_RING_SINK + _TARGET_PIP_H * 0.5, z)
+    const pip = new THREE.Mesh(_ringGeo, _targetPipMat)
+    pip.scale.set(0.5, 0.5, 0.5)
+    pip.position.set(x, y - _TARGET_RING_SINK + 0.25, z)
     for (const o of [ring, pip]) { o.renderOrder = 5; o.visible = false; _siteGroup.add(o) }
     return { members, x, z, ring, pip }
   })
@@ -7382,6 +7361,8 @@ function _syncSleepRow () {
     e.innerHTML = `energy ${now.toFixed(1)} → ${wake.toFixed(1)} / ${full.toFixed(0)} h`
       + `  ·  wake <span style="color:${STAGE_COLOR[daySystem.stageFor(wake)]}">${daySystem.stageFor(wake)}</span>`
       + (daySystem.coffeeDebt() > 0 ? `  ·  coffee debt ${daySystem.coffeeDebt().toFixed(0)} h at wake` : '')
+      // FEAT-310 (DEC-449) [DEFAULT]: the food this sleep would outlast. Item names are catalog strings.
+      + inventorySystem.spoilingWithin(h).map(x => `<br>the ${x.name.toLowerCase()} spoils in ${formatGameDuration(x.h)}`).join('')
   }
 }
 
@@ -7572,7 +7553,7 @@ document.getElementById('cp-light')?.addEventListener('click', (e) => {
   _renderCampUI()
 })
 // FEAT-118: the map is openable from camp (M works too); the clock stays held while it is up.
-document.getElementById('cp-map')?.addEventListener('click', (e) => { map2d.toggle(); e.currentTarget.blur() })
+document.getElementById('cp-map')?.addEventListener('click', (e) => { _toggleMap(); e.currentTarget.blur() })
 // FEAT-122: the inventory from camp (Tab works too); the camp pause holds the clock while it is up.
 document.getElementById('cp-item')?.addEventListener('click', (e) => { inventoryScreen.request(); e.currentTarget.blur() })
 document.getElementById('cp-hours')?.addEventListener('input', _syncSleepRow)
@@ -8340,30 +8321,25 @@ function _updateEnergyMeter () {
   }
   // FEAT-198 (owner, 2026-11-11): hunger mirrors energy — its word in its colour, then its own scrolling bar.
   // Hidden with hunger switched off (the debug toggle: hungerWord() is null).
-  const hw = daySystem.hungerWord()
+  const hLeft = _hmPreviewH ?? daySystem.fedLeftH()
+  const hw = daySystem.hungerWord(hLeft)
   if (hw !== _hmWord) {
     _hmWord = hw
     _emEls.hTitle.style.display = _emEls.hView.style.display = hw ? '' : 'none'
     if (hw) { _emEls.hStage.textContent = hw; _emEls.hStage.style.color = HUNGER_COLOR[hw] }
   }
   if (hw) {
-    const top = _emEls.hTop, left = Math.min(top, Math.max(-DAY_PARAMS.hungryRampH, daySystem.fedLeftH()))
+    const top = _emEls.hTop, left = Math.min(top, Math.max(-DAY_PARAMS.hungryRampH, hLeft))
     const hx = Math.round((EM_VIEW_W / 2 - (top - left) * EM_PX_PER_H) * dpr) / dpr
     if (hx !== _hmX) { _hmX = hx; _emEls.hStrip.style.transform = `translateX(${hx}px)` }
   }
 }
-/** FEAT-283: hovering "eat" paints the hunger the meal recovers on the hunger bar — a green box from the pointer to the
- *  post-meal level (DaySystem.eat: holds ADD up to the cap, FEAT-250; the gain is mealGainH). `id` null clears it. */
+/** FEAT-301 (DEC-438, replacing FEAT-283's green box, which ran off the strip on a big meal): hovering "eat" draws the
+ *  hunger strip and its word at the level the meal leaves (DaySystem.leftAfterMeal: the one rule eat() applies). `id` null clears it. */
+let _hmPreviewH = null
 function _previewEat (id) {
-  const box = document.getElementById('hm-preview'), it = id && ITEMS[id]
-  if (!box) return
-  if (!it || it.kind !== 'food' || it.satiety == null) { box.style.display = 'none'; return }
-  const left = daySystem.fedLeftH(), top = _hmTopH()
-  // post-meal level = what eat() leaves (additive, capped: mealGainH), from the pointer (which sits below 0 when hungry)
-  const dh = Math.max(0, left) + daySystem.mealGainH(foodSatietyH(id, _kitAtCamp())) - Math.min(top, left)
-  box.style.display = dh > 0 ? 'block' : 'none'
-  box.style.width = `${dh * EM_PX_PER_H}px`
-  box.style.left = `${EM_VIEW_W / 2 - dh * EM_PX_PER_H}px`
+  const it = id && ITEMS[id]
+  _hmPreviewH = it?.kind === 'food' && it.satiety != null ? daySystem.leftAfterMeal(foodSatietyH(id, _kitAtCamp())) : null
 }
 let _hmWord, _emX, _hmX   // the strips' last written translateX (PERF-48)
 /** The hunger strip's full end: the satiety cap (FEAT-250: foods stack up to it — DaySystem.eat). */
@@ -8455,7 +8431,7 @@ function _rankTimerSource () {
 // lost — fragile by health against its line, haul by the count still aboard, freight is earned on
 // arrival, courier by the letter under the rank bar once that bar is showing (before that the line
 // stays neutral: R-22 hides the clock until the goal is near, and a colour must not leak it early).
-let _jpRoot = null, _jpHtml = null
+let _jpRoot = null
 function _promiseTone (margin) {   // margin ≥ 0: how far inside the line (1 = comfortable); < 0: lost
   if (margin == null) return 'var(--text)'
   if (margin < 0) return 'var(--bad-text)'
@@ -8498,8 +8474,9 @@ function _promiseRows (m) {
     if (!_rtShown && _rtLayout && _rtKey === j) {
       const b = _rtLayout.bands.find(b => m.elapsed < b.t1)
       if (b && isFinite(b.t1)) {
+        // BUG-245: the minutes are padded too, so the line keeps one width and the centred box (and the Reward row in it) never shifts.
         const s = Math.max(0, b.t1 - m.elapsed), mm = Math.floor(s / 60), ss = Math.floor(s % 60)
-        clock = { label: 'Clock', what: `finish in ${mm}:${String(ss).padStart(2, '0')} or better for ${b.letter} rank`, tone: _promiseTone(1 - _rtLiveInt) }
+        clock = { label: 'Clock', what: `finish in ${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')} or better for ${b.letter} rank`, tone: _promiseTone(1 - _rtLiveInt) }
       }
     }
   }
@@ -8532,16 +8509,26 @@ function _promiseRows (m) {
   else if (kind === 'freight') rows.unshift({ label: 'Cargo', what: `${j.cargoKg} kg`, tone: 'var(--text)' })
   return rows
 }
+// BUG-245: the rows (label, icon, struck-out or not) are built only when they change; the live text and colour are then
+// written into the SAME elements. Rebuilding the whole box each second re-created the reward icon every tick.
+let _jpKey = null
 function _updateJobPromise () {
   if (!_jpRoot) { _jpRoot = document.getElementById('job-promise'); if (!_jpRoot) return }
   const rows = storySystem.isActive() && !storySystem.isEntering() ? _promiseRows(missionSystem) : null
-  const html = rows?.length ? rows.map(r => `<div class="jp-row"><span class="rt-label${r.label === 'Deed' ? ' jp-deed' : ''}">${r.label}</span>`
-      + (r.icon ? `<img src="assets/items/${r.icon}.png" alt="" onerror="this.style.display='none'">` : '')
-      + `<span class="jp-text" style="color:${r.tone}"><span${r.lost ? ' class="jp-lost"' : ''}>${r.what}</span>${r.next ? ` · ${r.next}` : ''}</span></div>`).join('') : ''   // R-33: lost = struck out
-  if (html === _jpHtml) return
-  _jpHtml = html
-  _jpRoot.innerHTML = html
-  _jpRoot.style.display = html ? 'block' : 'none'
+  const key = rows?.length ? rows.map(r => `${r.label}|${r.icon ?? ''}|${r.lost ? 1 : 0}`).join('\n') : ''
+  const text = (r) => `<span${r.lost ? ' class="jp-lost"' : ''}>${r.what}</span>${r.next ? ` · ${r.next}` : ''}`   // R-33: lost = struck out
+  if (key !== _jpKey) {
+    _jpKey = key
+    _jpRoot.innerHTML = key ? rows.map(r => `<div class="jp-row"><span class="rt-label${r.label === 'Deed' ? ' jp-deed' : ''}">${r.label}</span>`
+      + (r.icon ? `<img src="assets/items/${r.icon}.png" alt="" onerror="this.style.display='none'">` : '') + `<span class="jp-text"></span></div>`).join('') : ''
+    _jpRoot.style.display = key ? 'block' : 'none'
+  }
+  if (!key) return
+  rows.forEach((r, i) => {
+    const el = _jpRoot.children[i].querySelector('.jp-text'), html = text(r)
+    if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html }
+    if (el.style.color !== r.tone) el.style.color = r.tone
+  })
 }
 // R-23 (owner, 2026-10-24): the top-centre readout lands the bad news LIVE — the moment the job turns,
 // not on the result card. Persistent while the condition holds; a partial spill flashes for a beat.
@@ -9077,8 +9064,7 @@ document.addEventListener('keydown', e => {
     // of opening or re-targeting the map — mission framing is the live one — left the map's cap at
     // the free-roam 2000 m, short of a 2500 m region, so the region lock never engaged and panning
     // re-streamed around the cursor. The map now covers its own region whoever opened it.
-    if (!map2d.isOpen()) _closeMenus('map')   // BUG-187: a card at the POI would sit on the map's own
-    map2d.toggle()
+    _toggleMap(true)
     // Freecam pointer-lock swallows the mouse for FPS look — release it so the map is
     // interactive. The canvas click handler in camera.js re-locks it on return to freecam.
     if (document.pointerLockElement) document.exitPointerLock()
@@ -9146,6 +9132,7 @@ const _labFloorMaterial = new THREE.ShaderMaterial({
       gl_FragColor = vec4(col, 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
+      #include <dithering_fragment>
     }`,
 })
 const _gridGroundPlane = new THREE.Mesh(
@@ -9900,8 +9887,8 @@ const storySystem = new StorySystem({
     const mainNodes = storySystem.region()?.nodes ?? null
     poiSystem.build(center, radius, mainNodes)
     // FEAT-61: AFTER build() — mom is a newspaper customer, and she is a roster POI, so the roster
-    // has to exist before customers() can be asked who receives a paper. Houses carve nothing and
-    // touch no pads, so unlike build() this needs no re-bake behind it.
+    // has to exist before customers() can be asked who receives a paper. FEAT-295: it adds the route houses' pads to
+    // the roster's, so the re-bake below (storyPadReach) carves both.
     poiSystem.buildHouses(center, radius, mainNodes)
     // FEAT-67: the mission board — AFTER build() (it reads the roster) and AFTER daySystem.start()
     // (it starts on the run's clock). A new run, a new board: nothing survives from the last one.
@@ -9935,9 +9922,10 @@ const storySystem = new StorySystem({
     // chunks a pad touches so they re-scatter against the finished ground — a handful, not a rebuild.
     if (propSystem) {
       const S = CHUNK_SIZE
-      for (const q of poiSystem.list()) {
-        const c0x = Math.floor((q.x - q.halfLen) / S), c1x = Math.floor((q.x + q.halfLen) / S)
-        const c0z = Math.floor((q.z - q.halfLen) / S), c1z = Math.floor((q.z + q.halfLen) / S)
+      for (const q of [...poiSystem.list(), ...poiSystem.routeHouses().map(r => r.pad)]) {   // FEAT-295: house pads too
+        const e = Math.max(q.halfLen, q.halfWid)
+        const c0x = Math.floor((q.x - e) / S), c1x = Math.floor((q.x + e) / S)
+        const c0z = Math.floor((q.z - e) / S), c1z = Math.floor((q.z + e) / S)
         for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) propSystem.releaseChunk(cx, cz)
       }
     }
@@ -10322,7 +10310,8 @@ let _runEnded = false         // the run is over: never write it again (_discard
  *  card closed by mistake would strand the truck — and of its options only the tow to the shop (P3a: the gas station's
  *  or the tire service's would skip the shop's lesson). Installed here, below every name it reads (storySystem,
  *  _runEnded), so its poll can never touch one before it exists. */
-const _TUT_TOW = { allow: ['recovery', '#recovery-card [data-act="towShop"]'], hi: ['#recovery-card [data-act="towShop"]'] }
+const _TUT_TOW = { allow: ['recovery', '#recovery-card [data-act="towShop"]', '#recovery-card [data-act="towGo"]', '#recovery-card [data-act="towBack"]'],
+                   hi: ['#recovery-card [data-act="towShop"]', '#recovery-card [data-act="towGo"]'] }   // FEAT-307: the confirm is part of the lesson
 /** P5: while the pack is the stop (tossed, or fallen off on the way to Larry's) it wears the quest mark between cards too. */
 const _TUT_PACK = { ...BETWEEN, quest: 'pack' }
 const _tutStep = () => !_tutDrive() || _runEnded || !storySystem.isActive() ? null
@@ -11157,6 +11146,7 @@ function loop (t) {
     const _galBefore = vehicleState.fuel.gal   // FEAT-184: the evening burns none (put back after the damage step)
     _fragilePre()    // BUG-166: the fragile load's velocity before the step, for its felt g
     stepPhysics(vehicleState, RANGER_PARAMS, PHYSICS_DT, queryContacts, engineCtx)
+    _paperStep()     // FEAT-277: thrown papers settle and score on the step that stopped them
     _haulStep()   // FEAT-88: the haul load drops on the fixed step, like everything that touches physics
     _fragileStep()   // FEAT-97: the fragile load's shocks, on the step that produced them
     _looseStep()     // the loose load: out of the bed, the job waits for it (FEAT-144)
@@ -11491,6 +11481,8 @@ function loop (t) {
   if (propSystem && !_labActive) propSystem.update(streamCenter.x, streamCenter.z, _propRing, vehicleState.position.x, vehicleState.position.z, _bbRing, _streamMotion, _streamBudget)
   // BUG-71 / PERF-33: pay down the owed road-intrusion pass (see owePropSweep).
   if (_propSweepOwed > 0 && !_labActive && _streamBudget.remaining() > 0) { sweepPropIntrusions(PROP_SWEEP_PER_FRAME); _propSweepOwed -= PROP_SWEEP_PER_FRAME }
+  // FEAT-278: the clutter, once the loading screen is gone (_simHeld: the stage owns the screen).
+  if (!_simHeld && !_labActive) _clutter.drain(vehicleState.position.x, vehicleState.position.z, _streamBudget.deadline(CLUTTER_MS))
   perfAdd('frame.props.update', performance.now() - _pt)   // D-arc
   // PERF-07: bake freshly-committed chunks' prop shadows into the world atlas (sliced; no-op when the
   // queue is empty, i.e. the steady state). Off the frame's shadow pass entirely once baked.
@@ -11755,7 +11747,6 @@ function loop (t) {
   const drawnT = _prevRenderT + _renderAlpha * (simTime - _prevRenderT)
   updateCamera(camera, vehicleState, frameTime, Math.max(0, Math.min(MAX_FRAME_TIME, drawnT - _cameraDrawnT)))
   _cameraDrawnT = drawnT
-  _updateThrownRolls(frameTime)   // FEAT-61: fly the airborne papers (render-rate, analytic)
   flushPadRumble(pad.active && getCameraMode() !== 'freecam')   // FEAT-247: one mixed vibration effect per frame
   debrisSystem.update(_renderAlpha)   // FEAT-36: engine → debris meshes, at the truck's render alpha
   // FEAT-26: the slide director — the odometer's draw, the pick ahead, the release, the fade. Held with the sim;

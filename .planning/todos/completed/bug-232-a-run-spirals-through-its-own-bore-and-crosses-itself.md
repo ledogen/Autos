@@ -1,7 +1,7 @@
 ---
 id: BUG-232
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-18
 source: BUG-230 census, 2026-11-18
@@ -12,7 +12,7 @@ lane: Engine & world
 # BUG-232: A road run spirals through its own bore and crosses itself 0.2 m apart in plan
 
 ## Next steps
-Owner: pick a fix option (Description § Fix options; recommendation: option 1, then decide whether option 3 is wanted).
+Orchestrator: land `land/bug-232-self-crossing` (no seed in the 302-seed census lost a link any more).
 Orchestrator: mint a separate ticket for the run × run class (30 sites on 21 of 300 seeds, untraced).
 
 ## Summary
@@ -86,9 +86,19 @@ within 40 m of the crossing. BUG-230's "decks 0.9–2.0 m apart" was the shipped
 ## Tracker
 - [x] Reproduced and measured on 13+ random seeds: 300 random seeds, 4 self-crossings in-region (1.3 %), all ship 97–201 % ramps.
 - [x] Cause named in the code: corridorSearch's 2.5D lattice (4/5) or simplifyRDP tol 32 (1/5) makes the loop; FEAT-19 `_addCrossingByRun` lifts it into a wall (toggle-proven).
-- [ ] Owner picks a fix option (Description § Fix options).
+- [x] Owner picks a fix option (Description § Fix options).
 - [ ] Fixed with a gate, fingerprint and a 400-seed no-throw sweep.
+- [x] Owner picks a fix option: orchestrator 2026-11-18, options 1 + 2 (no spiral tunnels, no grade separation).
+- [x] Built: routeEdgeV2 rejects a self-crossing fitted line; a looping rung first retries on its own pin with a 32 m no-go disc on the crossing, and a looping rung 0 promotes the pinned uncapped rung 2 above the unpinned rung 1 (974c473d). Gate `self-crossing` fails 10/10 on main, passes 10/10 on the branch (5 seeds: 0 self-crossings, site steepest 10 m 18.1-24.9 %, main 90-202 %).
+- [x] Fingerprint main vs branch: all six windows identical in every component (no loop in seed 6/11/7/3 windows).
+- [x] Census main vs branch, 302 seeds (300 random + tutorial 1872706826 + 948023748): self 5 -> 0, near-self 3 -> 0, run × run no-junction 30 -> 30 (none up). Components unchanged on all 302; 15 seeds differ (runs +1..+9 on 13, infeasible 15->14 on one, runs -1 on 3237493602). 400-seed no-throw sweep: 402 rows, 0 failures.
+- [x] Affected gates: run-all 93 selected, all 91 run green. cdp-smoke PASS (41 steps, 0 console errors); pad-e2e ALL OK (104 checks, no console errors); wip/bug-232/sheet-fix.jpg made (both loops gone from the top-down).
+- [x] Lost link on 3237493602 traced and fixed: edges/junctions/nodes now equal main (see Log 2026-11-19). Re-census 302 seeds: edges up on 12, equal on 290, down on 0.
+- [x] Re-proof on merged head c50466bb (2026-11-19): 402-row no-throw sweep 0 errors; tutorial stats identical; dead ends checked on the 12 differing seeds; smoke + pad-e2e + self-crossing gate green.
 - [ ] Run × run no-junction crossings (30 sites / 21 seeds) ticketed separately.
+
+## Decisions
+- 2026-11-19, owner (card bug232-spiral-tunnels): "No spirals: refuse the loop". Recorded as DEC-446: the router refuses a path that crosses itself; no grade separation (no tunnel under, no bridge over) is added for spirals or for BUG-234's no-junction crossings.
 
 ## Open questions
 - May a road spiral over itself when the two passes are ≥ 14 m apart (a spiral tunnel, option 3)? Or should routing refuse every self-crossing (options 1–2)?
@@ -105,3 +115,23 @@ Sheet `wip/bug-232/sheet.jpg` (567993018 and 2283335151, top-down + driver view)
   (2 × 150, ~27 s/seed): self 4 sites/4 seeds, run × run 30/21, 0 throws. Trace on all 5 cases plus flatten toggle (numbers above).
   Probes in wip/bug-232/ (census, trace, toggle, prof, clsfind, xlist, shots, sheet). Not checked: the run × run class's cause;
   whether option 1 changes connectivity or T placement (no build was run with it).
+- 2026-11-19: owner answered "No spirals: refuse the loop" (DEC-446). Option 3 (spiral tunnels) is dropped. The plain fix stands: refuse a self-crossing path, take the next candidate; the fifth known case needs the retry search.
+- 2026-11-18 lane agent: fix af2da589 (src/corridor-router.js), gate df410c55 (test/self-crossing.mjs). 5 seeds clean, run × run on them unchanged
+  (400290281 keeps its one pre-existing cross). Fingerprint 6/6 windows identical. Census/sweep/gates were mid-run at handback:
+  logs in the session scratchpad b232/ (census-main.log, gates.log); probe wip/bug-232/census2.mjs [--sweep]; sheet prep sheet-fix.{html,mjs}, cases-views.json.
+- 2026-11-18 lane agent, proofs closed (branch af2da589+df410c55, based on main 60411652). Gates 91/91 green; smoke + pad-e2e green first try; census/sweep numbers in the Tracker.
+  Run counts: 661772743 163->172 (edges 162->171, nodes 144->151, junctions 62->65, dead ends 27->26, 1 component both); 2283335151 161->162 (edges 159->160, +1 node, dead ends 29 both, 1 comp);
+  948023748 184->185 (+1 edge, +1 node, 3 comps both, dead ends 32 both). Tutorial 1872706826: stats identical. Worse: 3237493602 (-1 edge, -1 junction, +1 dead end); 3882596942 refused edges 5->8 but +1 edge.
+  Not checked: dead ends on the other 12 differing seeds; driver-view shots on the branch look at the old camera height, so they show sky/terrain not road.
+- 2026-11-19 lane agent: lost link traced. 3237493602's missing edge is g:-4,3,0:-5,4,0 at (-2013, 2344)→(-2802, 2579), 3.2-3.9 km from spawn
+  (warm window, outside the story region); it IS main's one engine self-crossing there (loop 36-220 m from its node). Rung 0 looped; the
+  unpinned rung 1 was clean (1310 m) but left the node along sibling g:-4,2,1|-4,3,0 and crossed it 3× ((-2039,2310) (-2030,2272) (-2008,2226)),
+  so `_v2DeleteFor` (BUG-57 crossing delete, longer member dies) dropped it. Fix 974c473d: a looping rung retries once on its own pin with a
+  32 m disc on its crossing (replaces the all-rungs retry), and when rung 0 loops the pinned UNCAPPED rung 2 goes before unpinned rung 1.
+  The edge now ships 1179 m, clean, pinned; every other run identical to main. 3882596942 "refused 5→8" was not refused edges: `_v2Infeasible`
+  counts plan-layer sample solves; all 3 extras are re-samples (+ memo replays) of edge g:4,0,1:5,1,2's 1007 m first route, which main also finds
+  infeasible and then drops; the branch ships it as a 2000 m run, solved, steepest 10 m 19 %. Probes wip/bug-232/{runs,cls,stage,rungs,drape}.mjs.
+  Proofs: gate self-crossing PASS (5 seeds, 0 self-crossings, sites 18.1-29.4 %); census 302 (branch re-run, main log kept): self 5→0, near 3→0,
+  run × run 30→30, engine self-crossings in the warm window 17→0 (so no looping fallback ships), components equal on all 302, edges up 12 / down 0.
+  Gates (run-all --serial --changed=src/corridor-router.js): 93 selected, 91/91 green. Fingerprint-world vs main: ALL IDENTICAL (6 windows). Not re-run: smoke, pad-e2e, 400-seed sweep.
+- 2026-11-19 lane agent, proof-only re-run on c50466bb (main merged; no road code moved). Sweep 402 seeds (400 + 1872706826 + 948023748, 2 procs): 402 ok, 0 errors/failures, 0 engine self-crossings. Tutorial 1872706826 branch: 187 runs, 186 edges, 156 nodes, 81 junctions, 1 comp = main. Differing seeds vs main census: 12 (edges +1..+3 on all, comps equal). Dead ends main->branch (degree-1 graph nodes): up +1 on 3715981284 (29->30, edges 194->196) and 1927274698 (26->27, edges 172->173); down 1 on 1257139844, 2465745196; equal on 8. Edges down on none. cdp-smoke PASS (41 steps), pad-e2e ALL OK (136 ok lines) first try, test/self-crossing PASS. Not checked: dead ends via the old 15-seed list (now 12 differ).

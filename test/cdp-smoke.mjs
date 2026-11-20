@@ -681,6 +681,7 @@ const STEPS = [
     await seat(q.ox, q.oz, 0)
     const text2 = await until(card, 2000)
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+    await js('window.__inv.grant("breakfastBurrito")'); await sleep(200)   // for FEAT-310's sleep-card check below: an inventory change with the card up made Z flaky
     await tap(' ')
     check(await until(panel, 2000), `parking off the ribbon with the card up ("${text2}") opened no camp panel`)
     const title = () => js('document.getElementById("cp-title").textContent')
@@ -689,6 +690,14 @@ const STEPS = [
     await js('document.getElementById("cp-sleep").click()')
     check(await js('document.getElementById("cp-body").textContent.includes("campsites provide more rest")'),
       'the truck sleep face is missing its disclaimer')
+    // FEAT-310 (DEC-449): a sleep that outlasts a food says so on the timer — a fresh breakfast burrito keeps 8 h.
+    await js('document.getElementById("cp-hours").value = "10"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
+    check(await until(() => js('/breakfast burrito spoils in 8h 00m/.test(document.getElementById("cp-energy-text").textContent)'), 1500),
+      `FEAT-310: a 10 h sleep did not warn about the 8 h burrito: "${await js('document.getElementById("cp-energy-text").textContent')}"`)
+    if (process.env.NOTES1119_SHOTS) { mkdirSync('wip/notes-1119b', { recursive: true }); await sleep(300)
+      writeFileSync('wip/notes-1119b/sleep.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    await js('document.getElementById("cp-hours").value = "6"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
+    check(!await js('/spoils in/.test(document.getElementById("cp-energy-text").textContent)'), 'FEAT-310: a 6 h sleep warned about an 8 h burrito')
     await js('document.getElementById("cp-sleep-back").click()')
     // Owner, 2026-10-27: an unmade card keeps the tent up and lit, and Z there closes the card and
     // calls the hunt off — so later parks open nothing.
@@ -697,6 +706,7 @@ const STEPS = [
     await tap('z')
     check(await until(async () => !await panel(), 2000), 'Z did not close the truck face')
     check(!await lit(), 'Z closed the truck face but left the hunt on')
+    await js('window.__inv.consume("breakfastBurrito")')
     // BUG-142 (owner, 2026-11-07: "Camping menu should default to off when you break camp"): "leave", the break-camp
     // button, calls the hunt off too. Armed again while parked, the truck face opens at once (BUG-95).
     await tap('z')
@@ -704,6 +714,111 @@ const STEPS = [
     await js('document.getElementById("cp-break").click()')
     check(await until(async () => !await panel(), 2000), '"leave" did not close the truck face')
     check(!await lit(), 'breaking camp left the hunt on (BUG-142)')
+  }],
+  ['campCard', async () => {
+    // FEAT-308 (DEC-451): with the hunt on, above the prompt speed the card says whether this is a camping area, and
+    // only in one asks to slow down. Driven on a road stretch inside a zone and one clear of every zone.
+    // CAMP_SHOTS=1 also takes the owner's look (wip/camp-1119/): those two at speed, slowed in a zone on a site, and
+    // FEAT-309's two-sided search: two spots where the site lands across the road from the truck.
+    const s = await js(`(() => { const cs = window.__campSys(), pois = window.__poi().list()
+      const clearOfPois = (q) => pois.every(p => Math.hypot(p.x - q.x, p.z - q.z) > 120)
+      const far = (q) => cs.zones().every(z => Math.hypot(z.x - q.x, z.z - q.z) > z.r + 80)
+      let inZ = null, outZ = null
+      for (const e of window.__roadSys()._network.values()) {
+        const p = e.points
+        for (let i = 0; i + 1 < p.length && !(inZ && outZ); i++) {
+          let j = i, d = 0; while (j + 1 < p.length && d < 90) { d += Math.hypot(p[j + 1].x - p[j].x, p[j + 1].z - p[j].z); j++ }
+          if (d < 90) break
+          const run = p.slice(i, j + 1); if (!run.every(clearOfPois)) continue
+          const tx = p[i + 1].x - p[i].x, tz = p[i + 1].z - p[i].z, h = Math.atan2(-tx, -tz)
+          if (!inZ && run.every(q => cs.zoneAt(q.x, q.z))) inZ = { x: p[i].x, z: p[i].z, h }
+          if (!outZ && run.every(far)) outZ = { x: p[i].x, z: p[i].z, h }
+        }
+      }
+      return { inZ, outZ } })()`)
+    check(s.inZ && s.outZ, `no 90 m road stretch inside a camp zone and one clear of them: ${JSON.stringify(s)}`)
+    if (!s.inZ || !s.outZ) return
+    const SHOTS = !!process.env.CAMP_SHOTS, DIR = 'wip/camp-1119'
+    if (SHOTS) mkdirSync(DIR, { recursive: true })
+    const snap = async (name, caption) => {
+      if (!SHOTS) return
+      await js(`(() => { let c = document.getElementById('__cap'); if (!c) { c = document.createElement('div'); c.id = '__cap'; document.body.appendChild(c) }
+        c.style.cssText = 'position:fixed;left:0;top:0;right:0;padding:10px 16px;background:rgba(0,0,0,0.75);color:#fff;font:16px monospace;z-index:99999'
+        c.textContent = ${JSON.stringify(caption)} })()`)
+      await frames(4, 120)
+      writeFileSync(`${DIR}/${name}.png`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+      await js(`document.getElementById('__cap')?.remove()`)
+    }
+    const text = () => js('getComputedStyle(document.getElementById("camp-prompt")).display !== "none" && document.getElementById("camp-prompt-text").textContent')
+    const kph = () => js('window.__vs.velocity.length() * 3.6')
+    const atSpeed = async (q, name, label) => {
+      await seat(q.x, q.z, q.h)
+      await crank()
+      if (!await js('document.getElementById("camp-icon").classList.contains("on")')) await tap('z')
+      if (await js('window.__vs.parked')) await tap(' ')   // a teleport seats latched
+      await key('w', true)
+      const fast = await untilSim(async () => await kph() > 26, 15)
+      await sleep(400)   // the 10 Hz poll
+      const t = await text()
+      await snap(name, `${label}: ${(await kph()).toFixed(0)} km/h, card "${t}"`)
+      await key('w', false)
+      check(fast, `${label}: the truck never passed 26 km/h`)
+      return t
+    }
+    const tIn = await atSpeed(s.inZ, '1-fast-in-zone', 'FEAT-308 in a camping area at speed')
+    check(tIn && tIn.includes('camping area') && tIn.includes('slow down'), `in a camping area at speed the card does not ask to slow down: "${tIn}"`)
+    const tOut = await atSpeed(s.outZ, '2-fast-no-zone', 'FEAT-308 outside every camping area at speed')
+    check(tOut === 'no camping here', `outside the camping areas at speed the card is not "no camping here": "${tOut}"`)
+    if (SHOTS) {
+      // Truck spots in its own lane (3 m off the centreline) inside zones, each side: the first with a good site on its
+      // own side (slowed, from the chase cam), then two ≥ 300 m apart whose site is across the road (FEAT-309), from above.
+      const spots = await js(`(() => { const cs = window.__campSys(), pois = window.__poi().list(), P = cs._P(), reach = cs.reachM()
+        let slow = null; const across = [], tm = { one: 0, two: 0, n: 0 }
+        for (const e of window.__roadSys()._network.values()) for (let i = 0; i + 1 < e.points.length; i += 3) {
+          const q = e.points[i], n = e.points[i + 1]
+          if (!cs.zoneAt(q.x, q.z) || pois.some(p => Math.hypot(p.x - q.x, p.z - q.z) < 120)) continue
+          const tx = n.x - q.x, tz = n.z - q.z, l = Math.hypot(tx, tz) || 1
+          for (const sd of [1, -1]) {
+            const x = q.x + tz / l * 3 * sd, z = q.z - tx / l * 3 * sd
+            cs._eval = null; let t = performance.now(); const ev = cs.evaluate(x, z); tm.two += performance.now() - t
+            const nr = cs.nearRoadInfo(x, z); t = performance.now(); cs._gradeSide(nr, P, reach); tm.one += performance.now() - t; tm.n++
+            if (!ev.flat || !ev.pad || ev.vibe < 0.3) continue
+            const rec = { x, z, h: Math.atan2(-tx, -tz), px: ev.pad.x, pz: ev.pad.z, vibe: ev.vibe }
+            if (!slow && ev.pad.nx * nr.nx + ev.pad.nz * nr.nz > 0) slow = rec
+            if (ev.pad.nx * nr.nx + ev.pad.nz * nr.nz < 0 && across.every(a => Math.hypot(a.x - x, a.z - z) > 300)) {
+              const own = cs._gradeSide(nr, P, reach)
+              across.push({ ...rec, own: own.best ? +own.best.vibe.toFixed(2) : null })
+            }
+          }
+          if (slow && across.length >= 2 && tm.n >= 60) return { slow, across, tm }
+        }
+        return { slow, across, tm } })()`)
+      console.log(`  campCard: ms per grade in the page over ${spots.tm.n} spots: one ray ${(spots.tm.one / spots.tm.n).toFixed(2)}, both sides ${(spots.tm.two / spots.tm.n).toFixed(2)}`)
+      check(spots.slow && spots.across.length >= 2, `CAMP_SHOTS: no slowed site or no two across-the-road sites: ${JSON.stringify(spots)}`)
+      // Hunt off while seating (a teleport seats latched, and that park edge would open a card), brake off, hunt on.
+      const seatHunting = async (a) => {
+        if (await js('document.getElementById("camp-icon").classList.contains("on")')) await tap('z')
+        await seat(a.x, a.z, a.h)
+        if (await js('window.__vs.parked')) await tap(' ')
+        await tap('z')
+        await sleep(800)
+      }
+      if (spots.slow) {
+        await seatHunting(spots.slow)
+        await snap('3-slowed-in-zone', `FEAT-308 slowed in a camping area: card "${await text()}"`)
+      }
+      for (const [k, a] of spots.across.slice(0, 2).entries()) {
+        await seatHunting(a)
+        const t = await text()
+        await js(`(() => { const p = window.__vs.position, mx = (p.x + ${a.px}) / 2, mz = (p.z + ${a.pz}) / 2
+          const dx = Math.sin(${a.h}), dz = Math.cos(${a.h}), cx = mx + dx * 22, cz = mz + dz * 22, cy = p.y + 26
+          window.__view(cx, cy, cz, Math.atan2(cx - mx, cz - mz), -Math.atan2(cy - p.y, 22)) })()`)
+        await frames(20, 1500)
+        await snap(`${4 + k}-across-${k + 1}`, `FEAT-309 site across the road: vibe ${a.vibe.toFixed(2)}; the truck's own side alone: ${a.own == null ? 'no site' : a.own.toFixed(2)}; card "${t}"`)
+      }
+    }
+    await seat(s.outZ.x, s.outZ.z, s.outZ.h)   // a teleport drops the freecam
+    if (await js('document.getElementById("camp-icon").classList.contains("on")')) await tap('z')
   }],
   ['boltons', async () => {
     // FEAT-204: the roof rack, bull bar and light bar fitted straight onto the truck (window.__parts, no shop, no
@@ -850,10 +965,28 @@ const STEPS = [
     await sleep(200)
     const shot = await client.cmd('Page.captureScreenshot', { format: 'png' })
     mkdirSync('wip/fresh', { recursive: true }); writeFileSync('wip/fresh/bar.png', Buffer.from(shot.result.data, 'base64'))
+    // FEAT-310 (DEC-449): the selected food's line reads its time to spoil — 14 h of the chili dog's 16 are left.
+    const ci = await js(`window.__inv.list().findIndex(r => r.id === 'chiliDog')`)
+    await js(`document.querySelector('#inv-screen .inv-slot[data-slot="${ci}"]').click()`)
+    check(await until(() => js(`/spoils in 14h 0\\dm/.test(document.querySelector('#inv-screen .st-cond')?.textContent ?? '')`), 1500),
+      `FEAT-310: the chili dog line reads "${await js(`document.querySelector('#inv-screen .st-cond')?.textContent`)}", not 14 h to spoil`)
+    if (process.env.NOTES1119_SHOTS) { mkdirSync('wip/notes-1119b', { recursive: true }); await sleep(300)
+      writeFileSync('wip/notes-1119b/timer.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    await tap('Escape')
+    // FEAT-306 (DEC-448): past its 16 h the chili dog is not deleted: it stays as "Rotten chili dog", and cannot be eaten.
+    await js(`window.__inv.amend(window.__inv.list().findIndex(r => r.id === 'chiliDog'), { ages: [15.9] })`)   // 0.1 h from its 16
+    await js('window.__day().advanceMinutes(30)'); await sleep(200)
+    check(await js(`window.__inv.list().some(r => r.id === 'rottenChiliDog' && r.name === 'Rotten chili dog' && !r.usable) && !window.__inv.list().some(r => r.id === 'chiliDog')`),
+      'FEAT-306: the spoiled chili dog is not a rotten chili dog in the inventory')
+    await tap('Tab'); await until(open, 1000)
+    const ri = await js(`window.__inv.list().findIndex(r => r.id === 'rottenChiliDog')`)
+    await js(`document.querySelector('#inv-screen .inv-slot[data-slot="${ri}"]').click()`); await sleep(300)
+    await js(`document.getElementById('inv-tip').style.display = 'none'`)   // the pack's hover tip, left by the click
+    if (process.env.NOTES1119_SHOTS) writeFileSync('wip/notes-1119b/rotten.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
     await tap('Escape')
     check(await until(async () => !await open(), 1000), 'Esc left the inventory open')
-    await js(`(() => { window.__inv.consume('chiliDog'); window.__day().setEnergy(${e0}) })()`)
-    check(!await js(`window.__inv.list().some(r => r.id === 'chiliDog')`), 'the chili dog row is left behind')
+    await js(`(() => { window.__inv.remove(window.__inv.list().findIndex(r => r.id === 'rottenChiliDog')); window.__day().setEnergy(${e0}) })()`)
+    check(!await js(`window.__inv.list().some(r => /chiliDog/i.test(r.id))`), 'the chili dog row is left behind')
     if (!wasParked) await tap(' ')
     const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
@@ -1755,7 +1888,12 @@ const STEPS = [
     check(await until(async () => await js('window.__paper.system.stock()') === stock0 - 1, 2000),
       `an RB tap while aiming on a live round threw no paper: stock ${stock0} → ${await js('window.__paper.system.stock()')}`)
     await js('__fp.b[7] = 0; __fp.axes[2] = 0'); await frames(2, 60)
-    console.log(`  papers: a pad RB tap threw a paper on the live round (stock ${stock0} → ${stock0 - 1})`)
+    // FEAT-277: the paper is an engine body now — it must come to rest and be scored (in flight back to 0,
+    // a read-out shown) within maxFlightS of sim time, never hang in the air.
+    check(await untilSim(() => js('window.__paper.system.run.inFlight === 0'), 10),
+      `the thrown paper never came to rest: ${await js('window.__paper.system.run.inFlight')} still in flight after 10 s`)
+    check(await js('document.getElementById("throw-readout").style.display') === 'block', 'a paper came to rest and no throw read-out showed')
+    console.log(`  papers: a pad RB tap threw a paper on the live round (stock ${stock0} → ${stock0 - 1}); it came to rest and scored`)
     // Put the round down: parked, two clicks of the abandon button, then continue off the card.
     await park()
     // The abandon button reads "parked" off the ~10 Hz HUD poll; a click right after the latch can
@@ -1834,6 +1972,16 @@ const STEPS = [
     check(await until(async () => await hudText() !== staged, 3000), `job never started: HUD still "${staged}" after ${moved.toFixed(0)} m`)
     console.log(`  offer: ${p.type} job running after ${moved.toFixed(0)} m — HUD "${await hudText()}"`)
     check(await vis('mission-hud'), 'mission HUD vanished mid-job')
+    // BUG-245: the running courier job's promise box ticks without moving — over 5 clock ticks the box and its rows keep their
+    // rectangles and the very same elements (the box is no longer rebuilt every second).
+    check(await js('getComputedStyle(document.getElementById("job-promise")).display !== "none"'), 'BUG-245: a running board job shows no promise box')
+    { const rects = 'JSON.stringify([document.getElementById("job-promise"), ...document.querySelectorAll("#job-promise .jp-row")].map(r => { const b = r.getBoundingClientRect(); return [b.left, b.top, b.width] }))'
+      const clock0 = await js('document.querySelector("#job-promise .jp-text")?.textContent')
+      await js('window.__jpRow = document.querySelector("#job-promise .jp-row")')
+      const r0 = await js(rects); let same = true
+      for (let i = 0; i < 5; i++) { await sleep(1100); same = same && await js(rects) === r0 && await js('window.__jpRow === document.querySelector("#job-promise .jp-row")') }
+      check(same, `BUG-245: the promise box moved or was rebuilt over 5 ticks (${r0})`)
+      console.log(`  promise box: held still over 5 ticks (first row "${clock0}", rects ${r0})`) }
   }],
   // FEAT-42: the rolling run save. (1) save & exit → a real reload → continue puts the run back,
   // paused, with the offer step's courier job still in hand (part 2). (2) The crash: take a freight
@@ -2143,6 +2291,19 @@ const STEPS = [
     check(await until(async () => !await hint(), 2000), 'the stranded hint stayed up over the open Recovery card')
     check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towFuel]:not([disabled])")'), 3000),
       `no fuel tow on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
+    // FEAT-307 (DEC-450): a tow is asked for twice. The tow button only opens the confirm (price, time, tow / back); nothing
+    // is spent until the second press, and back returns to the list.
+    { const m0 = await js('window.__econ.money')
+      await js('document.querySelector("#recovery-card [data-act=towFuel]").click()')
+      check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towGo]") && /\\$/.test(document.querySelector("#recovery-card [data-act=towGo]").textContent)'), 2000),
+        `FEAT-307: the tow button showed no confirm: "${await js('document.getElementById("recovery-card").textContent')}"`)
+      check(await js('window.__econ.money') === m0, 'FEAT-307: asking for the tow already spent the money')
+      if (process.env.NOTES1119_SHOTS) { mkdirSync('wip/notes-1119b', { recursive: true }); await sleep(400)
+        writeFileSync('wip/notes-1119b/tow-key.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+        await padOn(); await btn(13); await sleep(400)   // the pad: D-pad down lands the focus ring on a button
+        writeFileSync('wip/notes-1119b/tow-pad.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')); await padOff() }
+      await js('document.querySelector("#recovery-card [data-act=towBack]").click()')
+      check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towFuel]")'), 2000), 'FEAT-307: back did not return to the tow list') }
     // BUG-113: pad B is the general back on the Recovery card too — it closes the card, it does not pause.
     await padOn(); await btn(1); await padOff()
     check(await until(() => js('document.getElementById("recovery-card").style.display === "none"'), 2000), 'pad B left the Recovery card open (BUG-113)')
@@ -2777,6 +2938,7 @@ const STEPS = [
         document.getElementById("svc-screen").checkVisibility(), window.__tutorial().phase, pe.style.display, pe.textContent.slice(0, 40), +window.__day().clockH().toFixed(2), document.getElementById("inv-screen")?.classList.contains("open"), document.getElementById("recovery-card")?.checkVisibility(), document.getElementById("svc-screen").className, document.getElementById("pump-display").classList.contains("on")])
       if (window.__towTrace.length > 80) clearInterval(id) }, 50) })()`)
     await js('document.querySelector("#recovery-card button[data-act=towShop]").click()')
+    await js('document.querySelector("#recovery-card button[data-act=towGo]").click()')   // FEAT-307: the confirm (the lesson's allow list names it)
     // The shop opens on the parked edge after the tow's reseat, which awaits the seat like a teleport: seat()'s ceiling.
     check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 30000), `the tow did not land at an open shop: ${await js(`JSON.stringify({ parked: window.__vs.parked,
       v: +window.__vs.velocity.length().toFixed(2), card: document.getElementById("dialogue-panel").checkVisibility() && document.getElementById("dlg-speaker").textContent,
@@ -3379,6 +3541,12 @@ const STEPS = [
     await hold(0, 2500)
     const g1 = await js('window.__vs.fuel.gal')
     check(g1 - g0 > 1, `A held 2.5 s pumped ${(g1 - g0).toFixed(2)} gal`)
+    // BUG-237: the map shuts every menu through its own close, and the pump's close is the checkout; so M (and the pad's
+    // View, a tap) does not open the map over an open pump: the pump stays up and the wallet is untouched.
+    await key('m', true); await sleep(100); await key('m', false); await sleep(300)
+    await btn(8); await sleep(300)
+    check(!await js('window.__map2d().isOpen()') && await js('document.getElementById("pump-display").classList.contains("on")') && await js('window.__openMenus().includes("pump")') && await js('window.__econ.money') === m0,
+      `BUG-237: M / View at an open pump: ${JSON.stringify(await js('({ map: window.__map2d().isOpen(), menus: window.__openMenus(), money: window.__econ.money })'))} (money was ${m0})`)
     await btn(5)
     check(await until(() => js(`window.__econ.money < ${m0} - 0.01`), 2000), 'RB at the pump did not pay')
     // Mom's doorstep: its camp card on the D-pad, the sleep timer's slider on ←/→, B back out of both.

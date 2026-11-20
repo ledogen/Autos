@@ -24,6 +24,21 @@ day.eat(potH)
 check('eat() adds exactly what mealGainH said', Math.abs(day.fedLeftH() - left1 - gain2) < 1e-9,
   `gain ${gain2.toFixed(2)} h, fedLeft ${left1.toFixed(2)} → ${day.fedLeftH().toFixed(2)} h`)
 
+// FEAT-301 (DEC-438): the hover's post-meal level is leftAfterMeal; eating must land exactly there, hungry or fed or at the cap.
+{
+  const d = new DaySystem({ setTimeOfDay: () => {} }); d.start()
+  let ok = true, n = 0
+  for (const wait of [(DAY_PARAMS.mealHoldH + 2) * 60, 0, 90, 300, 600]) {
+    d.advanceMinutes(wait)
+    for (const h of [2, potH, ITEMS.burger?.satiety ?? 8, 15]) {
+      const want = d.leftAfterMeal(h), word = d.hungerWord(want)
+      d.eat(h); n++
+      ok &&= Math.abs(d.fedLeftH() - want) < 1e-9 && d.hungerWord() === word
+    }
+  }
+  check('FEAT-301: the hover preview (leftAfterMeal, hungerWord) equals what eat() leaves, over hungry / fed / capped states', ok, `${n} meals`)
+}
+
 // The inventory, wired as main.js wires it: the eat effect plus the BUG-211 note.
 const NOTE = { all: 'too full', some: 'nearly full' }   // main.js _MEAL_NOTE's shape
 const note = (h) => NOTE[day.mealWaste(h)] ?? null

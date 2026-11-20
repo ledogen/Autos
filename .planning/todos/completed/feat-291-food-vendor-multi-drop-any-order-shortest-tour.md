@@ -1,9 +1,11 @@
 ---
 id: FEAT-291
 type: feature
-status: open
+status: done
 severity: major
 opened: 2026-11-18
+closed: 2026-11-19
+resolution: "Landed on main; owner answered Good: land it."
 source: owner, 2026-11-18 (inbox)
 ---
 lane: free lane
@@ -28,9 +30,10 @@ Owner: "For a food vendor job where you have to deliver to multiple locations. I
 ## Tracker
 - [x] Built: the stops in the shortest order from the giver (the paper round's planTourJob), any order at the wheel, the GPS re-planned from the truck (paper-route.js TourGuide, now shared with the demolition site)
 - [x] A gate holds it: test/multi-drop-tour.mjs (brute-force optimal, any order completes, par follows the tour, save/resume); story-poi's in-order drive updated
-- [ ] Owner has looked
+- [x] Owner has looked
 
 ## Decisions
+- 2026-11-19, owner (card feat291-multi-drop-drive): "Good: land it".
 - 2026-11-18, owner: "You should be able to deliver in any order that you'd like… the router should choose the shortest path through all of them and show you that as the default route. Basically reuse the old paper customer routing."
 
 ## Open questions
@@ -45,3 +48,4 @@ src/mission.js, src/paper-route.js, src/main.js, test/multi-drop-tour.mjs, test/
 ## Log
 - 2026-11-18 close-out: merged main clean (4bbf7424); 40 affected gates green after the gps-readout fixture fix; census 600 offers, 0 shorter than greedy; smoke (rerun after the accessor fix) green, pad-e2e ALL OK, at load 7.9 / 12.4. Owed card feat291-multi-drop-drive.
 - 2026-11-18 minted by the orchestrator from the owner's inbox.
+- 2026-11-19: owner drove it and answered "Good: land it" (it is on main). Every Tracker box is ticked: closed. The 35 % multi-drop share and the 3:2:1 stop weights stay FEAT-89 placeholders for the owner.

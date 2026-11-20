@@ -606,6 +606,7 @@ export const PROP_MODELS = {
     // 14 m and only 2.4 m crosses it, which is also how a real one parks in a lay-by.
     yawOffset: Math.PI * 0.5,
     tags: ['residence'],
+    rv: true,   // DEC-429: "Every residence that is not an RV should also get mailboxes" — src/poi.js gives this one none
     // FEAT-71. Turned broadside, the model's +X is its RIGHT flank — the entry-door side on a US RV
     // — and it faces the road; the pad's back edge is model -X. Seated 2.2 m back, the far side
     // (mirrors at x -1.46) stands 0.34 m off the back edge and the yard is the strip between the
@@ -1060,6 +1061,62 @@ export const PROP_MODELS = {
     seat: 0.85,
   },
 
+  // ASSET-91 — three small HOUSES whose porch floor is a paper-route target (FEAT-295): a paper thrown
+  // at the wall or door drops onto it, and one landing on it rests there. Kit generator
+  // assets/models/src/porch-houses.py; 7 materials each, no images. NOT tagged 'residence' yet: placing
+  // them is FEAT-295 (owner rule: an asset ticket closes when the .glb ships). FEAT-295: tagged 'routeHouse' — the
+  // pool a paper-route stop draws its house from (src/poi.js ROUTE_HOUSE_POOL); `porch` is the index in
+  // collision.boxes of the porch floor, whose centre is put on the stop's target.
+  // Two boxes each: the BODY (walls + foundation to the eave) and the PORCH FLOOR (ground to floor top,
+  // wall to front edge; the board crowns sit on its top). Steps, stair, posts, porch roof and the main
+  // roof are left soft, so a paper on a roof sinks to the body box's top at the eave.
+  // `seat` puts the back eave 0.30 m inside the pad's back edge (numbers printed by the generator).
+  //   cottagePorch  1484 tris. Folk cottage, walls 7.2 x 4.4; 8.1 x 7.1 x 5.3 m overall. Full-width
+  //                 covered porch 7.2 wide x 1.77 deep, floor 0.50 m. Front 0.64 m inside the pad.
+  //   ranchDeck     1098 tris. Ranch, walls 8.8 x 4.8; 9.5 x 7.4 x 4.6 m overall. Open deck 3.2 wide x
+  //                 1.87 deep, floor 0.40 m, no railing. Front 0.27 m inside the pad.
+  //   cabinLanding  1266 tris. Front-gable cabin on piers, walls 5.4 x 5.0; 6.0 x 7.1 x 5.4 m overall.
+  //                 Landing 2.4 wide x 1.47 deep, floor 0.72 m, open stair down +X. Front 0.63 m inside.
+  cottagePorch: {
+    url: 'assets/models/cottage-porch.glb',
+    collision: {
+      shape: 'box', size: [8.14, 5.34, 7.06],
+      boxes: [
+        { c: [0, 1.55, 0], s: [7.26, 3.1, 4.46] },         // body
+        { c: [0, 0.25, -3.115], s: [7.2, 0.5, 1.77] },     // porch floor
+      ],
+    },
+    seat: 1.2,
+    tags: ['routeHouse'],
+    porch: 1,
+  },
+  ranchDeck: {
+    url: 'assets/models/ranch-deck.glb',
+    collision: {
+      shape: 'box', size: [9.54, 4.6, 7.43],
+      boxes: [
+        { c: [0, 1.425, 0], s: [8.86, 2.85, 4.86] },       // body
+        { c: [1.2, 0.2, -3.365], s: [3.2, 0.4, 1.87] },    // deck floor
+      ],
+    },
+    seat: 0.85,
+    tags: ['routeHouse'],
+    porch: 1,
+  },
+  cabinLanding: {
+    url: 'assets/models/cabin-landing.glb',
+    collision: {
+      shape: 'box', size: [6.0, 5.42, 7.07],
+      boxes: [
+        { c: [0, 1.51, 0], s: [5.46, 3.02, 5.06] },        // body (on piers, but solid to the ground)
+        { c: [-1.0, 0.36, -3.265], s: [2.4, 0.72, 1.47] }, // landing floor
+      ],
+    },
+    seat: 0.63,
+    tags: ['routeHouse'],
+    porch: 1,
+  },
+
   // ASSET-73 — the COUNTRY SCHOOL, 1141 tris, 7 materials, one 512x512 atlas (the SCHOOL plaque + the
   // flag). White lapped clapboard, six-over-six windows with burgundy curtains, an entry vestibule
   // with red doors, a bell cupola, a flagpole. Main block 9.6 x 4.8; 10.2 x 7.0 x 7.8 m overall (to
@@ -1142,12 +1199,14 @@ export const PROP_MODELS = {
   // eyeballed — mailbox.py's header has the working. mailboxLeaning has NO Flag node on
   // purpose (its flag is snapped off): CHECK FOR THE NODE, do not assume it.
   //
-  // NO POOL TAG, and the same rule as the flamingos and the road signs applies: do not invent
-  // one to make these appear. Road furniture is PLACED FROM ROAD GEOMETRY, not scattered —
-  // that is FEAT-72. And ASSET-22's own warning stands: a populated route wants FEAT-59's
-  // deferred InstancedMesh path first, because cloning one mailbox per driveway at 3–5 draw
-  // calls each is exactly the scatter case the per-mesh path is not for. A handful placed by
-  // hand to prove the asset is fine; a paper route planned around them is not, yet.
+  // POOL 'mailbox' (FEAT-275, owner 2026-11-17: "add the mailboxes to Larry's pool"; DEC-429). Consumed ONLY by
+  // src/poi.js (mailboxKey / _residenceMailbox): one per residence that is not an RV (`rv` below), out on the
+  // road shoulder at one end of its pad, door to the road. No lone roadside ones (FEAT-280, withdrawn by the
+  // owner in DEC-429: "remove the random clutter boxes"). NOT 'lawnFurniture': the yard scatter must not draw
+  // eleven of them. Knockable (DEC-394): a mailbox is a box on a post, so it breaks away and tumbles with the
+  // mass below (box ~2 kg + a 4x4 post ~6 kg; the pillar is masonry, the planter holds soil); crushN is the post.
+  // CHECK FOR the Flag node: mailboxLeaning has none.
+  //
   // Reachable meanwhile via spawnModel('mailboxClassic') etc.
   //
   // CURATED RECOLOUR POOL on MailBox (owner ruling 2026-08-21, gnome precedent). Five real
@@ -1156,6 +1215,7 @@ export const PROP_MODELS = {
   // shorter pools of their own, and the barn is never recoloured (owner, 2026-10-01).
   mailboxClassic: {
     url: 'assets/models/mailbox-classic.glb',
+    tags: ['mailbox'], knockable: { massKg: 8, crushN: 1500 },
     // 132 tris. 0.223 wide (the flag is the widest part) x 1.235 tall (flag tip; the BOX top
     // is at the ticket's 1.15) x 0.478 deep. Knockable set dressing, not a wall.
     collision: { shape: 'box', size: [0.223, 1.235, 0.478] },
@@ -1163,6 +1223,7 @@ export const PROP_MODELS = {
   },
   mailboxTube: {
     url: 'assets/models/mailbox-tube.glb',
+    tags: ['mailbox'], knockable: { massKg: 8, crushN: 1500 },
     // 212 tris. Same box on a steel pipe post, with a newspaper tube slung under it — the
     // paper-route drop point that reads as one from the road, and the thing news-roll.glb
     // actually goes in. The tube is deliberately oversize (0.145 bore vs a real 0.115) and
@@ -1173,6 +1234,7 @@ export const PROP_MODELS = {
   },
   mailboxLeaning: {
     url: 'assets/models/mailbox-leaning.glb',
+    tags: ['mailbox'], knockable: { massKg: 7, crushN: 1500 },
     // 148 tris. The derelict: post canted on two axes and sitting 54 mm low, box dented and
     // crooked, door hanging open past horizontal over a real recessed cavity, flag snapped to
     // a bracket stub. NO `Flag` NODE.
@@ -1185,6 +1247,7 @@ export const PROP_MODELS = {
   },
   mailboxCluster: {
     url: 'assets/models/mailbox-cluster.glb',
+    tags: ['mailbox'], knockable: { massKg: 18, crushN: 1500 },
     // 204 tris. Three small boxes on a shared rail between two posts — the shared-driveway
     // bank, and the multi-customer drop point ASSET-22's 2026-09-30 note anticipates ("a
     // cluster of mailboxes can serve several customers at one stop"). The one WIDE silhouette
@@ -1199,6 +1262,7 @@ export const PROP_MODELS = {
   },
   mailboxBucket: {
     url: 'assets/models/mailbox-bucket.glb',
+    tags: ['mailbox'], knockable: { massKg: 9, crushN: 1500 },
     // 192 tris. Post set in a 5-gallon pail of concrete — the renter's fix, and
     // the cheapest thing in the kit to read as "nobody owns this place".
     collision: { shape: 'box', size: [0.268, 1.235, 0.478] },
@@ -1206,6 +1270,7 @@ export const PROP_MODELS = {
   },
   mailboxPlanter: {
     url: 'assets/models/mailbox-planter.glb',
+    tags: ['mailbox'], knockable: { massKg: 40, crushN: 1500 },
     // 236 tris. Galvanised wash tub of flowers at the foot, a flat-capped post
     // that runs past the box (the pyramid finial read as a spike — removed
     // 2026-10-01). THE COUNTERWEIGHT TO THE
@@ -1223,6 +1288,7 @@ export const PROP_MODELS = {
   },
   mailboxBarn: {
     url: 'assets/models/mailbox-barn.glb',
+    tags: ['mailbox'], knockable: { massKg: 12, crushN: 1500 },
     // 192 tris. A barn, cut down to the three cues that survive fog: a gable, a
     // dark roof overhanging on all four sides, and white trim on red. The
     // X-braced barn door IS the mailbox door — the gable end is the -Z face,
@@ -1237,6 +1303,7 @@ export const PROP_MODELS = {
   },
   mailboxLimb: {
     url: 'assets/models/mailbox-limb.glb',
+    tags: ['mailbox'], knockable: { massKg: 10, crushN: 1500 },
     // 188 tris. A tree limb for the post, standard box on top — the owner's
     // call: reuse the box, change what it stands on. The limb WANDERS in x and
     // y as it rises and carries a lopped branch stub; a straight tapered
@@ -1246,6 +1313,7 @@ export const PROP_MODELS = {
   },
   mailboxChicken: {
     url: 'assets/models/mailbox-chicken.glb',
+    tags: ['mailbox'], knockable: { massKg: 10, crushN: 1500 },
     // 244 tris, the tightest fit in the kit. Jigsawn chicken cut-outs bolted to
     // a standard box — which is how the real ones are made, so flat plates thin
     // in X are both the cheap way and the honest way.
@@ -1264,6 +1332,7 @@ export const PROP_MODELS = {
   },
   mailboxFancy: {
     url: 'assets/models/mailbox-fancy.glb',
+    tags: ['mailbox'], knockable: { massKg: 14, crushN: 1500 },
     // 248 tris, THREE MATERIALS (white casting, dark knob, flag). Rebuilt
     // 2026-10-01 from the owner's reference photo: a chunky panelled box
     // CANTILEVERED FORWARD (-Z, toward the road) off a square post on a wide
@@ -1280,6 +1349,7 @@ export const PROP_MODELS = {
   },
   mailboxPillar: {
     url: 'assets/models/mailbox-pillar.glb',
+    tags: ['mailbox'], knockable: { massKg: 150, crushN: 1500 },
     // 180 tris. Box on a dry-stacked stone pillar under a cast cap. The only wide dark base in
     // the kit, so it is the only flavour that reads as a PROPERTY rather than as road
     // furniture — use it where a driveway means money, not on a logging spur.
