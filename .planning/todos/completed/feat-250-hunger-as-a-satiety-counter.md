@@ -1,7 +1,7 @@
 ---
 id: FEAT-250
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-17
 source: owner, 2026-11-17 — "I'd like to change hunger to a system where food items can be stacked together I think a simple hunger counter that decreases over time through the stuffed full content zones and is added to by foods that each have Their own number that they add. This number is the satiety that the food contributes. Then let's add like six new food items to the game and make sure we have a good spread of cheap but not long lasting to high quality expensive with more satiety."
@@ -12,7 +12,7 @@ lane: C
 # FEAT-250: Hunger is a satiety counter that foods stack into; six new foods
 
 ## Next steps
-Owner: answer the card food-1117-numbers (the price table, the 12 h cap, the peanuts). Then lane C lands land/food-1117 with FEAT-260/261 and BUG-198.
+Closed 2026-11-20. Owner approved the numbers on card food-shop-1117-look.
 
 ## Summary
 Replace the current hunger hold with one counter that drains over time through the Stuffed / Full / Content zones. Each food adds its own satiety number, so foods stack. Add about six foods from cheap and short to expensive and long.
@@ -38,17 +38,18 @@ Linked owner rulings of the same night are under Decisions.
 ## Tracker
 - [x] Counter drains through the zones
 - [x] Each food has a satiety number and foods stack
-- [ ] Satiety cap (12 h proposed) approved by the owner
-- [ ] About six new foods, cheap/short to expensive/long, numbers approved by the owner (four built, five proposed: FEAT-260)
+- [x] Satiety cap (12 h proposed) approved by the owner
+- [x] About six new foods, cheap/short to expensive/long, numbers approved by the owner (four built, five proposed: FEAT-260)
 - [x] Items stack inside coolers; a stack is one slot; a cooler has four slots
 - [x] Cooked groceries spoil in 24 h outside a cooler
 - [x] Food cost about $0.35 per hour of hold (FEAT-69 dive); peanuts held at $3 by DEC-293 pending the card
-- [ ] Owner has played it
+- [x] Owner has played it
 
 ## Decisions
 - 2026-11-17, owner (fresh-clock-look card): "Let item stack inside coolers. A stack of items only counts as one slot and the coolers offer four slots. Cooked groceries should also spoil in 24h outside a cooler."
 - 2026-11-17, owner (FEAT-69 dive, cost level): "cut costs: food to about $0.35 per hour of hold, and the oil change $8 → $6" · "We should add a couple more types of food to add some variety"
 - 2026-11-17: owner (inbox 20261118062542-4cas): a second potato after one filled hunger changed nothing. Minted BUG-211; the Eat preview is FEAT-283.
+- 2026-11-20, owner: "Good" on card food-shop-1117-look (the price table, the 12 h cap, the shop shelf numbers).
 
 ## Open questions
 - The satiety cap: 12 h proposed (6 h past the start of stuffed).
@@ -63,3 +64,5 @@ Records DEC-376 (the counter), DEC-377 (the price line), DEC-379 (cooler slots, 
 ## Log
 - 2026-11-17: built on land/food-1117 (lane C). Gates: day-clock, inventory, shop-stock, economy green; affected run in the log line below.
 - 2026-11-17 (lane C): owner's card answered: DEC-407 — $/h by place of sale (cookable $0.25, staples $0.27–0.33, vendor $0.50–0.60, gas $0.67–0.70; band $0.245–0.70), peanuts $2, five more foods built (jerky, apple, burrito, beans heated at camp, fried chicken). test/inventory.mjs holds the band and four ordering rules. Gates/smoke: see the report; look card food-shop-1117-look.
+- 2026-11-20: owner, card food-shop-1117-look: "Good". Approves the 12 h satiety cap, the food numbers and prices, and the shop shelf numbers on the card (shelf life 6 to 68 h, standard tire weight 15, fill chance kept at 0.074, old tire weight 30). Closed.
+

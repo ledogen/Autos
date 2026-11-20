@@ -1,7 +1,7 @@
 ---
 id: FEAT-270
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-17
 source: owner, 2026-11-17 (inbox) — "We have a main menu button not gated on having to be parked and we have a save and exit button that is gated on having to be parked. My recommendation…"
@@ -12,7 +12,7 @@ lane: Free lane (menus)
 # FEAT-270: Drop the Main menu button; keep only Save and quit (parked-only)
 
 ## Next steps
-A lane drops the button and checks the pad menu order (FEAT-254 / DEC-368).
+Closed 2026-11-20. Owner looked and said good.
 
 ## Summary
 The pause menu has a Main menu button that works while moving and a Save and exit button that needs the truck parked. Drop the first, so leaving the run means parking, unless the player gives up.
@@ -41,3 +41,5 @@ the pause menu (index.html, src/main.js, src/menu-nav.js)
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118005628-kk6s).
 - 2026-11-17 ui-1117b: pm-menu hidden in a story run; save and exit (parked) or give up are the ways out. Free roam keeps main menu. Look pending.
+- 2026-11-20: owner, card ui-1117b-look: "Good: close them". Closed. On main (aa0009cc).
+

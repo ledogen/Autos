@@ -67,7 +67,7 @@ import { DustSystem, SUN_SHADE_UNIFORMS } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
 import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'   // the sky, its sun/moon/stars, the daylight and the sky fog — one atmosphere
-import { parseWorldSeed, seedFor } from './seed.js'
+import { parseWorldSeed, seedFor, rerollSeed } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
 import { createFrameCap } from './frame-cap.js'   // PERF-48 / BUG-169: the render cap skip decision (pure, gated)
@@ -9760,13 +9760,16 @@ const storySystem = new StorySystem({
   // BUG-85: pieces are cut at the PLANNERS' wall (radius less REGION_MARGIN) — see world-validate.js
   // THE STRICT CUT — so report.mainNodes is exactly the piece the planners can route on.
   validateRegion: (centre, radius) => validateArea(roadSystem, centre, discArea(radius, REGION_MARGIN), RANGER_PARAMS),
-  // BUG-100 (owner, 2026-11-01): a refused seed re-rolls a fresh one, typed or random, up to
+  // BUG-100 (owner, 2026-11-01): a refused seed re-rolls, typed or random, up to
   // SEED_REROLLS times; only then does the refusal card show. A resume never re-rolls — that would
   // throw the saved run away — so it gets the card at once.
   onSeedRejected: (seed, report) => {
     if (!_pendingResume && !_paperScenario && _seedRerolls < SEED_REROLLS) {
       console.info(`[story] seed "${seed}" refused (${unplayableReason(report)}) — re-roll ${_seedRerolls + 1}/${SEED_REROLLS}`)
-      void _startStory(_resolveSeed(''), _runWorld, _runGearbox, null, _seedRerolls + 1)
+      // BUG-226 (DEC-459): DERIVED from the refused seed, so a shared typed seed shares its replacement; the card names the swap
+      const to = rerollSeed(seed)
+      _seedSwap = { from: _seedSwap?.from ?? seed, to }
+      void _startStory(to, _runWorld, _runGearbox, null, _seedRerolls + 1)
       return
     }
     _showSeedModal(report, seed)
@@ -10080,7 +10083,7 @@ function _enterStageLoad (text, hint = '') {
   const t = document.getElementById('sl-text')
   if (t && text) t.textContent = text
   const hintEl = document.getElementById('sl-hint')
-  if (hintEl) hintEl.textContent = hint
+  if (hintEl) hintEl.textContent = hint && _seedSwap ? `seed ${_seedSwap.from} could not be built: playing ${_seedSwap.to}. ${hint}` : hint
 }
 /** The world is ready: drop the stage and hand the screen (and the fixed-step block) back. */
 function _exitStageLoad () {
@@ -10125,6 +10128,7 @@ let _runGearbox = 'auto'   // the box this run started with — a run save carri
 let _runWorld = null       // ...and the world knobs, so a BUG-100 re-roll keeps them
 let _pendingResume = null    // FEAT-42: the run save being resumed, between "continue" and onRegionLive
 const SEED_REROLLS = 3       // BUG-100: refused seeds re-rolled before the refusal card shows
+let _seedSwap = null         // BUG-226: { from: the seed asked for, to: the one now building } during a re-roll chain (the loading card names it)
 let _seedRerolls = 0         // re-rolls behind the current entry (0 for a player-started one)
 async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null, rerolls = 0, scenario = null, returnSeed = null) {
   _hideSeedModal()
@@ -10138,6 +10142,7 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   _runGearbox = gearbox
   _runWorld = world
   _seedRerolls = rerolls
+  if (!rerolls) _seedSwap = null
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
   _paperScenario = scenario   // FEAT-62: every entry sets it too — a scenario never outlives its own entry
   if (scenario) _paperSizeIdx = 0   // a scenario re-opens on the owner's rated rung (BUG-231: reset here, after _worldReady)

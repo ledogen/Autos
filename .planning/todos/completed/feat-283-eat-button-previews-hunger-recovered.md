@@ -1,7 +1,7 @@
 ---
 id: FEAT-283
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 (inbox) — "Change the "use" button to say "eat" for all food items. Also, when you hover the "eat" button, it should show you how much hunger you're going to rec…"
@@ -12,7 +12,7 @@ lane: SM-3 (items and food)
 # FEAT-283: Food items say "Eat"; hovering it previews the hunger recovered
 
 ## Next steps
-A lane changes the label and builds the preview.
+Closed 2026-11-20. Owner looked and said good.
 
 ## Summary
 The Use button on food items reads "Eat". Hovering it shows how much hunger it will recover: maybe a green box on the hunger bar, moved to the post-meal level.
@@ -41,3 +41,5 @@ the inventory item card (src/inventory*.js, src/main.js) · the hunger bar
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118062707-vgo6).
 - 2026-11-17 ui-1117b: built (eat label; green post-meal box on the hunger bar via the hover and the pad highlight). Look pending.
+- 2026-11-20: owner, card ui-1117b-look: "Good: close them". Closed. On main (aa0009cc).
+

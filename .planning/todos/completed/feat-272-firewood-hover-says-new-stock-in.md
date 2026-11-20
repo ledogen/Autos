@@ -1,7 +1,7 @@
 ---
 id: FEAT-272
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 (inbox) — "We should remove the new stock timers that show up under a POI's icon. I think it's clutter. In the hover menu for firewood, instead of available for,…"
@@ -12,7 +12,7 @@ lane: Places and Missions
 # FEAT-272: Firewood hover says "new stock in", not "available for"
 
 ## Next steps
-A lane changes the wording.
+Closed 2026-11-20. Owner looked and said good.
 
 ## Summary
 On the firewood vendor's hover card the timer line reads "available for". Firewood is always available, even after the timer, so the line should read "new stock in".
@@ -41,3 +41,5 @@ the POI hover card (src/main.js, src/map*.js)
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118010708-kmdu).
 - 2026-11-17 ui-1117b: a stock line (firewood yard) says "new stock in:"; test/offer-board.mjs follows. Look pending.
+- 2026-11-20: owner, card ui-1117b-look: "Good: close them". Closed. On main (aa0009cc).
+

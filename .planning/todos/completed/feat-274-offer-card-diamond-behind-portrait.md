@@ -1,7 +1,7 @@
 ---
 id: FEAT-274
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 (inbox) — "Can I get the colored diamond with letters in it associated with the mission type to show on the POI's offer in person? Tuck it behind the profile pic…"
@@ -12,7 +12,7 @@ lane: Places and Missions
 # FEAT-274: The mission-type diamond with its letter shows on the in-person offer, behind the portrait
 
 ## Next steps
-A lane reuses the map's diamond on the offer card.
+Closed 2026-11-20. Owner looked and said good.
 
 ## Summary
 The map shows each giver's portrait over a coloured diamond with the mission type's letter. Show the same diamond on the offer card when talking to the POI in person, tucked behind the profile picture.
@@ -40,3 +40,5 @@ the offer card (src/main.js, index.html) · data/map-icons.js
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118011206-xuk1).
 - 2026-11-17 ui-1117b: the offer panel head carries the family diamond (FAMILY_COLOR) with its letter behind the portrait; Larry gets a plain white diamond until FEAT-273 gives papers a letter. Look pending.
+- 2026-11-20: owner, card ui-1117b-look: "Good: close them". Closed. On main (aa0009cc).
+

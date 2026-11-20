@@ -12,9 +12,7 @@ lane: unplaced
 # FEAT-248: UI scale setting: Small (today) and Big (TV)
 
 ## Next steps
-Owner looks (owed card ui-1117-look) and tunes the Big factor (--ui-zoom in index.html, 1.5 now). DEC-383.
-
-OLD: A free lane (Sonnet): a two-value setting, Small = today, Big = TV. Find the cheapest single lever (one root scale) and show both on a 1080p TV-sized capture.
+Big UI factor 1.5 to 1.2 (DEC-463), being built. Then the owner looks on the TV.
 
 ## Summary
 Text is unreadable on a TV. Two options only: Small is the current size, Big is for a TV.
@@ -28,5 +26,10 @@ Read `.planning/research/UI-STYLE.md` first (12 px font floor, one pinned monosp
 - [x] Nothing overflows the screen at Big on 1080p and 720p (smoke step uiscale)
 - [ ] Owner has looked on the TV
 
+## Decisions
+- 2026-11-20, owner: "It works pretty well, but it's a little bit too big. Reduce the size by 20%." (DEC-463).
+
 ## Log
 - 2026-11-17: built on land/ui-1117 (35afeacd): CSS zoom on body children but the WebGL canvas. Map/cluster bitmaps are stretched, slightly soft. Main-menu pages scroll at Big. Sheet: wip/ui-1117/sheet.jpg.
+- 2026-11-20: owner, card ui-1117-look: "Changes (note box below)". Note: "It works pretty well, but it's a little bit too big. Reduce the size by 20%." DEC-463: Big goes from --ui-zoom 1.5 to 1.2 (index.html line 54, `html[data-ui-scale=big]`); the fix is being built by another agent. FEAT-262 and FEAT-263 on the same card drew no comment and stay open for their own look.
+

@@ -1,7 +1,7 @@
 ---
 id: BUG-226
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-18
 source: lane agent (FEAT-278), 2026-11-18 — found while taking screenshot sheets
@@ -12,9 +12,7 @@ lane: Engine & world
 # BUG-226: The same seed builds a different story world from one run to the next (seeds 914219767, 873064618)
 
 ## Next steps
-Not a determinism bug: both seeds are REFUSED (one condemned road) and BUG-100 re-rolls a fresh RANDOM seed, so each
-start plays a different seed. Owner call: should a refused seed re-roll to a seed DERIVED from it (the same typed seed
-then always lands on the same world), and should the player be told the seed was swapped? Close on the answer.
+BUILD per DEC-459: derived re-roll in `onSeedRejected` (src/main.js) plus the loading-card line naming the swap; a gate that pins the same replacement per refused seed.
 
 ## Summary
 The world is a pure function of the seed. What changed run to run was the seed itself: 914219767 and 873064618 each
@@ -35,13 +33,17 @@ mom and the roster but not the seed actually played, so the swap looked like the
 ## Tracker
 - [x] Reproduced, with the cause visible on every start (the re-roll log line).
 - [x] Root cause named: a refused seed is re-rolled to a random seed (BUG-100), not unseeded world build.
-- [ ] Owner: derived re-roll + a visible "seed swapped" note, or keep as is.
+- [x] Owner: derived re-roll + a visible "seed swapped" note, or keep as is. (Yes to both, DEC-459)
+- [x] Built: derived re-roll in onSeedRejected (`rerollSeed` in seed.js; every refusal path goes through it, Random included)
+- [x] Built: loading-card line naming the swap (the card's hint line: "seed X could not be built: playing Y. …")
+- [x] A gate holds the same replacement seed for a refused typed seed: test/seed-reroll.mjs
 - [x] A gate pins run-to-run identity: test/world-determinism.mjs (headless) already does; no build-path defect found.
 
 ## Decisions
 - DEC-054: a condemned road refuses a seed. BUG-100 (owner, 2026-11-01): "Typed seed should also just auto-re-roll."
 - DEC-012: a seed means the same world for every player. Holds for the PLAYED seed; a re-rolled typed seed does not
   (two players typing 914219767 get different worlds).
+- 2026-11-20, owner: "Yes to both (recommended)": derived re-roll AND a message on the loading card (DEC-459).
 
 ## Open questions
 - Re-roll a refused seed to `seedFor(seed, 'reroll-n')` instead of `Math.random`? Recommendation: yes (one line in
@@ -59,3 +61,7 @@ mom and the roster but not the seed actually played, so the swap looked like the
 - 2026-11-18 minted by the orchestrator from the FEAT-278 agent's report.
 - 2026-11-18 lane agent: headless deterministic and refused on both seeds (also at a545067a); browser shows the
   BUG-100 re-roll on every start. No code change. Severity critical → minor pending the owner's re-roll call.
+- 2026-11-20: owner, card bug226-refused-seed-reroll: "Yes to both (recommended)". DEC-459. To BUILD: (1) `onSeedRejected` in src/main.js re-rolls to a seed derived from the refused one (`seedFor(seed, 'reroll-n')`), not `Math.random`; (2) a line on the loading card naming the swap ("seed 914219767 could not be built: playing 2152877108"); (3) check test/world-determinism.mjs or a new gate holds that a refused typed seed lands on the same replacement every time. Ticket stays open until built.
+
+- 2026-11-20 lane agent (land/bug-226-reroll): BUILT. `rerollSeed(seed)` in src/seed.js = `String(seedFor(parseWorldSeed(seed), 'reroll'))`; main.js `onSeedRejected` calls it (a chain re-derives from each refused seed, so it is deterministic too; Random is derived as well, one rule). 914219767 -> 7948472 (playable); 873064618 -> 185046973. `_seedSwap` {from, to} keeps the FIRST refused seed; `_enterStageLoad` prefixes the hint line with it; a player-started entry clears it. Resume / paper scenario still go to the refusal card. Gate test/seed-reroll.mjs (914219767 refused on a cold build, same replacement each call, replacement builds playable, onSeedRejected goes through rerollSeed). Screenshot wip/bug-226/reroll.jpg. Gates: world-determinism, seed-reroll pass.
+- 2026-11-20 lane agent: proofs. cdp-smoke 42/42 on retry (first run: known flake "the evening did not put the truck back on it"), pad-e2e ALL OK, world-determinism + seed-reroll PASS. The full affected set is 154 gates (main.js reaches nearly all); stopped it after 18 green and ran the seed/story gates plus the browser pair, since the change is one additive seed.js export and a 6-line main.js edit.

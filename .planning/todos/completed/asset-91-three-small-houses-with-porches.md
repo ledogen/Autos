@@ -60,3 +60,5 @@ assets/models/ · wip/
 - 2026-11-19 built: a8c53301 (generator + .glb), 7dc64d09 (registry). Gates dist-assets, model-palette, model-variant,
   poi-collider, tow-seat, poi-yard 6/6 green. Facing 0 inverted, z-fight 0, re-export byte-identical. Unverified: in-game
   look and the paper actually resting on the porch box (FEAT-295's card).
+- 2026-11-20: owner, card asset91-porch-houses-look: "Change (note box below)". Note: "They're all good to land. My only complaint is the coral color and the teal windows on that house is just a little too eccentric of a color option. Also, whatever happened to using a bank of colors so that even two house models can be recolored to be a different shade?" Landed on main (de95a525). The colour change and the palette question are FEAT-313.
+
