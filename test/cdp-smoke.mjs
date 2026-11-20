@@ -681,6 +681,7 @@ const STEPS = [
     await seat(q.ox, q.oz, 0)
     const text2 = await until(card, 2000)
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+    await js('window.__inv.grant("breakfastBurrito")'); await sleep(200)   // for FEAT-310's sleep-card check below: an inventory change with the card up made Z flaky
     await tap(' ')
     check(await until(panel, 2000), `parking off the ribbon with the card up ("${text2}") opened no camp panel`)
     const title = () => js('document.getElementById("cp-title").textContent')
@@ -690,8 +691,6 @@ const STEPS = [
     check(await js('document.getElementById("cp-body").textContent.includes("campsites provide more rest")'),
       'the truck sleep face is missing its disclaimer')
     // FEAT-310 (DEC-449): a sleep that outlasts a food says so on the timer — a fresh breakfast burrito keeps 8 h.
-    await js('window.__inv.grant("breakfastBurrito")')
-    await sleep(100)
     await js('document.getElementById("cp-hours").value = "10"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
     check(await until(() => js('/breakfast burrito spoils in 8h 00m/.test(document.getElementById("cp-energy-text").textContent)'), 1500),
       `FEAT-310: a 10 h sleep did not warn about the 8 h burrito: "${await js('document.getElementById("cp-energy-text").textContent')}"`)
@@ -699,7 +698,6 @@ const STEPS = [
       writeFileSync('wip/notes-1119b/sleep.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
     await js('document.getElementById("cp-hours").value = "6"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
     check(!await js('/spoils in/.test(document.getElementById("cp-energy-text").textContent)'), 'FEAT-310: a 6 h sleep warned about an 8 h burrito')
-    await js('window.__inv.consume("breakfastBurrito")')
     await js('document.getElementById("cp-sleep-back").click()')
     // Owner, 2026-10-27: an unmade card keeps the tent up and lit, and Z there closes the card and
     // calls the hunt off — so later parks open nothing.
@@ -708,6 +706,7 @@ const STEPS = [
     await tap('z')
     check(await until(async () => !await panel(), 2000), 'Z did not close the truck face')
     check(!await lit(), 'Z closed the truck face but left the hunt on')
+    await js('window.__inv.consume("breakfastBurrito")')
     // BUG-142 (owner, 2026-11-07: "Camping menu should default to off when you break camp"): "leave", the break-camp
     // button, calls the hunt off too. Armed again while parked, the truck face opens at once (BUG-95).
     await tap('z')
