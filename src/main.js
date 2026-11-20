@@ -8053,8 +8053,13 @@ function _renderPaperUI () {
       show(panel, false); show(hud, true)
       // Delivered/total and the inventory — the two facts you act on. No elapsed (owner, 2026-10-15):
       // the rank bar under it reads time against par.
-      hudText.textContent = `${p.delivered()} / ${p.route.customers.length} delivered   `
-        + `${p.stock()} paper${p.stock() === 1 ? '' : 's'}` + _dueSuffix()
+      // FEAT-311 (owner 11-20): first, the road distance to the next house, the last house's in parentheses — the job
+      // HUD's form (BUG-205 follow-up), "to go" once they are the same house. km() keeps two decimals in the pinned
+      // monospace font, so the centred box holds its width as the numbers fall; _hudText writes only a changed line.
+      const left = p.distancesLeft(vehicleState.position.x, vehicleState.position.z)
+      const toGo = !left ? '' : km(left[0]) === km(left[1]) ? `${km(left[0])} to go · ` : `${km(left[0])} (${km(left[1])}) · `
+      _hudText(hudText, toGo + `${p.delivered()} / ${p.route.customers.length} delivered   `
+        + `${p.stock()} paper${p.stock() === 1 ? '' : 's'}` + _dueSuffix())
       break
     }
     case 'done': {
