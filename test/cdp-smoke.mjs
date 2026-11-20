@@ -2474,10 +2474,9 @@ const STEPS = [
     await readCards(800, 'Uncle Larry')
     if (await speaker() !== 'Uncle Larry') { await simFor(1); await park(true) }
     check(await until(async () => await speaker() === 'Uncle Larry', 5000), `parked at Larry's with his pack, no hand-over (speaker "${await speaker()}", ${JSON.stringify(await tut())})`)
-    if (process.env.GATE_SHOTS) {   // FEAT-305 look sheet: Larry's last card → Katie's ring, the slide held at two points
-      const text = () => js('document.getElementById("dlg-text").textContent')
-      for (let i = 0; i < 6 && await speaker() === 'Uncle Larry' && !/expedition camp/.test(await text()); i++) { await sleep(1500); said.push(`Uncle Larry: ${await text()}`); await tap('Enter'); await sleep(300) }
-      await sleep(3000); said.push(`Uncle Larry: ${await text()}`)
+    if (process.env.GATE_SHOTS) {   // FEAT-305 look sheet: Katie's ring card → Katie (one sequence), the slide held at two points
+      await readCards(800, 'Phone'); await sleep(1500)
+      said.push(`Phone: ${await js('document.getElementById("dlg-text").textContent')}`)
       const at = (out, inn) => js(`(() => { for (const a of document.getAnimations()) { if (a.id === 'dlg-out') a.currentTime = ${out}; if (a.id === 'dlg-in') a.currentTime = ${inn} } })()`)
       await js(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); for (const a of document.getAnimations()) if (a.id === 'dlg-out' || a.id === 'dlg-in') a.pause() })()`)
       await at(60, 60); await sleep(150); await shot('p8-1-slide-out-right')
@@ -2835,7 +2834,7 @@ const STEPS = [
     await js(`(() => { const lines = () => [...document.querySelectorAll("#svc-screen button[data-act=node][data-slot]")]
       for (let i = 0; i < lines().length && !${fit}; i++) lines()[i].click() })()`)
     if (await js(`!!${fit}`)) { await js(`${fit}.click()`); await sleep(200)
-      check(await js('window.__damage.flat[0] && !document.querySelector("#svc-screen [data-act=checkout]")'), 'DEC-443: under the patch lesson a tire bought on the Shop tab') }
+      check(await js('!document.querySelector("#svc-screen [data-act=checkout]") && window.__tutorial().until === "patched"'), 'DEC-443: under the patch lesson a tire bought on the Shop tab') }   // (an open tire row previews it on the truck: the flat reads fixed until the row closes)
     // the lesson's path: Maintenance, then each row ringed in turn down to the front left's patch, then check out
     const ringed = () => js('[...document.querySelectorAll("#svc-screen .tut-hi")].map(e => e.dataset.id ?? e.dataset.tab ?? e.dataset.act)')
     const path = []
