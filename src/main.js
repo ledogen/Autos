@@ -6186,12 +6186,13 @@ function _renderPumpDisplay (dt) {
   // a latched shutoff still reads full while the idling engine sips the tank a hair below it
   const tankFull = vehicleState.fuel.gal >= RANGER_PARAMS.fuelTankGal - 1e-6
   const full = (tankFull && !fuelStop.cans.some(c => c.cap - c.gal > 1e-6)) || (fuelStop.cutoff && !broke)
+  const pay = `release the handbrake ${keycap('Space')} to pay`   // FEAT-305: its key, in the pad's layout (DEC-431)
   document.getElementById('pd-hint').innerHTML = !fuelStop.isOpen ? 'thank you — drive safe'
     : _momMakesYouFill() ? `mom says fill it up · hold ${keycap('F')} till the money's gone`   // FEAT-184 PLACEHOLDER words
-    : full ? `${fuelStop.cans.length ? 'all full' : 'tank full'} · release the handbrake to pay`
-    : broke ? `that's all you can afford · release the handbrake to pay`
-    : tankFull ? `tank full · hold ${keycap('F')} to fill the jerry can · release the handbrake to pay`
-    : `hold ${keycap('F')} to pump · release the handbrake to pay`
+    : full ? `${fuelStop.cans.length ? 'all full' : 'tank full'} · ${pay}`
+    : broke ? `that's all you can afford · ${pay}`
+    : tankFull ? `tank full · hold ${keycap('F')} to fill the jerry can · ${pay}`
+    : `hold ${keycap('F')} to pump · ${pay}`
 }
 
 // ── The Recovery chip (FEAT-50 running dry → SM-3 in full) ───────────────────────────────────
