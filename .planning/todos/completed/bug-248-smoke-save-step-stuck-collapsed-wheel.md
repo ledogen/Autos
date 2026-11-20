@@ -52,4 +52,6 @@ seed 6's first bend and let the truck coast unbraked into the scenery at ~19 m/s
 
 ## Log
 - 2026-11-20: 41ab2477 traction fix + gate; offer step stops (4 s + park): 2 subset runs stop 0.3 m off the
-  centreline with no damage change. Gates and full smoke: see the landing commit.
+  centreline with no damage change. Affected gates 37/37 green (--serial; the 2 browser gates below). pad-e2e ALL OK.
+  Full smoke run 1: red in step "camp" ("Z did not close the truck face", 2 s wall wait; untouched code, load 13).
+  The retry was stopped by the owner's quiet-machine hold: the full smoke is still OWED before landing.
