@@ -70,6 +70,8 @@ import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'   // the sky, its s
 import { parseWorldSeed, seedFor, rerollSeed } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
+import { DIFFICULTY_ROWS, DIFFICULTY_PRESETS, CLASSIC_RULES } from '../data/difficulty.js'   // FEAT-296: the difficulty rows
+import { applyRules, legalRules, rulesLine, addRulesGui } from './difficulty.js'   // FEAT-296: a run's rules — run state, never the world's
 import { createFrameCap } from './frame-cap.js'   // PERF-48 / BUG-169: the render cap skip decision (pure, gated)
 import { putRun, putTruck, loadTruck, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
@@ -1571,20 +1573,34 @@ const _LIVE = { steerAssist: PAD_PARAMS, steerShape: PAD_PARAMS, clutchAssist: R
   throttleAssist: RANGER_PARAMS, tractionControl: RANGER_PARAMS, stickDeadzone: PAD_PARAMS, vibration: RUMBLE_PARAMS, padLayout: PAD_PARAMS }
 for (const [k, o] of Object.entries(_LIVE)) o[k] = _settings[k]
 const _STOCK_BOX = RANGER_PARAMS.transmission   // 'auto' = the truck's own automatic
-// `difficulty` is not stored: it names the preset the three knobs match ("custom" when none), and
-// picking one sets the knobs.
+// `difficulty` is not stored: it names the preset the three knobs AND the four rule rows match ("custom" when none),
+// and picking one sets them all (FEAT-296: a preset is a world and a set of rules).
 /** The setup page's world, from the saved knobs. */
 const _world = () => ({ t: _settings.worldTerrain, p: _settings.worldPoi, r: _settings.worldRoads })
 const _setWorld = (w) => { _settings.worldTerrain = w.t; _settings.worldPoi = w.p; _settings.worldRoads = w.r }
+/** FEAT-296: the setup page's rules, from the saved rows (settings keys rule<Row>). */
+const _RULE_KEY = { damage: 'ruleDamage', hunger: 'ruleHunger', cost: 'ruleCost', endless: 'ruleEndless' }
+const _setupRules = () => legalRules(Object.fromEntries(Object.entries(_RULE_KEY).map(([row, k]) => [row, _settings[k]])))
+const _difficultyOf = (w, r) => Object.keys(DIFFICULTY_PRESETS).find(id => {
+  const p = DIFFICULTY_PRESETS[id]
+  return presetOf(w) === p.world && Object.keys(_RULE_KEY).every(row => p[row] === r[row])
+}) ?? null
+const _ruleRow = (row, name) => ({ name, show: () => _setupMode === 'story', opts: Object.keys(DIFFICULTY_ROWS[row]).map(l => [l, l]) })
 const SELECTORS = {
   // FEAT-156: the new-game page's mode. Page state, never saved (owner, 2026-10-31): get/set, no key.
   gameMode:     { name: 'mode', opts: [['story', 'story'], ['scenarios', 'scenarios'], ['freeroam', 'free roam'], ['lab', 'testing lab']],
                   get: () => _setupMode, set: (m) => _setSetupMode(m) },
-  worldPreset:  { name: 'difficulty',      opts: [['casual', 'casual'], ['classic', 'classic']],
-                  get: () => presetOf(_world()) ?? 'custom', set: (id) => _setWorld(WORLD_PRESETS[id]) },
+  worldPreset:  { name: 'difficulty',      opts: Object.keys(DIFFICULTY_PRESETS).map(id => [id, id]),
+                  get: () => _difficultyOf(_world(), _setupRules()) ?? 'custom',
+                  set: (id) => { const p = DIFFICULTY_PRESETS[id]; _setWorld(WORLD_PRESETS[p.world]); for (const row in _RULE_KEY) _settings[_RULE_KEY[row]] = p[row] } },
   worldTerrain: { name: 'terrain relief',  opts: KNOBS.t.map(v => [v, `${v} %`]) },
   worldPoi:     { name: 'POI spacing',     opts: KNOBS.p.map(v => [v, `${v} %`]) },
   worldRoads:   { name: 'road climbs',     opts: KNOBS.r },
+  // FEAT-296 (DEC-433): the rule rows — story only (free roam has no economy to scale), shown under "rules".
+  ruleDamage:   _ruleRow('damage', 'damage'),
+  ruleHunger:   _ruleRow('hunger', 'hunger'),
+  ruleCost:     _ruleRow('cost', 'cost scaling'),
+  ruleEndless:  _ruleRow('endless', 'endless'),
   // FEAT-205: free roam's truck — stock, or the one a won run saved. Page state, never saved; shown only with a winner to pick.
   truck:        { name: 'truck', opts: [['stock', 'stock'], ['winner', 'winning truck']], show: () => _setupMode === 'freeroam' && !!loadTruck(),
                   get: () => _setupTruck, set: (t) => { _setupTruck = t } },
@@ -8235,7 +8251,7 @@ function _renderRunHud () {
   _checkMidnight()     // FEAT-148: the midnight overlay
   const req = offerBoard?.lines() ?? []
   // FEAT-146: the win — every line delivered, and the last one's result card put away.
-  if (req.length && req.every(l => l.state === 'done') && !missionSystem?.isActive()) _endRun('win')
+  if (req.length && req.every(l => l.state === 'done') && !missionSystem?.isActive() && !_endlessWon) _endRun('win')
   const reqText = req.some(l => l.state !== 'closed') ? `requisition ${req.filter(l => l.state === 'done').length} / ${req.length}` : null
   // The clock reads the one authoritative world clock (day.js) in the SAME notation as a job's due
   // time — "Day 3, 2:15 am" — so this is where the player looks to read a deadline (owner,
@@ -9018,6 +9034,7 @@ skySystem.addGui(_gui)   // the moon's folder sits inside it
 daySystem.addGui(_gui)
 // FEAT-53: economy folder — wallet/deeds/tier read-outs + the PROVISIONAL k and cap tunables.
 economySystem.addGui(_gui)
+addRulesGui(_gui, () => { _rulesApplied = ''; _syncRules() })   // FEAT-296: the difficulty rows' [DEFAULT] numbers
 // FEAT-122: grant any catalog item without running a mission.
 inventorySystem.addGui(_gui)
 partsSystem.addGui(_gui)
@@ -9404,7 +9421,7 @@ function _showPauseMenu () {
   if (storyBtn) storyBtn.textContent = storySystem.isActive() ? 'free roam' : 'story mode'
   // FEAT-41: the world code, so a random world can be shared and replayed.
   const codeEl = document.getElementById('pm-code')
-  if (codeEl) codeEl.textContent = `world ${formatWorldCode(_seedString, activeWorld())}`
+  if (codeEl) codeEl.textContent = `world ${formatWorldCode(_seedString, activeWorld())}` + (storySystem.isActive() && !_paperScenario ? ` · ${_runDifficulty()}` : '')   // FEAT-296
   // FEAT-62: restart only means something inside a scenario.
   const restartBtn = document.getElementById('pm-restart')
   if (restartBtn) restartBtn.style.display = scenarioSystem.isActive() || _paperScenario ? '' : 'none'
@@ -10131,6 +10148,21 @@ async function _startFreeRoam (seedStr) {
  */
 let _runGearbox = 'auto'   // the box this run started with — a run save carries it, never _settings
 let _runWorld = null       // ...and the world knobs, so a BUG-100 re-roll keeps them
+// FEAT-296 (DEC-433): ...and its rules, one level per difficulty row — RUN state: copied from the setup page when a new
+// game starts, carried by the save, kept across the tutorial's world hop and a re-roll, Classic in a scenario.
+let _runRules = CLASSIC_RULES
+let _endlessWon = false    // FEAT-296: an endless run's camp card has been shown (saved: it never shows again)
+/** FEAT-296: the rules in play — the run's own in a story run past its tutorial (DEC-151: the tutorial plays Classic),
+ *  Classic everywhere else (free roam, the lab, the menu). */
+function _rulesNow () { return storySystem.isActive() && !_inTutorial() ? _runRules : CLASSIC_RULES }
+let _rulesApplied = rulesLine(CLASSIC_RULES)
+/** Write the rules in play into the params on a CHANGE only, so a Classic game never writes them (src/difficulty.js). */
+/** FEAT-296: the run's difficulty as the pause menu and the summary say it — a preset's name, or its rows. */
+const _runDifficulty = () => _difficultyOf(activeWorld(), _runRules) ?? rulesLine(_runRules)
+function _syncRules () {
+  const r = _rulesNow(), key = rulesLine(r)
+  if (key !== _rulesApplied) { _rulesApplied = key; applyRules(r) }
+}
 let _pendingResume = null    // FEAT-42: the run save being resumed, between "continue" and onRegionLive
 const SEED_REROLLS = 3       // BUG-100: refused seeds re-rolled before the refusal card shows
 let _seedSwap = null         // BUG-226: { from: the seed asked for, to: the one now building } during a re-roll chain (the loading card names it)
@@ -10146,6 +10178,8 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   _fitGearbox(gearbox)
   _runGearbox = gearbox
   _runWorld = world
+  _runRules = scenario ? CLASSIC_RULES : resume ? legalRules(resume.rules) : returnSeed || rerolls ? _runRules : _setupRules()
+  _endlessWon = !!resume?.endlessWon
   _seedRerolls = rerolls
   if (!rerolls) _seedSwap = null
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
@@ -10499,18 +10533,25 @@ function _endRun (kind) {
   if (_paperScenario) { _paperScenarioOver(kind); return }   // FEAT-62: never _discardRunSave — the save is the player's
   if (_runEnded) return
   if (kind === 'win') putTruck({ parts: partsSystem.snapshot(), gearbox: _runGearbox })   // FEAT-205: free roam can fit it
-  _discardRunSave()
+  // FEAT-296 (DEC-433): endless — the camp is a milestone, not the end. Its card shows once (the grade, the summary), the
+  // save stays, and its one button, "keep playing", hands the run back: the board keeps posting, prices keep climbing,
+  // and the run ends only by dying or the towel.
+  const goesOn = kind === 'win' && DIFFICULTY_ROWS.endless[_runRules.endless].on
+  if (goesOn) _endlessWon = true
+  else _discardRunSave()
   // Read the run as it ended, before the clock moves on behind the card.
   const title = RUN_END_TITLE[kind], body = _runEndHtml(kind)
-  runLog.on && runLog.event('runEnd', { kind, economy: structuredClone(runEconomy), playedS: _playedS, fatal: damageModel.fatalImpact, cond: runLog._cond() })   // FEAT-242 (downloads the last part)
+  runLog.on && runLog.event(goesOn ? 'campWon' : 'runEnd', { kind, economy: structuredClone(runEconomy), playedS: _playedS, fatal: damageModel.fatalImpact, cond: runLog._cond() })   // FEAT-242 (downloads the last part)
   if (missionSystem?.isActive()) missionSystem.exit()
   if (kind === 'crash') renderer.domElement.style.filter = 'grayscale(1)'
   setTimeout(() => {
-    if (!_runEnded || !storySystem.isActive()) return   // left for the menu during the crash's beat
+    if ((!_runEnded && !goesOn) || !storySystem.isActive()) return   // left for the menu during the crash's beat
     _hidePauseMenu()
     _closeMenus()   // BUG-183: the card owns the screen
     document.getElementById('re-title').textContent = title
     document.getElementById('re-body').innerHTML = body
+    document.getElementById('re-keep').style.display = goesOn ? '' : 'none'
+    document.getElementById('re-menu').style.display = goesOn ? 'none' : ''
     document.getElementById('run-end').style.display = 'block'
     _runEndOpen = true
   }, kind === 'crash' ? CRASH_CARD_DELAY_S * 1000 : 0)
@@ -10538,6 +10579,7 @@ function _runEndHtml (kind) {
   return _runEndWhy(kind)
     + row('day', `${daySystem.day()}`)
     + row('playtime', `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`)
+    + row('difficulty', _runDifficulty())   // FEAT-296
     + row('jobs completed', `${e.missions}`, true)
     + row('mission ranks', [...'DCBAS'].map(l => `<span style="color:${RANK_COLOR[l]}">${l} ${e.ranks[l]}</span>`).join(' &middot; '))
     + row('good deeds', `${formatDeeds(e.halfPoints)} of ${ECONOMY_PARAMS.campDeeds}`)
@@ -10600,6 +10642,10 @@ function _upgradeRows (row) {
   return ups.map((id, i) => row(i ? '' : 'truck', PARTS[id].name + (n[id] > 1 ? ` ×${n[id]}` : ''), !i)).join('')
 }
 document.getElementById('re-menu')?.addEventListener('click', _backToMenu)
+document.getElementById('re-keep')?.addEventListener('click', () => {   // FEAT-296: the endless camp card hands the run back
+  document.getElementById('run-end').style.display = 'none'
+  _runEndOpen = false
+})
 
 // The towel: a confirm card in place of the pause menu (owner, 2026-10-31). The game stays paused
 // under it (_pauseOpen holds); back restores the menu, end goes through _endRun like every ending.
@@ -10624,6 +10670,7 @@ function _runSnapshot () {
   const vs = vehicleState, p = vs.position, q = vs.quaternion
   return {
     seed: _seedString, world: activeWorld(), gearbox: _runGearbox,
+    rules: _runRules, endlessWon: _endlessWon,   // FEAT-296: the run's difficulty rows (an old save without them is Classic)
     day: daySystem.snapshot(), economy: runEconomy, inventory: runInventory,
     worldItems: runWorldItems.items,   // FEAT-143: a drop is player state (cold generation still holds)
     parts: partsSystem.snapshot(),   // fitted parts, every track's condition + durability, the flats
@@ -11167,7 +11214,7 @@ function loop (t) {
     // soft path wrote its own rim contacts during stepPhysics and this maxes on top.
     const hit = readRimStrikes(physicsEngine, vehicleChassis, vehicleState.rimForce, PHYSICS_DT, vehicleState.rimHazard)
     damageModel.tireCondCap = tireCondCap(TRUCK, (_freight?.massKg ?? 0) + _carriedKg())   // FEAT-112: an overloaded bed pops tires (FEAT-122: stowed kit counts)
-    damageModel.held = _inTutorial()   // FEAT-184 (DEC-151): no wear and no impact damage for the whole tutorial (the feedContact below too)
+    damageModel.held = _inTutorial() || _rulesNow().damage === 'none'   // FEAT-184 (DEC-151): no wear and no impact damage for the whole tutorial (the feedContact below too); FEAT-296: nor with damage none
     damageModel.step(vehicleState, RANGER_PARAMS, PHYSICS_DT)
     if (_tutDrive()) vehicleState.fuel.gal = _galBefore   // FEAT-184 (DEC-151): …and the tutorial burns no fuel ("fuel disabled"); the pump below still fills
     _stepFuelStop(PHYSICS_DT)   // FEAT-50: an open pump fills on the fixed step (pauses with the game)
@@ -11717,6 +11764,7 @@ function loop (t) {
     // FEAT-53: the run wallet — money + good deeds, story mode only, always visible while the
     // region is live (owner, 2026-08-01). Run state, not mission state: it never references par
     // or the current job, so the SM-INV-3 running surface above stays clean.
+    _syncRules()   // FEAT-296: the rules in play follow the run (Classic outside it and in its tutorial)
     _renderRunHud()
     _checkEdge()   // FEAT-154: past the barricades, fade and come back in
     _updateBarricades()   // …and the rows near the truck are loose bodies

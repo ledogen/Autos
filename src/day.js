@@ -71,6 +71,9 @@ export const DAY_PARAMS = {
     hungryRate:   1.25,
     starvingRate: 1.5,
     hungryRampH:  4,
+    // FEAT-296: hours the counter may fall below empty before the drain above starts. 0 = today; the difficulty's hunger
+    // row raises it (data/difficulty.js hunger.graceH). Inside the grace the word stays 'peckish'.
+    hungerGraceH: 0,
     mealHoldH:    8,      // a standard meal (the burger, the dinner invitation): the run's start and the debug 'eat'
     // FEAT-250 / DEC-376 (owner, 2026-11-17): hunger is ONE satiety counter, in hours of drain — fedLeftH(), clockH to
     // _fedUntilH. It falls 1 per awake hour (not asleep, FEAT-173) and each food ADDS its `satiety` (data/items.js), so
@@ -370,14 +373,14 @@ export class DaySystem {
     }
 
     /** Past the last meal's hold. The energy box says so in its hunger word and bar (FEAT-198), never a number. */
-    hungry () { return DAY_PARAMS.hungerOn && this.clockH() > this._fedUntilH }
+    hungry () { return DAY_PARAMS.hungerOn && this.clockH() > this._fedUntilH + DAY_PARAMS.hungerGraceH }
 
     /** FEAT-169: the energy meter's hunger word — stuffed / full / content / peckish / hungry — or null with hunger
      *  off. A word, never a number; since FEAT-198 (owner, 2026-11-11) it sits over its own scrolling bar, like energy.
      *  'hungry' exactly when hungry() is. */
     hungerWord (left = this.fedLeftH()) {
         if (!DAY_PARAMS.hungerOn) return null
-        return DAY_PARAMS.hungerWords.find(([h]) => left >= h)?.[1] ?? 'hungry'
+        return DAY_PARAMS.hungerWords.find(([h]) => left >= h)?.[1] ?? (left >= -DAY_PARAMS.hungerGraceH ? 'peckish' : 'hungry')
     }
 
     /** Hours left on the last meal's hold — negative once hungry. Scrolls the energy box's hunger bar (FEAT-198). */
@@ -392,7 +395,7 @@ export class DaySystem {
         if (!DAY_PARAMS.hungerOn) return 0
         const P = DAY_PARAMS, R = P.hungryRampH, a = P.hungryRate - 1, b = P.starvingRate - P.hungryRate
         const extra = (t) => {
-            const x = t - this._fedUntilH
+            const x = t - this._fedUntilH - P.hungerGraceH
             return x <= 0 ? 0 : x < R ? a * x + b * x * x / (2 * R) : (a + b / 2) * R + (a + b) * (x - R)
         }
         return extra(h1) - extra(h0)

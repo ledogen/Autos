@@ -101,6 +101,9 @@
  *     re-anchor). The day ramp that once tightened S/A/B by day (rankDayLate, −0.02 by day 20)
  *     retired 2026-10-21 (FEAT-138); thresholds step by region instead (RANK_TABLE).
  */
+/** The cost curve for a per-day growth g: g^(day − 1) for days 1..30, to the cent. */
+export const dayTierCurve = (g) => Array.from({ length: 30 }, (_, i) => Math.round(g ** i * 100) / 100)
+
 export const ECONOMY_PARAMS = {
     // THE MAX RATE [owner, 2026-09-30]: $ per second of par a job pays at its ceiling (an S drive),
     // before the day/region tier. Anchored to the day-1 AVERAGE job — par 180 s (measured), region
@@ -220,7 +223,8 @@ export const ECONOMY_PARAMS = {
     // COST multiplier per run day, 1-based; day 31+ holds the last entry. tier(1) === 1 is the anchor:
     // day-1 prices are the authored ones. Parts, repairs, the tow and fuel ride it; pay does not
     // (FEAT-168). 1.065^(d−1), to the cent [DEFAULT] (derivation in the docblock above).
-    dayTierTable: Array.from({ length: 30 }, (_, i) => Math.round(1.065 ** i * 100) / 100),
+    // FEAT-296: the growth is the difficulty's cost row (data/difficulty.js; src/difficulty.js rebuilds the table).
+    dayTierTable: dayTierCurve(1.065),
 
     // ── FEAT-50 THE TOW [owner, 2026-10-16] — USER-OWNED ─────────────────────────────────────
     // Out of fuel and parked, the Recovery chip offers a tow to the nearest place that sells fuel.

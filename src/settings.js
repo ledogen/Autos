@@ -13,6 +13,12 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   worldTerrain: 100,        // terrain relief, % of Classic
   worldPoi: 100,            // POI spacing, % of Classic
   worldRoads: 180,          // roadV2.wGrade: 180 normal (Classic) · 290 gentle
+  // FEAT-296 (DEC-433): the setup page's rule rows (data/difficulty.js levels), Classic's by default. A run copies them
+  // into its save at start (main.js _runRules): the run keeps its own rules whatever this page says later.
+  ruleDamage: 'medium',     // none · low · medium
+  ruleHunger: 'normal',     // low · normal
+  ruleCost: 'medium',       // low · medium
+  ruleEndless: 'off',       // off · on
   gearbox: 'auto',          // 'auto' = the truck's own automatic · 'manual' = the M5OD-R1 (FEAT-126)
   steerAssist: true,        // PAD_PARAMS.steerAssist (FEAT-125)
   clutchAssist: true,       // RANGER_PARAMS.clutchAssist (FEAT-126)
