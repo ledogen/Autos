@@ -368,6 +368,41 @@ export class InventorySystem {
         this._changed()
     }
 
+    /** Which iced cooler chills each fresh-clock food right now: `of` entry → cooler entry (the best rate first, `holds`
+     *  slots each, a stack to a slot, inventory order), and the iced `coolers` themselves. tick() and spoilH() both read it. */
+    _chill () {
+        const E = runInventory.entries
+        const coolers = E.filter(e => ITEMS[e.id].coolRate && e.iceH > 0)
+            .sort((a, b) => ITEMS[a.id].coolRate - ITEMS[b.id].coolRate).map(c => ({ c, room: ITEMS[c.id].holds }))
+        const of = new Map()
+        for (const e of E) {
+            const it = ITEMS[e.id]
+            if (!it.freshH) continue
+            const k = it.kind === 'food' && coolers.find(k => k.room > 0)
+            if (k) { k.room--; of.set(e, k) }
+        }
+        return { of, coolers }
+    }
+
+    /** FEAT-310 (DEC-449): game hours until the next unit of food entry `e` spoils, by the same clock tick() runs (its
+     *  cooler's rate while the ice lasts, then the open air's), or null: not food, held clock (the tutorial), or already rotten. */
+    spoilH (e) {
+        const it = ITEMS[e.id]
+        if (!it.rotten || !e.n || this._held) return null
+        const g = e.droppedH != null && this._lastH != null ? Math.max(0, this._lastH - e.droppedH) : 0
+        let left = Math.max(0, it.freshH - (_ages(e)[e.n - 1] + g))
+        const k = this._chill().of.get(e)
+        if (!k) return left
+        const rate = ITEMS[k.c.id].coolRate, cold = k.c.iceH * rate
+        return left <= cold ? left / rate : k.c.iceH + left - cold
+    }
+
+    /** FEAT-310: the foods that spoil within `h` game hours, soonest first, as { name, h } (the sleep card's warning). */
+    spoilingWithin (h) {
+        return runInventory.entries.map(e => ({ name: ITEMS[e.id].name, h: this.spoilH(e) }))
+            .filter(x => x.h != null && x.h <= h).sort((a, b) => a.h - b.h)
+    }
+
     /**
      * FEAT-230 slice 2 (DEC-338): advance the fresh clock to world time `nowH` (daySystem.clockH(), every fixed step; a
      * sleep's jump lands on the next step). Every unit ages on its own and goes alone at freshH. The iced coolers, best
@@ -378,25 +413,30 @@ export class InventorySystem {
     tick (nowH, held = false) {
         const dH = nowH - (this._lastH ?? nowH)
         this._lastH = nowH
+        this._held = held
         if (held || !(dH > 0)) return   // held: the hours pass unaged (the tutorial, DEC-339)
         const E = runInventory.entries
-        const coolers = E.filter(e => ITEMS[e.id].coolRate && e.iceH > 0)
-            .sort((a, b) => ITEMS[a.id].coolRate - ITEMS[b.id].coolRate).map(c => ({ c, room: ITEMS[c.id].holds }))
+        const { of, coolers } = this._chill()
         let gone = false
+        const rotted = []   // FEAT-306 (DEC-448): a spoiled unit stays, as its `rotten` twin (data/items.js)
         for (const e of E) {
             const it = ITEMS[e.id]
             if (!it.freshH) continue
             const a = _ages(e)
-            const k = it.kind === 'food' && coolers.find(k => k.room > 0)
-            if (k) k.room--
+            const k = of.get(e)
             const cold = k ? Math.min(dH, k.c.iceH) : 0
             for (let u = 0; u < a.length; u++) a[u] += cold * (k ? ITEMS[k.c.id].coolRate : 1) + dH - cold
             a.sort((x, y) => x - y)
-            while (e.n && a[e.n - 1] >= it.freshH) { a.pop(); e.n--; gone = true }
+            while (e.n && a[e.n - 1] >= it.freshH) { a.pop(); e.n--; gone = true; if (it.rotten) rotted.push(it.rotten) }
         }
         for (const { c } of coolers) c.iceH = Math.max(0, c.iceH - dH)
         if (!gone) return
         for (let i = E.length; i--;) if (E[i].n <= 0) E.splice(i, 1)
+        // Never refused for room: the unit already held its slot, so a split stack may sit one slot over until a drop.
+        for (const id of rotted) {
+            const r = E.find(e => e.id === id && e.n < _cap(id))
+            if (r) r.n++; else E.push({ id, n: 1 })
+        }
         this._changed()
     }
 
@@ -440,7 +480,7 @@ export class InventorySystem {
     rowOf (e) {
         return { id: e.id, n: e.n, ...ITEMS[e.id], usable: this.usable(e.id), note: this.useNote(e),
                  equipped: !!e.equipped, cond: e.cond ?? null, flat: !!e.flat,
-                 tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, left: e.left ?? ITEMS[e.id].uses ?? null, gal: e.gal ?? null, fresh: this.freshLeft(e), contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
+                 tire: e.tire, wheel: e.wheel, wheelCond: e.wheelCond, left: e.left ?? ITEMS[e.id].uses ?? null, gal: e.gal ?? null, fresh: this.freshLeft(e), spoilH: this.spoilH(e), contents: e.contents?.map(id => ({ id, ...ITEMS[id] })) ?? null }
     }
 
     _changed () {

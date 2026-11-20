@@ -6389,8 +6389,14 @@ const _RC_LABEL = {
   towShop: (o) => `tow to service center · ${o.tow.km.toFixed(1)} km — $${formatMoney(o.tow.price)}`,
   tireService: (o) => `call a tire service — $${formatMoney(o.tow.price)}`,
 }
+// FEAT-307 (DEC-450): a tow is asked for twice. The card's tow buttons only name the tow (`_rcAsk`); the card then shows its
+// price and time with "tow" and "back", and only "tow" calls it. Closing the card forgets the ask.
+let _rcAsk = null
+const _RC_GO = { towFuel: _towToFuel, towShop: _towToShop }
 const _RC_ACT = {
-  towFuel: _towToFuel, towShop: _towToShop,
+  towFuel: () => { _rcAsk = 'towFuel'; _updateRecovery() }, towShop: () => { _rcAsk = 'towShop'; _updateRecovery() },
+  towGo: () => { const go = _RC_GO[_rcAsk]; _rcAsk = null; go?.() },
+  towBack: () => { _rcAsk = null; _updateRecovery() },
   tireService: () => {   // FEAT-162 amendment 5: fixed where it stands; the wait and the fitting on the clock
     const q = _recoveryState().tireService
     if (!q || !economySystem.spend(q.price)) return
@@ -6473,8 +6479,15 @@ function _updateRecovery () {
   const c = recoveryCard(st)
   icon?.classList.toggle('on', _recoveryOpen)
   card.style.display = _recoveryOpen ? 'block' : 'none'
-  if (!_recoveryOpen) return
-  const html = `<div class="rc-head">${c.head}</div>`
+  if (!_recoveryOpen) { _rcAsk = null; return }
+  const ask = c.opts.find(o => o.act === _rcAsk && o.enabled)   // a tow that stopped being affordable drops the ask
+  if (!ask) _rcAsk = null
+  const html = ask   // FEAT-307 [DEFAULT] wording
+    ? `<div class="rc-head">${c.head}</div><div class="rc-dim">${_RC_LABEL[ask.act](ask)}</div>`
+      + `<div class="rc-dim">${formatGameDuration(ask.tow.hours)} on the hook</div>`
+      + `<button class="rc-opt" data-act="towGo">call the tow &mdash; $${formatMoney(ask.tow.price)}</button>`
+      + `<button class="rc-opt" data-act="towBack">back</button><div class="rc-dim">you have $${formatMoney(money)}</div>`
+    : `<div class="rc-head">${c.head}</div>`
     + c.opts.filter(o => _RC_LABEL[o.act]).map(o => `<button class="rc-opt" data-act="${o.act}"${o.enabled ? '' : ' disabled'}>${_RC_LABEL[o.act](o)}</button>`
       + `<div class="rc-dim">${formatGameDuration(o.tow.hours)} ${o.act === 'tireService' ? 'to come out and fit it' : 'on the hook'}</div>`).join('')
     + (c.opts.length ? '' : '<div class="rc-dim">no tow can reach you here</div>')
@@ -7348,6 +7361,8 @@ function _syncSleepRow () {
     e.innerHTML = `energy ${now.toFixed(1)} → ${wake.toFixed(1)} / ${full.toFixed(0)} h`
       + `  ·  wake <span style="color:${STAGE_COLOR[daySystem.stageFor(wake)]}">${daySystem.stageFor(wake)}</span>`
       + (daySystem.coffeeDebt() > 0 ? `  ·  coffee debt ${daySystem.coffeeDebt().toFixed(0)} h at wake` : '')
+      // FEAT-310 (DEC-449) [DEFAULT]: the food this sleep would outlast. Item names are catalog strings.
+      + inventorySystem.spoilingWithin(h).map(x => `<br>the ${x.name.toLowerCase()} spoils in ${formatGameDuration(x.h)}`).join('')
   }
 }
 
@@ -8416,7 +8431,7 @@ function _rankTimerSource () {
 // lost — fragile by health against its line, haul by the count still aboard, freight is earned on
 // arrival, courier by the letter under the rank bar once that bar is showing (before that the line
 // stays neutral: R-22 hides the clock until the goal is near, and a colour must not leak it early).
-let _jpRoot = null, _jpHtml = null
+let _jpRoot = null
 function _promiseTone (margin) {   // margin ≥ 0: how far inside the line (1 = comfortable); < 0: lost
   if (margin == null) return 'var(--text)'
   if (margin < 0) return 'var(--bad-text)'
@@ -8459,8 +8474,9 @@ function _promiseRows (m) {
     if (!_rtShown && _rtLayout && _rtKey === j) {
       const b = _rtLayout.bands.find(b => m.elapsed < b.t1)
       if (b && isFinite(b.t1)) {
+        // BUG-245: the minutes are padded too, so the line keeps one width and the centred box (and the Reward row in it) never shifts.
         const s = Math.max(0, b.t1 - m.elapsed), mm = Math.floor(s / 60), ss = Math.floor(s % 60)
-        clock = { label: 'Clock', what: `finish in ${mm}:${String(ss).padStart(2, '0')} or better for ${b.letter} rank`, tone: _promiseTone(1 - _rtLiveInt) }
+        clock = { label: 'Clock', what: `finish in ${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')} or better for ${b.letter} rank`, tone: _promiseTone(1 - _rtLiveInt) }
       }
     }
   }
@@ -8493,16 +8509,26 @@ function _promiseRows (m) {
   else if (kind === 'freight') rows.unshift({ label: 'Cargo', what: `${j.cargoKg} kg`, tone: 'var(--text)' })
   return rows
 }
+// BUG-245: the rows (label, icon, struck-out or not) are built only when they change; the live text and colour are then
+// written into the SAME elements. Rebuilding the whole box each second re-created the reward icon every tick.
+let _jpKey = null
 function _updateJobPromise () {
   if (!_jpRoot) { _jpRoot = document.getElementById('job-promise'); if (!_jpRoot) return }
   const rows = storySystem.isActive() && !storySystem.isEntering() ? _promiseRows(missionSystem) : null
-  const html = rows?.length ? rows.map(r => `<div class="jp-row"><span class="rt-label${r.label === 'Deed' ? ' jp-deed' : ''}">${r.label}</span>`
-      + (r.icon ? `<img src="assets/items/${r.icon}.png" alt="" onerror="this.style.display='none'">` : '')
-      + `<span class="jp-text" style="color:${r.tone}"><span${r.lost ? ' class="jp-lost"' : ''}>${r.what}</span>${r.next ? ` · ${r.next}` : ''}</span></div>`).join('') : ''   // R-33: lost = struck out
-  if (html === _jpHtml) return
-  _jpHtml = html
-  _jpRoot.innerHTML = html
-  _jpRoot.style.display = html ? 'block' : 'none'
+  const key = rows?.length ? rows.map(r => `${r.label}|${r.icon ?? ''}|${r.lost ? 1 : 0}`).join('\n') : ''
+  const text = (r) => `<span${r.lost ? ' class="jp-lost"' : ''}>${r.what}</span>${r.next ? ` · ${r.next}` : ''}`   // R-33: lost = struck out
+  if (key !== _jpKey) {
+    _jpKey = key
+    _jpRoot.innerHTML = key ? rows.map(r => `<div class="jp-row"><span class="rt-label${r.label === 'Deed' ? ' jp-deed' : ''}">${r.label}</span>`
+      + (r.icon ? `<img src="assets/items/${r.icon}.png" alt="" onerror="this.style.display='none'">` : '') + `<span class="jp-text"></span></div>`).join('') : ''
+    _jpRoot.style.display = key ? 'block' : 'none'
+  }
+  if (!key) return
+  rows.forEach((r, i) => {
+    const el = _jpRoot.children[i].querySelector('.jp-text'), html = text(r)
+    if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html }
+    if (el.style.color !== r.tone) el.style.color = r.tone
+  })
 }
 // R-23 (owner, 2026-10-24): the top-centre readout lands the bad news LIVE — the moment the job turns,
 // not on the result card. Persistent while the condition holds; a partial spill flashes for a beat.
@@ -10284,7 +10310,8 @@ let _runEnded = false         // the run is over: never write it again (_discard
  *  card closed by mistake would strand the truck — and of its options only the tow to the shop (P3a: the gas station's
  *  or the tire service's would skip the shop's lesson). Installed here, below every name it reads (storySystem,
  *  _runEnded), so its poll can never touch one before it exists. */
-const _TUT_TOW = { allow: ['recovery', '#recovery-card [data-act="towShop"]'], hi: ['#recovery-card [data-act="towShop"]'] }
+const _TUT_TOW = { allow: ['recovery', '#recovery-card [data-act="towShop"]', '#recovery-card [data-act="towGo"]', '#recovery-card [data-act="towBack"]'],
+                   hi: ['#recovery-card [data-act="towShop"]', '#recovery-card [data-act="towGo"]'] }   // FEAT-307: the confirm is part of the lesson
 /** P5: while the pack is the stop (tossed, or fallen off on the way to Larry's) it wears the quest mark between cards too. */
 const _TUT_PACK = { ...BETWEEN, quest: 'pack' }
 const _tutStep = () => !_tutDrive() || _runEnded || !storySystem.isActive() ? null
