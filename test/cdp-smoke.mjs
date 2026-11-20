@@ -876,6 +876,7 @@ const STEPS = [
     await tap('Tab'); await until(open, 1000)
     const ri = await js(`window.__inv.list().findIndex(r => r.id === 'rottenChiliDog')`)
     await js(`document.querySelector('#inv-screen .inv-slot[data-slot="${ri}"]').click()`); await sleep(300)
+    await js(`document.getElementById('inv-tip').style.display = 'none'`)   // the pack's hover tip, left by the click
     if (process.env.NOTES1119_SHOTS) writeFileSync('wip/notes-1119b/rotten.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
     await tap('Escape')
     check(await until(async () => !await open(), 1000), 'Esc left the inventory open')
@@ -1414,15 +1415,6 @@ const STEPS = [
     await js('document.getElementById("mp-accept").click()')
     check(await until(async () => await vis('mission-hud') && await js('document.querySelector("#mission-hud .hud-text").textContent.trim()'), 5000), 'accepting the farm offer started no mission')
     console.log(`  farm: shop, jobs button, offer card, accepted → mission ${await js('window.__mission().state')}`)
-    // BUG-245: the promise box ticks without moving — across 6 s of the running clock the Deed row keeps its rectangle and the
-    // very same element (the box is no longer rebuilt every tick).
-    if (await js('getComputedStyle(document.getElementById("job-promise")).display !== "none"')) {
-      const rowRect = 'JSON.stringify([...document.querySelectorAll("#job-promise .jp-row")].filter(r => /Deed|Reward/.test(r.textContent)).map(r => { const b = r.getBoundingClientRect(); return [b.left, b.width] }))'
-      await js('window.__jpRow = document.querySelector("#job-promise .jp-row")')
-      const r0 = await js(rowRect); let same = true
-      for (let i = 0; i < 5; i++) { await sleep(1100); same = same && await js(rowRect) === r0 && await js('window.__jpRow === document.querySelector("#job-promise .jp-row")') }
-      check(same, `BUG-245: the promise box moved or was rebuilt over 5 ticks (${r0})`)
-    } else console.log('  BUG-245: no promise box on the farm job — the tick check skipped')
     await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')   // abandon: two clicks (the confirm)
     check(await until(async () => !await js('window.__mission().isOnJob()'), 3000), 'abandoning the farm job did not end it')
     await js('window.__mission().exit()')   // the abandoned job's result card hides every POI prompt: close it for the steps that follow
@@ -1875,6 +1867,16 @@ const STEPS = [
     check(await until(async () => await hudText() !== staged, 3000), `job never started: HUD still "${staged}" after ${moved.toFixed(0)} m`)
     console.log(`  offer: ${p.type} job running after ${moved.toFixed(0)} m — HUD "${await hudText()}"`)
     check(await vis('mission-hud'), 'mission HUD vanished mid-job')
+    // BUG-245: the running courier job's promise box ticks without moving — over 5 clock ticks the box and its rows keep their
+    // rectangles and the very same elements (the box is no longer rebuilt every second).
+    check(await js('getComputedStyle(document.getElementById("job-promise")).display !== "none"'), 'BUG-245: a running board job shows no promise box')
+    { const rects = 'JSON.stringify([document.getElementById("job-promise"), ...document.querySelectorAll("#job-promise .jp-row")].map(r => { const b = r.getBoundingClientRect(); return [b.left, b.top, b.width] }))'
+      const clock0 = await js('document.querySelector("#job-promise .jp-text")?.textContent')
+      await js('window.__jpRow = document.querySelector("#job-promise .jp-row")')
+      const r0 = await js(rects); let same = true
+      for (let i = 0; i < 5; i++) { await sleep(1100); same = same && await js(rects) === r0 && await js('window.__jpRow === document.querySelector("#job-promise .jp-row")') }
+      check(same, `BUG-245: the promise box moved or was rebuilt over 5 ticks (${r0})`)
+      console.log(`  promise box: held still over 5 ticks (first row "${clock0}", rects ${r0})`) }
   }],
   // FEAT-42: the rolling run save. (1) save & exit → a real reload → continue puts the run back,
   // paused, with the offer step's courier job still in hand (part 2). (2) The crash: take a freight

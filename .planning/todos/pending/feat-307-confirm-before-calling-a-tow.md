@@ -37,4 +37,4 @@ Same card, same buttons the pad and keyboard already drive (menu-nav focuses the
 `src/main.js` (_updateRecovery, _RC_ACT, _TUT_TOW) · `test/cdp-smoke.mjs`
 
 ## Log
-- 2026-11-19: built on land/notes-1119b (not landed). Smoke not yet run (bench window).
+- 2026-11-19: built on land/notes-1119b (not landed). Smoke 41 steps and pad-e2e green on the branch.

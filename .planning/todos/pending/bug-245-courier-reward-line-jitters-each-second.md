@@ -18,11 +18,11 @@ Owner: look at the card notes-1119b-look. Fix on branch land/notes-1119b, not la
 The overlay under the readout (#job-promise) is centred, and its width follows its widest line. The courier's Clock row printed the minutes unpadded ("finish in 9:59 …" then "10:00" or "0:59"), so the box changed width when the minutes crossed a digit and the Reward row in it shifted.
 
 ## Description
-Cause: `_promiseRows` in `src/main.js` printed `${mm}` unpadded (the font is monospace, so only the digit count matters). Fix: minutes padded to two digits, and `font-variant-numeric: tabular-nums` on the box. Only that line's text changed; the overlay's HTML was already written only when it differs (`_jpHtml`).
+Two causes, both in `src/main.js`. (1) `_updateJobPromise` rewrote the box's whole `innerHTML` whenever any text changed, which is every second on a courier job (the Clock row counts down), so the Reward row and its icon were destroyed and re-created each tick. (2) `_promiseRows` printed the clock's minutes unpadded, so the box (which is as wide as its widest row) changed width when the minutes gained or lost a digit. Fix: the rows are built only when their label, icon or struck-out state change; the live text and colour are written into the same elements; minutes are padded to two digits; `font-variant-numeric: tabular-nums` on the box.
 
 ## Tracker
 - [x] Clock line keeps one width
-- [ ] Browser check: the Reward row's box does not move across 5 ticks
+- [x] Browser check (cdp-smoke `offer` step): the box and its rows keep their rectangles and the same elements across 5 ticks; the same step FAILS on the old main.js
 - [ ] Owner look
 
 ## Open questions
@@ -32,4 +32,4 @@ Cause: `_promiseRows` in `src/main.js` printed `${mm}` unpadded (the font is mon
 `src/main.js` (_promiseRows) · `index.html`
 
 ## Log
-- 2026-11-19: fix on land/notes-1119b (not landed).
+- 2026-11-19: fix on land/notes-1119b (not landed). Old code fails the new smoke check, new code passes. The vertical case (the Clock row appearing once) is unchanged.
