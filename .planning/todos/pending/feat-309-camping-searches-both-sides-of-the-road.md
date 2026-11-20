@@ -1,0 +1,43 @@
+---
+id: FEAT-309
+type: feature
+status: open
+severity: minor
+opened: 2026-11-19
+source: owner, 2026-11-19 (inbox 20261119222722-t7df) — "Camping should search both sides of the road simultaneously."
+relates: DEC-452, DEC-006, FEAT-45, FEAT-308, FEAT-299, src/camp.js
+---
+lane: unplaced
+
+# FEAT-309: The campsite search looks on both sides of the road at once
+
+## Next steps
+Owner: look at `wip/camp-1119/sheet.jpg` (owed card camp-1119-look): two spots where the camp now lands across the road.
+
+## Summary
+The site was searched on one ray, out from the road edge on the side the truck stands on (FEAT-45, 2026-07-30).
+Good ground across the road was missed unless you parked over there. Now a ray runs out on each side every grade,
+and the better site wins.
+
+## Description
+`CampSystem.evaluate` grades `_gradeSide` twice: the truck's own side and the far side (same road point, normal
+flipped). `sideBeats` picks, by the score the card already shows:
+1. a flat site beats no flat site;
+2. two flat sites: the higher vibe (flat + view + shade + water);
+3. neither flat: the flatter ground (the card then reports the nearer miss; a ray with rungs beats one with none).
+**Tie rule:** an exact tie stays on the truck's own side (no crossing the road for nothing). The result is a pure
+function of the truck's spot, so it is deterministic. The memo (re-grade after 1.5 m) still keys on the truck's side,
+because the tie rule reads it. The pad's normal points to the chosen side, so the gear faces the road either way.
+
+FEAT-299 (continuous camping areas, not built) changes the zones, not the ray: nothing here is in its way.
+
+## Tracker
+- [x] Both sides graded each re-grade; the better by the existing score wins; tie → own side
+- [x] Gate `test/camp-sides.mjs` registered: never worse than one-sided, the better side, deterministic (numbers in Log)
+- [x] Cost measured, one ray vs both (Log)
+- [ ] Owner look (sheet)
+
+## Files
+`src/camp.js` (`evaluate`, `_gradeSide`, `sideBeats`) · `test/camp-sides.mjs`
+
+## Log

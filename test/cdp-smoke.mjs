@@ -705,6 +705,101 @@ const STEPS = [
     check(await until(async () => !await panel(), 2000), '"leave" did not close the truck face')
     check(!await lit(), 'breaking camp left the hunt on (BUG-142)')
   }],
+  ['campCard', async () => {
+    // FEAT-308 (DEC-451): with the hunt on, above the prompt speed the card says whether this is a camping area, and
+    // only in one asks to slow down. Driven on a road stretch inside a zone and one clear of every zone.
+    // CAMP_SHOTS=1 also takes the owner's look (wip/camp-1119/): those two at speed, slowed in a zone on a site, and
+    // FEAT-309's two-sided search: two spots where the site lands across the road from the truck.
+    const s = await js(`(() => { const cs = window.__campSys(), pois = window.__poi().list()
+      const clearOfPois = (q) => pois.every(p => Math.hypot(p.x - q.x, p.z - q.z) > 120)
+      const far = (q) => cs.zones().every(z => Math.hypot(z.x - q.x, z.z - q.z) > z.r + 80)
+      let inZ = null, outZ = null
+      for (const e of window.__roadSys()._network.values()) {
+        const p = e.points
+        for (let i = 0; i + 1 < p.length && !(inZ && outZ); i++) {
+          let j = i, d = 0; while (j + 1 < p.length && d < 90) { d += Math.hypot(p[j + 1].x - p[j].x, p[j + 1].z - p[j].z); j++ }
+          if (d < 90) break
+          const run = p.slice(i, j + 1); if (!run.every(clearOfPois)) continue
+          const tx = p[i + 1].x - p[i].x, tz = p[i + 1].z - p[i].z, h = Math.atan2(-tx, -tz)
+          if (!inZ && run.every(q => cs.zoneAt(q.x, q.z))) inZ = { x: p[i].x, z: p[i].z, h }
+          if (!outZ && run.every(far)) outZ = { x: p[i].x, z: p[i].z, h }
+        }
+      }
+      return { inZ, outZ } })()`)
+    check(s.inZ && s.outZ, `no 90 m road stretch inside a camp zone and one clear of them: ${JSON.stringify(s)}`)
+    if (!s.inZ || !s.outZ) return
+    const SHOTS = !!process.env.CAMP_SHOTS, DIR = 'wip/camp-1119'
+    if (SHOTS) mkdirSync(DIR, { recursive: true })
+    const snap = async (name, caption) => {
+      if (!SHOTS) return
+      await js(`(() => { let c = document.getElementById('__cap'); if (!c) { c = document.createElement('div'); c.id = '__cap'; document.body.appendChild(c) }
+        c.style.cssText = 'position:fixed;left:0;top:0;right:0;padding:10px 16px;background:rgba(0,0,0,0.75);color:#fff;font:16px monospace;z-index:99999'
+        c.textContent = ${JSON.stringify(caption)} })()`)
+      await frames(4, 120)
+      writeFileSync(`${DIR}/${name}.png`, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+      await js(`document.getElementById('__cap')?.remove()`)
+    }
+    const text = () => js('getComputedStyle(document.getElementById("camp-prompt")).display !== "none" && document.getElementById("camp-prompt-text").textContent')
+    const kph = () => js('window.__vs.velocity.length() * 3.6')
+    const atSpeed = async (q, name, label) => {
+      await seat(q.x, q.z, q.h)
+      if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
+      if (!await js('document.getElementById("camp-icon").classList.contains("on")')) await tap('z')
+      await key('w', true)
+      const fast = await untilSim(async () => await kph() > 26, 15)
+      await sleep(400)   // the 10 Hz poll
+      const t = await text()
+      await snap(name, `${label}: ${(await kph()).toFixed(0)} km/h, card "${t}"`)
+      await key('w', false)
+      check(fast, `${label}: the truck never passed 26 km/h`)
+      return t
+    }
+    const tIn = await atSpeed(s.inZ, '1-fast-in-zone', 'FEAT-308 in a camping area at speed')
+    check(tIn && tIn.includes('camping area') && tIn.includes('slow down'), `in a camping area at speed the card does not ask to slow down: "${tIn}"`)
+    const tOut = await atSpeed(s.outZ, '2-fast-no-zone', 'FEAT-308 outside every camping area at speed')
+    check(tOut === 'no camping here', `outside the camping areas at speed the card is not "no camping here": "${tOut}"`)
+    if (SHOTS) {
+      // Shoulder spots (7 m out: off the 5 m ribbon) inside zones, each side: the first with a site (slowed, from the
+      // chase cam), then two ≥ 300 m apart whose site is across the road (FEAT-309), framed from above.
+      const spots = await js(`(() => { const cs = window.__campSys(), pois = window.__poi().list(), P = cs._P(), reach = cs.reachM()
+        let slow = null; const across = []
+        for (const e of window.__roadSys()._network.values()) for (let i = 0; i + 1 < e.points.length; i += 3) {
+          const q = e.points[i], n = e.points[i + 1]
+          if (!cs.zoneAt(q.x, q.z) || pois.some(p => Math.hypot(p.x - q.x, p.z - q.z) < 120)) continue
+          const tx = n.x - q.x, tz = n.z - q.z, l = Math.hypot(tx, tz) || 1
+          for (const sd of [1, -1]) {
+            const x = q.x + tz / l * 7 * sd, z = q.z - tx / l * 7 * sd
+            cs._eval = null; const ev = cs.evaluate(x, z), nr = cs.nearRoadInfo(x, z)
+            if (!ev.flat || !ev.pad) continue
+            const rec = { x, z, h: Math.atan2(-tx, -tz), px: ev.pad.x, pz: ev.pad.z, vibe: ev.vibe }
+            if (!slow && ev.pad.nx * nr.nx + ev.pad.nz * nr.nz > 0) slow = rec
+            if (ev.pad.nx * nr.nx + ev.pad.nz * nr.nz < 0 && across.every(a => Math.hypot(a.x - x, a.z - z) > 300)) {
+              const own = cs._gradeSide(nr, P, reach)
+              across.push({ ...rec, own: own.best ? +own.best.vibe.toFixed(2) : null })
+            }
+          }
+          if (slow && across.length >= 2) return { slow, across }
+        }
+        return { slow, across } })()`)
+      check(spots.slow && spots.across.length >= 2, `CAMP_SHOTS: no slowed site or no two across-the-road sites: ${JSON.stringify(spots)}`)
+      if (spots.slow) {
+        await seat(spots.slow.x, spots.slow.z, spots.slow.h)
+        await sleep(600)
+        await snap('3-slowed-in-zone', `FEAT-308 slowed in a camping area: card "${await text()}"`)
+      }
+      for (const [k, a] of spots.across.slice(0, 2).entries()) {
+        await seat(a.x, a.z, a.h)
+        await sleep(600)
+        await js(`(() => { const p = window.__vs.position, mx = (p.x + ${a.px}) / 2, mz = (p.z + ${a.pz}) / 2
+          const dx = Math.sin(${a.h}), dz = Math.cos(${a.h}), cx = mx + dx * 30, cz = mz + dz * 30, cy = p.y + 38
+          window.__view(cx, cy, cz, Math.atan2(cx - mx, cz - mz), -Math.atan2(cy - p.y, 30)) })()`)
+        await frames(20, 1500)
+        await snap(`${4 + k}-across-${k + 1}`, `FEAT-309 site across the road: vibe ${a.vibe.toFixed(2)}; the truck's own side alone: ${a.own == null ? 'no site' : a.own.toFixed(2)}`)
+      }
+    }
+    await seat(s.outZ.x, s.outZ.z, s.outZ.h)   // a teleport drops the freecam
+    if (await js('document.getElementById("camp-icon").classList.contains("on")')) await tap('z')
+  }],
   ['boltons', async () => {
     // FEAT-204: the roof rack, bull bar and light bar fitted straight onto the truck (window.__parts, no shop, no
     // inventory row): each model in the scene and shown, the light bar's rack-mount model only with the rack (DEC-340,
