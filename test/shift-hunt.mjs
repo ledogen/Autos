@@ -41,7 +41,7 @@ function freshParams (box) {
 }
 
 // One cell: a steady pedal on a constant grade from v0. Returns the shift list and the hunts in it.
-export async function runCell (box, grade, pedal, kmh, ctx, { runS = RUN_S, stop = null } = {}) {
+export async function runCell (box, grade, pedal, kmh, ctx, { runS = RUN_S, stop = null, gear = null } = {}) {
   const P = freshParams(box)
   let key = 0
   const pedalAt = typeof pedal === 'number' ? () => pedal
@@ -60,6 +60,7 @@ export async function runCell (box, grade, pedal, kmh, ctx, { runS = RUN_S, stop
   const coupledIn = (g) => w0 * P.gearRatios[g - 1] * P.finalDrive * RPM_PER_RAD / P.converterCouplingSR
   let g0 = 1
   for (let g = 1; g <= P.gearRatios.length; g++) if (Math.abs(coupledIn(g) - 2000) < Math.abs(coupledIn(g0) - 2000)) g0 = g
+  if (gear) g0 = gear   // a stale gear, as a re-seat can leave it
   const vs = {
     position: new THREE.Vector3(0, 0, 0).addScaledVector(N, eq.bodyY), velocity: fwd.clone().multiplyScalar(v0),
     quaternion: quat.clone(), angularVelocity: new THREE.Vector3(),
