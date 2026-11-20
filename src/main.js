@@ -104,7 +104,7 @@ import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, s
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, deedLine, stockPrice, itemCost } from './offer-board.js'   // FEAT-67: the mission board; R-17 the promise lines
-import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
+import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist, campFastLine } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem, cardSlide } from './dialogue.js'   // FEAT-61: sequential character cards; FEAT-288 P8: the speaker slide
@@ -6042,7 +6042,7 @@ _menu('camp', () => !!_campUi, () => _closeCampUi())
  * What the tent and its card show, or null when neither should: story mode, mission idle,
  * dialogue closed. Not looking → { collapsed } (the tent alone). Looking → ALWAYS a card (owner,
  * 2026-10-19: Z is a true toggle, so a hunt left on at speed reads on screen instead of popping up
- * when you next slow down): { fast } above 20 kph, { truck } off camping ground, else the graded
+ * when you next slow down): { fast, fastZone } above 20 kph (FEAT-308: whether this is a camping area), { truck } off camping ground, else the graded
  * site. Outside the tether or on bad ground is NOT null — those are the card's failure copies, and
  * telling the player why they cannot camp here is the entire job of a prompt.
  */
@@ -6072,8 +6072,11 @@ function _campPromptState () {
   if (_inPoiRing()) return null
   // Collapsed: nothing is paid at all — no zone scan, no ray, no grading.
   if (!_campSeek) return { collapsed: true }
-  if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return { fast: true }
-  if (!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)) return { truck: true }
+  // FEAT-308 (DEC-451): at speed the card still says whether this is camping ground (the disc scan is
+  // cheap); only the grading ray waits for the slow-down.
+  const zone = !!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)
+  if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return { fast: true, fastZone: zone }
+  if (!zone) return { truck: true }
   const g = campSystem.evaluate(vehicleState.position.x, vehicleState.position.z)
   return g.inZone ? g : { truck: true }
 }
@@ -6694,7 +6697,7 @@ function _updateParkTriggers (zParked = false) {
             : camp.cands === 0   ? 'no room off the road'
             :                      'not flat'
   _hudHtml(document.getElementById('camp-prompt-text'),
-      camp.fast ? 'slow down to look for a campsite'
+      camp.fast ? campFastLine(camp.fastZone)
     : site      ? parkPrompt(parked ? 'park again to make camp' : 'park to make camp')
     : moms      ? why
     : onRoad    ? `${why}<br>park on the shoulder to sleep in the truck`
