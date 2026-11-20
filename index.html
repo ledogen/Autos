@@ -51,7 +51,7 @@
        top-level 2D element, never on the WebGL canvas (the first <canvas>, a direct child of body). Small = 1 = today.
        Big is for a TV; the factor is the one number below (see FEAT-248). */
     html { --ui-zoom: 1; }
-    html[data-ui-scale=big] { --ui-zoom: 1.5; }
+    html[data-ui-scale=big] { --ui-zoom: 1.4; }
     html[data-ui-scale=big] body > :not(canvas:first-child) { zoom: var(--ui-zoom); }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #111; overflow: hidden; }

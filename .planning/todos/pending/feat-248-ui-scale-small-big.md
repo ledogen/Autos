@@ -30,3 +30,4 @@ Read `.planning/research/UI-STYLE.md` first (12 px font floor, one pinned monosp
 
 ## Log
 - 2026-11-17: built on land/ui-1117 (35afeacd): CSS zoom on body children but the WebGL canvas. Map/cluster bitmaps are stretched, slightly soft. Main-menu pages scroll at Big. Sheet: wip/ui-1117/sheet.jpg.
+- 2026-11-20: owner, via card ui-1117-look: "It works pretty well, but it's a little bit too big." then "big setting zoom should go from 1.5x to 1.4x" (the coordinator relayed 1.2 first, corrected to 1.4). index.html `html[data-ui-scale=big] { --ui-zoom }` 1.5 -> 1.4. Checked at 2045x1200 in wip/followups-1120/ui.jpg.
