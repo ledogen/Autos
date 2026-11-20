@@ -5327,14 +5327,15 @@ function _updateFiringCam (dt) {
   setCameraFocus(c.p, { theta: c.theta, radius: FIRING_CAM.radius, rightDrag: true })
 }
 
-// First-use cards (data/dialogue.js TUT), and Larry's welcome through the same door: queued, then
+// The tutorial's cards (data/dialogue.js TUT), and Larry's welcome through the same door: queued, then
 // played by _pumpTut on the HUD poll once no other card is up, each HOLDING the sim and the clock
-// (_cardHold) — so one may land mid-drive (the rank bar appears near the drop) without the truck
-// running on under it. Only in a run that played its opening rather than skipping it — `always` lifts that
-// for the story's own beats (the paycheck, the boss's check, Larry's call); each key once per run.
+// (_cardHold) — so one may land mid-drive without the truck running on under it. Only while the tutorial is on
+// (_inTutorial) — DEC-442 (owner, 2026-11-19): no tip interrupts the actual game, every one is taught in the tutorial —
+// and `always` lifts that for the story's own beats (the paycheck, the boss's check, Larry's call, the camp taking you
+// on); each key once per run.
 const _tutQueue = []
 function _tut (key, cards = TUT[key], done = null, always = false) {
-  if (!always && (!dialogueSystem.has(DLG.firing) || dialogueSystem.has(DLG.skipped))) return
+  if (!always && !_inTutorial()) return
   if (dialogueSystem.has(key) || _tutQueue.some(t => t.key === key)) return
   _tutQueue.push({ key, cards, done })
 }
@@ -5846,9 +5847,9 @@ function _poiInReach () {
   return q && _inPoiSpot(q) ? q : null
 }
 
-/** A giver's card opens on its live offers, with its first-use lessons. */
+/** A giver's card opens on its live offers. */
 function _openOffers (poi, offers) {
-  missionSystem.enterFromPoi(poi, offers, _planOffer); _tut('tut-offer')   // FEAT-147
+  missionSystem.enterFromPoi(poi, offers, _planOffer)
 }
 
 /**
@@ -8186,7 +8187,7 @@ function _renderRunHud () {
   const s = economySystem.snapshot()
   // FEAT-103: the camp's gate. Every deed source settles through the wallet, and this poll reads it,
   // so this is the one place the requisition opens (openLines is idempotent).
-  if (offerBoard && !_paperScenario && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
+  if (offerBoard && !_paperScenario && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp', TUT['tut-camp'], null, true)   // FEAT-305: a story beat, not a tip (DEC-442): every run hears it
   if (daySystem.clockH() >= _eveWakeH()) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
   _syncTutCard()       // FEAT-184: the intro's card, back after a resume
   _untilTick()         // DEC-359
@@ -8287,7 +8288,6 @@ function _updateEnergyMeter () {
   const st = daySystem.stage()
   if (st !== _emStage) {
     _emStage = st
-    if (st === 'sleepy' && !_tutDrive()) _tut('tut-sleep')   // FEAT-147 (its camp advice is free will's: DEC-308)
     _emEls.stage.textContent = st
     _emEls.stage.style.color = STAGE_COLOR[st]
   }
@@ -8586,7 +8586,6 @@ function _updateRankTimer () {
   const shown = src.near != null ? src.near : f.shown
   if (shown !== _rtShown) {
     _rtShown = shown
-    if (shown) _tut('tut-rank')   // FEAT-147: the first time the bar appears
     E.root.classList.toggle('rt-in', shown)
   }
   E.root.style.display = shown ? 'block' : 'none'

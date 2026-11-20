@@ -121,9 +121,9 @@ export const LARRY_PACK = [
 ]
 
 /**
- * First-use cards: each plays once, the first time the player meets the thing, and only in a run that
- * opened on the firing. They play once no other card is up and hold the sim while they are (main.js
- * _tut). Mom is the tutorial's voice; Katie calls after Larry's (the picnic, DEC-345), meets you at the camping area
+ * The tutorial's cards: each plays once, the first time the player meets the thing, and only while the tutorial is on
+ * (DEC-442: no tip after it; 'tut-camp' is the one story beat here, heard in every run). They play once no other card
+ * is up and hold the sim while they are (main.js _tut). Mom is the tutorial's voice; Katie calls after Larry's (the picnic, DEC-345), meets you at the camping area
  * (DEC-347). *
  * A lesson card (`until`, DEC-359) is also the tutorial gate's STEP (FEAT-288 P2, src/tut-gate.js): `allow` names the
  * locked actions it opens (gamepad.js BINDINGS names: 'inventory', 'damage screen', 'camp', 'recovery', …) and the card /
@@ -131,15 +131,10 @@ export const LARRY_PACK = [
  * and row of the in-game cards is locked while it is up. `hi` is what gets the yellow ring. test/tut-gate.mjs checks them.
  */
 export const TUT = {
-    'tut-offer': [{ speaker: 'Mom', text: `That's the job card: who's asking, what it pays, how long you've got. `
-        + `Every job has one. Take it when you're ready.` }],
-    'tut-rank': [{ speaker: 'Mom', text: `The bar up top is the clock on this job. Keep it in the good part and you'll earn the tip.` }],
     'tut-fuel': [{ speaker: 'Mom', text: `Fill up here. That old truck drinks &mdash; keep an eye on the fuel gauge on the dashboard, `
         + `because running dry out there means a tow you can't afford.` }],   // DEC-363: mom's, not Larry's (placeholder words)
     'tut-service': [{ speaker: 'Mom', text: `The shop fixes what you broke and sells what you need. `
         + `Every repair has a price on it &mdash; drive gentle and you'll keep more of your pay.` }],
-    'tut-sleep': [{ speaker: 'Uncle Larry', text: `Getting late. Find flat ground off the road and make camp, or sleep at your mom's. `
-        + `The day is all the time you've got &mdash; whatever you didn't earn by dark, you didn't earn.` }],
     'tut-camp': [{ speaker: 'Uncle Larry', text: `That's enough good deeds. The expedition camp is taking you on &mdash; `
         + `they've posted what they need. Bring it and you're out of here.` }],
 
