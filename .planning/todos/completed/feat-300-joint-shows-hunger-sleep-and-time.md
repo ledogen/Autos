@@ -12,7 +12,7 @@ lane: SM-1 tutorial (scribe: with FEAT-298, the same scene; Sonnet)
 # FEAT-300: At the burger joint, show hunger, sleep and the time
 
 ## Next steps
-A lane finds why the hunger, sleep (energy) and clock readouts are not on screen at the joint and shows them there. The owner answers which scene he means.
+Built (land/feat-300-joint-status): the joint's shop menu keeps the HUD dock (energy, hunger, clock) beside the card. The firing and the paycheck stop already showed all three. Owner looks (owed card feat300-joint-status-look).
 
 ## Summary
 Owner's words:
@@ -25,8 +25,8 @@ The owner is at "the joint" (the burger joint). The code names it two ways: the 
 (See Summary.)
 
 ## Tracker
-- [ ] Find where the status readouts are hidden at the joint and why (the opening, or the paycheck scene, or both)
-- [ ] Hunger, sleep (energy) and the time show at the joint
+- [x] Find where the status readouts are hidden at the joint and why: only the shop menu (FEAT-167 hid the whole dock behind any shop card); the firing and paycheck show all three
+- [x] Hunger, sleep (energy) and the time show at the joint (storefront menus keep the dock, slid left of the card)
 - [ ] Owner has looked
 
 ## Open questions
@@ -39,3 +39,5 @@ The owner is at "the joint" (the burger joint). The code names it two ways: the 
 
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
+- 2026-11-20: measured in Chrome: firing and paycheck show run-hud (clock), energy and hunger (clock held, still drawn). The shop menu hid the dock (src/service-screen.js FEAT-167 rule). Fix: the dock stays for storefronts, `right` moved left of the card; auto shop unchanged. Sheet wip/feat-300/sheet.jpg. pad-e2e and service gate green; smoke: see below. Also visible now beside the card: the park badge and the start-truck hint (not touched).
+- 2026-11-20: main merged; also hide #hud-icons + #ignition-hint behind a storefront card. service, pad-e2e, smoke (42 steps) green.
