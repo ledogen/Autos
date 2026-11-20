@@ -11,10 +11,12 @@
 // The base lock — every tutorial step — refuses LOCKED; driving, the brake, the key, lights, looking, the map, pause,
 // back, the skip hold and the tutorial's reset are never in it, so nothing here can strand the truck.
 //
-// Enforced at four hooks and nowhere else: keys (a capture-phase listener here; the pad's buttons arrive as synthetic
-// keys, gamepad.js sendKey), the B menu (hud-menu.js items()), the card walk (menu-nav.js live()), and clicks (a
-// capture-phase listener here; locked elements also get pointer-events: none). A refused action nudges what it hit and
-// the card asking for something else: no sound, no alert.
+// Enforced at three hooks and nowhere else: keys (a capture-phase listener here; the pad's buttons arrive as synthetic
+// keys, gamepad.js sendKey), clicks (a capture-phase listener here: the mouse, the B menu's pick and the card walk's A all
+// press by click), and a locked slider's arrow steps (menu-nav.js). DEC-443 (owner, 2026-11-19): "always allow the player
+// to navigate the entire UI … If they try to interact with the wrong option, nothing should happen" — the highlight and
+// the B menu walk everything, a refused press does nothing at all (no nudge), and the lesson's own control wears .tut-hi,
+// an outline of its own, quieter than the highlight's (index.html).
 //
 // No state of its own: every call reads stepOf(), so a skip, the tutorial's end, a run end or a reload (stepOf() → null)
 // unlocks everything on the next look, and the 10 Hz paint wipes its classes (BUG-183). Inactive, every hook is one
@@ -58,15 +60,6 @@ export function allowsEl (el, s = stepOf()) {
   return el.matches(BACK) || s.allow.some(q => isSelector(q) && el.closest(q))
 }
 
-/** A refused press: `el` (what was hit) and the card asking for something else give a short shake. */
-export function refuse (el) {
-  const dp = document.getElementById('dialogue-panel')
-  for (const n of [el, dp?.style.display === 'block' ? dp : null]) {
-    if (!n) continue
-    n.classList.remove('tut-nudge'); void n.offsetWidth; n.classList.add('tut-nudge')   // the reflow restarts the animation
-  }
-}
-
 /** A card that waits for any key owns every key (main.js), so the gate leaves keys to it. */
 const cardOwnsKeys = () => { const dp = document.getElementById('dialogue-panel'); return dp?.style.display === 'block' && !dp.classList.contains('dlg-waits') }
 const typing = (t) => (t?.tagName === 'INPUT' && t.type !== 'range') || t?.tagName === 'TEXTAREA'
@@ -94,7 +87,6 @@ export function initTutGate (getStep) {
     const act = KEY_ACT[e.key.toLowerCase()]
     if (!act || allows(act, s) || typing(e.target) || cardOwnsKeys()) return
     e.preventDefault(); e.stopImmediatePropagation()
-    if (!e.repeat) refuse(document.getElementById(Object.keys(ICON_ACT).find(id => ICON_ACT[id] === act)))
   }, true)
   window.addEventListener('click', (e) => {
     const s = stepOf()
@@ -102,7 +94,6 @@ export function initTutGate (getStep) {
     const el = e.target.closest?.(LOCKABLE)
     if (!el || allowsEl(el, s)) return
     e.preventDefault(); e.stopImmediatePropagation()
-    refuse(el)
   }, true)
   setInterval(paint, 100)   // ponytail: a poll, like menu-nav's; a card that re-renders its rows is re-marked within 100 ms
 }

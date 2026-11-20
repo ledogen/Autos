@@ -179,5 +179,24 @@ ok(/go\.disabled = _firingDay\(\) && /.test(main) && !/cp-sleep-go[^\n]*disabled
   }
   ok(changes > 5, `P8: the scripts hold ${changes} changes of speaker (the ring card → the caller counts)`) }
 
+// ── 6. FEAT-305 (tutorial round 5) ──
+{ const nav = readFileSync(new URL('../src/menu-nav.js', import.meta.url), 'utf8'), hud = readFileSync(new URL('../src/hud-menu.js', import.meta.url), 'utf8')
+  // DEC-443: the highlight and the B menu walk every item; a locked one is refused only when pressed (the click listener)
+  ok(/const live = \(c\) => \[\.\.\.c\.querySelectorAll\(ITEMS\)\]\.filter\(el => el\.offsetParent !== null\)\n/.test(nav), 'DEC-443: menu-nav live() fences nothing')
+  ok(/if \(!allowsEl\(cur\)\) return/.test(nav), "DEC-443: a locked slider takes no arrow step")
+  ok(/^const items = usable$/m.test(hud) && !/refuse/.test(hud), 'DEC-443: the B menu walks every usable icon, and a wrong pick is silent')
+  ok(/ \.tut-locked \{ opacity: 0\.35 !important; \}/.test(html) && /input\.tut-locked \{ pointer-events: none/.test(html),
+    'DEC-443: a locked element keeps the pointer and the highlight (only a locked slider takes no drag)')
+  // DEC-442: no tip after the tutorial — every non-story card is gated on _inTutorial(), and the three that only ever came after it are gone
+  ok(/function _tut \(key, cards = TUT\[key\], done = null, always = false\) \{\n  if \(!always && !_inTutorial\(\)\) return\n/.test(main), 'DEC-442: _tut plays only inside the tutorial (or a story beat, `always`)')
+  for (const k of ['tut-offer', 'tut-rank', 'tut-sleep']) ok(!(k in DLG.TUT) && !main.includes(`'${k}'`), `DEC-442: the after-the-tutorial tip ${k} is gone`)
+  ok(/_tut\('tut-camp', TUT\['tut-camp'\], null, true\)/.test(main), "DEC-442: the camp taking you on is a story beat (`always`)")
+  // item 4: a key inside a pad half is the pad's own button (the map's X), never put through the keyboard's keycap
+  ok(/if \(!k\.closest\('\.kc-pad'\) && _DLG_PAD_KEYS\.has/.test(main), 'item 4: a pad half\'s dlg-key is not re-read as a keyboard key')
+  ok(Object.values(DLG.TUT).flat().every(c => !/>View</.test(c.text)), 'item 6: no card names the pad\'s View')
+  // item 11: a press-any card shuts the screens under it; item 12: the lesson's spare fits only the flat corner
+  ok(/if \(card && card !== _dlg\.card && !card\.until\) \{ damageScreen\.close\(\); inventoryScreen\.close\(\) \}/.test(main), 'item 11: a card that owns every key shuts the inventory under it')
+  ok(/corner: \(c\) => trap \? damageModel\.flat\[c\] : !e\.flat/.test(main), 'item 12: the trap\'s spare is offered the flat corner alone') }
+
 console.log(fails ? `tut-gate: ${fails} FAIL` : `tut-gate: PASS (${steps} steps)`)
 process.exit(fails ? 1 : 0)

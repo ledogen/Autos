@@ -2540,13 +2540,22 @@ const STEPS = [
     check(await hi('#svc-screen .sv-line[data-item="bagOfPeanuts"]'), 'the shop card: the peanuts row is not ringed')
     await gateShot('14-shop-peanuts')
     await padOn()   // the fake pad: the D-pad walks the peanuts row and its add to cart alone, A presses
+    // DEC-443 (FEAT-305): the highlight goes anywhere on the card; A on a wrong row does nothing, A on the right one acts
     const walk = []
-    for (let i = 0; i < 12 && await waits() === 'cart'; i++) {
-      const f = await js(`(e => !e ? 'none' : e.dataset.act === 'stow' ? 'stow' : e.matches('.sv-line[data-item=bagOfPeanuts]:not(.on)') ? 'row' : 'other:' + (e.dataset.act ?? e.textContent.trim().slice(0, 20)))(document.querySelector('#svc-screen .nav-focus'))`)
-      walk.push(f); await btn(f === 'row' || f === 'stow' ? 0 : 13)
+    let inert = null
+    for (let i = 0; i < 24 && await waits() === 'cart'; i++) {
+      const f = await js(`(e => !e ? 'none' : e.dataset.act === 'stow' ? 'stow' : e.matches('.sv-line[data-item=bagOfPeanuts]:not(.on)') ? 'row' : (e.classList.contains('tut-locked') ? 'locked:' : 'other:') + (e.dataset.act ?? e.dataset.item ?? e.textContent.trim().slice(0, 20)))(document.querySelector('#svc-screen .nav-focus'))`)
+      walk.push(f)
+      if (f.startsWith('locked:') && inert === null) {   // A on it: the shop stays open, the card still waits, nothing opened
+        const shelf = () => js('document.getElementById("svc-screen").textContent.length')
+        const s0 = await shelf(); await btn(0); await sleep(250)
+        inert = await shopUp() && await waits() === 'cart' && await shelf() === s0
+      }
+      await btn(f === 'row' || f === 'stow' ? 0 : 13)
     }
     await padOff()
     check(await until(async () => await waits() === 'bought', 3000), `the pad did not put the peanuts in the cart: ${JSON.stringify({ tut: await tut(), f: await navFocus(), walk })}`)
+    check(inert === true, `DEC-443: the highlight never reached a locked element of the shop, or A on it did something (${inert}): ${JSON.stringify(walk)}`)
     check(await hi('#svc-screen [data-act="checkout"]'), 'the check out card: check out is not ringed')
     await gateShot('15-shop-checkout')
     await js('document.querySelector("#svc-screen [data-act=discard]").click()')   // the mouse: discard is refused

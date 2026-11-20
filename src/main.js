@@ -76,7 +76,7 @@ import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearb
 import { pad, PAD_PARAMS, BINDINGS, steerCurve, padOf, padRoleName } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
-import { initTutGate, stepFor, allows, refuse, BETWEEN } from './tut-gate.js'   // FEAT-288 P2: the tutorial's lock and highlight
+import { initTutGate, stepFor, allows, BETWEEN } from './tut-gate.js'   // FEAT-288 P2: the tutorial's lock and highlight
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -4833,9 +4833,7 @@ const _fillSnack = (cards) => cards.map(c => c.hi ? { ...c, hi: c.hi.map(q => q.
 /** FEAT-288 P3b: the tutorial gate's say on a waypoint — every input that drops one (N, the pad's Y, a click on the sheet)
  *  lands here: refused unless the step allows it, and under Katie's waypoint card anywhere but her station. */
 function _tutWaypointOk (p) {
-  if (allows('map: drop / clear the waypoint') && (!p || dialogueSystem.current()?.until !== 'waypoint' || _nearSnack(p))) return true
-  refuse(null)
-  return false
+  return allows('map: drop / clear the waypoint') && (!p || dialogueSystem.current()?.until !== 'waypoint' || _nearSnack(p))
 }
 /** Mom's money (DEC-306): the bag's shelf price today in whole dollars, plus the gas money she does not mention — the
  *  wallet is topped up to it from her hand-over until the bag is bought, so spending it on something else first cannot
