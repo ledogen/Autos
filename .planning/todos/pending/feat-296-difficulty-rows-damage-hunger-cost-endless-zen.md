@@ -95,4 +95,4 @@ DEC-433.
 
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
-- 2026-11-20: prototype on `land/feat-296-difficulty`: `data/difficulty.js` + `src/difficulty.js`, setup rows, run state, endless card, debug folder. `test/difficulty.mjs` 25/25, fingerprint-physics identical, smoke endings step covers endless. Sheet `wip/feat-296/sheet.jpg`.
+- 2026-11-20: prototype on `land/feat-296-difficulty`: `data/difficulty.js` + `src/difficulty.js`, setup rows, run state, endless card, debug folder. `test/difficulty.mjs` 25/25, fingerprint-physics identical, affected gates 81/81, smoke 42/42 (endings step covers endless; flake on try 1), pad-e2e OK. Sheet `wip/feat-296/sheet.jpg`. Card `feat296-difficulty-try`; dev server :3296.
