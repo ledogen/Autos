@@ -163,7 +163,7 @@ export const TUT = {
         // with its POI id; _tutWaypointOk takes a drop on it alone), the legend pointed at, the map closed. She holds the
         // line to the store (`holds`), where tut-shop picks the call up.
         { speaker: KATIE, phone: true, until: 'map', allow: [], text: `Not sure which station? Open your map: `
-            + `<span class="kc-kb"><span class="dlg-key">M</span></span><span class="kc-pad"><span class="dlg-key">View</span></span>.` },
+            + `<span class="dlg-key">M</span>.` },
         { speaker: KATIE, phone: true, until: 'shoptab', allow: [], hi: ['#map-list-head [data-tab="shopping"]'],
             text: `That list on the side shows every shop around here. Switch it to Shopping: `
             + `<span class="kc-kb"><span class="dlg-key">Q</span></span><span class="kc-pad"><span class="dlg-key">X</span></span>.` },
@@ -173,7 +173,7 @@ export const TUT = {
             + `<span class="kc-kb"><span class="dlg-key">N</span></span><span class="kc-pad"><span class="dlg-key">Y</span></span>.` },
         { speaker: KATIE, phone: true, holds: true, until: 'mapshut', allow: [], hi: ['#map-legend'],
             text: `And the key to all those little marks is down in the corner. Close the map `
-            + `(<span class="kc-kb"><span class="dlg-key">M</span></span><span class="kc-pad"><span class="dlg-key">View</span></span>) and holler when you're at the store.` },
+            + `(<span class="dlg-key">M</span>) and holler when you're at the store.` },
     ],
     // FEAT-288 P3b (DEC-422: "Katie needs to guide you through the shopping process, how to select an item, how to check
     // out"): parked at the store, the shop open, she is still on the line — the peanuts row and its add to cart only, then

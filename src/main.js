@@ -4194,8 +4194,9 @@ function _renderDialogue () {
     tx.innerHTML = card.text
     // FEAT-125: a key a card names reads the pad's button while the pad drives — the prompts' keycap(). Only keys the
     // pad has ONE button for: A / D (the stick steers) and F (the stick aims, RB throws) need the card's own pad words,
-    // and a grade or a phrase (B, "ten good deeds") is emphasis, never a key.
-    for (const k of tx.querySelectorAll('.dlg-key')) if (_DLG_PAD_KEYS.has(k.textContent.trim().toLowerCase())) k.innerHTML = keycap(k.textContent.trim())
+    // and a grade or a phrase (B, "ten good deeds") is emphasis, never a key. FEAT-305: a key inside a pad half (kc-pad) is
+    // already the pad's button — its X (the map's Shopping tab) is not the keyboard's X (recovery, held B).
+    for (const k of tx.querySelectorAll('.dlg-key')) if (!k.closest('.kc-pad') && _DLG_PAD_KEYS.has(k.textContent.trim().toLowerCase())) k.innerHTML = keycap(k.textContent.trim())
     for (const k of tx.querySelectorAll('[data-pad]')) k.textContent = padRoleName(k.dataset.pad)   // DEC-431: a pad half's driving button, in the layout
     clearInterval(_dlg.timer)
     Object.assign(_dlg, { card, words: _hideWords(tx), n: 0, t0: performance.now() + _dlg.delay })   // P8: streams as it slides in
