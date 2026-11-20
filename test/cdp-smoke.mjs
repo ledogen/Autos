@@ -1878,6 +1878,12 @@ const STEPS = [
     await js('__fp.b[7] = 0.7')   // RT: rolling past the 5 mph throw floor
     check(await untilSim(() => js('window.__vs.velocity.length() > 3'), 8), `the fake pad did not get the truck rolling: ${(await js('window.__vs.velocity.length()')).toFixed(1)} m/s`)
     check(await until(async () => await state() === 'running', 3000), `leaving Larry's circle did not start the round: ${await state()}`)
+    // FEAT-311: the top line leads with the road distance to the next house, the last house's in parentheses.
+    const ppHud = () => js('document.querySelector("#paper-hud .hud-text").textContent')
+    check(await until(async () => /^\d+\.\d\d km \(\d+\.\d\d km\) · 0 \/ 4 delivered/.test(await ppHud()), 2000),
+      `the running round's top line shows no "next house (last house)" distance: "${await ppHud()}"`)
+    if (process.env.PAPER_SHOT) writeFileSync(process.env.PAPER_SHOT, Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'jpeg', quality: 85 })).result.data, 'base64'))
+    console.log(`  papers: the top line reads "${(await ppHud()).trim()}"`)
     const stock0 = await js('window.__paper.system.stock()')
     await js('__fp.axes[2] = 0.7'); await frames(4, 150)          // aim: the right stick
     // A TAP of RB: pressed for ONE pad poll and let go in-page on the next frame. gamepad.js times the tap in
