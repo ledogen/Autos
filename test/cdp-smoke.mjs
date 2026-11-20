@@ -1387,6 +1387,15 @@ const STEPS = [
     await js('document.getElementById("mp-accept").click()')
     check(await until(async () => await vis('mission-hud') && await js('document.querySelector("#mission-hud .hud-text").textContent.trim()'), 5000), 'accepting the farm offer started no mission')
     console.log(`  farm: shop, jobs button, offer card, accepted → mission ${await js('window.__mission().state')}`)
+    // BUG-245: the promise box ticks without moving — across 6 s of the running clock the Deed row keeps its rectangle and the
+    // very same element (the box is no longer rebuilt every tick).
+    if (await js('getComputedStyle(document.getElementById("job-promise")).display !== "none"')) {
+      const rowRect = 'JSON.stringify([...document.querySelectorAll("#job-promise .jp-row")].filter(r => /Deed|Reward/.test(r.textContent)).map(r => { const b = r.getBoundingClientRect(); return [b.left, b.width] }))'
+      await js('window.__jpRow = document.querySelector("#job-promise .jp-row")')
+      const r0 = await js(rowRect); let same = true
+      for (let i = 0; i < 5; i++) { await sleep(1100); same = same && await js(rowRect) === r0 && await js('window.__jpRow === document.querySelector("#job-promise .jp-row")') }
+      check(same, `BUG-245: the promise box moved or was rebuilt over 5 ticks (${r0})`)
+    } else console.log('  BUG-245: no promise box on the farm job — the tick check skipped')
     await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')   // abandon: two clicks (the confirm)
     check(await until(async () => !await js('window.__mission().isOnJob()'), 3000), 'abandoning the farm job did not end it')
     await js('window.__mission().exit()')   // the abandoned job's result card hides every POI prompt: close it for the steps that follow

@@ -8412,7 +8412,7 @@ function _rankTimerSource () {
 // lost — fragile by health against its line, haul by the count still aboard, freight is earned on
 // arrival, courier by the letter under the rank bar once that bar is showing (before that the line
 // stays neutral: R-22 hides the clock until the goal is near, and a colour must not leak it early).
-let _jpRoot = null, _jpHtml = null
+let _jpRoot = null
 function _promiseTone (margin) {   // margin ≥ 0: how far inside the line (1 = comfortable); < 0: lost
   if (margin == null) return 'var(--text)'
   if (margin < 0) return 'var(--bad-text)'
@@ -8490,16 +8490,26 @@ function _promiseRows (m) {
   else if (kind === 'freight') rows.unshift({ label: 'Cargo', what: `${j.cargoKg} kg`, tone: 'var(--text)' })
   return rows
 }
+// BUG-245: the rows (label, icon, struck-out or not) are built only when they change; the live text and colour are then
+// written into the SAME elements. Rebuilding the whole box each second re-created the reward icon every tick.
+let _jpKey = null
 function _updateJobPromise () {
   if (!_jpRoot) { _jpRoot = document.getElementById('job-promise'); if (!_jpRoot) return }
   const rows = storySystem.isActive() && !storySystem.isEntering() ? _promiseRows(missionSystem) : null
-  const html = rows?.length ? rows.map(r => `<div class="jp-row"><span class="rt-label${r.label === 'Deed' ? ' jp-deed' : ''}">${r.label}</span>`
-      + (r.icon ? `<img src="assets/items/${r.icon}.png" alt="" onerror="this.style.display='none'">` : '')
-      + `<span class="jp-text" style="color:${r.tone}"><span${r.lost ? ' class="jp-lost"' : ''}>${r.what}</span>${r.next ? ` · ${r.next}` : ''}</span></div>`).join('') : ''   // R-33: lost = struck out
-  if (html === _jpHtml) return
-  _jpHtml = html
-  _jpRoot.innerHTML = html
-  _jpRoot.style.display = html ? 'block' : 'none'
+  const key = rows?.length ? rows.map(r => `${r.label}|${r.icon ?? ''}|${r.lost ? 1 : 0}`).join('\n') : ''
+  const text = (r) => `<span${r.lost ? ' class="jp-lost"' : ''}>${r.what}</span>${r.next ? ` · ${r.next}` : ''}`   // R-33: lost = struck out
+  if (key !== _jpKey) {
+    _jpKey = key
+    _jpRoot.innerHTML = key ? rows.map(r => `<div class="jp-row"><span class="rt-label${r.label === 'Deed' ? ' jp-deed' : ''}">${r.label}</span>`
+      + (r.icon ? `<img src="assets/items/${r.icon}.png" alt="" onerror="this.style.display='none'">` : '') + `<span class="jp-text"></span></div>`).join('') : ''
+    _jpRoot.style.display = key ? 'block' : 'none'
+  }
+  if (!key) return
+  rows.forEach((r, i) => {
+    const el = _jpRoot.children[i].querySelector('.jp-text'), html = text(r)
+    if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html }
+    if (el.style.color !== r.tone) el.style.color = r.tone
+  })
 }
 // R-23 (owner, 2026-10-24): the top-centre readout lands the bad news LIVE — the moment the job turns,
 // not on the result card. Persistent while the condition holds; a partial spill flashes for a beat.
