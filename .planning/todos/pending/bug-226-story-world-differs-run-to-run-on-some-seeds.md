@@ -34,9 +34,9 @@ mom and the roster but not the seed actually played, so the swap looked like the
 - [x] Reproduced, with the cause visible on every start (the re-roll log line).
 - [x] Root cause named: a refused seed is re-rolled to a random seed (BUG-100), not unseeded world build.
 - [x] Owner: derived re-roll + a visible "seed swapped" note, or keep as is. (Yes to both, DEC-459)
-- [ ] Built: derived re-roll in onSeedRejected
-- [ ] Built: loading-card line naming the swap
-- [ ] A gate holds the same replacement seed for a refused typed seed
+- [x] Built: derived re-roll in onSeedRejected (`rerollSeed` in seed.js; every refusal path goes through it, Random included)
+- [x] Built: loading-card line naming the swap (the card's hint line: "seed X could not be built: playing Y. …")
+- [x] A gate holds the same replacement seed for a refused typed seed: test/seed-reroll.mjs
 - [x] A gate pins run-to-run identity: test/world-determinism.mjs (headless) already does; no build-path defect found.
 
 ## Decisions
@@ -63,3 +63,4 @@ mom and the roster but not the seed actually played, so the swap looked like the
   BUG-100 re-roll on every start. No code change. Severity critical → minor pending the owner's re-roll call.
 - 2026-11-20: owner, card bug226-refused-seed-reroll: "Yes to both (recommended)". DEC-459. To BUILD: (1) `onSeedRejected` in src/main.js re-rolls to a seed derived from the refused one (`seedFor(seed, 'reroll-n')`), not `Math.random`; (2) a line on the loading card naming the swap ("seed 914219767 could not be built: playing 2152877108"); (3) check test/world-determinism.mjs or a new gate holds that a refused typed seed lands on the same replacement every time. Ticket stays open until built.
 
+- 2026-11-20 lane agent (land/bug-226-reroll): BUILT. `rerollSeed(seed)` in src/seed.js = `String(seedFor(parseWorldSeed(seed), 'reroll'))`; main.js `onSeedRejected` calls it (a chain re-derives from each refused seed, so it is deterministic too; Random is derived as well, one rule). 914219767 -> 7948472 (playable); 873064618 -> 185046973. `_seedSwap` {from, to} keeps the FIRST refused seed; `_enterStageLoad` prefixes the hint line with it; a player-started entry clears it. Resume / paper scenario still go to the refusal card. Gate test/seed-reroll.mjs (914219767 refused on a cold build, same replacement each call, replacement builds playable, onSeedRejected goes through rerollSeed). Screenshot wip/bug-226/reroll.jpg. Gates: world-determinism, seed-reroll pass.
