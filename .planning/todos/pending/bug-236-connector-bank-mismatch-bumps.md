@@ -12,9 +12,7 @@ lane: unplaced
 # BUG-236: a degree-2 connector bend meets two different banks — hump, dip and a crease at the node
 
 ## Next steps
-Owner: pick a fix on the card `bug236-bumps-kink` (recommended: X2, the node decides the BUG-90 run-off for both legs,
-plus a follow-up diagnosis of connector-bend bumps in general). Then a road lane builds it with a gate on this site
-plus the census sites, and looks at the one site X2 makes worse.
+Building the DEC-461 design (CarGame-machine). Then gates, a check of the node height change against streams / causeways / POIs, and an owner drive.
 
 ## Summary
 Two runs meet at a degree-2 node with a 42° kink; a connector arc (R ≈ 24 m) carries the road round it. BUG-90 runs
@@ -78,8 +76,11 @@ this one has a connector).
 - [x] Cause named and proven by experiment; today's landings cleared
 - [x] Census over 60 random seeds
 - [x] Screenshot sheet (`/Users/ledogen/CodeShit/CarGame/wip/bug-236/sheet.jpg`)
-- [ ] Owner picks a fix
+- [x] Owner picks a fix
 - [ ] Fix + gate (this site, plus the census sites), road gates green
+
+## Decisions
+- 2026-11-20, owner: "Build the proposed design" (DEC-461).
 
 ## Open questions
 - Which fix (card `bug236-bumps-kink`). Is the "small kink" the crease or the dash stub at the node?
@@ -94,3 +95,5 @@ CarGame-machine (git-ignored): `walk2.mjs` (deck walk), `census.mjs`, `sheet.mjs
 ## Log
 - 2026-11-19: diagnosis on land/bug-236-bumps-kink (lane b). No src change. Experiments X1/X2/X3 in scratch copies only.
   Not checked: an in-game drive at speed; story-mode pruning (census used the free-roam network; this site matches).
+- 2026-11-20: owner, card bug236-bumps-kink: "Build the proposed design". DEC-461 (connector deck design: one vertical curve through the node, smooth connector height, the connector's own crown, the node still decides the bank). Not yet checked at choice time: regression gates on the design, node height change against streams, causeways and POIs, a drive. Build is under way in CarGame-machine.
+

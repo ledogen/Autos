@@ -51,7 +51,7 @@
        top-level 2D element, never on the WebGL canvas (the first <canvas>, a direct child of body). Small = 1 = today.
        Big is for a TV; the factor is the one number below (see FEAT-248). */
     html { --ui-zoom: 1; }
-    html[data-ui-scale=big] { --ui-zoom: 1.5; }
+    html[data-ui-scale=big] { --ui-zoom: 1.4; }
     html[data-ui-scale=big] body > :not(canvas:first-child) { zoom: var(--ui-zoom); }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #111; overflow: hidden; }
@@ -283,6 +283,12 @@
     #mm-settings-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
     #main-menu.settings #mm-root { display: none; }
     #main-menu.settings #mm-settings-panel { display: flex; }
+    /* BUG-247 (DEC-455): a list that changes size keeps its top line. The pause box and the main menu are CENTRED, so a row that
+       grows (the centre-softening graph) re-centred the whole list; on the settings and setup pages the top is pinned instead and
+       the list grows downwards. % is the screen's, so Big's zoom (FEAT-248) leaves it alone. */
+    #pause-menu.settings { top: 12%; transform: translateX(-50%); max-height: 86%; overflow-y: auto; }
+    #main-menu.settings::before, #main-menu.setup::before { content: ''; flex: 0 0 10%; }
+    #main-menu.settings, #main-menu.setup { justify-content: flex-start; }
     #pause-menu.settings > :not(#mm-settings-panel) { display: none; }
     #pause-menu.settings #mm-settings-panel { display: flex; align-items: stretch; gap: 8px; }
     #mm-bindings-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
@@ -1026,6 +1032,7 @@
       display: none; margin-top: 6px; padding: 4px 12px;
       background: var(--hud-bg); border: 1px solid var(--line);
       font-family: var(--font); font-size: 13px; color: var(--text); text-align: left;
+      font-variant-numeric: tabular-nums;   /* BUG-245: a ticking clock keeps its width */
     }
     #job-promise .jp-row { display: flex; align-items: center; gap: 8px; line-height: 22px; }
     #job-promise .rt-label { font-size: 11px; min-width: 7ch; }
@@ -1540,6 +1547,7 @@
        colour-code note on .vseg-*) so the reader can tie a word to a segment; the vibe number
        itself is neutral white because it is the sum of all four. */
     .cp-stat  { color: var(--text-bright); }
+    .cp-perk  { color: var(--text-body); }   /* FEAT-312: the packed gear's lines under the site stats */
     .cp-flat  { color: #e8d44a; }
     .cp-view  { color: #b98ae0; }
     .cp-trees { color: #7fd86a; }

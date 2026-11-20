@@ -26,6 +26,7 @@
 
 import { keycap, hintPark, BACK_BUTTON } from './park-badge.js'
 import { ITEMS } from '../data/items.js'
+import { formatGameDuration } from './offer-board.js'
 import { PARTS, RARITY_COLOR } from '../data/parts.js'
 
 const THUMB = (id) => `assets/items/${ITEMS[id]?.thumb ?? id}.png`
@@ -98,6 +99,7 @@ const btn = (act, label, enabled = true, data = '') =>
 export function condLine (r, { air: withAir = true } = {}) {
   if (r.gal != null) return `${r.gal.toFixed(1)} of ${r.capGal} gal`
   if (r.uses) return `${r.left} of ${r.uses} uses left` + (r.n > 1 ? ' in the open one' : '')
+  if (r.spoilH != null) return `spoils in ${formatGameDuration(r.spoilH)}`   // FEAT-310 (DEC-449) [DEFAULT]
   if (r.kind !== 'part') return ''
   const pct = (c) => Math.round((c ?? 1) * 100) + '%'
   const air = withAir && PARTS[r.id]?.slot === 'tire' ? (r.flat ? ' · flat' : ' · holding air') : ''

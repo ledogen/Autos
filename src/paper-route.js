@@ -64,7 +64,7 @@ import { computePar, gradeRun, RANK_THRESHOLDS_DEFAULT } from './par.js'
 // The accuracy law is throw.js's, not restated here. It is one line of algebra and that is exactly
 // why it must have one home: a second copy is a second thing to keep in step with the gate.
 import { accuracyScore } from './throw.js'
-import { polyCumOf, traceRow } from './mission.js'
+import { polyCumOf, routeLeftM, traceRow } from './mission.js'
 
 export const PAPER_PARAMS = {
     // (The deadline is not here: it is par × (1 + DEADLINE_SLACK.papers), the board's one rule for
@@ -1049,6 +1049,18 @@ export class PaperRouteSystem {
     owedWithin (x, z, r) {
         if (this.state !== 'running') return false
         return this.route.customers.some(c => !this.run.hits.has(c.id) && Math.hypot(c.x - x, c.z - z) < r)
+    }
+    /**
+     * FEAT-311: metres left along the line the GPS follows (line(): the guide's tour from the truck) from (x, z) — to the
+     * next porch still owed, and to the last — or null. mission.js _tourLeft's measure: the leg is matched on its own
+     * slice of the line, the total adds the line past that porch (the tour ends at its last porch).
+     */
+    distancesLeft (x, z) {
+        const l = this.state === 'running' ? this.line() : null
+        const f = l?.polyCum && l.stopsAt?.find(s => !this.run.hits.has(s.c.id))
+        if (!f) return null
+        const leg = routeLeftM(l, x, z, f.p)
+        return [leg, leg + l.polyCum.at(-1) - l.polyCum[f.p]]
     }
     /** Seconds on the route's clock so far. Elapsed, not remaining: the HUD states the deadline as a clock time (SM-INV-3). */
     elapsed () { return this.run ? this.run.elapsed : 0 }

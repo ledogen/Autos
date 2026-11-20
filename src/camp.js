@@ -155,6 +155,7 @@ const GRADE_N = 5
 // vibey"), and on hilly ground it declared most of a zone uncampable because the single spot it
 // looked at happened to be the road's own cut slope. So the site is now chosen by casting a ray
 // straight out from the road edge on the driver's side and grading a ladder of candidates along it.
+// Since FEAT-309 (DEC-452) a ladder runs out on EACH side of the road and the better one wins.
 //
 //   CAMP_RAY_STEP_M  spacing of the candidates (≈21 of them over the 40 m tether)
 //   CAMP_RESAMPLE_M  how far the truck must move before the ladder is re-graded
@@ -356,6 +357,22 @@ export function campReach (segs, zones) {
  * The dispersed-camping layer: zone generation, the region-scoped zone list the map and the
  * in-world queries read, and the road-adjacency half of the Phase-D eligibility test.
  */
+/** FEAT-308 (DEC-451): the camp card's line above the prompt speed — whether this is camping ground, and
+ *  only on it the nudge to slow down for the graded site. [DEFAULT] copy: the owner writes the words. */
+export const campFastLine = (inZone) => inZone ? 'camping area<br>slow down to look for a campsite' : 'no camping here'
+
+/**
+ * FEAT-309: does siting ray `a` beat ray `b` (each a _gradeSide result)? By the score the prompt shows:
+ * a flat site beats none; two flat sites, the higher vibe; neither flat, the flatter ground (spread),
+ * so the card reports the nearer miss, and a ray with rungs beats one with none (spread Infinity).
+ * STRICT, so a tie keeps `b`: evaluate passes the truck's own side as `b`.
+ */
+function sideBeats (a, b) {
+    if (!!a.best !== !!b.best) return !!a.best
+    if (a.best) return a.best.vibe > b.best.vibe
+    return (a.pick?.spread ?? Infinity) < (b.pick?.spread ?? Infinity)
+}
+
 export class CampSystem {
     /**
      * @param {object} deps
@@ -575,7 +592,7 @@ export class CampSystem {
     // spot beside it either. The truck may legitimately sit on the shoulder, that is what shoulders
     // are for, but a bench dug there would be half in the road; and a bench dug one pad-width off it
     // is still ON the shoulder as far as the player's eye is concerned. So the site is chosen along
-    // a RAY cast from the road edge outward to the tether on the driver's own side: the near end of
+    // a RAY cast from the road edge outward to the tether (one each side, FEAT-309): the near end of
     // that ray is the old single candidate (nearest centerline point, out along the right-hand
     // normal by shoulder + gap + half the pad, exactly the way poi.js sites a lay-by), and the far
     // end is the last spot dispersed camping is still permitted at. The BEST flat candidate on that
@@ -630,6 +647,48 @@ export class CampSystem {
         if (!out.hasRoad) return out   // nothing to hang a bench off — grading has no spot to grade
         const P = this._P()            // the params copy is for the grade only — not on a memo hit
 
+        // BOTH SIDES OF THE ROAD, EVERY GRADE (FEAT-309, DEC-452). The ray used to run out on the
+        // truck's own side only, so a flat meadow across the road was invisible unless the player
+        // parked over there. Now one ladder runs out each way and the better site wins by the score
+        // the prompt already shows (sideBeats). TIE → the truck's own side: no crossing the road for
+        // nothing. The memo still keys on the truck's side because the tie rule reads it.
+        const own = this._gradeSide(nr, P, reach)
+        const far = this._gradeSide({ ...nr, side: -nr.side, nx: -nr.nx, nz: -nr.nz }, P, reach)
+        const r = sideBeats(far, own) ? far : own
+        out.cands = r.cands
+        const pick = r.pick
+        if (!pick) return out
+
+        out.spread = pick.spread
+        out.flat = pick.flat
+        out.flatScore = pick.flatScore
+        out.viewScore = pick.viewScore
+        out.trees = pick.trees
+        out.shadeScore = pick.shadeScore
+        out.waterDist = pick.waterDist
+        out.waterFound = pick.waterFound
+        out.waterScore = pick.waterScore
+        out.vibe = pick.vibe
+
+        // The pad record — the POI pad shape verbatim, because it rides the POI pad carve.
+        // y = the chosen spot's own ground level (its lattice mean): a camp bench is flattened to
+        // the ground it sits on, not to the road, since it is metres off the shoulder.
+        out.pad = {
+            x: pick.x, z: pick.z, y: pick.y,
+            tx: r.nr.tx, tz: r.nr.tz, nx: r.nr.nx, nz: r.nr.nz,
+            halfLen: P.campPadHalfM, halfWid: P.campPadHalfM,
+        }
+        return out
+    }
+
+    /**
+     * One siting ray, out from the road edge along nr's normal (nr.nx, nr.nz), graded: the best flat
+     * rung, or the flattest rung when none is flat (amenity-graded either way, so the debug read-out
+     * describes real ground), and how many rungs survived the road/POI/terrain rejects.
+     * @returns {{ nr:object, cands:number, best:object|null, pick:object|null }}
+     */
+    _gradeSide (nr, P, reach) {
+        let cands = 0
         // The ray: from the road edge (the near candidate, pad snug against the shoulder gap) out to
         // the tether limit, one candidate every CAMP_RAY_STEP_M.
         const lat0 = this._k('roadHalfWidth', 5) + this._k('roadShoulderWidth', 2.5)
@@ -656,7 +715,7 @@ export class CampSystem {
             if (road.poiPadBlocked(cx, cz, P.campPadHalfM)) continue   // a POI's lot is flat because it is paved, not a site (owner, 2026-10-23)
             const c = this._gradeFlat(cx, cz, nr, P, t)
             if (!c) continue                       // off the terrain: not a site
-            out.cands++
+            cands++
             if (!flattest || c.spread < flattest.spread) flattest = c
             if (c.flat) flats.push(c)
         }
@@ -701,29 +760,8 @@ export class CampSystem {
         // No flat candidate anywhere on the ray ⇒ "not flat" — and the record reports the flattest
         // spot found, so the debug spread read-out still describes real ground rather than Infinity.
         const pick = best || flattest
-        if (!pick) return out
-        if (!best) this._gradeAmenity(pick, P, waterPts, viewEnds)
-
-        out.spread = pick.spread
-        out.flat = pick.flat
-        out.flatScore = pick.flatScore
-        out.viewScore = pick.viewScore
-        out.trees = pick.trees
-        out.shadeScore = pick.shadeScore
-        out.waterDist = pick.waterDist
-        out.waterFound = pick.waterFound
-        out.waterScore = pick.waterScore
-        out.vibe = pick.vibe
-
-        // The pad record — the POI pad shape verbatim, because it rides the POI pad carve.
-        // y = the chosen spot's own ground level (its lattice mean): a camp bench is flattened to
-        // the ground it sits on, not to the road, since it is metres off the shoulder.
-        out.pad = {
-            x: pick.x, z: pick.z, y: pick.y,
-            tx: nr.tx, tz: nr.tz, nx: nr.nx, nz: nr.nz,
-            halfLen: P.campPadHalfM, halfWid: P.campPadHalfM,
-        }
-        return out
+        if (pick && !best) this._gradeAmenity(pick, P, waterPts, viewEnds)
+        return { nr, cands, best, pick }
     }
 
     /**

@@ -67,7 +67,7 @@ import { DustSystem, SUN_SHADE_UNIFORMS } from './dust.js'
 import { TireSmokeSystem } from './smoke.js'
 import { DirtSpraySystem } from './dirt-spray.js'
 import { SkySystem, SKY_CYCLE, nightWeight } from './sky.js'   // the sky, its sun/moon/stars, the daylight and the sky fog — one atmosphere
-import { parseWorldSeed, seedFor } from './seed.js'
+import { parseWorldSeed, seedFor, rerollSeed } from './seed.js'
 import { applyWorld, activeWorld, worldTag, formatWorldCode, parseWorldCode, presetOf, WORLD_PRESETS, KNOBS } from './world-presets.js'   // FEAT-41: the world knobs — part of the world's identity
 import { loadSettings, saveSettings } from './settings.js'   // FEAT-41: the player's saved choices
 import { createFrameCap } from './frame-cap.js'   // PERF-48 / BUG-169: the render cap skip decision (pure, gated)
@@ -104,7 +104,7 @@ import { recoveryCard, tireServiceQuote, tireService, fitSpare, spareFitHours, s
 import { rollJalopy } from './jalopy.js'   // SM-3: the run's starting truck (SM-INV-7)
 import { InventoryScreen, condLine } from './inventory-screen.js'   // FEAT-122: Tab screen + quick keys 1–4
 import { OfferBoard, formatGameDuration, formatDue, gateText, gateLine, deedLine, stockPrice, itemCost } from './offer-board.js'   // FEAT-67: the mission board; R-17 the promise lines
-import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
+import { CampSystem, CAMP_PARAMS, VIBE_W, vibeAssist, campFastLine } from './camp.js'  // FEAT-45: story-mode dispersed-camping zones
 import { CampfireFx } from './campfire.js'   // FEAT-66 fire slot: ASSET-24 + flames/light
 import { CampGear, slotXZ } from './camp-gear.js'   // FEAT-66: the packed camp gear on the pad
 import { DialogueSystem, cardSlide } from './dialogue.js'   // FEAT-61: sequential character cards; FEAT-288 P8: the speaker slide
@@ -3452,16 +3452,17 @@ function _rebuildPoiMarkers () {
   // target on it (owner-reported). Asking by tag is the whole point of having tags.
   const tr = POI_PARAMS.poiHouseTargetR
   for (const h of poiSystem.customers()) {
+    const y = h.house?.floorY ?? h.y   // FEAT-295: at a route house the halo stands on its porch floor
     const ring = new THREE.Mesh(_ringGeo, _targetRingMat)
     ring.scale.set(tr, _TARGET_RING_H, tr)
-    ring.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_RING_H * 0.5, h.z)
+    ring.position.set(h.x, y - _TARGET_RING_SINK + _TARGET_RING_H * 0.5, h.z)
     ring.renderOrder = 5
     ring.visible = false      // lit only by _updateCustomerRings, and only on a live round
     _poiGroup.add(ring)
 
     const pip = new THREE.Mesh(_ringGeo, _targetPipMat)
     pip.scale.set(_TARGET_PIP_R, _TARGET_PIP_H, _TARGET_PIP_R)
-    pip.position.set(h.x, h.y - _TARGET_RING_SINK + _TARGET_PIP_H * 0.5, h.z)
+    pip.position.set(h.x, y - _TARGET_RING_SINK + _TARGET_PIP_H * 0.5, h.z)
     pip.renderOrder = 5
     pip.visible = false
     _poiGroup.add(pip)
@@ -3475,6 +3476,21 @@ function _rebuildPoiMarkers () {
     _poiGroup.add(g)
     _poiYards.push(g)
     _clutter.add(sat.x, sat.z, () => _spawnSatellite(sat, g)); clutterKeys.add(sat.key)
+  }
+  // FEAT-295: each route stop's house (poi.js routeHouses()), queued like the yards; its colliders are already up
+  // (_syncPoiPhysics), so a paper thrown before the model streams in still lands on the porch.
+  for (const r of poiSystem.routeHouses()) {
+    const g = new THREE.Group()
+    g.userData.x = r.modelX; g.userData.z = r.modelZ
+    _poiGroup.add(g)
+    _poiYards.push(g)
+    _clutter.add(r.modelX, r.modelZ, () => {
+      const m = spawnModel(r.key, { castShadow: true, receiveShadow: true, variant: r.variant })
+      m.position.set(r.modelX, r.baseY, r.modelZ)
+      m.rotation.y = r.modelYaw
+      g.add(m)
+    })
+    clutterKeys.add(r.key)
   }
   void _clutter.openWhen(Promise.all([...clutterKeys].map(getModel)))   // FEAT-278: no clone waits on a fetch
 }
@@ -3605,10 +3621,10 @@ function _updatePoiPresence (force = false) {
   }
   _syncPoiPhysics()
 }
-/** MESH == PHYSICS for the markers AND their yards' solid things (FEAT-149: poi.js satSolid). */
+/** MESH == PHYSICS for the markers AND their yards' solid things (FEAT-149: poi.js satSolid), and the route houses (FEAT-295). */
 function _syncPoiPhysics () {
   const shown = poiSystem.list().filter(q => !q.hidden)
-  poiPhysics.sync([...shown, ...shown.flatMap(q => (q.satellites ?? []).map(satSolid).filter(Boolean))], POI_PARAMS.poiCubeSize)
+  poiPhysics.sync([...shown, ...shown.flatMap(q => (q.satellites ?? []).map(satSolid).filter(Boolean)), ...poiSystem.routeHouses()], POI_PARAMS.poiCubeSize)
 }
 const POI_REAPPEAR_CLEAR_M = 15   // m — truck-to-marker distance a hidden marker waits for before it returns
 
@@ -5494,6 +5510,7 @@ gpsSystem = new GpsSystem(scene, {
   getRoad: () => roadSystem,
   // FEAT-297: the POI an objective stands for (matched by its x, z), so the route-end arrow can hover over its roof.
   getCamera: () => camera.position,
+  getBlocked: (x, y, z, r) => poiSystem.queryContact(x, y, z, r),
   getObjectiveTopY: (o) => { const q = poiSystem.list().find(p => Math.hypot(p.x - o.x, p.z - o.z) < 1); return q ? poiTopY(q) : null },
 })
 
@@ -6049,7 +6066,7 @@ _menu('camp', () => !!_campUi, () => _closeCampUi())
  * What the tent and its card show, or null when neither should: story mode, mission idle,
  * dialogue closed. Not looking → { collapsed } (the tent alone). Looking → ALWAYS a card (owner,
  * 2026-10-19: Z is a true toggle, so a hunt left on at speed reads on screen instead of popping up
- * when you next slow down): { fast } above 20 kph, { truck } off camping ground, else the graded
+ * when you next slow down): { fast, fastZone } above 20 kph (FEAT-308: whether this is a camping area), { truck } off camping ground, else the graded
  * site. Outside the tether or on bad ground is NOT null — those are the card's failure copies, and
  * telling the player why they cannot camp here is the entire job of a prompt.
  */
@@ -6079,8 +6096,11 @@ function _campPromptState () {
   if (_inPoiRing()) return null
   // Collapsed: nothing is paid at all — no zone scan, no ray, no grading.
   if (!_campSeek) return { collapsed: true }
-  if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return { fast: true }
-  if (!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)) return { truck: true }
+  // FEAT-308 (DEC-451): at speed the card still says whether this is camping ground (the disc scan is
+  // cheap); only the grading ray waits for the slow-down.
+  const zone = !!campSystem.zoneAt(vehicleState.position.x, vehicleState.position.z)
+  if (Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) * 3.6 > CAMP_PROMPT_KPH) return { fast: true, fastZone: zone }
+  if (!zone) return { truck: true }
   const g = campSystem.evaluate(vehicleState.position.x, vehicleState.position.z)
   return g.inZone ? g : { truck: true }
 }
@@ -6378,8 +6398,14 @@ const _RC_LABEL = {
   towShop: (o) => `tow to service center · ${o.tow.km.toFixed(1)} km — $${formatMoney(o.tow.price)}`,
   tireService: (o) => `call a tire service — $${formatMoney(o.tow.price)}`,
 }
+// FEAT-307 (DEC-450): a tow is asked for twice. The card's tow buttons only name the tow (`_rcAsk`); the card then shows its
+// price and time with "tow" and "back", and only "tow" calls it. Closing the card forgets the ask.
+let _rcAsk = null
+const _RC_GO = { towFuel: _towToFuel, towShop: _towToShop }
 const _RC_ACT = {
-  towFuel: _towToFuel, towShop: _towToShop,
+  towFuel: () => { _rcAsk = 'towFuel'; _updateRecovery() }, towShop: () => { _rcAsk = 'towShop'; _updateRecovery() },
+  towGo: () => { const go = _RC_GO[_rcAsk]; _rcAsk = null; go?.() },
+  towBack: () => { _rcAsk = null; _updateRecovery() },
   tireService: () => {   // FEAT-162 amendment 5: fixed where it stands; the wait and the fitting on the clock
     const q = _recoveryState().tireService
     if (!q || !economySystem.spend(q.price)) return
@@ -6462,8 +6488,15 @@ function _updateRecovery () {
   const c = recoveryCard(st)
   icon?.classList.toggle('on', _recoveryOpen)
   card.style.display = _recoveryOpen ? 'block' : 'none'
-  if (!_recoveryOpen) return
-  const html = `<div class="rc-head">${c.head}</div>`
+  if (!_recoveryOpen) { _rcAsk = null; return }
+  const ask = c.opts.find(o => o.act === _rcAsk && o.enabled)   // a tow that stopped being affordable drops the ask
+  if (!ask) _rcAsk = null
+  const html = ask   // FEAT-307 [DEFAULT] wording
+    ? `<div class="rc-head">${c.head}</div><div class="rc-dim">${_RC_LABEL[ask.act](ask)}</div>`
+      + `<div class="rc-dim">${formatGameDuration(ask.tow.hours)} on the hook</div>`
+      + `<button class="rc-opt" data-act="towGo">call the tow &mdash; $${formatMoney(ask.tow.price)}</button>`
+      + `<button class="rc-opt" data-act="towBack">back</button><div class="rc-dim">you have $${formatMoney(money)}</div>`
+    : `<div class="rc-head">${c.head}</div>`
     + c.opts.filter(o => _RC_LABEL[o.act]).map(o => `<button class="rc-opt" data-act="${o.act}"${o.enabled ? '' : ' disabled'}>${_RC_LABEL[o.act](o)}</button>`
       + `<div class="rc-dim">${formatGameDuration(o.tow.hours)} ${o.act === 'tireService' ? 'to come out and fit it' : 'on the hook'}</div>`).join('')
     + (c.opts.length ? '' : '<div class="rc-dim">no tow can reach you here</div>')
@@ -6702,7 +6735,7 @@ function _updateParkTriggers (zParked = false) {
             : camp.cands === 0   ? 'no room off the road'
             :                      'not flat'
   _hudHtml(document.getElementById('camp-prompt-text'),
-      camp.fast ? 'slow down to look for a campsite'
+      camp.fast ? campFastLine(camp.fastZone)
     : site      ? parkPrompt(parked ? 'park again to make camp' : 'park to make camp')
     : moms      ? why
     : onRoad    ? `${why}<br>park on the shoulder to sleep in the truck`
@@ -7219,6 +7252,18 @@ function _makeCamp () {
 }
 
 /** A graded site's vibe with the packed gear's assist on top (camp.js vibeAssist — the chosen site only). */
+/** FEAT-312 (DEC-456): the packed gear's perks at a previewed site, as "<item>: +N % <stat>" lines. The numbers are the rules' own data: `rest`
+ *  is what restBonus() sums into the sleep rate (recoveryRate: x(1 + rest)), the shade/… share is vibeAssist's deficit on THIS site (0 on a site
+ *  already good at it, so nothing is listed). */
+function _campPerks (site) {
+  const assist = vibeAssist(site, inventorySystem.fills()), seen = new Set(), out = []
+  for (const id of inventorySystem.packed()) {
+    const it = ITEMS[id]
+    if (it.rest) out.push(`${it.name}: +${Math.round(it.rest * 100)} % sleep recovery`)
+    if (it.fills && !seen.has(it.fills)) { seen.add(it.fills); const a = assist[it.fills]; if (a > 0) out.push(`${it.name}: +${Math.round(a * 100)} % vibe (${it.fills})`) }
+  }
+  return out
+}
 const _siteVibe = (site) => site.vibe + Object.values(vibeAssist(site, inventorySystem.fills())).reduce((a, b) => a + b, 0)
 /** What a night here is worth, as day.js reads it: the site's vibe, mom's fixed 0.5, or 'truck'. */
 const _campVibe = (st) => st?.truck ? 'truck' : st?.moms ? 0.5 : st?.site ? _siteVibe(st.site) : 0.5
@@ -7337,6 +7382,8 @@ function _syncSleepRow () {
     e.innerHTML = `energy ${now.toFixed(1)} → ${wake.toFixed(1)} / ${full.toFixed(0)} h`
       + `  ·  wake <span style="color:${STAGE_COLOR[daySystem.stageFor(wake)]}">${daySystem.stageFor(wake)}</span>`
       + (daySystem.coffeeDebt() > 0 ? `  ·  coffee debt ${daySystem.coffeeDebt().toFixed(0)} h at wake` : '')
+      // FEAT-310 (DEC-449) [DEFAULT]: the food this sleep would outlast. Item names are catalog strings.
+      + inventorySystem.spoilingWithin(h).map(x => `<br>the ${x.name.toLowerCase()} spoils in ${formatGameDuration(x.h)}`).join('')
   }
 }
 
@@ -7430,6 +7477,7 @@ function _renderCampUI () {
         + ` &middot; <span class="cp-trees">${st.site.trees} trees</span>`
         // No water ⇒ the word is simply absent. A greyed "fishable" would read as a broken promise.
         + (st.site.waterFound ? ' &middot; <span class="cp-water">fishable</span>' : '')
+        + _campPerks(st.site).map(l => `<br><span class="cp-perk">${l}</span>`).join('')   // FEAT-312
     } else if (isSleep) {
       body.innerHTML = '<span class="cp-dim">how long?</span>' + (st.truck ? `<br>${TRUCK_SLEEP_NOTE}` : '')
     } else if (st.truck) {
@@ -8027,8 +8075,13 @@ function _renderPaperUI () {
       show(panel, false); show(hud, true)
       // Delivered/total and the inventory — the two facts you act on. No elapsed (owner, 2026-10-15):
       // the rank bar under it reads time against par.
-      hudText.textContent = `${p.delivered()} / ${p.route.customers.length} delivered   `
-        + `${p.stock()} paper${p.stock() === 1 ? '' : 's'}` + _dueSuffix()
+      // FEAT-311 (owner 11-20): first, the road distance to the next house, the last house's in parentheses — the job
+      // HUD's form (BUG-205 follow-up), "to go" once they are the same house. km() keeps two decimals in the pinned
+      // monospace font, so the centred box holds its width as the numbers fall; _hudText writes only a changed line.
+      const left = p.distancesLeft(vehicleState.position.x, vehicleState.position.z)
+      const toGo = !left ? '' : km(left[0]) === km(left[1]) ? `${km(left[0])} to go · ` : `${km(left[0])} (${km(left[1])}) · `
+      _hudText(hudText, toGo + `${p.delivered()} / ${p.route.customers.length} delivered   `
+        + `${p.stock()} paper${p.stock() === 1 ? '' : 's'}` + _dueSuffix())
       break
     }
     case 'done': {
@@ -8404,7 +8457,7 @@ function _rankTimerSource () {
 // lost — fragile by health against its line, haul by the count still aboard, freight is earned on
 // arrival, courier by the letter under the rank bar once that bar is showing (before that the line
 // stays neutral: R-22 hides the clock until the goal is near, and a colour must not leak it early).
-let _jpRoot = null, _jpHtml = null
+let _jpRoot = null
 function _promiseTone (margin) {   // margin ≥ 0: how far inside the line (1 = comfortable); < 0: lost
   if (margin == null) return 'var(--text)'
   if (margin < 0) return 'var(--bad-text)'
@@ -8447,8 +8500,9 @@ function _promiseRows (m) {
     if (!_rtShown && _rtLayout && _rtKey === j) {
       const b = _rtLayout.bands.find(b => m.elapsed < b.t1)
       if (b && isFinite(b.t1)) {
+        // BUG-245: the minutes are padded too, so the line keeps one width and the centred box (and the Reward row in it) never shifts.
         const s = Math.max(0, b.t1 - m.elapsed), mm = Math.floor(s / 60), ss = Math.floor(s % 60)
-        clock = { label: 'Clock', what: `finish in ${mm}:${String(ss).padStart(2, '0')} or better for ${b.letter} rank`, tone: _promiseTone(1 - _rtLiveInt) }
+        clock = { label: 'Clock', what: `finish in ${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')} or better for ${b.letter} rank`, tone: _promiseTone(1 - _rtLiveInt) }
       }
     }
   }
@@ -8481,16 +8535,26 @@ function _promiseRows (m) {
   else if (kind === 'freight') rows.unshift({ label: 'Cargo', what: `${j.cargoKg} kg`, tone: 'var(--text)' })
   return rows
 }
+// BUG-245: the rows (label, icon, struck-out or not) are built only when they change; the live text and colour are then
+// written into the SAME elements. Rebuilding the whole box each second re-created the reward icon every tick.
+let _jpKey = null
 function _updateJobPromise () {
   if (!_jpRoot) { _jpRoot = document.getElementById('job-promise'); if (!_jpRoot) return }
   const rows = storySystem.isActive() && !storySystem.isEntering() ? _promiseRows(missionSystem) : null
-  const html = rows?.length ? rows.map(r => `<div class="jp-row"><span class="rt-label${r.label === 'Deed' ? ' jp-deed' : ''}">${r.label}</span>`
-      + (r.icon ? `<img src="assets/items/${r.icon}.png" alt="" onerror="this.style.display='none'">` : '')
-      + `<span class="jp-text" style="color:${r.tone}"><span${r.lost ? ' class="jp-lost"' : ''}>${r.what}</span>${r.next ? ` · ${r.next}` : ''}</span></div>`).join('') : ''   // R-33: lost = struck out
-  if (html === _jpHtml) return
-  _jpHtml = html
-  _jpRoot.innerHTML = html
-  _jpRoot.style.display = html ? 'block' : 'none'
+  const key = rows?.length ? rows.map(r => `${r.label}|${r.icon ?? ''}|${r.lost ? 1 : 0}`).join('\n') : ''
+  const text = (r) => `<span${r.lost ? ' class="jp-lost"' : ''}>${r.what}</span>${r.next ? ` · ${r.next}` : ''}`   // R-33: lost = struck out
+  if (key !== _jpKey) {
+    _jpKey = key
+    _jpRoot.innerHTML = key ? rows.map(r => `<div class="jp-row"><span class="rt-label${r.label === 'Deed' ? ' jp-deed' : ''}">${r.label}</span>`
+      + (r.icon ? `<img src="assets/items/${r.icon}.png" alt="" onerror="this.style.display='none'">` : '') + `<span class="jp-text"></span></div>`).join('') : ''
+    _jpRoot.style.display = key ? 'block' : 'none'
+  }
+  if (!key) return
+  rows.forEach((r, i) => {
+    const el = _jpRoot.children[i].querySelector('.jp-text'), html = text(r)
+    if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html }
+    if (el.style.color !== r.tone) el.style.color = r.tone
+  })
 }
 // R-23 (owner, 2026-10-24): the top-centre readout lands the bad news LIVE — the moment the job turns,
 // not on the result card. Persistent while the condition holds; a partial spill flashes for a beat.
@@ -9721,13 +9785,16 @@ const storySystem = new StorySystem({
   // BUG-85: pieces are cut at the PLANNERS' wall (radius less REGION_MARGIN) — see world-validate.js
   // THE STRICT CUT — so report.mainNodes is exactly the piece the planners can route on.
   validateRegion: (centre, radius) => validateArea(roadSystem, centre, discArea(radius, REGION_MARGIN), RANGER_PARAMS),
-  // BUG-100 (owner, 2026-11-01): a refused seed re-rolls a fresh one, typed or random, up to
+  // BUG-100 (owner, 2026-11-01): a refused seed re-rolls, typed or random, up to
   // SEED_REROLLS times; only then does the refusal card show. A resume never re-rolls — that would
   // throw the saved run away — so it gets the card at once.
   onSeedRejected: (seed, report) => {
     if (!_pendingResume && !_paperScenario && _seedRerolls < SEED_REROLLS) {
       console.info(`[story] seed "${seed}" refused (${unplayableReason(report)}) — re-roll ${_seedRerolls + 1}/${SEED_REROLLS}`)
-      void _startStory(_resolveSeed(''), _runWorld, _runGearbox, null, _seedRerolls + 1)
+      // BUG-226 (DEC-459): DERIVED from the refused seed, so a shared typed seed shares its replacement; the card names the swap
+      const to = rerollSeed(seed)
+      _seedSwap = { from: _seedSwap?.from ?? seed, to }
+      void _startStory(to, _runWorld, _runGearbox, null, _seedRerolls + 1)
       return
     }
     _showSeedModal(report, seed)
@@ -9848,8 +9915,8 @@ const storySystem = new StorySystem({
     const mainNodes = storySystem.region()?.nodes ?? null
     poiSystem.build(center, radius, mainNodes)
     // FEAT-61: AFTER build() — mom is a newspaper customer, and she is a roster POI, so the roster
-    // has to exist before customers() can be asked who receives a paper. Houses carve nothing and
-    // touch no pads, so unlike build() this needs no re-bake behind it.
+    // has to exist before customers() can be asked who receives a paper. FEAT-295: it adds the route houses' pads to
+    // the roster's, so the re-bake below (storyPadReach) carves both.
     poiSystem.buildHouses(center, radius, mainNodes)
     // FEAT-67: the mission board — AFTER build() (it reads the roster) and AFTER daySystem.start()
     // (it starts on the run's clock). A new run, a new board: nothing survives from the last one.
@@ -9883,9 +9950,10 @@ const storySystem = new StorySystem({
     // chunks a pad touches so they re-scatter against the finished ground — a handful, not a rebuild.
     if (propSystem) {
       const S = CHUNK_SIZE
-      for (const q of poiSystem.list()) {
-        const c0x = Math.floor((q.x - q.halfLen) / S), c1x = Math.floor((q.x + q.halfLen) / S)
-        const c0z = Math.floor((q.z - q.halfLen) / S), c1z = Math.floor((q.z + q.halfLen) / S)
+      for (const q of [...poiSystem.list(), ...poiSystem.routeHouses().map(r => r.pad)]) {   // FEAT-295: house pads too
+        const e = Math.max(q.halfLen, q.halfWid)
+        const c0x = Math.floor((q.x - e) / S), c1x = Math.floor((q.x + e) / S)
+        const c0z = Math.floor((q.z - e) / S), c1z = Math.floor((q.z + e) / S)
         for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) propSystem.releaseChunk(cx, cz)
       }
     }
@@ -10040,7 +10108,7 @@ function _enterStageLoad (text, hint = '') {
   const t = document.getElementById('sl-text')
   if (t && text) t.textContent = text
   const hintEl = document.getElementById('sl-hint')
-  if (hintEl) hintEl.textContent = hint
+  if (hintEl) hintEl.textContent = hint && _seedSwap ? `seed ${_seedSwap.from} could not be built: playing ${_seedSwap.to}. ${hint}` : hint
 }
 /** The world is ready: drop the stage and hand the screen (and the fixed-step block) back. */
 function _exitStageLoad () {
@@ -10085,6 +10153,7 @@ let _runGearbox = 'auto'   // the box this run started with — a run save carri
 let _runWorld = null       // ...and the world knobs, so a BUG-100 re-roll keeps them
 let _pendingResume = null    // FEAT-42: the run save being resumed, between "continue" and onRegionLive
 const SEED_REROLLS = 3       // BUG-100: refused seeds re-rolled before the refusal card shows
+let _seedSwap = null         // BUG-226: { from: the seed asked for, to: the one now building } during a re-roll chain (the loading card names it)
 let _seedRerolls = 0         // re-rolls behind the current entry (0 for a player-started one)
 async function _startStory (seed, world = _world(), gearbox = _settings.gearbox, resume = null, rerolls = 0, scenario = null, returnSeed = null) {
   _hideSeedModal()
@@ -10098,6 +10167,7 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   _runGearbox = gearbox
   _runWorld = world
   _seedRerolls = rerolls
+  if (!rerolls) _seedSwap = null
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
   _paperScenario = scenario   // FEAT-62: every entry sets it too — a scenario never outlives its own entry
   if (scenario) _paperSizeIdx = 0   // a scenario re-opens on the owner's rated rung (BUG-231: reset here, after _worldReady)
@@ -10270,7 +10340,8 @@ let _runEnded = false         // the run is over: never write it again (_discard
  *  card closed by mistake would strand the truck — and of its options only the tow to the shop (P3a: the gas station's
  *  or the tire service's would skip the shop's lesson). Installed here, below every name it reads (storySystem,
  *  _runEnded), so its poll can never touch one before it exists. */
-const _TUT_TOW = { allow: ['recovery', '#recovery-card [data-act="towShop"]'], hi: ['#recovery-card [data-act="towShop"]'] }
+const _TUT_TOW = { allow: ['recovery', '#recovery-card [data-act="towShop"]', '#recovery-card [data-act="towGo"]', '#recovery-card [data-act="towBack"]'],
+                   hi: ['#recovery-card [data-act="towShop"]', '#recovery-card [data-act="towGo"]'] }   // FEAT-307: the confirm is part of the lesson
 /** P5: while the pack is the stop (tossed, or fallen off on the way to Larry's) it wears the quest mark between cards too. */
 const _TUT_PACK = { ...BETWEEN, quest: 'pack' }
 const _tutStep = () => !_tutDrive() || _runEnded || !storySystem.isActive() ? null

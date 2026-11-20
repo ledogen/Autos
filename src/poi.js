@@ -28,7 +28,7 @@ import { requisitionTotal } from './offer-board.js'   // FEAT-292 (DEC-424): the
 import { houseRungs, roadDistFromLarry, idKey } from './paper-route.js'   // FEAT-61: the ladder placement serves, in road metres
 import { SOURCES } from '../data/offers.js'           // FEAT-67: which types post offers (→ `jobs`)
 import { hash32, mulberry32 } from './seed.js'        // per-edge / per-POI PRNG keys (byte-stable)
-import { padSd } from './road-carve.js'               // FEAT-71: the pad's own shape, for the yard clip
+import { padSd, PAD_RIM_HOLD } from './road-carve.js'   // FEAT-71: the pad's own shape, for the yard clip; FEAT-295: a house pad's gap
 
 /** Tunables. Geometry + siting only — none of this may ever enter RANGER_PARAMS. */
 export const POI_PARAMS = {
@@ -139,6 +139,11 @@ export const POI_PARAMS = {
                               // the reason the offset exists at all.
     poiHouseTargetR:  5,      // m — the delivery circle (owner: 3 → 5 on 2026-08-07)
     poiMailboxInset:  0.5,    // m — FEAT-275 (DEC-429): a residence's mailbox post stands on the shoulder, this far inside its outer edge
+    // FEAT-295: a route stop's HOUSE (_routeHouse) stands on a pad like a residence's (DEC-429: "residence models with
+    // pads"): the yard from poiPadGap past the shoulder to the house's back, flat at the shoulder's height. Measured
+    // before the pad: natural ground under a 9 x 7 m footprint spreads 0.6-5.7 m, so 1 stop in 30 could take one.
+    poiRouteHouseMargin: 0.5, // m round the collision boxes: the eaves and the steps, kept 0.5 m off every road's shoulder
+    poiRouteHouseSideYard: 1.0, // m of pad past each gable end
     poiHouseMaxDrop:  1.5,    // m — max height spread across the target circle's rim. A circle
                               // draped over a cliff edge reads as broken, and you could not land a
                               // paper in it anyway. The light stand-in for the pad's earthwork cap.
@@ -397,6 +402,17 @@ export function overDropZone (q, x, z, slack = 0, box = q?.drop) {
  * eleven of them. Placed by PoiSystem._residenceMailbox from the road geometry, cold from the seed, never saved.
  */
 export const MAILBOX_POOL = 'mailbox'
+/** FEAT-295: the data/prop-models.js tag a paper-route stop draws its house from (each names its `porch` box). */
+export const ROUTE_HOUSE_POOL = 'routeHouse'
+
+/** FEAT-295: do two yawed rectangles ({ x, z, hw, hd, sn, cs }, local +X = (cs, −sn)) overlap? Separating axes. */
+function _rectsOverlap (a, b) {
+    for (const r of [a, b]) for (const [ux, uz] of [[r.cs, -r.sn], [r.sn, r.cs]]) {
+        const proj = (q) => Math.abs(q.hw * (q.cs * ux - q.sn * uz)) + Math.abs(q.hd * (q.sn * ux + q.cs * uz))
+        if (Math.abs((b.x - a.x) * ux + (b.z - a.z) * uz) > proj(a) + proj(b)) return false
+    }
+    return true
+}
 export function mailboxKey (seed, id) {
     const pool = modelsTagged(MAILBOX_POOL)
     return pool[hash32(`poi-mailbox:${seed}:${id}`) % pool.length]
@@ -670,6 +686,7 @@ export class PoiSystem {
         this._pool = []         // every viable pad the last build saw; see pool()
         this._houses = []       // FEAT-61 newspaper customers; see houses()
         this._mailboxes = []    // FEAT-275 the paper-route houses' mailboxes; see mailboxes()
+        this._routeHouses = []  // FEAT-295 the houses standing at route stops; see routeHouses()
         this._built = null      // {x,z,r,seed} the current list was built for
     }
 
@@ -714,6 +731,15 @@ export class PoiSystem {
 
     /** FEAT-275 (DEC-429): the paper-route houses' mailboxes, on the shoulder: satellite records plus `id` (the house), built with the houses. */
     mailboxes () { return this._mailboxes }
+
+    /**
+     * FEAT-295: the houses at route stops, built with them: { id (the stop), key, modelX, modelZ, baseY, modelYaw,
+     * collision, floorY (the porch floor's top, where the halo stands), pad (its carve record, handed to the road with
+     * the roster's), rect (the pad's rectangle) } — a PoiPhysics record, and the stop carries the same object as
+     * `house`. A stop with none keeps its bare target (and its mailbox).
+     */
+    routeHouses () { return this._routeHouses }
+
 
     /** Every POI or house carrying `tag`. The tag-driven query systems ask instead of type-matching. */
     tagged (tag) {
@@ -923,6 +949,9 @@ export class PoiSystem {
         const road = this._d.getRoad()
         if (!road || !center) return this._houses
         const P = { ...POI_PARAMS, ...this._d.getParams() }
+        // FEAT-295: every site is judged on the ground with the roster's pads alone (the last build's house pads off),
+        // so a rebuild sees what the first build saw.
+        road.setPoiPads(this._list)
 
         // Same canonical edge order as build(), for the same reason: the Map's order is a streaming
         // artifact, and ids have to be stable across windows.
@@ -979,7 +1008,7 @@ export class PoiSystem {
         for (const q of roster) delete q.paperTier
         const dist = larry ? roadDistFromLarry(road, larry, [...cands, ...roster],
             { x: center.x, z: center.z, r: radius, nodes }, REGION_MARGIN) : null
-        if (!dist) { this._houses = []; this._mailboxes = []; return this._houses }
+        if (!dist) { this._houses = []; this._mailboxes = []; this._routeHouses = []; return this._houses }
         let picked = []
         for (const rung of houseRungs()) {
             const inBand = (q) => (dist.get(q.id) ?? Infinity) <= rung.d
@@ -1019,7 +1048,77 @@ export class PoiSystem {
             const mb = this._shoulderMailbox(road, h, [0, 1.5, -1.5, 3, -3].map(d => h.s + d), P, seed, junctions)
             if (mb) this._mailboxes.push({ ...mb, id: h.id })   // id: the house it serves
         }
+        // FEAT-295: a house at each stop, on its own pad, in stop order (the first to claim ground keeps it). The stop
+        // does not move.
+        const rosterPads = this._list.filter(q => q.halfLen)
+        this._routeHouses = []
+        for (const h of picked) {
+            h.house = this._routeHouse(road, h, P, seed, junctions, rosterPads)
+            if (h.house) this._routeHouses.push(h.house)
+        }
+        road.setPoiPads([...this._list, ...this._routeHouses.map(r => r.pad)])
         return picked
+    }
+
+    /**
+     * FEAT-295: a house for route stop `h`, its porch to the road and the porch floor's centre ON the stop's target
+     * (h.x, h.z, poiHouseLat off the centreline), so the scored point does not move and a paper resting on the porch
+     * scores best. The model is drawn from ROUTE_HOUSE_POOL by (seed, stop); one that does not fit gives way to the
+     * next in the pool. Null when none fits: the stop keeps its bare target and its mailbox.
+     *
+     * Its PAD is a residence's: from poiPadGap past the shoulder back to the house's back eave, poiRouteHouseSideYard
+     * past each gable, flat at the road's top at the shoulder edge (the carve sinks it roadClearanceMargin, which is
+     * where the house stands: BUG-91's rule). It must stay inside poiMaxCutFill of the ground, off junction aprons,
+     * roster pads (a rim hold and a metre apart), water, other roads, and other route houses' pads; the house itself
+     * (its boxes + poiRouteHouseMargin) keeps off every road's shoulder.
+     */
+    _routeHouse (road, h, P, seed, junctions, rosterPads) {
+        const pool = modelsTagged(ROUTE_HOUSE_POOL)
+        const terrain = this._d.getTerrain?.(), water = this._d.getWater?.()
+        if (!pool.length || h.yaw == null || !terrain?.analyticHeight) return null
+        const edgeLat = (P.roadHalfWidth ?? 5) + (P.roadShoulderWidth ?? 2.5), lat = P.poiHouseLat
+        const topY = road.sampleRoadTopY(h.x - h.nx * (lat - edgeLat), h.z - h.nz * (lat - edgeLat))
+        if (topY == null || !isFinite(topY)) return null
+        const m = P.poiRouteHouseMargin, sn = Math.sin(h.yaw), cs = Math.cos(h.yaw)
+        const k0 = hash32(`poi-route-house:${seed}:${h.id}`) % pool.length
+        for (let i = 0; i < pool.length; i++) {
+            const key = pool[(k0 + i) % pool.length]
+            const col = PROP_MODELS[key].collision, pc = col.boxes[PROP_MODELS[key].porch]
+            // the origin that puts the porch centre on the target (model −Z to the road: yaw = atan2(nx, nz))
+            const X0 = h.x - (pc.c[0] * cs + pc.c[2] * sn), Z0 = h.z - (-pc.c[0] * sn + pc.c[2] * cs)
+            const world = (lx, lz) => [X0 + lx * cs + lz * sn, Z0 - lx * sn + lz * cs]
+            let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+            for (const b of col.boxes) {
+                x0 = Math.min(x0, b.c[0] - b.s[0] / 2 - m); x1 = Math.max(x1, b.c[0] + b.s[0] / 2 + m)
+                z0 = Math.min(z0, b.c[2] - b.s[2] / 2 - m); z1 = Math.max(z1, b.c[2] + b.s[2] / 2 + m)
+            }
+            // the pad, in the model's frame: near edge poiPadGap past the shoulder, far edge the house's back
+            const pz0 = pc.c[2] - (lat - edgeLat - P.poiPadGap)
+            const px0 = x0 - P.poiRouteHouseSideYard, px1 = x1 + P.poiRouteHouseSideYard
+            const [cx, cz] = world((px0 + px1) / 2, (pz0 + z1) / 2)
+            const pad = { x: cx, z: cz, y: topY, tx: cs, tz: -sn, halfLen: (px1 - px0) / 2, halfWid: (z1 - pz0) / 2, cornerR: P.poiPadCornerR }
+            const rect = { x: cx, z: cz, hw: pad.halfLen, hd: pad.halfWid, sn, cs }
+            if (this._routeHouses.some(o => _rectsOverlap(o.rect, { ...rect, hw: rect.hw + 1, hd: rect.hd + 1 }))) continue
+            const nu = Math.ceil((px1 - px0) / 1.5), nv = Math.ceil((z1 - pz0) / 1.5)
+            let ok = true
+            for (let a = 0; a <= nu && ok; a++) for (let b = 0; b <= nv; b++) {
+                const lx = px0 + (px1 - px0) * a / nu, lz = pz0 + (z1 - pz0) * b / nv
+                const [x, z] = world(lx, lz)
+                const y = terrain.analyticHeight(x, z)
+                const inHouse = lx >= x0 && lx <= x1 && lz >= z0
+                const nr = road.queryNearest(x, z, inHouse ? edgeLat + m : edgeLat)
+                if (!isFinite(y) || Math.abs(y - topY) > P.poiMaxCutFill
+                    || (nr && (inHouse || nr.runKey !== h.runKey))
+                    || junctions.some(nd => Math.hypot(nd.x - x, nd.z - z) <= nd.reach)
+                    || rosterPads.some(q => padSd(q, x - q.x, z - q.z) <= PAD_RIM_HOLD + 1)
+                    || (water && (water.isRoadNoGo(x, z) || water.streamChannelAt?.(x, z)?.inChannel))) { ok = false; break }
+            }
+            if (!ok) continue
+            const baseY = topY - (P.roadClearanceMargin ?? 0.25)
+            return { id: h.id, key, variant: hash32(`poi-route-house-paint:${seed}:${h.id}`) & 0x7fffffff, modelX: X0, modelZ: Z0, baseY, modelYaw: h.yaw, collision: col,
+                     floorY: baseY + pc.c[1] + pc.s[1] / 2, pad, rect }
+        }
+        return null
     }
 
     /**
@@ -1502,6 +1601,14 @@ export class PoiSystem {
                 const h = s && this._boxesContact(s, cube, cx, cy, cz, r)
                 if (h) return h
             }
+        }
+        // BUG-246: and the route houses (FEAT-295). Their boxes were engine colliders only (main.js _syncPoiPhysics), so
+        // the body met a porch floor but the tires — this query — rolled through it: the 0.40 m deck and the 0.50 m porch
+        // stand at or under the bumper blade's bottom edge, the chamfer slid the body up onto them, and the truck crept on
+        // with its front wheels inside the porch until the house wall stopped it. Both halves of MESH == PHYSICS here too.
+        for (const h of this._routeHouses) {
+            const hit = this._boxesContact(h, cube, cx, cy, cz, r)
+            if (hit) return hit
         }
         return null
     }

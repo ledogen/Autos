@@ -14,7 +14,7 @@ import { PoiSystem } from '../src/poi.js'
 import { validateArea, discArea } from '../src/world-validate.js'
 import { REGION_MARGIN } from '../src/mission.js'
 import { REGION_RADIUS_M, REGION_WARM_RADIUS_M } from '../src/story.js'
-import { planTour, planGuideJob, tourLeg, PAPER_PARAMS, RR_PARAMS } from '../src/paper-route.js'
+import { planTour, planGuideJob, tourLeg, PAPER_PARAMS, RR_PARAMS, PaperRouteSystem } from '../src/paper-route.js'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
@@ -70,6 +70,37 @@ const off = drive(false), on = drive(true)
 check('control: without the kept order the leg flips back between tied houses', off.flipsBack > 0, `${off.flipsBack} flip-backs, ${off.served}/4 served in ${off.steps} steps`)
 check(`with keepM ${RR_PARAMS.keepM} m: no flip-back, the round finishes`, on.flipsBack === 0 && on.served === 4, `${on.flipsBack} flip-backs, ${on.served}/4 served in ${on.steps} steps`)
 check('…and no longer than the control past keepM a house', on.steps * 20 <= off.steps * 20 + 4 * RR_PARAMS.keepM + 20, `${on.steps * 20} vs ${off.steps * 20} m driven`)
+
+// FEAT-311: the HUD's "next house (last house)" — PaperRouteSystem.distancesLeft on the planned round, the truck walked
+// along its line from Larry's 5 m at a time, each porch delivered as the truck reaches it. Between deliveries both numbers
+// only fall; at each porch the first switches to the next house (the road between the two) and the second does not jump.
+{
+    const run = { hits: new Set() }, sys = { state: 'running', line: () => route, run }
+    const left = (q) => PaperRouteSystem.prototype.distancesLeft.call(sys, q.x, q.z)
+    const stops = route.stopsAt, cum = route.polyCum
+    let prev = left(route.poly[0]), rises = 0, switches = 0, badSwitch = 0, totalJump = 0
+    for (let u = 5; u <= cum.at(-1) + 5; u += 5) {
+        const q = at(route.poly, u), owed = stops.find(st => !run.hits.has(st.c.id))
+        if (owed && u >= cum[owed.p]) {
+            run.hits.add(owed.c.id)
+            const nx = stops.find(st => !run.hits.has(st.c.id)), now = left(q)
+            if (nx) {
+                switches++
+                if (Math.abs(now[0] - (cum[nx.p] - cum[owed.p])) > 30) badSwitch++
+                totalJump = Math.max(totalJump, Math.abs(now[1] - prev[1]))
+            } else if (now !== null) badSwitch++
+            prev = now
+            continue
+        }
+        const now = left(q)
+        if (now[0] > prev[0] + 1 || now[1] > prev[1] + 1) rises++
+        prev = now
+    }
+    check('FEAT-311: the next house\'s and the last house\'s road distance fall as the truck drives the round',
+        rises === 0, `${rises} rises over ${(cum.at(-1) / 1000).toFixed(2)} km`)
+    check('…and at each delivered house the first switches to the next one, the second carries on', switches === stops.length - 1 && badSwitch === 0 && totalJump <= 30,
+        `${switches} switches, ${badSwitch} wrong, last-house number moved ${totalJump.toFixed(0)} m at a switch`)
+}
 
 console.log(fails ? `\nFAIL: ${fails}` : '\nALL OK')
 process.exit(fails ? 1 : 0)

@@ -1431,15 +1431,16 @@ export function polyCumOf (poly) {
 /** FEAT-217 (DEC-270): metres left ALONG a planned route ({ poly, polyCum }) from (x, z) — the arc past the line's nearest
  *  vertex, floored at the crow distance to its end (routeRemaining's rule). For a line with no job behind it (the
  *  tutorial's GPS). ponytail: a full scan with no window, so a line that doubles back past itself can match the far arm;
- *  routeRemaining's window is the upgrade if a tutorial line ever does. */
-export function routeLeftM ({ poly, polyCum: cum }, x, z) {
+ *  routeRemaining's window is the upgrade if a tutorial line ever does. `end` (FEAT-311): measure to that vertex instead of the
+ *  line's last, matching only the vertices up to it (the leg to a paper route's next porch). */
+export function routeLeftM ({ poly, polyCum: cum }, x, z, end = poly.length - 1) {
     let bi = 0, bd = Infinity
-    for (let i = 0; i < poly.length; i++) {
+    for (let i = 0; i <= end; i++) {
         const d = (poly[i].x - x) ** 2 + (poly[i].z - z) ** 2
         if (d < bd) { bd = d; bi = i }
     }
-    const e = poly[poly.length - 1]
-    return Math.max(Math.hypot(e.x - x, e.z - z), cum[cum.length - 1] - cum[bi])
+    const e = poly[end]
+    return Math.max(Math.hypot(e.x - x, e.z - z), cum[end] - cum[bi])
 }
 
 /**

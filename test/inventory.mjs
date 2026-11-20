@@ -232,6 +232,17 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
   check('DEC-339: held hours (the tutorial) age nothing — a packed lunch survives 100 held hours', n('packedLunch') === 1)
   f.tick(123.9); check('…and ages from the hold\'s end: fresh at 23.9 h after it', n('packedLunch') === 1)
   f.tick(124.1); check('…gone at 24 h after it', n('packedLunch') === 0)
+  check('FEAT-306 (DEC-448): …but not deleted: it is "Rotten packed lunch", cannot be eaten, and can be dropped',
+    n('rottenPackedLunch') === 1 && ITEMS.rottenPackedLunch.name === 'Rotten packed lunch' && !f.usable('rottenPackedLunch')
+    && f.drop(f.list().findIndex(r => r.id === 'rottenPackedLunch')) && n('rottenPackedLunch') === 0)
+  f = mk()
+  f.tick(0); f.grant('packedLunch'); f.tick(10)
+  check('FEAT-310 (DEC-449): the timer reads 14 h at 10 h of a 24 h lunch, and the sleep card lists it for a 14 h+ sleep only',
+    near(f.list().find(r => r.id === 'packedLunch').spoilH, 14) && f.spoilingWithin(13).length === 0 && f.spoilingWithin(14.1)[0].name === 'Packed lunch')
+  f.grant('cooler'); ent('cooler').iceH = 2
+  const cl = f.list().find(r => r.id === 'packedLunch').spoilH
+  check('…and it runs by the spoil rule: with 2 h of ice at x1/4 the 14 h left is 2 h cold (0.5 h of life) + 13.5 h open = 15.5 h, and tick agrees',
+    near(cl, 15.5) && (f.tick(10 + cl - 0.01), n('packedLunch') === 1) && (f.tick(10 + cl + 0.01), n('packedLunch') === 0 && n('rottenPackedLunch') === 1), String(cl))
   f = mk()
   f.tick(100); f.grant('chiliDog', 2); f.grant('potato', 3); f.grant('potatoCooked')
   f.tick(115.9)
