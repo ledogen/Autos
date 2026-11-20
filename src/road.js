@@ -11261,17 +11261,20 @@ export class RoadSystem {
      * mouths to keep the weld exact — buying wobble, not banking.
      * Pure fn of the streamed network (window-invariant, D-16). Allocation-free.
      */
-    _connectorDesignAt(arc, wx, wz, out) {
+    _connectorDesignAt(arc, wx, wz, out, prIn) {
         // BUG-236: between the two mouths the connector is ONE road with its own deck (_connectorCore): its height a
         // cubic in arc length along its own centre line, C1 to each run at its mouth, and the normal crown about that
         // centre line plus a bank run linearly from one mouth's bank to the other's. The two-leg blend below made a
         // bump the legs do not have where it handed one run's EXTENDED grade and cross-section over to the other's
         // (8–15 m off both legs at a sharp kink, where the crown fold is −15 to −40 cm): census median 8.5 cm on the
         // grade and 10 cm on the cross-section. The lead-ins, which ride ON their legs, keep the blend: its weld to the
-        // ribbon is exact there. The core's frame is a ruled sweep (continuous in x, z), never the nearest chord.
+        // ribbon is exact there. WHICH part owns the point is the nearest-chord projection's call (as for the whole
+        // connector: a point its lead-in is nearest stays the lead-in's — on a hairpin the core curls back within a few
+        // metres of it); WHERE it lies along and across the core is a ruled sweep (continuous in x, z), never the chord.
         const core = arc.core ?? (arc.core = this._connectorCore(arc))
-        if (core) {
-            const f = this._coreFrame(core, wx, wz)
+        const pr = core && (prIn || this._projectOntoDeg2Arc(arc, wx, wz))
+        if (pr && pr.arcS > core.c0 && pr.arcS < core.c1) {
+            const f = this._coreFrame(core, wx, wz, pr)
             if (f) {
                 const L = core.c1 - core.c0, u = (f.s - core.c0) / L, u2 = u * u, u3 = u2 * u
                 out.grade = (2 * u3 - 3 * u2 + 1) * core.y0 + (u3 - 2 * u2 + u) * L * core.m0 + (3 * u2 - 2 * u3) * core.y1 + (u3 - u2) * L * core.m1
@@ -11305,10 +11308,13 @@ export class RoadSystem {
         // At each mouth the rung is that RUN's own normal (its ribbon's frame, as the mesh's lead-in takes it): every point
         // on it projects onto the leg at the mouth, so the core meets the lead-in's blend at one height across the width.
         // A chord bisector there leaned ~half a chord's turn off it: on a 23 % grade a 4 cm step at the edge.
+        // Its sign follows the chord normal it replaces (a lead-in's markPhase sign can read against the core's travel).
         const mp = arc.markPhase
-        if (mp) for (const [i, a, sg, key] of [[i0, mp.aArc, mp.aSig, mp.aKey], [i1, mp.bArc, mp.bSig, mp.bKey]]) {
-            const f = this.runFrameAt(a, key)
-            if (f) { nrm[2 * (i - i0)] = sg * f.tz; nrm[2 * (i - i0) + 1] = -sg * f.tx }
+        if (mp) for (const [i, a, key] of [[i0, mp.aArc, mp.aKey], [i1, mp.bArc, mp.bKey]]) {
+            const f = this.runFrameAt(a, key), k = 2 * (i - i0)
+            if (!f) continue
+            const sg = f.tz * nrm[k] - f.tx * nrm[k + 1] < 0 ? -1 : 1
+            nrm[k] = sg * f.tz; nrm[k + 1] = -sg * f.tx
         }
         const at = (s) => {   // the centre line at connector arc length s (lead-ins included)
             let i = 0; while (i < cum.length - 2 && cum[i + 1] < s) i++
@@ -11335,35 +11341,41 @@ export class RoadSystem {
     }
 
     /**
-     * BUG-236: (wx, wz) in the connector core's own frame — arc length s along its centre line and lateral offset lat —
-     * or null outside the core (past either mouth). The frame is a ruled sweep: the point lies on the segment between
-     * vertex i + λ·n_i and vertex i+1 + λ·n_{i+1} (n = the vertex normals), solved per chord for t ∈ [0, 1]; s and λ are
-     * then continuous in x, z everywhere the rungs do not cross (on the inside of the bend that is past its own radius,
-     * beyond the asphalt). The nearest-chord projection is not: its arc length jumps 2·lat·tan(turn/2) across each
-     * vertex bisector on the inside (0.7 m at the edge of an 8° chord turn, a 7 cm step on a 10 % grade).
+     * BUG-236: (wx, wz) in the connector core's own frame — arc length s along its centre line and lateral offset lat.
+     * The frame is a ruled sweep: the point lies on the segment between vertex i + λ·n_i and vertex i+1 + λ·n_{i+1}
+     * (n = the vertex normals), solved per chord for t; s and λ are then continuous in x, z wherever the rungs do not
+     * cross. The nearest-chord projection is not: its arc length jumps 2·lat·tan(turn/2) across each vertex bisector on
+     * the inside (0.7 m at the edge of an 8° chord turn, a 7 cm step on a 10 % grade). `pr` = that projection: of several
+     * solutions (rungs crossing past the bend's own radius) the one nearest its arc length and distance off wins;
+     * in the sliver between a mouth's chord bisector and its rung (half a chord's turn) the end chord is extended.
      */
-    _coreFrame(core, wx, wz) {
-        const { i0, i1, P, cum, nrm } = core
-        let best = null, bestAbs = Infinity
+    _coreFrame(core, wx, wz, pr) {
+        const { i0, i1, P, cum, nrm } = core, dNear = Math.sqrt(pr.d2)
+        let best = null, bestD = Infinity, ext = null, extD = Infinity
         for (let i = i0; i < i1; i++) {
             const k = 2 * (i - i0), nx0 = nrm[k], nz0 = nrm[k + 1], fx = nrm[k + 2] - nx0, fz = nrm[k + 3] - nz0
             const ex = P[i + 1].x - P[i].x, ez = P[i + 1].z - P[i].z, dx = wx - P[i].x, dz = wz - P[i].z
-            // (D − tE) × (n0 + tF) = 0  →  a t² + b t + c = 0
+            // (D − tE) × (n0 + tF) = 0  →  a t² + b t + c = 0; both roots are candidates
             const a = -(ex * fz - ez * fx), b = (dx * fz - dz * fx) - (ex * nz0 - ez * nx0), c = dx * nz0 - dz * nx0
-            let t
-            if (Math.abs(a) < 1e-12) { if (Math.abs(b) < 1e-12) continue; t = -c / b }
+            let t1, t2
+            if (Math.abs(a) < 1e-12) { if (Math.abs(b) < 1e-12) continue; t1 = t2 = -c / b }
             else {
                 const disc = b * b - 4 * a * c
                 if (disc < 0) continue
-                const r = Math.sqrt(disc), q = -0.5 * (b + (b < 0 ? -r : r)), t1 = q / a, t2 = Math.abs(q) > 1e-12 ? c / q : t1
-                t = Math.abs(t1 - 0.5) <= Math.abs(t2 - 0.5) ? t1 : t2   // the root inside (or nearest) the chord
+                const r = Math.sqrt(disc), q = -0.5 * (b + (b < 0 ? -r : r))
+                t1 = q / a; t2 = Math.abs(q) > 1e-12 ? c / q : t1
             }
-            if (!(t >= -1e-9 && t <= 1 + 1e-9)) continue
-            const nx = nx0 + t * fx, nz = nz0 + t * fz, n2 = nx * nx + nz * nz
-            const lat = ((dx - t * ex) * nx + (dz - t * ez) * nz) / (n2 || 1)
-            if (Math.abs(lat) < bestAbs) { bestAbs = Math.abs(lat); best = { s: cum[i] + Math.max(0, Math.min(1, t)) * (cum[i + 1] - cum[i]), lat } }
+            for (const t of t1 === t2 ? [t1] : [t1, t2]) {
+                const inside = t >= -1e-9 && t <= 1 + 1e-9, end = (i === i0 && t < 0 && t > -0.5) || (i === i1 - 1 && t > 1 && t < 1.5)
+                if (!inside && !end) continue
+                const nx = nx0 + t * fx, nz = nz0 + t * fz, n2 = nx * nx + nz * nz
+                const f = { s: cum[i] + t * (cum[i + 1] - cum[i]), lat: ((dx - t * ex) * nx + (dz - t * ez) * nz) / (n2 || 1) }
+                // the solution the nearest-chord projection agrees with (along, and in distance off the centre line)
+                const sc = Math.abs(f.s - pr.arcS) + Math.abs(Math.abs(f.lat) - dNear)
+                if (inside) { if (sc < bestD) { bestD = sc; best = f } } else if (sc < extD) { extD = sc; ext = f }
+            }
         }
-        return best
+        return best || ext
     }
 
     // The two-leg blend (QUAL-16 + junction-flow stage 5, documented above): the connector's lead-ins, and the mouth
@@ -11458,7 +11470,7 @@ export class RoadSystem {
         // step. Measured on the PERF-32 capture, 30 m off the connector: 7.3 -> 1.5 ms/step.
         const latCeiling = carveHalfWidth + maxEmbankmentToe
         if (bestLat > latCeiling) return null
-        const cd = this._connectorDesignAt(bestArc, wx, wz, _CD_OUT)
+        const cd = this._connectorDesignAt(bestArc, wx, wz, _CD_OUT, bestPr)
         if (cd == null) return null
         if (rawAmp === undefined) rawAmp = this._coarseH(wx, wz)
         const designY = cd.grade - clearanceMargin
@@ -12552,8 +12564,9 @@ export class RoadSystem {
     // while both runs still meet at endpoint.y AT the node (d = 0) → C0 step-free. Camber is unchanged
     // (still → 0 only at flatCamber nodes and BUG-90 crest-side legs): inclination handling stays as-is.
     // BUG-236: a run's SOLVED grade leaving one end (rise per m away from that node, over the first min(10 m, 45 %) of
-    // the run) and its length — the vertical curve's tangents. Read from the routed points (the solved profile,
-    // before any junction blend), so both legs of a node read the same two numbers.
+    // the run), its length, and `open` — the distance from that node to its first bore (polyCum spans, as the
+    // underground-junction test reads them): the vertical curve never reshapes a bore's floor (BUG-216's rule). Read
+    // from the routed points (the solved profile, before any junction blend), so both legs read the same numbers.
     _runAwayGrade(key, isStart) {
         const e = this._network?.get(key), P = e?.points
         if (!P || P.length < 2 || !e.polyCum) return null
@@ -12564,7 +12577,9 @@ export class RoadSystem {
         while (i + step >= 0 && i + step < M && Math.abs(cum[i + step] - s0) < d) i += step
         const j = i + step, a = Math.abs(cum[i] - s0), b = Math.abs(cum[j] - s0), f = (d - a) / ((b - a) || 1)
         const y = P[i].y + (P[j].y - P[i].y) * f
-        return { g: (y - P[isStart ? 0 : M - 1].y) / d, len }
+        let open = Infinity
+        for (const sp of e.tunnelSpans || []) open = Math.min(open, Math.max(0, isStart ? sp.s0 : len - sp.s1))
+        return { g: (y - P[isStart ? 0 : M - 1].y) / d, len, open }
     }
 
     _applyJunctionBlend(runKey, arcPos, gradeY, camberRad, pts) {
@@ -12718,7 +12733,7 @@ export class RoadSystem {
         // 55 cm against an 8 m straightedge). Instead one symmetric parabolic vertical curve centred on the node joins
         // the two runs' solved grades: grade change A = the two away-grades summed (> 0 = sag), length 2·half with
         // half = A / κ / 2, κ the open-road rule the solver prices every crest and sag by (roadV2.crestHold /
-        // sagLoad · g / vMax², i.e. crest R ≥ 160 m, sag R ≥ 80 m), capped at 45 % of either run and 80 m. Offset
+        // sagLoad · g / vMax², i.e. crest R ≥ 160 m, sag R ≥ 80 m), capped at 45 % of either run, 80 m and either leg's first bore. Offset
         // A/(4·half)·(half − d)² at d m out: C1 with the run's own profile at half, and both legs compute the same
         // A and half, so they meet at the same height and grade at the node (whose height floats onto the curve).
         // Not a grade smoother (DEC-065): it shapes only the joint between two solved runs, which no solve sees,
@@ -12731,7 +12746,7 @@ export class RoadSystem {
             const load = A > 0 ? (C.sagLoad ?? 0) : (C.crestHold ?? 0)
             if (!(load > 0)) continue
             const kap = PAR_REF.g * load / (PAR_REF.vMax * PAR_REF.vMax)
-            const half = Math.min(Math.abs(A) / kap / 2, 0.45 * o.len, 0.45 * t.len, 80)
+            const half = Math.min(Math.abs(A) / kap / 2, 0.45 * o.len, 0.45 * t.len, 80, o.open, t.open)
             if (!(half > 0.5)) continue
             for (let i = 0; i < N; i++) {
                 const d = st ? arcPos[i] - aStart : aEnd - arcPos[i]
