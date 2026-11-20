@@ -34,3 +34,4 @@ The three porch houses landed with one colour each. They now each carry a five-e
 
 ## Log
 - 2026-11-20: land/followups-1120. Sheet wip/followups-1120/houses.jpg (4 draws each, daylight, plus same-model pairs).
+- 2026-11-20: land/followups-1120 gates 61/61 green (run-all --serial), cdp-smoke 42/42, pad-e2e ALL OK. Sheets: wip/followups-1120/{houses,ui,arrow}.jpg; the shoot scripts are beside them.

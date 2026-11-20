@@ -33,3 +33,4 @@ The camp spot preview (the confirm card) now has one line per perk of the gear i
 
 ## Log
 - 2026-11-20: land/followups-1120.
+- 2026-11-20: land/followups-1120 gates 61/61 green (run-all --serial), cdp-smoke 42/42, pad-e2e ALL OK. Sheets: wip/followups-1120/{houses,ui,arrow}.jpg; the shoot scripts are beside them.
