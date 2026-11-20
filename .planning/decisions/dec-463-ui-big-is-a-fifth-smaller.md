@@ -1,6 +1,6 @@
 ---
 id: DEC-463
-status: standing
+status: superseded
 decided: 2026-11-20
 area: ui
 governs: FEAT-248, DEC-383, index.html, --ui-zoom, UI scale big
