@@ -1,11 +1,11 @@
 // GATE (BUG-244): the automatic does not hunt at steady inputs.
 //
-// The owner (2026-11-19): "The automatic transmission hunts and seeks really bad". A steady pedal on a
-// constant grade is the case a real TCM settles: it picks a gear and holds it. This gate drives the full
-// vehicle (stepPhysics, the game's own tires/struts/drivetrain) on an infinite analytic plane, sweeps
-// grade × pedal × starting speed, and counts REVERSALS: a shift answered by the opposite shift within
-// REVERSE_S. A reversal at steady inputs is a hunt: the inputs did not change, so the box changed its
-// mind about the same road.
+// The owner (2026-11-19): "The automatic transmission hunts and seeks really bad". A steady input on a
+// constant grade must not make the box change its mind: this gate drives the full vehicle (stepPhysics, the
+// game's own tires/struts/drivetrain) on an infinite analytic plane, sweeps grade × input × starting speed
+// (the input a pad held still, or a keyboard feathering W at a fixed duty), and counts REVERSALS: a shift
+// answered by the opposite shift within REVERSE_S. Where no gear holds a steady speed at that input the box
+// may still change gear (the driver closes that loop), but never back within REVERSE_S.
 //
 // Starting speed is set with the truck already in the gear whose coupled rpm sits nearest 2000, and the box
 // held for its first second while its acceleration estimate warms up, so the opening shifts are the box
