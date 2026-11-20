@@ -11283,6 +11283,18 @@ export class RoadSystem {
                 const L = core.c1 - core.c0, u = (f.s - core.c0) / L, u2 = u * u, u3 = u2 * u
                 out.grade = (2 * u3 - 3 * u2 + 1) * core.y0 + (u3 - 2 * u2 + u) * L * core.m0 + (3 * u2 - 2 * u3) * core.y1 + (u3 - u2) * L * core.m1
                 out.lateral = crownProfile(f.lat, core.hw, core.crown) + Math.max(-core.cap, Math.min(core.cap, f.lat)) * (core.k0 + (core.k1 - core.k0) * u)
+                // Off its own asphalt the core hands over to the two-leg blend across the shoulder (smoothstep, hw →
+                // hw + shoulder): out there the connector's bench overlaps the LEGS' pavement (on the outside of a
+                // bend the node sits up to 10 m off the core), and the blend IS each leg's own surface there. The core's
+                // deck extended 10 m sideways stood 0.65 m above the leg at 2832975687's node and its shoulder ramp
+                // warped the leg's pavement by 13 % (bare-join gate).
+                const e = (Math.abs(f.lat) - core.hw) / core.sh
+                if (e > 0) {
+                    const g = out.grade, l = out.lateral
+                    if (!this._connectorBlendAt(arc, wx, wz, out)) { out.grade = g; out.lateral = l; return out }
+                    const t = e >= 1 ? 1 : e * e * (3 - 2 * e)
+                    out.grade = g + (out.grade - g) * t; out.lateral = l + (out.lateral - l) * t
+                }
                 return out
             }
         }
@@ -11341,7 +11353,7 @@ export class RoadSystem {
         return { i0, i1, P, cum, nrm, c0, c1, y0, y1, k0, k1,
                  m0: (y0 - b0) / Math.max(1e-6, c0 - Math.max(0, c0 - 1)),
                  m1: (b1 - y1) / Math.max(1e-6, Math.min(cum[cum.length - 1], c1 + 1) - c1),
-                 hw, crown: p.crownHeight ?? 0.05, cap: hw + (p.roadCarveExtraWidth ?? 3) }
+                 hw, sh: p.roadShoulderWidth ?? 2.5, crown: p.crownHeight ?? 0.05, cap: hw + (p.roadCarveExtraWidth ?? 3) }
     }
 
     /**
