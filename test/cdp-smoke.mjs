@@ -2334,6 +2334,27 @@ const STEPS = [
       const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
       for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
     await ended(/beat the alpha/)
+    // FEAT-296 (DEC-433): an endless run's win is a milestone — the card's one button is "keep playing", the save stays,
+    // the card never comes back, and the run still ends the ordinary ways (here the towel).
+    await js('window.__settings.ruleEndless = "on"')
+    await newRun()
+    await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)
+    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), 'endless: no requisition')
+    await js(`(() => { const b = window.__board(), h = window.__day().clockH()
+      const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
+      for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
+    const et = await until(card, 5000)
+    check(et && /beat the alpha/.test(et) && await js('document.getElementById("re-keep").offsetParent !== null && document.getElementById("re-menu").offsetParent === null'),
+      `endless: the win card offers only "keep playing" ("${et}")`)
+    check(/endless on/.test(await js('document.getElementById("re-body").textContent')), 'endless: the summary does not name the run\'s rules')
+    await sleep(1500)   // past an autosave tick
+    check(await saved() && await js('JSON.parse(localStorage.getItem("autos-run/1")).data.endlessWon === true'), 'endless: the win discarded the save or lost the flag')
+    await js('document.getElementById("re-keep").click()')
+    await sleep(1500)
+    check(await js(`document.getElementById("run-end").style.display !== "block" && ${live}`), 'endless: "keep playing" did not hand the run back (or the card came back)')
+    await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+    await ended(/gave up/)
+    await js('window.__settings.ruleEndless = "off"')
   }],
   ['opening', async () => {
     // FEAT-147: a new run starts PARKED AT THE BURGER JOINT, the firing's cards over a slow orbit of it with the sim held.
