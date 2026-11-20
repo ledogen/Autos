@@ -157,7 +157,7 @@ export const TUT = {
         { speaker: KATIE, phone: true, text: `Hey Billy! How you doing? Sorry about yesterday&hellip;` },
         { speaker: KATIE, phone: true, text: `Anyway, since I know you got nothing going on today, why don't we go picnic out at the old McGill ranch. `
             + `I'll let you pick a spot and I'll meet you out there.` },
-        { speaker: KATIE, phone: true, text: `Grab us a bag of peanuts at the gas station on your way, would you? Park out front of the store, not at the pumps.` },
+        { speaker: KATIE, phone: true, text: `Grab us a bag of peanuts at the gas station on your way, would you?` },
         // FEAT-288 P3b (DEC-422: "explain the list on the side, setting a waypoint, direct the player to the legend"): the
         // map beat, inside her call — open the map, the Shopping list, a waypoint on her station (main.js fills {snack}
         // with its POI id; _tutWaypointOk takes a drop on it alone), the legend pointed at, the map closed. She holds the
@@ -258,7 +258,7 @@ export const TUT = {
     // couple bucks" is the peanuts' price plus the gas money she does not mention (DEC-306). The pick-up lesson is a
     // PLACEHOLDER; its keys are the game's (D-pad ↓ / G).
     'tut-handover': [{ speaker: 'Mom', text: `Take this pack over to your uncle. He left it behind. Also, here's a couple bucks for food.` }],
-    'tut-pickup': [{ speaker: 'Mom', until: 'pickup', allow: [], hi: ['#poi-prompt'], quest: 'pack', text: `Park next to it and `
+    'tut-pickup': [{ speaker: 'Mom', until: 'pickup', allow: [], hi: ['#poi-prompt'], quest: 'pack', text: `<span class="dlg-key">Park</span> next to it and `
         + `<span class="kc-kb">press <span class="dlg-key">G</span></span><span class="kc-pad">press <span class="dlg-key">D-pad ↓</span></span> `
         + `to load anything loose nearby. Then run it over to Larry's.` }],
     // FEAT-229 (DEC-346): the tank filled, mom sends you on your way (PLACEHOLDER words); the line already runs to the
@@ -286,12 +286,12 @@ export const TUT = {
     // {deeds} are filled from the game, as RUN_INTRO's are (main.js _fillCamp).
     'tut-katie': [
         { speaker: KATIE, text: `So what are you gonna do now that you don't have a job?` },   // DEC-355: in person, no opener
-        { speaker: KATIE, text: `I hear there's an expedition camp up at the old {dir} road. I think they're looking to make a new supply route. `
+        { speaker: KATIE, text: `say, i hear theres an expedition camp up at the old {dir} road. I think they're looking to make a new supply route. `
             + `I heard them say they'd take anyone with {deeds} good deeds to their name.` },
         { speaker: KATIE, text: `Don't expect it to be easy if you join up with them, but it might be the best way to get connected back up with the outside world.` },
         { speaker: KATIE, text: `Getting a good deed is as simple as taking delivery jobs and keeping the pace. Or sometimes getting the cargo there in one piece `
-            + `is all that matters. Listen closely to the client, because they'll tell you exactly what they need.` },
-        { speaker: KATIE, text: `The client will also tell you the base pay ahead of time. Usually they tip better if you drive better. Some folks might even `
+            + `is all that matters. Listen closely to the customer, because they'll tell you exactly what they need.` },
+        { speaker: KATIE, text: `The customer will also tell you the base pay ahead of time. Usually they tip better if you drive better. Some folks might even `
             + `throw in an item.` },
         { speaker: KATIE, text: `Well, I better get going. Break camp whenever you're ready, and head on home.` },   // DEC-422: the paycheck is mom's
     ],
