@@ -12188,6 +12188,7 @@ export class RoadSystem {
             let inside = null   // BUG-90: a gentle deg-2 kink's inside direction (see _applyJunctionBlend)
             let join = null     // BUG-230: a BARE deg-2 join's other leg (see _applyJunctionBlend's bank mean)
             let curve = null    // BUG-236: a CONNECTOR bend's other leg — the two runs meet on one vertical curve (_applyJunctionBlend)
+            let bend = null     // BUG-236: a SHARP connector bend's strands — its plane is fitted to the two runs (_deg2BendPlane)
             if (d === 2) {
                 const strands = this._graphNodeStrands(id)
                 if (strands && strands.length === 2) {
@@ -12203,7 +12204,9 @@ export class RoadSystem {
                     if (kink >= DEG2_PLANE_KINK) flatCamber = true
                     else if (kinkMin > 0 && kink > kinkMin) inside = { x: strands[0].wx + strands[1].wx, z: strands[0].wz + strands[1].wz, other }
                     else join = other
-                    if (kinkMin > 0 && kink > kinkMin) curve = other
+                    // BUG-236: a GENTLE connector bend joins its two runs on one vertical curve; a sharp one (≥ DEG2_PLANE_KINK)
+                    // keeps its legs on one shared plane while their pavements overlap (_deg2BendPlane).
+                    if (kinkMin > 0 && kink > kinkMin && other) { if (kink < DEG2_PLANE_KINK) curve = other; else bend = { strands, other } }
                     const rEff = kink > PAR_REF.junctionDeadband ? PAR_REF.junctionRadius / Math.min(1, kink / (Math.PI / 2)) : Infinity
                     vNode2 = Math.min(PAR_REF.vMax * PAR_REF.vMax, PAR_REF.mu * PAR_REF.g * rEff)
                 }
@@ -12213,9 +12216,9 @@ export class RoadSystem {
             // QUAL-13: a true ≥3-way junction eases onto its sloped PAD PLANE — y = plane at the
             // node, slopeAway = plane grade along this strand — so every leg lands tangent to ONE
             // shared tilted plaza. Degree-2 pass-throughs keep the FEAT-19 through-axis line.
-            // BUG-236: a connector bend has no plane — its legs meet on the vertical curve, and the connector core carries
-            // its own cross-section (_connectorDesignAt). flatCamber (≥ DEG2_PLANE_KINK) still runs the banks off to flat.
-            const plane = flatCamber && !curve ? this._junctionPadPlane(id) : null
+            // BUG-236: a gentle connector bend has no plane (its legs meet on the vertical curve); a sharp one rides the plane
+            // fitted to its two runs, not the plaza plane a ≥3-way node fits.
+            const plane = bend ? this._deg2BendPlane(id, bend.strands, runKey, bend.other) : flatCamber ? this._junctionPadPlane(id) : null
             if (plane && thisStrand) {
                 y = plane.y0
                 slopeAway = plane.gx * thisStrand.wx + plane.gz * thisStrand.wz
@@ -12493,6 +12496,33 @@ export class RoadSystem {
         return plane
     }
 
+    /**
+     * BUG-236: the plane a SHARP degree-2 connector bend (kink ≥ DEG2_PLANE_KINK) holds both legs on while their pavements
+     * overlap — at a switchback the two legs leave the node 0–120° apart and share ground for up to 30 m, so they must
+     * share one surface there (junction-stitch, BUG-56). It is a point on two roads already solved, so it passes through
+     * the node at their shared height and its grade vector is SOLVED from the two runs' own grades leaving the node
+     * (G·wA = gA, G·wB = gB, the first 10 m, _runAwayGrade): each leg rides out on its own grade, and the recovery past the
+     * hold has no grade break to absorb. The ≥3-way plaza plane it replaces here capped the grade at 7 % and pulled the
+     * height up to 3 m toward the terrain, so the legs left the node off their own lines and the recovery bent them back:
+     * 23 of the census's 60 sag bumps. Capped at 24 % (DEC-409's design maximum); legs nearly parallel (det < 0.05) take
+     * the through-axis mean (_junctionGradeVector). Pure fn of the two runs' points; both legs compute the same plane.
+     */
+    _deg2BendPlane(id, strands, runKey, other) {
+        const e = this._network.get(runKey), st = this._proto.graph.key(e.cellA) === this._proto.graph.key(id)
+        const P = st ? e.points[0] : e.points[e.points.length - 1]
+        const a = strands[0], b = strands[1]
+        const ga = this._runAwayGrade(a.key, a.key === runKey ? st : other.isStart)
+        const gb = this._runAwayGrade(b.key, b.key === runKey ? st : other.isStart)
+        if (!ga || !gb) return this._junctionPadPlane(id)
+        const det = a.wx * b.wz - a.wz * b.wx
+        let gx, gz
+        if (Math.abs(det) > 0.05) { gx = (ga.g * b.wz - gb.g * a.wz) / det; gz = (a.wx * gb.g - b.wx * ga.g) / det }
+        else { const G = this._junctionGradeVector(strands); gx = G.gx; gz = G.gz }
+        const m = Math.hypot(gx, gz), cap = 0.24
+        if (m > cap) { gx *= cap / m; gz *= cap / m }
+        return { cx: P.x, cz: P.z, y0: P.y, gx, gz }
+    }
+
     _computePadPlane(id) {
         const p = this._params || {}
         const maxG = p.roadJunctionPadMaxGrade ?? 0.07
@@ -12730,7 +12760,7 @@ export class RoadSystem {
             if (gradeY && fG > 0)    gradeY[i] += (ny - gradeY[i]) * fG
             if (camberRad && fC > 0) camberRad[i] += (nc - camberRad[i]) * fC
         }
-        // BUG-236: a CONNECTOR bend is ONE road through the node. The two runs are solved separately and meet there
+        // BUG-236: a GENTLE CONNECTOR bend is ONE road through the node. The two runs are solved separately and meet there
         // with a grade break (114 of 203 connector nodes on 60 random seeds were sags with > 10 % change); the deck hold
         // and corner-speed recovery below left that break as a hump or dip in the bend (census median 22.6 cm, worst
         // 55 cm against an 8 m straightedge). Instead one symmetric parabolic vertical curve centred on the node joins
