@@ -12502,10 +12502,12 @@ export class RoadSystem {
      * share one surface there (junction-stitch, BUG-56). It is a point on two roads already solved, so it passes through
      * the node at their shared height and its grade vector is SOLVED from the two runs' own grades leaving the node
      * (G·wA = gA, G·wB = gB, the first 10 m, _runAwayGrade): each leg rides out on its own grade, and the recovery past the
-     * hold has no grade break to absorb. The ≥3-way plaza plane it replaces here capped the grade at 7 % and pulled the
-     * height up to 3 m toward the terrain, so the legs left the node off their own lines and the recovery bent them back:
-     * 23 of the census's 60 sag bumps. Capped at 24 % (DEC-409's design maximum); legs nearly parallel (det < 0.05) take
-     * the through-axis mean (_junctionGradeVector). Pure fn of the two runs' points; both legs compute the same plane.
+     * hold has little grade break to absorb. The ≥3-way plaza plane it replaces here pulled its height up to 3 m toward
+     * the terrain, so the legs left the node off their own solved height and the recovery bent them back (23 of the
+     * census's 60 sag bumps were at kinks ≥ 60°). The grade keeps the plaza's cap (roadJunctionPadMaxGrade, 7 %): on the
+     * census's worst sharp bends a 12 %, 16 % or 24 % cap tilted the shared plane into 6–12° banks and made 4–6 bends worse
+     * than main by 1–3 cm; 7 % made one (1.2 cm). Legs nearly parallel (det < 0.05) take the through-axis mean
+     * (_junctionGradeVector). Pure fn of the two runs' points; both legs compute the same plane.
      */
     _deg2BendPlane(id, strands, runKey, other) {
         const e = this._network.get(runKey), st = this._proto.graph.key(e.cellA) === this._proto.graph.key(id)
@@ -12518,7 +12520,7 @@ export class RoadSystem {
         let gx, gz
         if (Math.abs(det) > 0.05) { gx = (ga.g * b.wz - gb.g * a.wz) / det; gz = (a.wx * gb.g - b.wx * ga.g) / det }
         else { const G = this._junctionGradeVector(strands); gx = G.gx; gz = G.gz }
-        const m = Math.hypot(gx, gz), cap = 0.24
+        const m = Math.hypot(gx, gz), cap = this._params?.roadJunctionPadMaxGrade ?? 0.07
         if (m > cap) { gx *= cap / m; gz *= cap / m }
         return { cx: P.x, cz: P.z, y0: P.y, gx, gz }
     }
