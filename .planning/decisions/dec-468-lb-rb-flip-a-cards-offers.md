@@ -1,6 +1,6 @@
 ---
 id: DEC-468
-status: standing
+status: superseded
 decided: 2026-11-20
 area: ui
 governs: FEAT-314, FEAT-294, FEAT-125, src/gamepad.js, src/menu-nav.js, gamepad, controller, offer card, mission panel

@@ -46,3 +46,4 @@ FEAT-294 (the first build), FEAT-125 (the pad contract).
 ## Log
 - 2026-11-20: minted by the orchestrator from the owner's chat ruling.
 - 2026-11-20: owner: "fix the stale keycap. if a card has multiple offers, lb/rb should flip them." DEC-468: both layouts; keycaps hidden on a one-offer card.
+- 2026-11-20: owner: "Kill the shoulder buttons flipping cards at a POI. Leave the highlightable UI buttons." DEC-469 supersedes DEC-468.
