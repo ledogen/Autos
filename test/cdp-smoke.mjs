@@ -2220,6 +2220,12 @@ const STEPS = [
         await js(`document.documentElement.dataset.uiScale = '${sc}'`); await sleep(400)
         writeFileSync(join(process.env.GATE_SHOTS, `${name}-${sc}.png`), Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
       await js(`document.documentElement.dataset.uiScale = '${was}'`) }
+    // FEAT-305 look sheet: one frame as it stands (no UI-size pass), and a gateShot with the pad's halves showing
+    const shot = async (name) => { if (!process.env.GATE_SHOTS) return; mkdirSync(process.env.GATE_SHOTS, { recursive: true })
+      writeFileSync(join(process.env.GATE_SHOTS, `${name}.png`), Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    const padShot = async (name) => { if (!process.env.GATE_SHOTS) return
+      const was = await js('document.body.classList.contains("pad-on")')
+      await js('document.body.classList.add("pad-on")'); await gateShot(name); if (!was) await js('document.body.classList.remove("pad-on")') }
     // DEC-320: the firing opens on Katie's call, wrapping up as Billy arrives; then the manager.
     check(await until(async () => await speaker() === 'Katie', 3000), `the run did not open on the firing's call (speaker "${await speaker()}")`)
     // FEAT-288 P8 (DEC-426 Q2): every card shown from here, with the slide it came with — the copy leaving (.dlg-ghost's
@@ -2447,6 +2453,7 @@ const STEPS = [
     // DEC-305 (DEC-238's errand): the pack lands by her steps; parked beside it, G loads it; parked at Larry's, he gives it you.
     check(await until(async () => !!(await tut()).pack, 3000), `mom's toss put no pack on the ground: ${JSON.stringify(await tut())}`)
     await readCards()   // the pick-up lesson
+    await gateShot('p5-pickup-card')   // FEAT-305 item 2: 'Park' in the key colour
     // FEAT-288 P5: the pick-up lesson's step names the pack, so the tossed pack wears the quest mark (beam + white pulse).
     check(await until(() => js('!!window.__questMark()'), 3000), `the tossed pack wears no quest mark (card up: ${JSON.stringify(await tut())})`)
     const pk = (await tut()).pack, mq = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'momsHouse'); return { x: q.roadX, z: q.roadZ } })()`)
@@ -2467,6 +2474,15 @@ const STEPS = [
     await readCards(800, 'Uncle Larry')
     if (await speaker() !== 'Uncle Larry') { await simFor(1); await park(true) }
     check(await until(async () => await speaker() === 'Uncle Larry', 5000), `parked at Larry's with his pack, no hand-over (speaker "${await speaker()}", ${JSON.stringify(await tut())})`)
+    if (process.env.GATE_SHOTS) {   // FEAT-305 look sheet: Larry's last card → Katie's ring, the slide held at two points
+      const text = () => js('document.getElementById("dlg-text").textContent')
+      for (let i = 0; i < 6 && await speaker() === 'Uncle Larry' && !/expedition camp/.test(await text()); i++) { await sleep(1500); said.push(`Uncle Larry: ${await text()}`); await tap('Enter'); await sleep(300) }
+      await sleep(3000); said.push(`Uncle Larry: ${await text()}`)
+      const at = (out, inn) => js(`(() => { for (const a of document.getAnimations()) { if (a.id === 'dlg-out') a.currentTime = ${out}; if (a.id === 'dlg-in') a.currentTime = ${inn} } })()`)
+      await js(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); for (const a of document.getAnimations()) if (a.id === 'dlg-out' || a.id === 'dlg-in') a.pause() })()`)
+      await at(60, 60); await sleep(150); await shot('p8-1-slide-out-right')
+      await at(149, 240); await sleep(150); await shot('p8-2-slide-in-left')
+      await js(`for (const a of document.getAnimations()) if (a.id === 'dlg-out' || a.id === 'dlg-in') a.finish()`) }
     await readCards()
     check((await tut()).stop === 'snack' && await js("window.__inv.list().some(r => r.id === 'pack')"), `Larry's hand-over did not leave the pack on board and send the day for the snack: ${JSON.stringify(await tut())}`)
     // DEC-345: his cards over, Katie calls — the picnic at the old McGill ranch, a snack from the station on the way.
@@ -2484,7 +2500,7 @@ const STEPS = [
     // within a second, not on the instant
     const hi = (q) => until(() => js(`!!document.querySelector(${JSON.stringify(q)})?.classList.contains('tut-hi')`), 1000)
     check(await waits() === 'map' && !await js('window.__map2d().isOpen()'), `her call did not stop on "open your map": ${JSON.stringify(await tut())}`)
-    await gateShot('10-map-card')
+    await gateShot('10-map-card'); await padShot('10-map-card-pad')   // FEAT-305 item 6: the pad's ◂ Back
     await padOn(); await js('__fp.b[8] = 1'); await frames(2, 60); await js('__fp.b[8] = 0'); await frames(2, 60)   // View, a tap (a hold is the skip)
     check(await until(async () => await waits() === 'shoptab', 3000) && await js('window.__map2d().isOpen()'), `the pad's View did not open the map and turn her card: ${JSON.stringify(await tut())}`)
     check(await hi('#map-list-head [data-tab="shopping"]'), 'the map card: the Shopping tab is not ringed')
@@ -2595,7 +2611,9 @@ const STEPS = [
     await hold('f', 1); await tap(' '); await readCards()
     check(await js('document.getElementById("pump-display").classList.contains("on") && !window.__worstDay().pump.done'),
       `the brake let go at the pump with money left: ${JSON.stringify(await wd())}, $${await js('window.__econ.money')}`)
-    await hold('f', 6); await tap(' ')   // pump till the money runs out, then the brake off pays
+    await hold('f', 6)   // pump till the money runs out, then the brake off pays
+    await sleep(300); await gateShot('17-pump-pay'); await padShot('17-pump-pay-pad')   // FEAT-305 item 7: the handbrake's key
+    await tap(' ')
     check(await until(async () => (await wd()).pump.done, 3000), `filling up did not end the station's beat: ${JSON.stringify(await wd())}`)
     check(await js('window.__econ.money < 0.05'), `the fill-up left money in the wallet: $${await js('window.__econ.money')}`)
     check(await until(async () => (await tut()).stop === 'camp', 3000), `the fill-up did not send the day to the camping area: ${JSON.stringify(await tut())}`)
@@ -2824,6 +2842,7 @@ const STEPS = [
     for (const q of ['[data-tab=maint]', '.sv-line[data-d="0"][data-id=twbs]', '.sv-line[data-d="1"][data-id=tw]', '.sv-line[data-d="2"][data-id=FL]',
       '.sv-line[data-id=FL].on + .sv-kids > .sv-line[data-id=tire]', '[data-act=patch][data-track=tireFL]']) {
       await sleep(250); path.push((await ringed()).join('+'))
+      if (path.length === 4) { await gateShot('18-shop-patch-path'); await padShot('18-shop-patch-path-pad') }   // the ring on the front left, the highlight elsewhere
       await js(`document.querySelector('#svc-screen ${q}').click()`)
     }
     await sleep(250); path.push((await ringed()).join('+'))
@@ -2835,7 +2854,7 @@ const STEPS = [
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')   // FEAT-212: the cart
     check(await until(async () => await js('window.__tutorial().until') === 'svcshop', 3000) && (await ringed()).join() === 'shop',
       `FEAT-305: checked out, mom does not point at the Shop tab: ${JSON.stringify({ tut: await js('window.__tutorial()'), ringed: await ringed() })}`)
-    await gateShot('20-shop-tab-rb')
+    await gateShot('20-shop-tab-rb'); await padShot('20-shop-tab-rb-pad')
     await tap('e')   // the keyboard's tab step (the pad's RB)
     check(await until(async () => await lightsUp() && await js('document.getElementById("svc-screen").checkVisibility()'), 3000),
       `FEAT-288 P4 (DEC-422): the tire's check-out put no headlights card up in the shop (it waited for the shift): ${await js('JSON.stringify({ tut: window.__tutorial(), dlg: document.getElementById("dlg-text")?.textContent.slice(0, 60), shop: document.getElementById("svc-screen").checkVisibility(), flat: window.__damage.flat, wd: window.__worstDay() })')}`)
