@@ -31,6 +31,7 @@ const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
 const src = readdirSync(new URL('../src/', import.meta.url)).filter(f => f.endsWith('.js'))
   .map(f => readFileSync(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n')
 const idExists = (id) => html.includes(`id="${id}"`) || new RegExp(`id\\s*[=:]\\s*['"\`]${id}['"\`]|id="${id}"|getElementById\\(['"]${id}['"]\\)`).test(src)
+const svcSrc = readFileSync(new URL('../src/service-screen.js', import.meta.url), 'utf8')
 const actions = new Set(BINDINGS.map(b => b.action))
 const cards = [...Object.entries(DLG.TUT).flatMap(([k, cs]) => cs.map((c, i) => [`${k}[${i}]`, c])),
   ...['MOM_CALL', 'FIRING', 'LARRY_CALL', 'PAYCHECK', 'BOSS_CHECK', 'LARRY_PACK'].flatMap(k => (DLG[k] ?? []).map((c, i) => [`${k}[${i}]`, c]))]
@@ -42,7 +43,8 @@ for (const [name, c] of cards) {
   for (const q of [...(c.allow ?? []), ...(c.hi ?? [])]) {
     if (!isSelector(q)) { ok(LOCKED.includes(q), `${name}: '${q}' is a locked action`); continue }
     for (const [, id] of q.matchAll(/#([\w-]+)/g)) ok(idExists(id), `${name}: #${id} exists (index.html or src/)`)
-    for (const [, id] of q.matchAll(/data-id="(\w+)"/g)) ok(!!ITEMS[id], `${name}: data-id ${id} is an item`)
+    // an inventory slot's data-id is an item; a service-screen tree row's is a node of its tree (FEAT-305)
+    for (const [, sv, id] of q.matchAll(/(\.sv-line[^\s]*)?\[data-id="(\w+)"\]/g)) ok(sv ? svcSrc.includes(`'${id}'`) : !!ITEMS[id], `${name}: data-id ${id} is ${sv ? 'a service-screen node' : 'an item'}`)
   }
   for (const q of c.hi ?? []) ok(isSelector(q), `${name}: hi '${q}' is a selector`)
   if (c.quest) ok(!!ITEMS[c.quest], `${name}: quest '${c.quest}' is an item`)

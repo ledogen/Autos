@@ -2807,20 +2807,36 @@ const STEPS = [
         return s && { fromSeat: +Math.hypot(p.x - s.x, p.z - s.z).toFixed(1), fromMarker: +Math.hypot(p.x - q.x, p.z - q.z).toFixed(1) } })(), h: window.__day().clockH(), trace: window.__towTrace })`)}`)
     check((await wd()).towed, 'the tow was not counted (the night beat)')
     console.log('  worst day: the shop')
-    await readCards()   // the shop's cards
+    await readCards()   // the shop's cards, up to mom's patch lesson (FEAT-305), which waits for the patch's check out
+    check(await js('window.__tutorial().until') === 'patched', `FEAT-305: the shop's card does not wait for the patch: ${JSON.stringify(await js('window.__tutorial()'))}`)
+    const m0 = await js('window.__econ.money')
+    // DEC-443: the Shop tab is browsable under it, but a tire for the front left does not buy (the wrong option does nothing)
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     const fit = 'document.querySelector("#svc-screen button[data-act=buy][data-socket=tireFL]:not([disabled])")'
     // FEAT-196: a shelf row's options show only while it is selected — select each in turn until one fits the front left.
     await js(`(() => { const lines = () => [...document.querySelectorAll("#svc-screen button[data-act=node][data-slot]")]
       for (let i = 0; i < lines().length && !${fit}; i++) lines()[i].click() })()`)
-    check(await until(() => js(`!!${fit}`), 2000), 'the shop offers no tire for the front left')
-    const m0 = await js('window.__econ.money')
-    await js(`${fit}.click()`)
-    check(await until(() => js('!window.__damage.flat[0]'), 2000), 'buying a tire for the flat corner did not fix it')
+    if (await js(`!!${fit}`)) { await js(`${fit}.click()`); await sleep(200)
+      check(await js('window.__damage.flat[0] && !document.querySelector("#svc-screen [data-act=checkout]")'), 'DEC-443: under the patch lesson a tire bought on the Shop tab') }
+    // the lesson's path: Maintenance, then each row ringed in turn down to the front left's patch, then check out
+    const ringed = () => js('[...document.querySelectorAll("#svc-screen .tut-hi")].map(e => e.dataset.id ?? e.dataset.tab ?? e.dataset.act)')
+    const path = []
+    for (const q of ['[data-tab=maint]', '.sv-line[data-d="0"][data-id=twbs]', '.sv-line[data-d="1"][data-id=tw]', '.sv-line[data-d="2"][data-id=FL]',
+      '.sv-line[data-id=FL].on + .sv-kids > .sv-line[data-id=tire]', '[data-act=patch][data-track=tireFL]']) {
+      await sleep(250); path.push((await ringed()).join('+'))
+      await js(`document.querySelector('#svc-screen ${q}').click()`)
+    }
+    await sleep(250); path.push((await ringed()).join('+'))
+    await gateShot('19-shop-patch')
+    check(path.join() === 'maint,twbs,tw,FL,tire,patch,checkout', `FEAT-305: the patch lesson does not ring one next row at a time: ${path.join()}`)
     const lightsUp = () => js('/headlights/.test(document.getElementById("dlg-text")?.textContent ?? "") && document.getElementById("dialogue-panel").checkVisibility()')
-    await sleep(300)
-    check(!await lightsUp(), "FEAT-288 P4: the headlights card came up with the tire still in the cart (it waits for the check-out)")
+    check(await until(() => js('!window.__damage.flat[0]'), 2000) && !await lightsUp() && await js('window.__tutorial().until') === 'patched',
+      "FEAT-305: the patch in the cart: the flat is not fixed, or the lesson moved on before the check-out")
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')   // FEAT-212: the cart
+    check(await until(async () => await js('window.__tutorial().until') === 'svcshop', 3000) && (await ringed()).join() === 'shop',
+      `FEAT-305: checked out, mom does not point at the Shop tab: ${JSON.stringify({ tut: await js('window.__tutorial()'), ringed: await ringed() })}`)
+    await gateShot('20-shop-tab-rb')
+    await tap('e')   // the keyboard's tab step (the pad's RB)
     check(await until(async () => await lightsUp() && await js('document.getElementById("svc-screen").checkVisibility()'), 3000),
       `FEAT-288 P4 (DEC-422): the tire's check-out put no headlights card up in the shop (it waited for the shift): ${await js('JSON.stringify({ tut: window.__tutorial(), dlg: document.getElementById("dlg-text")?.textContent.slice(0, 60), shop: document.getElementById("svc-screen").checkVisibility(), flat: window.__damage.flat, wd: window.__worstDay() })')}`)
     check(await js('window.__econ.money') === m0, `the tire was not on mom (FEAT-184): $${m0} → $${await js('window.__econ.money')}`)

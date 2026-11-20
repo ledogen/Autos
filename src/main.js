@@ -5360,6 +5360,10 @@ const _UNTIL = {
   cart: () => serviceCenter.cart.length > 0 || _snackBought(),   // her card unlocks the peanuts' add to cart alone
   bought: () => _snackBought(),
   shopshut: () => !serviceScreen.isOpen,
+  // FEAT-305: mom's shop beat (tut-shopfix) — the flat patched and checked out (a queued job is already on the truck,
+  // service.js queue), or the shop left; then the Shop tab
+  patched: () => (!damageModel.flat.some(Boolean) && !serviceCenter.cart.length) || !serviceScreen.isOpen,
+  svcshop: () => serviceScreen.tab === 'shop' || !serviceScreen.isOpen,
 }
 /** On the HUD poll: clear the card on screen if it waits for an action and that action is done. */
 function _untilTick () {

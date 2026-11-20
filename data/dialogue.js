@@ -212,8 +212,27 @@ export const TUT = {
     'tut-spareflat': [{ speaker: 'Mom', until: 'recovery', allow: ['recovery'], hi: ['#hud-b-hint', '#recovery-icon'], text: `The spare's flat too? Of course it is. Call a tow: `
         + `<span class="kc-kb"><span class="dlg-key">X</span> is</span><span class="kc-pad">hold <span class="dlg-key" data-pad="menu">B</span> and pick</span> the recovery menu.` }],
     'tut-tow': [{ speaker: 'Mom', text: `The tow takes you to the nearest auto shop. It's on me this time.` }],
-    // FEAT-184 (DEC-151): the tire is on mom — one mounted tire and its fitting, paid at the cart's check out (FEAT-212). PLACEHOLDER words.
-    'tut-shopfix': [{ speaker: 'Mom', text: `Get a good tire on that corner &mdash; that one's on me. Check out at the counter, then come home, it's late.` }],
+    // FEAT-184 (DEC-151): the fix is on mom — the patch, or a mounted tire and its fitting — paid at the cart's check out
+    // (FEAT-212). FEAT-305 (owner: "It should show you what buttons to click like any other menu. It should direct you to fix
+    // the tire with the patch and then show you that there's (rb) a shop where you can pick up some tire plugs or even get a
+    // new tire"): the patch first — the whole menu walkable (DEC-443), the next row down the tree to the front left's patch
+    // ringed (the open rows lose theirs), then check out — and then the Shop tab. [DEFAULT] words (the owner writes them).
+    'tut-shopfix': [
+        { speaker: 'Mom', until: 'patched',
+            allow: ['#svc-screen [data-act="node"]', '#svc-screen [data-act="tab"]', '#svc-screen [data-act="patch"][data-track="tireFL"]', '#svc-screen [data-act="checkout"]'],
+            hi: ['#svc-screen:not(:has([data-act="checkout"])) [data-act="tab"][data-tab="maint"]:not(.on)',
+                '#svc-screen:not(:has([data-act="checkout"])) .sv-line[data-d="0"][data-id="twbs"]:not(.on)',
+                '#svc-screen:not(:has([data-act="checkout"])) .sv-line[data-d="1"][data-id="tw"]:not(.on)',
+                '#svc-screen:not(:has([data-act="checkout"])) .sv-line[data-d="2"][data-id="FL"]:not(.on)',
+                '#svc-screen:not(:has([data-act="checkout"])) .sv-line[data-id="FL"].on + .sv-kids > .sv-line[data-id="tire"]:not(.on)',
+                '#svc-screen:not(:has([data-act="checkout"])) [data-act="patch"][data-track="tireFL"]',
+                '#svc-screen [data-act="checkout"]'],
+            text: `That one's on me, honey. Patch that front left tire: <span class="kc-kb"><span class="dlg-key">↑</span> <span class="dlg-key">↓</span> and <span class="dlg-key">Enter</span></span>`
+            + `<span class="kc-pad">the <span class="dlg-key">D-pad</span> and <span class="dlg-key">A</span></span> down the list, then check out at the counter.` },
+        { speaker: 'Mom', until: 'svcshop', allow: ['#svc-screen [data-act="tab"]'], hi: ['#svc-screen [data-act="tab"][data-tab="shop"]'],
+            text: `A patch won't last forever. The shop has tire plugs, and even new tires: `
+            + `<span class="kc-kb"><span class="dlg-key">E</span></span><span class="kc-pad"><span class="dlg-key">RB</span></span>. Then come home, it's late.` },
+    ],
     // Stage 5: the night drive home after the shop.
     'tut-lights': [{ speaker: 'Mom', until: 'lights', allow: [], text: `It's pitch dark out there. `
         + `<span class="kc-kb"><span class="dlg-key">L</span> turns</span><span class="kc-pad">the <span class="dlg-key">left stick</span> click turns</span> `
