@@ -40,3 +40,4 @@ The owner is at "the joint" (the burger joint). The code names it two ways: the 
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
 - 2026-11-20: measured in Chrome: firing and paycheck show run-hud (clock), energy and hunger (clock held, still drawn). The shop menu hid the dock (src/service-screen.js FEAT-167 rule). Fix: the dock stays for storefronts, `right` moved left of the card; auto shop unchanged. Sheet wip/feat-300/sheet.jpg. pad-e2e and service gate green; smoke: see below. Also visible now beside the card: the park badge and the start-truck hint (not touched).
+- 2026-11-20: main merged; also hide #hud-icons + #ignition-hint behind a storefront card. service, pad-e2e, smoke (42 steps) green.
