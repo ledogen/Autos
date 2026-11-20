@@ -1,7 +1,7 @@
 ---
 id: FEAT-271
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 (inbox) — "We should remove the new stock timers that show up under a POI's icon. I think it's clutter. In the hover menu for firewood, instead of available for,…"
@@ -12,7 +12,7 @@ lane: Places and Missions
 # FEAT-271: Remove the new-stock timers under a POI icon
 
 ## Next steps
-A lane removes the label (map/list).
+Closed 2026-11-20. Owner looked and said good.
 
 ## Summary
 The new-stock countdown shown under a POI icon is clutter. Remove it.
@@ -40,3 +40,5 @@ src/map*.js · data/map-icons.js
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118010708-kmdu).
 - 2026-11-17 ui-1117b: the under-icon stock timer is gone from the map (status().nextText retired too). Look pending.
+- 2026-11-20: owner, card ui-1117b-look: "Good: close them". Closed. On main (aa0009cc).
+

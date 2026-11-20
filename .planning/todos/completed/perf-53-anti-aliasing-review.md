@@ -1,7 +1,7 @@
 ---
 id: PERF-53
 type: perf
-status: open
+status: closed
 severity: minor
 opened: 2026-11-18
 source: owner, inbox, 2026-11-18
@@ -11,9 +11,7 @@ lane: engine & world
 # PERF-53: Review how the game does anti-aliasing and whether it can be cheaper or better
 
 ## Next steps
-Owner picks on owed card `perf53-aa-options` (recommended: MSAA 2x). Before any build, the orchestrator runs the PERF-40
-ceiling bench in a quiet window: `cd /Users/ledogen/CodeShit/CarGame && node test/playtest-bench.mjs --b=/Users/ledogen/CodeShit/CarGame-perf53-noaa --seeds=1 --reps=2`
-(A = main, B = branch exp/perf-53-noaa 285f7039: MSAA off, never lands). It bounds what any AA change can save while driving.
+Closed 2026-11-20. MSAA stays 4x (DEC-460). 2x measured as no saving on the Mac.
 
 ## Summary
 Owner: "Dropping a note to look into how we/3js handles anti-aliasing and if it can be optimized better"
@@ -48,13 +46,14 @@ Harness: `wip/perf-53/aa.mjs` (variants installed from outside the page; nothing
 ## Tracker
 - [x] What is used today, and its cost (rough, parked; the bench read is owed)
 - [x] Cheaper options with look crops: MSAA 2x, MSAA off, off + FXAA, off + SMAA (sheet below)
-- [ ] PERF-40 ceiling bench (today vs MSAA off), orchestrator, quiet machine
-- [ ] Owner picks
+- [x] PERF-40 ceiling bench (today vs MSAA off), orchestrator, quiet machine
+- [x] Owner picks
 
 ## Decisions
 - 2026-11-18, owner: "for aa i want to specifically look for performance speed improvements. im happy with the visual
   quality". Quality-only options (alpha-to-coverage, a higher sample count) are out. The render-resolution cap stays
   declined (PERF-41, owner 2026-11-13: "res cap shouldnt be necessary to get the game super snappy").
+- 2026-11-20, owner: "Back to 4x" (DEC-460).
 
 ## Open questions
 
@@ -68,3 +67,6 @@ src/main.js (renderer setup)
 - 2026-11-18 minted by the orchestrator from the inbox.
 - 2026-11-18 review (land/perf-53-aa-review, docs only): MSAA 4x at 2045 x 1200; rough parked cost above; sheet + card
   `perf53-aa-options`. Bench not run (orchestrator's call: lanes busy). Unverified: driving cost, exposure-meter copy cost.
+- 2026-11-20: PERF-40 bench ran (2026-11-19 23:07, 4 of 4 sessions valid, this Mac, one seed, A-B-A-B): MSAA 2x saves nothing. GPU active cycles 4x vs 2x: drive 792 vs 780 Mcyc/s, map 730 vs 743, parked 769 vs 768 (inside noise); GPU watts on the drive 1.90 to 2.48 W; main-thread work unchanged. The full-screen copy 2x needs cancels the saved samples.
+- 2026-11-20: owner, card perf53-aa-options: "Back to 4x". DEC-460. Branch land/perf-53-msaa2 does not land. Nothing open: the Windows card at 165 fps was not measured, the owner chose 4x anyway. Closed.
+

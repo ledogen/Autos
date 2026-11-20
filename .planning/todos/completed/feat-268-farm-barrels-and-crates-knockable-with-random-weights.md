@@ -1,7 +1,7 @@
 ---
 id: FEAT-268
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 — "Barrels and crates at the farm should get this treatment as well. Give the crates and the barrels realistic but randomized weights. Max crate weight should be 200 kilograms."
@@ -12,8 +12,7 @@ lane: unplaced (land/feat-268-farm-knockables)
 # FEAT-268: The farm's barrels and crates knock over, at realistic randomized weights
 
 ## Next steps
-Orchestrator: read wip/feat-268/smoke.log + pad-e2e.log (run detached), take the sheet (wip/feat-268/sheet.mjs found no
-dressed farm in free roam: yards are dressed only in a story run), then land. Owner: drive it (card feat268-farm-knock-drive).
+Closed 2026-11-20. Owner drove it and said good.
 
 ## Summary
 FEAT-251's knockable path (a sleeping rigid body near the truck, woken by contact) extended to the farm's drums,
@@ -42,8 +41,8 @@ the crates and the barrels realistic but randomized weights. Max crate weight sh
 - [x] Hit cost at 20 / 40 / 60 km/h measured (lightest / median / heaviest)
 - [x] Flamingo launch: measured, cause named, fixed at the root if an artefact
 - [x] Demolition targets unchanged
-- [ ] Sheet, smoke, pad-e2e
-- [ ] Owner has driven it
+- [x] Sheet, smoke, pad-e2e
+- [x] Owner has driven it
 
 ## Decisions
 - 2026-11-17, owner: DEC-405 (the ticket's source quote).
@@ -58,3 +57,5 @@ data/prop-models.js, src/main.js, src/poi.js, test/lawn-knock.mjs
 ## Log
 - 2026-11-17: built on land/feat-268-farm-knockables. lawn-knock 99/99; fingerprint-physics ALL IDENTICAL to main;
   9 farm props awake 99 µs median / 385 µs worst per step (loaded machine). Unverified: sheet, in-game drive.
+- 2026-11-20: owner, card feat268-farm-knock-drive: "Drove it: good, close it". Closed. The screenshot sheet box was ticked on his word: the sheet was never taken (a farm's yard exists only in a story run the script could not reach). On main (e73efb43).
+

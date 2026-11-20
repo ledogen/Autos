@@ -1,7 +1,7 @@
 ---
 id: BUG-212
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-17
 source: owner, 2026-11-17 (inbox) — "I feel like the GPS map line gets kind of confused especially for missions with multiple stops"
@@ -12,7 +12,7 @@ lane: bug (alpha by default)
 # BUG-212: The GPS route line gets confused, especially on multi-stop missions
 
 ## Next steps
-The owner drives a paper round and a demolition job (card bugs-1117-gps-food-camp-drive) and answers the two drawing questions there.
+Closed 2026-11-20. Owner drove it and said good.
 
 ## Summary
 The GPS line seems to get confused, most on missions with several stops. Stated as a feeling: no specific stop or seed was named.
@@ -25,7 +25,7 @@ Owner's words, verbatim (inbox 20261118062617-1pat):
 ## Tracker
 - [x] The GPS line follows the intended next stop and tour on a multi-stop mission
 - [x] A repro (seed, mission, position) is captured first (census + gate paper-guide-keep, seed 1)
-- [ ] Owner has driven it
+- [x] Owner has driven it
 
 ## Decisions
 - Measured (test/gps-multistop-census.mjs, 6 random seeds, a driver that FOLLOWS the GPS 20 m a re-plan, i.e. one RR_PARAMS.tourS at ~20 m/s; paper 4/7/9/11 houses and every demolition job; clean / a missed stop / off the route / a U-turn; 448 drives):
@@ -46,3 +46,5 @@ the GPS / guide route in src/main.js and the road system
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118062617-1pat).
 - 2026-11-17 4286e100 + dcd4eac1 + 444e14e1 (keepM in planTourJob; paper and demolition pass the followed order), 59f66aab (demolition map line). Gate paper-guide-keep.mjs (control 24 flip-backs, built 0); smoke demolition step checks the map line. Unverified: the owner's drive.
+- 2026-11-20: owner, card bugs-1117-gps-food-camp-drive: "Drove it: good, close them". Closed on the owner's drive; on main (merge 164f603b, bd959072).
+
