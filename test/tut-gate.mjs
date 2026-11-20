@@ -12,8 +12,8 @@
 // 4. Release (BUG-183) and the quest mark (P5): no step → everything allowed, and main.js hands the gate null outside the tutorial and after a
 //    run's end (the browser half — nothing marked after a skip — is test/cdp-smoke.mjs's opening step).
 // 5. P8's speaker slide (src/dialogue.js cardSlide, DEC-426 Q2): over every played script as framed, the same speaker cycles
-//    in place, a change of speaker slides the old card out by the side it came in from and the new one in from the other,
-//    the sides alternate per change, the first card enters from the left and the last leaves by its side. (The browser
+//    in place, a change of speaker slides the old card out to the right and the new one in from the left (FEAT-305: one
+//    way, every change), the first card enters from the left and the last leaves to the right. (The browser
 //    half — the slide on screen, a press mid-slide, reduced motion — is test/cdp-smoke.mjs's opening step.)
 
 import { readFileSync, readdirSync } from 'node:fs'
@@ -152,20 +152,17 @@ ok(/function _questMark \(\) \{\n  const id = _tutStep\(\)\?\.quest\n/.test(main
 // skip, the night's end or a reload (fresh DOM, _firingDay() read off the save) leaves Sleep live.
 ok(/go\.disabled = _firingDay\(\) && /.test(main) && !/cp-sleep-go[^\n]*disabled = true/.test(main), 'main.js: Sleep is greyed only while _firingDay() (DEC-426 Q1)')
 
-// ── 5. P8: the speaker slide ──
+// ── 5. P8: the speaker slide (FEAT-305: one way, out to the right, in from the left) ──
 { const S = (speaker) => ({ speaker })
-  const walk = (cards) => { let side = -1, prev = null; const out = []
-    for (const c of [...cards, null]) { const m = cardSlide(prev, c, side); out.push(m); side = m.side; prev = c }
+  const walk = (cards) => { let prev = null; const out = []
+    for (const c of [...cards, null]) { out.push(cardSlide(prev, c)); prev = c }
     return out }
-  // Katie, Katie, the manager, then nothing: cycle; out left + in right; out right.
+  // Katie, Katie, the manager, then nothing: in from the left; cycle; out right + in left; out right.
   const w = walk([S('Katie'), S('Katie'), S('The manager')])
   ok(w[0].out === 0 && w[0].in === -1, `P8: the first card enters from the left, nothing leaves: ${JSON.stringify(w[0])}`)
   ok(w[1].out === 0 && w[1].in === 0, `P8: the same speaker's next card cycles in place: ${JSON.stringify(w[1])}`)
-  ok(w[2].out === -1 && w[2].in === 1, `P8: a change of speaker: out by the side it came in (left), in from the other: ${JSON.stringify(w[2])}`)
-  ok(w[3].out === 1 && w[3].in === 0, `P8: the last card leaves by its own side: ${JSON.stringify(w[3])}`)
-  // A, B, A: per change, not per person — A's second turn enters from the right's opposite (left), not "A's side".
-  const a = walk([S('A'), S('B'), S('A'), S('C')])
-  ok(a.slice(0, 4).map(m => m.in).join() === '-1,1,-1,1', `P8: sides alternate per change of speaker: ${a.map(m => m.in)}`)
+  ok(w[2].out === 1 && w[2].in === -1, `FEAT-305: a change of speaker: out to the right, in from the left: ${JSON.stringify(w[2])}`)
+  ok(w[3].out === 1 && w[3].in === 0, `FEAT-305: the last card leaves to the right: ${JSON.stringify(w[3])}`)
   // Every played script, framed as main.js frames it (DEC-354's ring and <click> cards included): each step obeys the rule.
   const dlg = new DialogueSystem(DLG.PHONE)
   const scripts = [...Object.values(DLG.TUT), ...['FIRING', 'MOM_CALL', 'LARRY_CALL', 'PAYCHECK', 'BOSS_CHECK', 'LARRY_PACK', 'RUN_INTRO', 'PAPER_ROUTE_INTRO'].map(k => DLG[k])]
@@ -176,7 +173,7 @@ ok(/go\.disabled = _firingDay\(\) && /.test(main) && !/cp-sleep-go[^\n]*disabled
     for (let i = 1; i < f.length; i++) {
       const same = f[i].speaker === f[i - 1].speaker
       if (!same) changes++
-      ok(same ? !m[i].out && !m[i].in : m[i].out === m[i - 1].side && m[i].in === -m[i].out,
+      ok(same ? !m[i].out && !m[i].in : m[i].out === 1 && m[i].in === -1,
         `P8: ${f[i - 1].speaker} → ${f[i].speaker} (${same ? 'cycle' : 'slide'}): ${JSON.stringify(m[i])}`)
     }
   }

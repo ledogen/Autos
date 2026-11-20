@@ -4106,19 +4106,19 @@ const dialogueSystem = new DialogueSystem(PHONE)   // DEC-354: phone calls frame
 // streams. The first press fills it (the advance handlers below), the next one turns it; one blip when full.
 const DLG_WORD_MS = 80   // [DEFAULT] ~12 words a second
 const _DLG_PAD_KEYS = new Set(['w', 's', 'm', 'v', 'tab', 'space', 'x'])   // FEAT-125: see _renderDialogue; FEAT-184: X (recovery)
-const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0, side: -1, anims: [], delay: 0 }
+const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0, anims: [], delay: 0 }
 // FEAT-288 P8 (DEC-426 Q2): a change of speaker slides, the same speaker's next card cycles in place (dialogue.js cardSlide).
-// The card going out is a copy of the panel (.dlg-ghost: no ids, takes no pointer) that leaves by the side it came in from;
+// The card going out is a copy of the panel (.dlg-ghost: no ids, takes no pointer) that leaves to the right (FEAT-305);
 // the live panel, ALREADY the new card (so the tutorial gate, menu-nav and every check read the card that is up), comes in
-// from the other side once the copy is gone. Web Animations on `translate` (composited by the browser; no per-frame JS).
+// from the left once the copy is gone. Web Animations on `translate` (composited by the browser; no per-frame JS).
 // A press mid-slide lands it at once, filled, and is spent (_dlgFill): no card is ever turned unread, none is lost.
 // prefers-reduced-motion (the browser's "avoid motion" accessibility setting): an instant swap.
 const DLG_OUT_MS = 150, DLG_IN_MS = 200   // [DEFAULT] short: 350 ms door to door on a change of speaker, 200 ms for a first card
 const _dlgOff = (s) => s < 0 ? 'calc(-100vw - 100%)' : 'calc(100vw + 100%)'   // past the screen's edge from anywhere on it
 function _dlgSlide (panel, prev, next) {
   for (const a of _dlg.anims) a.finish()   // a slide still running lands first
-  const m = cardSlide(prev, next, _dlg.side)
-  _dlg.side = m.side; _dlg.anims = []; _dlg.delay = 0
+  const m = cardSlide(prev, next)
+  _dlg.anims = []; _dlg.delay = 0
   if (!m.out && !m.in || matchMedia('(prefers-reduced-motion: reduce)').matches) return
   if (m.out) {
     const g = panel.cloneNode(true)

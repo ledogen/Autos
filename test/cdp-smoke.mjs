@@ -2272,8 +2272,8 @@ const STEPS = [
     // BUG-136: the days before the clock's zero; the HUD read day 0 as "Day 0, -6 am".
     const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
     check(await until(async () => await hudClock() === 'Day 0, 7 am', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day 0, 7 am" (BUG-136)`)
-    // FEAT-288 P8: Katie's <click> cycles in place; the manager is a change of speaker: Katie's card leaves by the left (she
-    // came in from there, the first card of a showing), his comes in from the right, and leaves by the right at the end.
+    // FEAT-288 P8: Katie's <click> cycles in place; the manager is a change of speaker. FEAT-305 (owner: "flip this"): every
+    // change runs one way: Katie's card leaves by the right, his comes in from the left, and leaves by the right at the end.
     // A press mid-slide (here a click, dispatched in the same task as the press that started the slide, so it IS mid-slide
     // on any load) lands his card whole and is spent: he is still up. Then presses as fast as CDP sends them, keys and
     // clicks: the cards shown are the framed script's, none lost.
@@ -2293,8 +2293,8 @@ const STEPS = [
         `P8: the firing's cards shown are not its script's (${want.length} framed, the first read before): ${JSON.stringify(R)}`)
       check(cards[0]?.tx === '<click>', "the firing's call did not hang up (<click>) before the manager (DEC-354)")
       check(cards[0]?.out === 0 && cards[0]?.in === 0, `P8: Katie's <click> slid — the same speaker must cycle in place: ${JSON.stringify(cards[0])}`)
-      check(cards[1]?.sp === 'The manager' && cards[1].out === -1 && cards[1].in === 1, `P8: Katie's card did not leave by the left, the manager's come in from the right: ${JSON.stringify(cards[1])}`)
-      check(R.at(-1)?.end && R.at(-1).out === 1, `P8: the manager's card did not leave by the right, the side it came in from: ${JSON.stringify(R.at(-1))}`) }
+      check(cards[1]?.sp === 'The manager' && cards[1].out === 1 && cards[1].in === -1, `FEAT-305: Katie's card did not leave by the right, the manager's come in from the left: ${JSON.stringify(cards[1])}`)
+      check(R.at(-1)?.end && R.at(-1).out === 1, `FEAT-305: the manager's card did not leave by the right: ${JSON.stringify(R.at(-1))}`) }
     // The card: up, the sim held under it; "play" on seed 6 loads the tutorial seed with seed 6 to come back to.
     check(await until(() => js('document.getElementById("tut-card").style.display === "flex"'), 3000), `the firing did not end on the tutorial card: ${JSON.stringify(await tut())}`)
     check((await tut()).phase === 'card', `the card is up but the tutorial reads ${JSON.stringify(await tut())}`)
