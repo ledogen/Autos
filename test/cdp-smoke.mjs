@@ -689,6 +689,17 @@ const STEPS = [
     await js('document.getElementById("cp-sleep").click()')
     check(await js('document.getElementById("cp-body").textContent.includes("campsites provide more rest")'),
       'the truck sleep face is missing its disclaimer')
+    // FEAT-310 (DEC-449): a sleep that outlasts a food says so on the timer — a fresh breakfast burrito keeps 8 h.
+    await js('window.__inv.grant("breakfastBurrito")')
+    await sleep(100)
+    await js('document.getElementById("cp-hours").value = "10"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
+    check(await until(() => js('/breakfast burrito spoils in 8h 00m/.test(document.getElementById("cp-energy-text").textContent)'), 1500),
+      `FEAT-310: a 10 h sleep did not warn about the 8 h burrito: "${await js('document.getElementById("cp-energy-text").textContent')}"`)
+    if (process.env.NOTES1119_SHOTS) { mkdirSync('wip/notes-1119b', { recursive: true }); await sleep(300)
+      writeFileSync('wip/notes-1119b/sleep.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    await js('document.getElementById("cp-hours").value = "6"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
+    check(!await js('/spoils in/.test(document.getElementById("cp-energy-text").textContent)'), 'FEAT-310: a 6 h sleep warned about an 8 h burrito')
+    await js('window.__inv.consume("breakfastBurrito")')
     await js('document.getElementById("cp-sleep-back").click()')
     // Owner, 2026-10-27: an unmade card keeps the tent up and lit, and Z there closes the card and
     // calls the hunt off — so later parks open nothing.
@@ -850,10 +861,27 @@ const STEPS = [
     await sleep(200)
     const shot = await client.cmd('Page.captureScreenshot', { format: 'png' })
     mkdirSync('wip/fresh', { recursive: true }); writeFileSync('wip/fresh/bar.png', Buffer.from(shot.result.data, 'base64'))
+    // FEAT-310 (DEC-449): the selected food's line reads its time to spoil — 14 h of the chili dog's 16 are left.
+    const ci = await js(`window.__inv.list().findIndex(r => r.id === 'chiliDog')`)
+    await js(`document.querySelector('#inv-screen .inv-slot[data-slot="${ci}"]').click()`)
+    check(await until(() => js(`/spoils in 14h 0\\dm/.test(document.querySelector('#inv-screen .st-cond')?.textContent ?? '')`), 1500),
+      `FEAT-310: the chili dog line reads "${await js(`document.querySelector('#inv-screen .st-cond')?.textContent`)}", not 14 h to spoil`)
+    if (process.env.NOTES1119_SHOTS) { mkdirSync('wip/notes-1119b', { recursive: true }); await sleep(300)
+      writeFileSync('wip/notes-1119b/timer.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    await tap('Escape')
+    // FEAT-306 (DEC-448): past its 16 h the chili dog is not deleted: it stays as "Rotten chili dog", and cannot be eaten.
+    await js(`window.__inv.amend(window.__inv.list().findIndex(r => r.id === 'chiliDog'), { ages: [15.9] })`)   // 0.1 h from its 16
+    await js('window.__day().advanceMinutes(30)'); await sleep(200)
+    check(await js(`window.__inv.list().some(r => r.id === 'rottenChiliDog' && r.name === 'Rotten chili dog' && !r.usable) && !window.__inv.list().some(r => r.id === 'chiliDog')`),
+      'FEAT-306: the spoiled chili dog is not a rotten chili dog in the inventory')
+    await tap('Tab'); await until(open, 1000)
+    const ri = await js(`window.__inv.list().findIndex(r => r.id === 'rottenChiliDog')`)
+    await js(`document.querySelector('#inv-screen .inv-slot[data-slot="${ri}"]').click()`); await sleep(300)
+    if (process.env.NOTES1119_SHOTS) writeFileSync('wip/notes-1119b/rotten.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
     await tap('Escape')
     check(await until(async () => !await open(), 1000), 'Esc left the inventory open')
-    await js(`(() => { window.__inv.consume('chiliDog'); window.__day().setEnergy(${e0}) })()`)
-    check(!await js(`window.__inv.list().some(r => r.id === 'chiliDog')`), 'the chili dog row is left behind')
+    await js(`(() => { window.__inv.remove(window.__inv.list().findIndex(r => r.id === 'rottenChiliDog')); window.__day().setEnergy(${e0}) })()`)
+    check(!await js(`window.__inv.list().some(r => /chiliDog/i.test(r.id))`), 'the chili dog row is left behind')
     if (!wasParked) await tap(' ')
     const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
