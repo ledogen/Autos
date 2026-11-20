@@ -5,20 +5,20 @@ status: open
 severity: minor
 opened: 2026-11-20
 source: owner, 2026-11-20 (chat) — "I'm not a huge fan of the way that it was built." / "yep dispo the card with option A+C instead"
-relates: FEAT-294, DEC-466, DEC-465, DEC-431, src/gamepad.js
+relates: FEAT-294, DEC-467, DEC-466, DEC-465, DEC-431, src/gamepad.js
 ---
 lane: free lane (controller)
 
 # FEAT-314: Ventura Highway: rework the three guessed cells (DEC-465)
 
 ## Next steps
-A lane builds DEC-466 in `src/gamepad.js` and extends `test/pad-e2e.mjs`.
+A lane builds DEC-467 in `src/gamepad.js` and extends `test/pad-e2e.mjs`.
 
 ## Summary
 FEAT-294 shipped the Ventura Highway pad layout with three cells guessed. The owner did not like them and picked replacements (DEC-465).
 
 ## Description
-Ventura Highway only; Professor is unchanged.
+Ventura Highway, plus one Professor change: LT pumps in both layouts (A no longer pumps).
 1. On a plain card RB does nothing. Where a card has tabs or faces, RB and LB flip them.
 2. On the result card: parked, B is back; moving, B is the upshift. A is the handbrake.
 3. At the pump: LT pumps, A is the handbrake (it releases it), B closes the pump and pays; the gas still releases the brake.
@@ -32,7 +32,7 @@ Ventura Highway only; Professor is unchanged.
 - [ ] Owner has tried it
 
 ## Decisions
-DEC-466 (supersedes DEC-465, which superseded DEC-431).
+DEC-467 (supersedes DEC-466, DEC-465, DEC-431 in turn).
 
 ## Open questions
 None.

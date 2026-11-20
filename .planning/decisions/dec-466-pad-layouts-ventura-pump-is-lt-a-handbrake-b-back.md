@@ -1,6 +1,6 @@
 ---
 id: DEC-466
-status: standing
+status: superseded
 decided: 2026-11-20
 area: ui
 governs: FEAT-294, FEAT-314, FEAT-125, src/gamepad.js, gamepad, controller, pad layout, Ventura Highway
