@@ -7329,6 +7329,8 @@ function _syncSleepRow () {
     e.innerHTML = `energy ${now.toFixed(1)} → ${wake.toFixed(1)} / ${full.toFixed(0)} h`
       + `  ·  wake <span style="color:${STAGE_COLOR[daySystem.stageFor(wake)]}">${daySystem.stageFor(wake)}</span>`
       + (daySystem.coffeeDebt() > 0 ? `  ·  coffee debt ${daySystem.coffeeDebt().toFixed(0)} h at wake` : '')
+      // FEAT-310 (DEC-449) [DEFAULT]: the food this sleep would outlast. Item names are catalog strings.
+      + inventorySystem.spoilingWithin(h).map(x => `<br>the ${x.name.toLowerCase()} spoils in ${formatGameDuration(x.h)}`).join('')
   }
 }
 
