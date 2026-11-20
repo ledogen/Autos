@@ -27,7 +27,10 @@ const DT = 1 / 60, RPM_PER_RAD = 60 / (2 * Math.PI)
 const RUN_S = 40, REVERSE_S = 4
 const MAP = process.argv.includes('--map')
 const GRADES = [0, 0.02, 0.04, 0.06, 0.08, 0.10, 0.12, 0.15]
-const PEDALS = [0.15, 0.25, 0.35, 0.5, 0.7, 1.0]
+// A pad held at a fixed pedal, and a keyboard feathering W: held for `duty` of every second through the
+// game's own press/release ramps (throttleRampRate / releaseRampRate), as test/shift-schedule.mjs does.
+const PEDALS = [0.15, 0.25, 0.35, 0.5, 0.7, 1.0, { duty: 0.3 }, { duty: 0.5 }, { duty: 0.7 }]
+const label = (p) => typeof p === 'number' ? `pedal ${p.toFixed(2)}` : `W ${(p.duty * 100).toFixed(0)} %  `
 const SPEEDS = [20, 50, 80, 110]   // km/h at the start
 
 function freshParams (box) {
@@ -40,6 +43,10 @@ function freshParams (box) {
 // One cell: a steady pedal on a constant grade from v0. Returns the shift list and the hunts in it.
 export async function runCell (box, grade, pedal, kmh, ctx, { runS = RUN_S, stop = null } = {}) {
   const P = freshParams(box)
+  let key = 0
+  const pedalAt = typeof pedal === 'number' ? () => pedal
+    : (t) => (key = (t % 1) < pedal.duty ? Math.min(1, key + P.throttleRampRate * DT) : Math.max(0, key - P.releaseRampRate * DT))
+  const p0 = typeof pedal === 'number' ? pedal : pedal.duty
   const tanT = grade, theta = Math.atan(grade)
   const N = new THREE.Vector3(0, Math.cos(theta), Math.sin(theta))
   const queryContacts = (cx, cy, cz, r) => {
@@ -56,20 +63,22 @@ export async function runCell (box, grade, pedal, kmh, ctx, { runS = RUN_S, stop
   const vs = {
     position: new THREE.Vector3(0, 0, 0).addScaledVector(N, eq.bodyY), velocity: fwd.clone().multiplyScalar(v0),
     quaternion: quat.clone(), angularVelocity: new THREE.Vector3(),
-    steerAngle: 0, throttle: pedal, brake: 0, smoothThrottle: pedal, smoothBrake: 0,
+    steerAngle: 0, throttle: p0, brake: 0, smoothThrottle: p0, smoothBrake: 0,
     wheelSteerAngles: [0, 0, 0, 0],
     wheelDebug: [0, 1, 2, 3].map(() => ({ fn: 0, fy: 0, sa: 0, c: 0, omega: 0, fz: 0 })),
     wheelOmega: [w0, w0, w0, w0], slipLong: [0, 0, 0, 0], slipLat: [0, 0, 0, 0],
     strutComp: [...eq.strutComp], strutCompVel: [0, 0, 0, 0], handbrake: false,
-    drivetrain: { engineRPM: 750, gear: g0, shiftTimer: 1, activeGear: g0, throttleAvg: pedal },   // 1 s: the box's acceleration estimate warms up before it may shift
+    drivetrain: { engineRPM: 750, gear: g0, shiftTimer: 1, activeGear: g0, throttleAvg: p0 },   // 1 s: the box's acceleration estimate warms up before it may shift
   }
   const shifts = []
   let g = g0, rpm = 0, dist = 0, tStop = null
   for (let s = 1; s <= runS / DT; s++) {
-    vs.throttle = pedal; vs.brake = 0
+    vs.throttle = pedalAt(s * DT); vs.brake = 0
+    // The driven axle's rpm in this gear as the box reads it this step: the rev-out test (engine out of rpm).
+    const axleRpm = 0.5 * (vs.wheelOmega[2] + vs.wheelOmega[3]) * P.gearRatios[g - 1] * P.finalDrive * RPM_PER_RAD / P.converterCouplingSR
     stepPhysics(vs, P, DT, queryContacts, ctx)
     const d = vs.drivetrain, ng = d.gear
-    if (ng !== g) { shifts.push({ t: s * DT, from: g, to: ng, kmh: vs.velocity.dot(fwd) * 3.6, rpm, spin: d.wheelspin }); g = ng }
+    if (ng !== g) { shifts.push({ t: s * DT, from: g, to: ng, kmh: vs.velocity.dot(fwd) * 3.6, rpm, axleRpm, spin: d.wheelspin }); g = ng }
     rpm = d.coupledRPM
     const v = vs.velocity.dot(fwd); dist += v * DT
     if (stop && stop(v * 3.6, dist)) { tStop = s * DT; break }
@@ -77,8 +86,9 @@ export async function runCell (box, grade, pedal, kmh, ctx, { runS = RUN_S, stop
   const hunts = []
   for (let i = 1; i < shifts.length; i++) {
     const a = shifts[i - 1], b = shifts[i]
-    // An upshift at the WOT upshift point is the engine out of rpm (a kickdown revving out), never a hunt.
-    if (b.to === a.from && b.t - a.t < REVERSE_S && !(b.to > b.from && b.rpm >= P.shiftUpRPM - 50)) hunts.push({ pair: `${Math.min(a.from, a.to)}-${Math.max(a.from, a.to)}`, dt: b.t - a.t })
+    // An upshift with the driven axle at the WOT upshift point is the engine out of rpm (a kickdown revving out,
+    // spinning or not), never a hunt.
+    if (b.to === a.from && b.t - a.t < REVERSE_S && !(b.to > b.from && b.axleRpm >= P.shiftUpRPM)) hunts.push({ pair: `${Math.min(a.from, a.to)}-${Math.max(a.from, a.to)}`, dt: b.t - a.t })
   }
   return { g0, shifts, hunts, tStop, vEnd: vs.velocity.dot(fwd) * 3.6, gEnd: g }
 }
@@ -114,7 +124,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         bad++; total += r.hunts.length
         for (const h of r.hunts) { pairs[h.pair] = (pairs[h.pair] || 0) + 1; periods.push(h.dt) }
       }
-      if (MAP || r.hunts.length) console.log(`  ${box} ${(grade * 100).toFixed(0).padStart(2)}% pedal ${pedal.toFixed(2)} from ${String(kmh).padStart(3)} km/h (gear ${r.g0}): ` +
+      if (MAP || r.hunts.length) console.log(`  ${box} ${(grade * 100).toFixed(0).padStart(2)}% ${label(pedal)} from ${String(kmh).padStart(3)} km/h (gear ${r.g0}): ` +
         `${r.shifts.length} shifts, ${r.hunts.length} hunts, ends gear ${r.gEnd} at ${r.vEnd.toFixed(0)} km/h` +
         (r.hunts.length ? `  [${r.shifts.map(s => `${s.from}→${s.to}@${s.t.toFixed(1)}`).join(' ')}]` : ''))
     }
