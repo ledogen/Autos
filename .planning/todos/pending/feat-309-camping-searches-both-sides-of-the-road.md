@@ -46,3 +46,5 @@ FEAT-299 (continuous camping areas, not built) changes the zones, not the ray: n
   (21.1 %); never a worse one. The own-side ray matched main's evaluate exactly at all 744 (identity check, not kept).
   Cost per full re-grade, measured in the page (seed 6, 60 spots): one ray 1.5 ms → both sides 3.5 ms. A re-grade runs
   only while hunting below 20 km/h, after 1.5 m of travel (≤ ~3.7 a second), on the 10 Hz poll.
+- 2026-11-20: affected gates 19/19 green (camp-sides 1470 s under load 10, ~470 s quiet), cdp-smoke 42/42 on the retry
+  (first run: the known DEC-357 blink flake), pad-e2e ALL OK. Sheet wip/camp-1119/sheet.jpg; card camp-1119-look.

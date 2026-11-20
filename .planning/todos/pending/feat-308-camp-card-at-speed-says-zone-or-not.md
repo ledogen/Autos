@@ -47,3 +47,5 @@ reads it and needs no change then.
 ## Log
 - 2026-11-19 (lane ai, land/camp-1119): built; gate camp-fast-card, smoke step campCard drives 26+ km/h in and out of a
   zone and reads the card. Cost at speed: one zone-disc loop per 10 Hz poll (no ray, no grading).
+- 2026-11-20: affected gates 19/19 green (camp-sides 1470 s under load 10, ~470 s quiet), cdp-smoke 42/42 on the retry
+  (first run: the known DEC-357 blink flake), pad-e2e ALL OK. Sheet wip/camp-1119/sheet.jpg; card camp-1119-look.
