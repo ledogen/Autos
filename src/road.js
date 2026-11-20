@@ -222,10 +222,11 @@ const XS_SOFT2 = 0.5 * 0.5
 // CONTINUOUS overDist (not the offEnd boolean) keeps the design surface C0/C1: at its own mouth a leg
 // has overDist 0 ⇒ weight 1 ⇒ the weld to that ribbon is exact and unchanged.
 const XS_OFF_FADE = 4.0
-// DEG2_PLANE_KINK (BUG-90): a degree-2 kink at least this sharp gets the ≥3-way junction treatment —
-// both legs held on one shared pad plane, banking set to the plane's cross-slope (_runEndpointJunctions).
-// Measured over 91 connectors (seeds 6, 3, 7, 20, 11 + 477662008): no connector whose crest unloads the
-// wheels below 12 m/s is left; at 0° (every deg-2 node) it also flattened the owner's "fair" dip 3.
+// DEG2_PLANE_KINK (BUG-90): a degree-2 kink at least this sharp runs both legs' banks off to flat at the node
+// (_runEndpointJunctions' flatCamber). It also held both legs on one shared pad plane; BUG-236 replaced that, at every
+// connector bend, by the vertical curve through the node and the core's own deck (_applyJunctionBlend,
+// _connectorDesignAt) — the plane's grade and cross-section errors only partly cancelled (census: 23 of the 60 sag
+// bumps and 23 of the 35 cross-section bumps were at kinks ≥ 60°). The plane stays only with connectors off.
 const DEG2_PLANE_KINK = 60 * Math.PI / 180
 const _BJ_RP = { gradeY: 0, tx: 1, tz: 0 }   // BUG-230: _bareJoinFrame's scratch profile sample
 const _xsOffFade = (d) => { const u = Math.min(1, Math.max(0, d / XS_OFF_FADE)); return 1 - u * u * (3 - 2 * u) }
@@ -11222,9 +11223,11 @@ export class RoadSystem {
     }
 
     /**
-     * QUAL-16 + junction-flow stage 5: the deg-2 connector's DESIGN SURFACE at a world point — the two
-     * legs' cross-sections blended, written into `out` as { grade, lateral } (asphalt grade before
-     * clearance, plus the lateral crown/camber fold) or null off both legs.
+     * QUAL-16 + junction-flow stage 5: the deg-2 connector's DESIGN SURFACE at a world point, written into
+     * `out` as { grade, lateral } (asphalt grade before clearance, plus the lateral crown/camber fold) or
+     * null off both legs. Between the mouths the core's own deck owns it (BUG-236, the first lines of the
+     * function); this block documents the two-leg blend (_connectorBlendAt) the lead-ins keep, and the
+     * core's mouth values are read from.
      *
      * The connector is a BEND, not a flat plaza: it carries the whole cross-section — grade, crown and
      * superelevation. A gentle deg-2 node is NOT flatCamber (≥3-way nodes and ≥60° kinks ease their
@@ -11378,8 +11381,8 @@ export class RoadSystem {
         return best || ext
     }
 
-    // The two-leg blend (QUAL-16 + junction-flow stage 5, documented above): the connector's lead-ins, and the mouth
-    // values its core is built from.
+    // The two-leg blend (QUAL-16 + junction-flow stage 5, documented at _connectorDesignAt): the connector's lead-ins,
+    // and the mouth values its core is built from.
     _connectorBlendAt(arc, wx, wz, out) {
         const a = this._runGradeAt(arc.netKeys[0], wx, wz, _CD_A)
         const b = this._runGradeAt(arc.netKeys[1], wx, wz, _CD_B)
