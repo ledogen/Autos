@@ -2192,6 +2192,10 @@ const STEPS = [
       check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towGo]") && /\\$/.test(document.querySelector("#recovery-card [data-act=towGo]").textContent)'), 2000),
         `FEAT-307: the tow button showed no confirm: "${await js('document.getElementById("recovery-card").textContent')}"`)
       check(await js('window.__econ.money') === m0, 'FEAT-307: asking for the tow already spent the money')
+      if (process.env.NOTES1119_SHOTS) { mkdirSync('wip/notes-1119b', { recursive: true }); await sleep(400)
+        writeFileSync('wip/notes-1119b/tow-key.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+        await padOn(); await btn(13); await sleep(400)   // the pad: D-pad down lands the focus ring on a button
+        writeFileSync('wip/notes-1119b/tow-pad.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')); await padOff() }
       await js('document.querySelector("#recovery-card [data-act=towBack]").click()')
       check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towFuel]")'), 2000), 'FEAT-307: back did not return to the tow list') }
     // BUG-113: pad B is the general back on the Recovery card too — it closes the card, it does not pause.
