@@ -4180,6 +4180,10 @@ function _renderDialogue () {
   const panel = document.getElementById('dialogue-panel')
   if (!panel) return
   const card = dialogueSystem.current()
+  // FEAT-305 (owner: the inventory stayed open under Katie's talk, and B could not shut it): a card that owns every key
+  // shuts the screens under it first — nothing can work them while it is up (Katie's talk, after the peanuts; mom's
+  // send-off, after breakfast).
+  if (card && card !== _dlg.card && !card.until) { damageScreen.close(); inventoryScreen.close() }   // this order: a pick's close goes back to the inventory
   if (card !== _dlg.card) _dlgSlide(panel, _dlg.card, card)   // before the paint: the copy that leaves carries the card that was up
   panel.style.display = card ? 'block' : 'none'
   panel.classList.toggle('dlg-waits', !!card?.until)   // DEC-359: menu-nav.js lets the pad work the card under a waiting one
@@ -6274,7 +6278,7 @@ function _pickSpare (e) {
   const trap = e.flat && _firingDay()   // FEAT-184 stage 4 / FEAT-217 (xbnc): the worst day's flat spare is found out AFTER the player tries it on a corner
   damageScreen.pick({
     title: 'Fit the mounted tire',
-    corner: () => trap || !e.flat,
+    corner: (c) => trap ? damageModel.flat[c] : !e.flat,   // FEAT-305: the lesson's spare goes on the flat corner, no other
     note: _tireNote,
     about: `The mounted tire: ${condLine({ ...e, kind: 'part' })}.` + (e.flat ? ' Plug it before it goes on.' : ''),
     actions: ({ corner }) => [{ label: `Swap it on — ${formatGameDuration(spareFitHours(inventorySystem))}`, run: () => {

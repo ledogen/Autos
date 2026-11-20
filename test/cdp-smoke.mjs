@@ -2648,8 +2648,11 @@ const STEPS = [
     check(!await js('!!window.__map2d()._getWaypoint()') && !/McGill/.test((await eve()).hud || ''), 'camped, the ranch pin or its line is still up (DEC-356)')
     await readCards()
     check(!await shown('cp-sleep'), 'the camp offers sleep on the firing day (DEC-308)')
+    await js('document.getElementById("cp-item").click()')   // FEAT-305: eaten from the inventory she names, left open
+    check(await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 1000), "the camp card's inventory button opened no inventory")
     check(await js("window.__inv.use('bagOfPeanuts')"), 'the peanuts could not be eaten')
     check(await until(() => js('/now that you don.t have a job/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), `eating in camp brought no call from Katie: ${JSON.stringify(await tut())}`)
+    check(!await js('document.getElementById("inv-screen").classList.contains("open")'), "FEAT-305: the inventory is still open under Katie's talk")
     await stamped(17, "Katie's call")
     check(await js('!/\\{dir\\}|\\{deeds\\}/.test(document.getElementById("dialogue-panel").textContent)'), "Katie's call left a fill unfilled")
     // FEAT-288 P3a: under Katie's talk the camp card is locked (break camp refused: a press-any-key card locks what lies under
@@ -2760,6 +2763,12 @@ const STEPS = [
     await js('window.__inv.use("spareTire")')
     check(await until(() => js('document.getElementById("dmg-screen").classList.contains("picking")'), 1000), 'the spare opened no tire picker')
     await gateShot('3-spare-picker')
+    // FEAT-305 (owner: "allows you to put the spare on the wrong corner"): only the flat corner (the front left) takes it
+    { const g = await js(`(() => { const d = document.getElementById("dmg-screen")
+        for (const c of ["FR", "RL", "RR"]) d.querySelector(".ds-pbtn[data-track=tire" + c + "]").click()
+        return { on: d.querySelector(".ds-pbtn.on")?.dataset.track ?? null, act: !!d.querySelector("[data-act=pick-do]"),
+          off: ["FR", "RL", "RR"].every(c => d.querySelector(".ds-pbtn[data-track=tire" + c + "]").disabled), fl: !d.querySelector(".ds-pbtn[data-track=tireFL]").disabled } })()`)
+      check(!g.on && !g.act && g.off && g.fl, `FEAT-305: the spare's picker took a corner that is not the flat one: ${JSON.stringify(g)}`) }
     await js('document.querySelector("#dmg-screen .ds-pbtn[data-track=tireFL]").click()')
     await js('document.querySelector("#dmg-screen [data-act=pick-do]").click()'); await readCards()   // the spare: flat too (waits for X)
     check(await js('window.__tutorial().until') === 'recovery', `the spare's card does not wait for the recovery menu: ${JSON.stringify(await js('window.__tutorial()'))}`)
