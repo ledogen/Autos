@@ -2148,6 +2148,15 @@ const STEPS = [
     check(await until(async () => !await hint(), 2000), 'the stranded hint stayed up over the open Recovery card')
     check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towFuel]:not([disabled])")'), 3000),
       `no fuel tow on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
+    // FEAT-307 (DEC-450): a tow is asked for twice. The tow button only opens the confirm (price, time, tow / back); nothing
+    // is spent until the second press, and back returns to the list.
+    { const m0 = await js('window.__econ.money')
+      await js('document.querySelector("#recovery-card [data-act=towFuel]").click()')
+      check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towGo]") && /\\$/.test(document.querySelector("#recovery-card [data-act=towGo]").textContent)'), 2000),
+        `FEAT-307: the tow button showed no confirm: "${await js('document.getElementById("recovery-card").textContent')}"`)
+      check(await js('window.__econ.money') === m0, 'FEAT-307: asking for the tow already spent the money')
+      await js('document.querySelector("#recovery-card [data-act=towBack]").click()')
+      check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towFuel]")'), 2000), 'FEAT-307: back did not return to the tow list') }
     // BUG-113: pad B is the general back on the Recovery card too — it closes the card, it does not pause.
     await padOn(); await btn(1); await padOff()
     check(await until(() => js('document.getElementById("recovery-card").style.display === "none"'), 2000), 'pad B left the Recovery card open (BUG-113)')
@@ -2782,6 +2791,7 @@ const STEPS = [
         document.getElementById("svc-screen").checkVisibility(), window.__tutorial().phase, pe.style.display, pe.textContent.slice(0, 40), +window.__day().clockH().toFixed(2), document.getElementById("inv-screen")?.classList.contains("open"), document.getElementById("recovery-card")?.checkVisibility(), document.getElementById("svc-screen").className, document.getElementById("pump-display").classList.contains("on")])
       if (window.__towTrace.length > 80) clearInterval(id) }, 50) })()`)
     await js('document.querySelector("#recovery-card button[data-act=towShop]").click()')
+    await js('document.querySelector("#recovery-card button[data-act=towGo]").click()')   // FEAT-307: the confirm (the lesson's allow list names it)
     // The shop opens on the parked edge after the tow's reseat, which awaits the seat like a teleport: seat()'s ceiling.
     check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 30000), `the tow did not land at an open shop: ${await js(`JSON.stringify({ parked: window.__vs.parked,
       v: +window.__vs.velocity.length().toFixed(2), card: document.getElementById("dialogue-panel").checkVisibility() && document.getElementById("dlg-speaker").textContent,
