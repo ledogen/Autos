@@ -29,15 +29,15 @@ import { wirePondNoGo } from './lib/pond-no-go.mjs'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { CHUNK_SIZE } from '../src/terrain.js'
 
-// seed, node x, z, class, wheel-track bar (m), main's bump (m, for the report)
+// seed, node x, z, class, wheel-track bar (m: the branch's measured bump + ~1 cm), main's bump (m, for the report)
 const SITES = [
   ['1225608752', -765.9, 222.7, 'capture', 0.06, 0.282],
   ['3872516096', 915.0, 157.7, 'class 1', 0.06, 0.163],
   ['2215738496', -756.9, -500.2, 'class 1', 0.09, 0.296],
   ['2619533952', -735.0, 440.2, 'class 1', 0.07, 0.217],
-  ['2973054976', 956.3, -66.4, 'class 2', 0.10, 0.552],
-  ['4082309632', 255.5, -692.1, 'class 3', 0.10, 0.335],
-  ['3138363520', 874.2, -108.8, 'class 4', 0.10, 0.376],
+  ['2973054976', 956.3, -66.4, 'class 2', 0.155, 0.552],
+  ['4082309632', 255.5, -692.1, 'class 3', 0.145, 0.335],
+  ['3138363520', 874.2, -108.8, 'class 4', 0.12, 0.376],
 ]
 const MAX_MIS = 0.5, MAX_DY = 0.002, MAX_D2 = 0.015, MAX_MP = 0.02, NEAR = 40, D = 180 / Math.PI
 const P = { ...RANGER_PARAMS, potholeEnabled: false }, hw = P.roadHalfWidth ?? 5, W = P.roadWidth ?? 10
