@@ -61,8 +61,9 @@ function cardContainer () {
 
 // The inventory's slots are divs; BUG-109: so are the damage screen's list rows, and its pictogram parts are SVG.
 const ITEMS = 'button, input, .inv-slot[data-slot], .inv-slot[data-packslot], .inv-slot[data-ground], #dmg-screen .ds-part[data-track], #dmg-screen .ds-row[data-track]'
-/** The items the arrows can land on and Enter can press: showing, and not locked by the tutorial (FEAT-288 P2, src/tut-gate.js). */
-const live = (c) => [...c.querySelectorAll(ITEMS)].filter(el => el.offsetParent !== null && allowsEl(el))
+/** The items the arrows can land on: every one showing. DEC-443 (owner, 2026-11-19): a tutorial lesson never fences the
+ *  highlight; what it locks (src/tut-gate.js) is refused when PRESSED — the click is caught there — so a wrong one does nothing. */
+const live = (c) => [...c.querySelectorAll(ITEMS)].filter(el => el.offsetParent !== null)
 
 let cur = null   // the highlighted item
 // FEAT-133: where it was, so a card that re-renders its innerHTML (the inventory, on every change)
@@ -165,6 +166,7 @@ function onKey (e) {
   // the pad's D-pad arrives as synthetic key events, which never move a native slider (owner,
   // 2026-10-20: the sleep slider would not budge on a pad).
   if (cur.type === 'range' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    if (!allowsEl(cur)) return   // DEC-443: a slider the lesson locks takes no step (no click passes through the gate here)
     e.key === 'ArrowLeft' ? cur.stepDown() : cur.stepUp()
     cur.dispatchEvent(new Event('input', { bubbles: true }))
     return

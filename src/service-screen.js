@@ -57,7 +57,7 @@ import { BACK_BUTTON } from './park-badge.js'
 const CSS = `
 #svc-screen { display: none; position: fixed; top: 0; right: 0; bottom: 0; z-index: 95; pointer-events: none;
   align-items: flex-start; padding: 0 16px; font-family: var(--font); color: var(--text-body); }
-#svc-screen.open { display: flex; }
+#svc-screen.open { display: flex; }   /* DEC-444, DEC-455: top-aligned, so a section opening never moves the row the eye is on */
 body.map-open #svc-screen { visibility: hidden; }
 body:has(#dmg-screen.open) #svc-screen { visibility: hidden; }   /* FEAT-212: Vehicle Diagnostics opens over it */
 /* FEAT-167 (owner, 2026-11-05): no HUD behind the shop — the card carries the wallet and the clock. The
