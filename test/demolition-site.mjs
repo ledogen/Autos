@@ -188,5 +188,11 @@ for (const s of SEEDS) {
 }
 
 check(`a farm or work site posts a demolition offer on some seed's board (${posted})`, posted > 0)
+// DEC-430: no demolition line wears a road sign (ASSET-31, sign-*.glb), and its work-zone signs belong to no pool.
+const dressKinds = [...THINGS, ...REQUISITION].filter((t) => t.family === 'demolition').flatMap((t) => t.targets.flatMap((g) => g.kinds))
+const roadSigns = dressKinds.filter((k) => PROP_MODELS[TARGET_TYPES[k].model].url.includes('/sign-'))
+check(`DEC-430: no demolition target is a road sign (${roadSigns.join(' ') || 'none'})`, roadSigns.length === 0)
+const pooled = Object.keys(PROP_MODELS).filter((k) => PROP_MODELS[k].url?.includes('/work-') && PROP_MODELS[k].tags?.length)
+check(`DEC-430: the work-zone signs are in no model pool (${pooled.join(' ') || 'none'})`, pooled.length === 0)
 if (fails) { console.log(`\ndemolition-site: ${fails} FAIL`); process.exit(1) }
 console.log('\ndemolition-site: all ok')

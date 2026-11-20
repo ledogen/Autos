@@ -21,7 +21,20 @@ a spawner brings in one sign, not a set:
     sign-stop.glb       STOP octagon                         (R1-1)
     sign-icy.glb        ICY                                  (W8-?)
 
-The .blend holds all seven side by side as the source view.  `build()` gives you that;
+DEC-430 (owner, 2026-11-18) adds a WORK-ZONE set from the same generator: a demolition
+target "must read as a target, not as road furniture", so the work site's sign line draws
+from its own pool, in the Type III barricade's orange (ASSET-71), never from the seven above:
+
+    work-sign-worker.glb   the man with a shovel              (W21-1)
+    work-sign-arrow.glb    a heavy arrow
+    work-sign-blank.glb    a bare orange blank, border and bolts
+    work-board-stripes.glb an orange / white striped rail board
+
+Same post, same 36 in blank, so the three diamonds hull EXACTLY as a warning sign does
+(src/debris.js hulls the .glb) and the board within a centimetre at bumper height.
+No words on any of them: nobody has written work-zone wording yet.
+
+The .blend holds all eleven side by side as the source view.  `build()` gives you that;
 `export()` writes the files and then rebuilds the combined view before you save.
 
 
@@ -170,6 +183,8 @@ YELLOW = (0.887, 0.554, 0.010)     # MUTCD yellow, a touch weathered
 INK = (0.012, 0.012, 0.013)
 STOP_RED = (0.500, 0.015, 0.022)
 ENAMEL = (0.780, 0.775, 0.760)     # the white on the stop sign
+ORANGE = (0.700, 0.130, 0.010)     # DEC-430's work zone: expedition-camp.py's BarrierOrange, so a
+                                   # work sign and the Type III barricade beside it are one family
 
 MATERIALS = [
     ("SignPost", (0.235, 0.190, 0.140), 0.92),   # weathered timber
@@ -177,8 +192,8 @@ MATERIALS = [
     ("SignFace", (1.000, 1.000, 1.000), 0.55),   # baseColor IS the bake
 ]
 
-OUT_DIR = os.path.join(os.path.dirname(bpy.data.filepath) or ".", "..")
-BLEND_PATH = os.path.join(os.path.dirname(bpy.data.filepath) or ".", "road-signs.blend")
+OUT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # ASSETS.md: paths from the script
+BLEND_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "road-signs.blend")
 TRI_BUDGET = 120           # per sign; the ticket allows post 120 + face 40
 
 
@@ -447,6 +462,11 @@ class Canvas:
         # PNG's row filters completely: it took these faces from 15 kB to 230 kB each,
         # i.e. most of the .glb.  Anything baking flat artwork wants this off.
         sc.render.dither_intensity = 0.0
+        # NO STAMPS (ART-STYLE rule 1): the date and render time land in the PNG's text
+        # chunks, so a re-export would never come out byte-identical.
+        for k in dir(sc.render):
+            if k.startswith("use_stamp"):
+                setattr(sc.render, k, False)
         cam_data = bpy.data.cameras.new("SignCam")
         cam_data.type = "ORTHO"
         cam_data.ortho_scale = 1.0
@@ -566,14 +586,15 @@ class Canvas:
         return img
 
 
-def warning_blank(c, bolts=True):
+def warning_blank(c, bolts=True, field=YELLOW):
     """Yellow field, black border stripe, two bolt heads.  Shared by all six warning
-    signs; the field colour also fills the canvas so edge bleed is invisible."""
+    signs (and, in ORANGE, the work-zone diamonds); the field colour also fills the
+    canvas so edge bleed is invisible."""
     outline = diamond_outline()
-    c.rect(0.0, 1.0, 0.0, 1.0, YELLOW, "Bleed")
-    c.poly(outline, YELLOW, "Field")
+    c.rect(0.0, 1.0, 0.0, 1.0, field, "Bleed")
+    c.poly(outline, field, "Field")
     c.poly(inset_poly(outline, BORDER_OFF), INK, "Border")
-    c.poly(inset_poly(outline, BORDER_OFF + BORDER_W), YELLOW, "Inner")
+    c.poly(inset_poly(outline, BORDER_OFF + BORDER_W), field, "Inner")
     if bolts:
         for cy in BOLT_CY:
             c.circle(0.5, cy, BOLT_R, INK, "Bolt%d" % int(cy * 100))
@@ -709,6 +730,57 @@ def art_icy(c):
     c.text("ICY", 0.5, 0.5, INK, "Legend", cap_h=0.270, max_width=0.600)
 
 
+# --- the work zone (DEC-430): demolition targets only, never road furniture ---
+
+BOARD_Y = (0.36, 0.64)     # the rail board's band of the canvas: 0.914 x 0.256 m (36 x 10 in)
+
+
+def board_outline():
+    """A Type I barricade rail as a board on the 4x4: the canvas's full width, BOARD_Y tall."""
+    y0, y1 = BOARD_Y
+    return [(0.0, y0), (1.0, y0), (1.0, y1), (0.0, y1)]
+
+
+def art_work_worker(c):
+    """W21-1: a worker leaning into a shovel, the pile at his feet.  The one road-work
+    symbol that needs no word.  Every limb is a ribbon so the figure stays one weight;
+    each point is inside diamond_halfw(SYMBOL_INSET_BOLD) at its own height."""
+    warning_blank(c, bolts=False, field=ORANGE)
+    hip, sho = (0.40, 0.45), (0.47, 0.59)
+    c.quads(ribbon([hip, sho], 0.042), INK, "Torso")
+    c.circle(0.505, 0.670, 0.048, INK, "Head", sides=16)
+    c.quads(ribbon([hip, (0.355, 0.370), (0.350, 0.300)], 0.030), INK, "LegBack")
+    c.quads(ribbon([hip, (0.465, 0.380), (0.460, 0.300)], 0.030), INK, "LegFront")
+    c.quads(ribbon([(0.440, 0.600), (0.600, 0.370)], 0.013), INK, "Handle")
+    c.quads(ribbon([sho, (0.510, 0.520), (0.530, 0.475)], 0.022), INK, "Arm")
+    c.poly([(0.575, 0.355), (0.625, 0.315), (0.665, 0.360), (0.615, 0.400)], INK, "Blade")
+    c.poly([(0.500, 0.300), (0.690, 0.300), (0.610, 0.385)], INK, "Pile")
+
+
+def art_work_arrow(c):
+    """A heavy arrow across the widest band of the diamond."""
+    warning_blank(c, bolts=False, field=ORANGE)
+    c.rect(0.230, 0.540, 0.445, 0.555, INK, "Shaft")
+    c.poly([(0.520, 0.330), (0.790, 0.500), (0.520, 0.670)], INK, "Head")
+
+
+def art_work_blank(c):
+    """A bare work blank, border and bolts: what a crew leaves up between jobs."""
+    warning_blank(c, field=ORANGE)
+
+
+def art_work_stripes(c):
+    """Orange / white 45 deg stripes, the barricade rail's.  Drawn across the whole canvas
+    width; board_outline() crops them, so no stripe can end short of the board's edge."""
+    y0, y1 = BOARD_Y
+    c.rect(0.0, 1.0, 0.0, 1.0, ORANGE, "Bleed")
+    h, w, period = y1 - y0, 0.080, 0.160
+    x = -h
+    while x < 1.0:
+        c.poly([(x, y0), (x + w, y0), (x + w + h, y1), (x + h, y1)], ENAMEL, "Stripe%d" % int((x + 1) * 1000))
+        x += period
+
+
 VARIANTS = [
     ("sign-grade", diamond_outline, art_grade),
     ("sign-curves", diamond_outline, art_curves),
@@ -717,6 +789,10 @@ VARIANTS = [
     ("sign-cross", diamond_outline, art_cross),
     ("sign-stop", octagon_outline, art_stop),
     ("sign-icy", diamond_outline, art_icy),
+    ("work-sign-worker", diamond_outline, art_work_worker),
+    ("work-sign-arrow", diamond_outline, art_work_arrow),
+    ("work-sign-blank", diamond_outline, art_work_blank),
+    ("work-board-stripes", board_outline, art_work_stripes),
 ]
 
 
@@ -834,7 +910,7 @@ def report(ob):
 
 
 def build(offset=True):
-    """All seven side by side - the .blend source view."""
+    """All eleven side by side - the .blend source view."""
     _fresh_scene()
     print("=" * 74)
     for i, (name, outline_fn, art_fn) in enumerate(VARIANTS):
@@ -846,11 +922,14 @@ def build(offset=True):
     print("=" * 74)
 
 
-def export():
+def export(only=None):
     """One .glb per variant, each built alone in a fresh scene, then the combined
-    side-by-side view rebuilt so the .blend can be saved as the source."""
+    side-by-side view rebuilt so the .blend can be saved as the source.  `only` is a
+    name prefix ("work-" re-exports the work zone and leaves the road signs' files)."""
     print("=" * 74)
     for name, outline_fn, art_fn in VARIANTS:
+        if only and not name.startswith(only):
+            continue
         _fresh_scene()
         ob = build_sign(name, outline_fn, art_fn)
         report(ob)
@@ -873,6 +952,7 @@ def export():
 if __name__ == "__main__":
     import sys
     if "export" in sys.argv:
-        export()
+        tail = sys.argv[sys.argv.index("export") + 1:]
+        export(tail[0] if tail else None)
     else:
         build()
