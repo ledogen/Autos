@@ -45,3 +45,5 @@ reads it and needs no change then.
 `src/main.js` (`_campPromptState`, the card line) · `src/camp.js` (`campFastLine`) · `test/camp-fast-card.mjs`
 
 ## Log
+- 2026-11-19 (lane ai, land/camp-1119): built; gate camp-fast-card, smoke step campCard drives 26+ km/h in and out of a
+  zone and reads the card. Cost at speed: one zone-disc loop per 10 Hz poll (no ray, no grading).

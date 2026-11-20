@@ -41,3 +41,8 @@ FEAT-299 (continuous camping areas, not built) changes the zones, not the ray: n
 `src/camp.js` (`evaluate`, `_gradeSide`, `sideBeats`) · `test/camp-sides.mjs`
 
 ## Log
+- 2026-11-19 (lane ai, land/camp-1119): built. 32 random seeds × shoulder spots (744): a site found one-sided 216 (29.0 %),
+  two-sided 337 (45.3 %); 121 spots (16.3 %) gained a site where one-sided had none; the site sits across the road at 157
+  (21.1 %); never a worse one. The own-side ray matched main's evaluate exactly at all 744 (identity check, not kept).
+  Cost per full re-grade, measured in the page (seed 6, 60 spots): one ray 1.5 ms → both sides 3.5 ms. A re-grade runs
+  only while hunting below 20 km/h, after 1.5 m of travel (≤ ~3.7 a second), on the 10 Hz poll.
