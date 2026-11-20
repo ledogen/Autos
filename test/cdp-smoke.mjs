@@ -3291,7 +3291,7 @@ const STEPS = [
     const lessonCap = () => js('(k => k && JSON.stringify({ kb: getComputedStyle(k.querySelector(".kc-kb")).display, pad: getComputedStyle(k.querySelector(".kc-pad")).display, key: k.querySelector(".kc-kb").textContent, text: k.querySelector(".kc-pad").textContent }))(document.querySelector("#dlg-text .dlg-key .keycap"))')
     for (let i = 0; i < 30 && await dlg() && !await lessonCap(); i++) { await btn(0); await sleep(150) }
     const cap = JSON.parse(await lessonCap() ?? 'null')
-    check(cap && cap.kb === 'none' && cap.pad !== 'none' && /^(RT|LT|View|B|RB)$/.test(cap.text), `a lesson's key does not read the pad's button: ${JSON.stringify(cap)}`)
+    check(cap && cap.kb === 'none' && cap.pad !== 'none' && /^(RT|LT|◂ Back|B|RB)$/.test(cap.text), `a lesson's key does not read the pad's button: ${JSON.stringify(cap)}`)
     // FEAT-174: a line that differs by input says it once, for the device driving, and swaps live. The drive lesson
     // reads "the left stick" on the pad; one keyboard press (Shift alone: hands the keyboard control, turns no card)
     // re-reads it as "A and D".
