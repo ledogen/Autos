@@ -3485,7 +3485,7 @@ function _rebuildPoiMarkers () {
     _poiGroup.add(g)
     _poiYards.push(g)
     _clutter.add(r.modelX, r.modelZ, () => {
-      const m = spawnModel(r.key, { castShadow: true, receiveShadow: true })
+      const m = spawnModel(r.key, { castShadow: true, receiveShadow: true, variant: r.variant })
       m.position.set(r.modelX, r.baseY, r.modelZ)
       m.rotation.y = r.modelYaw
       g.add(m)
@@ -5503,6 +5503,7 @@ gpsSystem = new GpsSystem(scene, {
   getRoad: () => roadSystem,
   // FEAT-297: the POI an objective stands for (matched by its x, z), so the route-end arrow can hover over its roof.
   getCamera: () => camera.position,
+  getBlocked: (x, y, z, r) => poiSystem.queryContact(x, y, z, r),
   getObjectiveTopY: (o) => { const q = poiSystem.list().find(p => Math.hypot(p.x - o.x, p.z - o.z) < 1); return q ? poiTopY(q) : null },
 })
 
