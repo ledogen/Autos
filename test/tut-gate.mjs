@@ -191,8 +191,7 @@ ok(/go\.disabled = _firingDay\(\) && /.test(main) && !/cp-sleep-go[^\n]*disabled
     'DEC-443: a locked element keeps the pointer and the highlight (only a locked slider takes no drag)')
   // DEC-442: no tip after the tutorial — every non-story card is gated on _inTutorial(), and the three that only ever came after it are gone
   ok(/function _tut \(key, cards = TUT\[key\], done = null, always = false\) \{\n  if \(!always && !_inTutorial\(\)\) return\n/.test(main), 'DEC-442: _tut plays only inside the tutorial (or a story beat, `always`)')
-  for (const k of ['tut-offer', 'tut-rank', 'tut-sleep']) ok(!(k in DLG.TUT) && !main.includes(`'${k}'`), `DEC-442: the after-the-tutorial tip ${k} is gone`)
-  ok(/_tut\('tut-camp', TUT\['tut-camp'\], null, true\)/.test(main), "DEC-442: the camp taking you on is a story beat (`always`)")
+  for (const k of ['tut-offer', 'tut-rank', 'tut-sleep', 'tut-camp']) ok(!(k in DLG.TUT) && !main.includes(`'${k}'`), `DEC-442: the after-the-tutorial tip ${k} is gone`)
   // item 4: a key inside a pad half is the pad's own button (the map's X), never put through the keyboard's keycap
   ok(/if \(!k\.closest\('\.kc-pad'\) && _DLG_PAD_KEYS\.has/.test(main), 'item 4: a pad half\'s dlg-key is not re-read as a keyboard key')
   ok(Object.values(DLG.TUT).flat().every(c => !/>View</.test(c.text)), 'item 6: no card names the pad\'s View')

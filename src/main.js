@@ -5329,8 +5329,7 @@ function _updateFiringCam (dt) {
 // played by _pumpTut on the HUD poll once no other card is up, each HOLDING the sim and the clock
 // (_cardHold) — so one may land mid-drive without the truck running on under it. Only while the tutorial is on
 // (_inTutorial) — DEC-442 (owner, 2026-11-19): no tip interrupts the actual game, every one is taught in the tutorial —
-// and `always` lifts that for the story's own beats (the paycheck, the boss's check, Larry's call, the camp taking you
-// on); each key once per run.
+// and `always` lifts that for the story's own beats (the paycheck, the boss's check, Larry's call); each key once per run.
 const _tutQueue = []
 function _tut (key, cards = TUT[key], done = null, always = false) {
   if (!always && !_inTutorial()) return
@@ -8189,7 +8188,7 @@ function _renderRunHud () {
   const s = economySystem.snapshot()
   // FEAT-103: the camp's gate. Every deed source settles through the wallet, and this poll reads it,
   // so this is the one place the requisition opens (openLines is idempotent).
-  if (offerBoard && !_paperScenario && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp', TUT['tut-camp'], null, true)   // FEAT-305: a story beat, not a tip (DEC-442): every run hears it
+  if (offerBoard && !_paperScenario && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds) offerBoard.openLines(daySystem.clockH())   // DEC-442: no card (Larry's was a played tutorial's only)
   if (daySystem.clockH() >= _eveWakeH()) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
   _syncTutCard()       // FEAT-184: the intro's card, back after a resume
   _untilTick()         // DEC-359

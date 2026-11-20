@@ -122,8 +122,7 @@ export const LARRY_PACK = [
 
 /**
  * The tutorial's cards: each plays once, the first time the player meets the thing, and only while the tutorial is on
- * (DEC-442: no tip after it; 'tut-camp' is the one story beat here, heard in every run). They play once no other card
- * is up and hold the sim while they are (main.js _tut). Mom is the tutorial's voice; Katie calls after Larry's (the picnic, DEC-345), meets you at the camping area
+ * (DEC-442: no tip after it). They play once no other card is up and hold the sim while they are (main.js _tut). Mom is the tutorial's voice; Katie calls after Larry's (the picnic, DEC-345), meets you at the camping area
  * (DEC-347). *
  * A lesson card (`until`, DEC-359) is also the tutorial gate's STEP (FEAT-288 P2, src/tut-gate.js): `allow` names the
  * locked actions it opens (gamepad.js BINDINGS names: 'inventory', 'damage screen', 'camp', 'recovery', …) and the card /
@@ -135,8 +134,6 @@ export const TUT = {
         + `because running dry out there means a tow you can't afford.` }],   // DEC-363: mom's, not Larry's (placeholder words)
     'tut-service': [{ speaker: 'Mom', text: `The shop fixes what you broke and sells what you need. `
         + `Every repair has a price on it &mdash; drive gentle and you'll keep more of your pay.` }],
-    'tut-camp': [{ speaker: 'Uncle Larry', text: `That's enough good deeds. The expedition camp is taking you on &mdash; `
-        + `they've posted what they need. Bring it and you're out of here.` }],
 
     // FEAT-170 stage 4: the opening's lessons, in mom's voice, in the order they come. PLACEHOLDER words
     // (Lane A's draft, 2026-11-06; the owner writes them — FEAT-148).
