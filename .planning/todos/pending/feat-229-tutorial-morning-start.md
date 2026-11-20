@@ -137,3 +137,7 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
   blink check (2 s window; passed in both other runs, the check now prints its state). pad-e2e ALL OK. Unverified: a real drive.
 - 2026-11-20: owner, card tutorial-seed-1872706826-drive: "Drove it: good". The seed box is ticked; the ticket stays open for the dialogue boxes. The card also reported "Wrong way. Turn around" showing over the opening's cards on both seeds (not seed-specific); the owner did not comment, no ticket minted by the scribe.
 
+- 2026-11-17: seed search round 2 (lane u, `land/tut-seed-search-r2`, study in git-invisible `wip/tut-seed-search-r2/`). Pinned
+  3590618618 Larry's → station: steepest 10 m 38.7 %, 1005 m > 12 %. 1000 random seeds, 900 valid, 14 pass a 20 % / 150 m
+  limit; no seed has a whole day under 20 % (the router's 38 % ceiling). 5 candidates + the pin on owed card
+  `tutorial-seed-pick-r2` (sheets in the wip folder). Pin unchanged.
