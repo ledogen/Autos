@@ -223,10 +223,11 @@ const XS_SOFT2 = 0.5 * 0.5
 // has overDist 0 ⇒ weight 1 ⇒ the weld to that ribbon is exact and unchanged.
 const XS_OFF_FADE = 4.0
 // DEG2_PLANE_KINK (BUG-90): a degree-2 kink at least this sharp runs both legs' banks off to flat at the node
-// (_runEndpointJunctions' flatCamber). It also held both legs on one shared pad plane; BUG-236 replaced that, at every
-// connector bend, by the vertical curve through the node and the core's own deck (_applyJunctionBlend,
-// _connectorDesignAt) — the plane's grade and cross-section errors only partly cancelled (census: 23 of the 60 sag
-// bumps and 23 of the 35 cross-section bumps were at kinks ≥ 60°). The plane stays only with connectors off.
+// (_runEndpointJunctions' flatCamber) and holds both legs on one shared plane while their pavements overlap
+// (junction-stitch). BUG-236: that plane is fitted to the two runs' own grades through the node height
+// (_deg2BendPlane), no longer the terrain-biased plaza plane; a GENTLER connector bend joins its runs on one vertical
+// curve through the node instead (_applyJunctionBlend). Either way the core between the mouths carries its own deck
+// (_connectorDesignAt). With connectors off the plaza plane (_junctionPadPlane) stays.
 const DEG2_PLANE_KINK = 60 * Math.PI / 180
 const _BJ_RP = { gradeY: 0, tx: 1, tz: 0 }   // BUG-230: _bareJoinFrame's scratch profile sample
 const _xsOffFade = (d) => { const u = Math.min(1, Math.max(0, d / XS_OFF_FADE)); return 1 - u * u * (3 - 2 * u) }
@@ -12504,9 +12505,8 @@ export class RoadSystem {
      * (G·wA = gA, G·wB = gB, the first 10 m, _runAwayGrade): each leg rides out on its own grade, and the recovery past the
      * hold has little grade break to absorb. The ≥3-way plaza plane it replaces here pulled its height up to 3 m toward
      * the terrain, so the legs left the node off their own solved height and the recovery bent them back (23 of the
-     * census's 60 sag bumps were at kinks ≥ 60°). The grade keeps the plaza's cap (roadJunctionPadMaxGrade, 7 %): on the
-     * census's worst sharp bends a 12 %, 16 % or 24 % cap tilted the shared plane into 6–12° banks and made 4–6 bends worse
-     * than main by 1–3 cm; 7 % made one (1.2 cm). Legs nearly parallel (det < 0.05) take the through-axis mean
+     * census's 60 sag bumps were at kinks ≥ 60°). Capped at 24 % (DEC-409's design maximum); the plaza's 7 % cap here
+     * measured 10 bends over 15 cm against 5 (60-seed census), since it pulls the legs off their own grades again. Legs nearly parallel (det < 0.05) take the through-axis mean
      * (_junctionGradeVector). Pure fn of the two runs' points; both legs compute the same plane.
      */
     _deg2BendPlane(id, strands, runKey, other) {
@@ -12520,7 +12520,7 @@ export class RoadSystem {
         let gx, gz
         if (Math.abs(det) > 0.05) { gx = (ga.g * b.wz - gb.g * a.wz) / det; gz = (a.wx * gb.g - b.wx * ga.g) / det }
         else { const G = this._junctionGradeVector(strands); gx = G.gx; gz = G.gz }
-        const m = Math.hypot(gx, gz), cap = this._params?.roadJunctionPadMaxGrade ?? 0.07
+        const m = Math.hypot(gx, gz), cap = 0.24
         if (m > cap) { gx *= cap / m; gz *= cap / m }
         return { cx: P.x, cz: P.z, y0: P.y, gx, gz }
     }
