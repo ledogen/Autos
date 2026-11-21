@@ -3012,7 +3012,12 @@ export class Map2D {
         const baseFull = baseH + B.BONUS
         // FEAT-211 (owner, 2026-11-14): 0.46 of the sheet's width bound the card at k = 1 once the sheet shared the window
         // with the list column; 0.75 gives back the 1.4x it had full screen at the owner's 1045 x 700.
-        const k = Math.max(1, Math.min(1.6, (s.w * 0.75) / B.W, (s.h * 0.62) / baseFull))
+        // BUG-251: and the WHOLE card, every row and an auto shop's shelf form included, fits the sheet's height with its
+        // margins (12 base units top and bottom). The shelf grew to 6 slots + 3 always rows (FEAT-168) and the bound
+        // above never counted it, so a shop's card ran off the bottom. A tall card is drawn smaller, below k = 1 if it must.
+        const rowsBase = (c?.verdict ? 1 : 0) + (c?.times?.length ? 1 : 0) + (c?.deed ? 1 : 0) + (c?.traits ?? []).reduce((n, l) => n + (l.length > 46 ? 2 : 1), 0)   // a trait line over ~46 characters wraps (FEAT-142, below)
+        const allBase = baseH + rowsBase * B.LH + (c?.bonus ? B.BONUS : 0) + (v.shelf ? B.PAD * 2 + B.HEAD + v.shelf.length * B.LH : 0)
+        const k = Math.min(Math.max(1, Math.min(1.6, (s.w * 0.75) / B.W, (s.h * 0.62) / baseFull)), s.h / (allBase + 24))
         const W = B.W * k, PAD = B.PAD * k, LH = B.LH * k, HEAD = B.HEAD * k
         const PORT = 3 * LH                               // portrait spans the sentence block
         const TX = PAD + B.BAR * k + PORT + 12 * k        // text column, right of the portrait
