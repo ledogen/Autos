@@ -42,3 +42,4 @@ A manual shift landing in a gear still releases it with the engine running (DEC-
 
 ## Log
 - 2026-11-20: built on land/gearbox-1120; park-brake gate all green incl. §8.
+- 2026-11-20: 1698b8bf — the smoke's Ventura roll-off starts the engine first (a story teleport seats a dead truck, FEAT-33; a driven arrival has it running). SMOKE_STEPS=boot,pad green: mom's card, offer, shop, pump all let go on the gas.
