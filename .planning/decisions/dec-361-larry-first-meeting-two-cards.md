@@ -1,6 +1,6 @@
 ---
 id: DEC-361
-status: standing
+status: superseded
 decided: 2026-11-17
 area: story
 governs: FEAT-184, DEC-322, DEC-305, DEC-236, data/dialogue.js, LARRY_PACK, Larry

@@ -1,6 +1,6 @@
 ---
 id: DEC-431
-status: standing
+status: superseded
 decided: 2026-11-18
 area: ui
 governs: FEAT-294, FEAT-125, src/gamepad.js, gamepad, controller, pad layout

@@ -63,7 +63,12 @@ body:has(#dmg-screen.open) #svc-screen { visibility: hidden; }   /* FEAT-212: Ve
 /* FEAT-167 (owner, 2026-11-05): no HUD behind the shop — the card carries the wallet and the clock. The
    dock comes back over the map, where the run HUD lifts above it. */
 body:has(#svc-screen.open) #quickjob-btn, body:has(#svc-screen.open) #cluster,
-body:has(#svc-screen.open):not(.map-open) #hud-dock { visibility: hidden; }
+body:has(#svc-screen.open:not(.store)):not(.map-open) #hud-dock { visibility: hidden; }
+/* FEAT-300 (owner 11-19: "at the joint it should show your hunger, sleep and the time"): a storefront's shop is where you
+   choose what to eat, so the dock (energy, hunger, the wallet's clock) stays, slid left of the card — one card's width + its gutters. */
+body:has(#svc-screen.open.store):not(.map-open) #hud-dock { right: calc(min(520px, 100vw - 32px) + 32px); }
+/* …only the readouts: the icon column (park badge, hold-B hint) and the start-the-truck hint are off; the card has its own Back. */
+body:has(#svc-screen.open.store):not(.map-open) #hud-icons, body:has(#svc-screen.open.store) #ignition-hint { display: none !important; }
 #svc-screen .sv-card { pointer-events: auto; background: var(--card-bg); border: 1px solid var(--line-card);
   padding: 12px 16px 14px; width: min(520px, calc(100vw - 32px)); max-height: calc(90% - 32px); position: relative; top: 10%;   /* BUG-247 (DEC-455): the top is pinned, a node that opens grows the card downwards */ box-sizing: border-box;
   display: flex; flex-direction: column; }
@@ -245,6 +250,7 @@ export class ServiceScreen {
     this.leaving = null
     this.note = 0
     this.screen.classList.add('open')
+    this.screen.classList.toggle('store', !!store)
     if (!store) this.onView(true)
     this.render()
   }
