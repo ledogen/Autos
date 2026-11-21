@@ -50,3 +50,5 @@ guessing at `padKick`'s length or strength (suspect 2) can't be checked without 
 **Owed by the owner:** the same two console lines in Chrome with the pad on a USB cable.
 - If it buzzes there, suspect 2 is live: lengthen `padKick` to 80–100 ms at magnitude 1, and check it on the cable.
 - If it is null or silent there too, close this as a platform limit: macOS Chrome + this pad has no rumble path.
+
+- 2026-11-20: owner on the USB card: "is this necessary anymore? rumble confirmed works on windows". Card dropped; ticket stays open only for the ABS kick itself.

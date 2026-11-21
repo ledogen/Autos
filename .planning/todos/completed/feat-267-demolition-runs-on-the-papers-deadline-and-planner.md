@@ -1,7 +1,7 @@
 ---
 id: FEAT-267
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-17
 source: owner, 2026-11-17 — "demolition should follow the papers, timer, and route planning. I'm happy with the clustered placement of the barrels. ... i think we just make demo a straight hurried job."
@@ -68,3 +68,5 @@ To build, mirroring the paper round as FEAT-266 leaves it:
   errors (smoke-r2.log, no board demolition offer live at that hour; the step subset smoke-demo-r2.log took one: $0.50 a
   share, expiry keeps $1.00), pad-e2e ALL OK. Sheet
   wip/feat-267/sheet-r2.jpg (full clear: $10 → $18.99 = base $5.25 + tip $3.74 exactly).
+
+- 2026-11-20: owner signed off on the owed card ("Drove it: good, close it"; par unchanged; follow-ups FEAT-320 (distance to the sign line on the HUD) and BUG-252 (hitch on first prop strike)). Closed.
