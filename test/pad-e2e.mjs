@@ -626,6 +626,7 @@ await press(B); const pumpB = await keysSeen(), closes = await js('__pc')
 check(ltDown === 'f' && ltBrk === 0 && pumpA === ' ' && pumpB === '' && closes === 1, `VH pump: LT holds F ("${ltDown}", brake ${ltBrk}), A is Space ("${pumpA}"), B closes the pump once (${closes}) and sends no key ("${pumpB}")`)
 await js(`${pm}.pumpActive = __pA; ${pm}.pumpClose = __pcl; __eat = false`)
 if ((await vs()).parked !== park0) await press(A)   // the A at the result card above toggled the truck's brake
+if (!(await vs()).parked) await repark()   // the A presses above released the brake and the slope took the truck
 await keysSeen()
 // FEAT-126 manual through Ventura Highway: B up, X down, LB clutch.
 await js(`(async () => { const R = (${appMod('/data/ranger.js')}).RANGER_PARAMS, T = (${appMod('/data/transmissions.js')}).TRANSMISSIONS
