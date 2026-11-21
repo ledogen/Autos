@@ -38,8 +38,11 @@ The momentum bound 2·m·v/M is about 0.56 m/s; one step, then the truck runs on
 broadside and edge-on: the same single step (−0.50 to −0.58, −0.66 to −0.68). No multi-step hold anywhere.
 
 ### Browser, testing lab (wip/bug-252/browser.mjs: the real app, the sign spawned as `_updateSite` does)
-First strike of the session at 28.6 m/s: frame dt 16.9 ms at contact, sim +16.7 ms every frame, worst frame in the
-400-frame window 19.5 ms, 0 hitches over 24 ms. No stall.
+The truck is set to 40 m/s 100 m short and coasts, so it arrives at about 29 m/s. Run A (60 fps): first strike of the
+session, frame dt 16.9 ms at contact, sim +16.7 ms every frame, worst frame of 400 = 19.5 ms. Run B (a loaded machine,
+30 fps), two strikes in one session: every frame around both contacts gains the sim its full 33.3 ms; contact frame dt
+34.2 ms (strike 1) and 35.1 ms (strike 2), worst of 400 frames 36.7 / 36.1 ms; speed off the truck in the contact frame
+0.35 and 0.33 m/s. The first strike and the second are the same.
 
 ### Why it can look like a freeze without a frame drop
 PERF-32's catch-up brake drops the sim debt a long frame leaves. A 100 ms main-thread stall therefore shows the last
