@@ -84,7 +84,7 @@ import { MissionSystem, REGION_MARGIN, secPerGameH, routeLeftM } from './mission
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, poiTopY, dropZoneWorld, overDropZone, satSolid, knockMass, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, poiTopY, dropZoneWorld, overDropZone, onPoiGround, satSolid, knockMass, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS, LINE_SUPPLY } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
@@ -3238,13 +3238,13 @@ scene.add(_poiGroup)
 const _poiCubeGeo = new THREE.BoxGeometry(POI_PARAMS.poiCubeSize, POI_PARAMS.poiCubeSize, POI_PARAMS.poiCubeSize)
 const _poiCubeMat = new THREE.MeshStandardMaterial({ color: 0xff7a18, emissive: 0x3a1a00, roughness: 0.55 })
 
-// The INTERACTION ring (owner, 2026-08-02): a translucent orange curtain standing at
-// poiInteractR, so the spot where parking actually opens the offer is something you can see and
-// aim at rather than a radius you discover by trial — the first step toward the marker being a
-// highlighted parking spot you pull into. Drawn on every marker out to the drawn terrain (poiRingShowR);
-// it is part of what a POI looks like, not a UI state.
+// The INTERACTION curtain (owner, 2026-08-02): a translucent orange curtain standing round the POI's parking spot,
+// so the spot where parking actually opens the offer is something you can see and aim at rather than a radius you
+// discover by trial. FEAT-318 (DEC-474): it is always a box now, never a circle: the model's PARK box, else the
+// shoulder strip in front of the pad (poi.js _shoulderStrip). Drawn on every marker out to the drawn terrain
+// (poiRingShowR); it is part of what a POI looks like, not a UI state.
 //
-// Deliberately dumb geometry: an open-ended unit cylinder, scaled to the radius and sunk into the
+// Deliberately dumb geometry: an open-ended unit cylinder (a box for the spots: _parkBoxGeo), scaled and sunk into the
 // ground so undulating terrain can never open a gap under it. depthWrite off + DoubleSide so it
 // reads as a light curtain from both approaches instead of a solid bucket. Lit like the world round it
 // (see _ringMat), so the headlights pick it out at night.
@@ -3296,16 +3296,15 @@ const _ringMat = (color, opacity = 0.28) => {
 const _poiRingMat = _ringMat(0xff7a18)     // orange — park here to be offered a job
 const _pumpZoneMat = _ringMat(0x4fc8ff)    // FEAT-50: blue — pull alongside and park to use the pump
 const _pumpZoneMarks = []                  // the pump zones' curtains (two per island), rebuilt with the markers
-// ASSET-74: the same curtain round a PARK box instead of a circle — the ring with four sides. A unit
+// ASSET-74: the same curtain round a PARK box instead of a circle — the ring with four sides (FEAT-318: every POI's). A unit
 // square (side 1, open top and bottom): 4 radial segments started at 45°, at radius √½. Shares the
 // ring's material and alpha ramp, so it reads as the same signal in a different shape.
 const _parkBoxGeo = new THREE.CylinderGeometry(Math.SQRT1_2, Math.SQRT1_2, 1, 4, 1, true, Math.PI / 4)
 const PARK_SLACK = 0.3         // m the park box grows by for the trigger — a truck half a wheel over the line still counts
-// The STAGING ring (owner, 2026-08-02): taking the job swaps the marker's orange circle for the
+// The STAGING ring (owner, 2026-08-02): taking the job swaps the marker's orange spot for the
 // green start threshold. One ring at a time, and its colour is the state — orange means "this is
-// where you stop", green means "this is where the clock starts". Same geometry, same style, wider
-// radius (START_ZONE_R vs poiInteractR) and taller in proportion so a 25 m circle still reads as a
-// wall rather than a puddle.
+// where you stop", green means "this is where the clock starts". Same material and style, a 25 m
+// circle (START_ZONE_R), taller in proportion so it still reads as a wall rather than a puddle.
 const _stageRingMat = _ringMat(0x3ddc6b)   // green — cross this and you're running
 const _STAGE_RING_H = 8.0      // m
 const _STAGE_RING_SINK = 3.0   // m
@@ -3370,7 +3369,6 @@ function _rebuildPoiMarkers () {
   _clutter.reset()
   const clutterKeys = new Set()
   const half = POI_PARAMS.poiCubeSize * 0.5
-  const r = POI_PARAMS.poiInteractR
   for (const q of poiSystem.list()) {
     const yard = new THREE.Group()
     yard.userData.x = q.x; yard.userData.z = q.z
@@ -3420,22 +3418,19 @@ function _rebuildPoiMarkers () {
       _pumpZoneMarks.push(m)
     }
 
-    // The ring means "park here and something happens", so it belongs only to markers where
+    // The curtain means "park here and something happens", so it belongs only to markers where
     // something does: a job giver, and mom's house (FEAT-288, DEC-422: "Mom's house should have a marked parking spot
-    // just like everyone else" — her door, camp.js atMoms, answers 25 m round her marker, so the 10 m ring sits inside it).
+    // just like everyone else" — her door, camp.js atMoms, answers in it).
     if (!q.jobs && q.type !== 'momsHouse') continue
-    // FEAT-88: a haul giver's "park here" is its drop zone, not a ring round the pad.
+    // FEAT-88: a haul giver's "park here" is its drop zone.
     if (q.drop) { _addDropMark(q); continue }
-    const box = q.park ? dropZoneWorld(q, q.park) : null
-    const ring = new THREE.Mesh(box ? _parkBoxGeo : _ringGeo, _poiRingMat)
-    if (box) {   // ASSET-74: the general store's lot — a box curtain round every stall
-      ring.scale.set(2 * box.halfX, _POI_RING_H, 2 * box.halfZ)
-      ring.position.set(box.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, box.z)
-      ring.rotation.y = box.yaw
-    } else {
-      ring.scale.set(r, _POI_RING_H, r)
-      ring.position.set(q.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, q.z)
-    }
+    if (!q.park) continue   // none: poi.js gives every other such POI a spot (FEAT-318)
+    // ASSET-74 / FEAT-318: a box curtain round the parking spot — the store's stalls, the lift, or the shoulder strip
+    const box = dropZoneWorld(q, q.park)
+    const ring = new THREE.Mesh(_parkBoxGeo, _poiRingMat)
+    ring.scale.set(2 * box.halfX, _POI_RING_H, 2 * box.halfZ)
+    ring.position.set(box.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, box.z)
+    ring.rotation.y = box.yaw
     ring.renderOrder = 5
     _poiGroup.add(ring)
     _poiRings.set(q.id, ring)
@@ -4070,12 +4065,11 @@ function _serviceInReach () {
   // is charged off the wallet (_takeItem) and needs room in the truck, so a purchase made first could take either
   // away. Only this ordering: with no result card up the shop is open as ever (DEC-051).
   if (missionSystem?.state === 'done' || paperRouteSystem?.state === 'done') return null
-  const vp = vehicleState.position
-  const q = poiSystem.nearest(vp.x, vp.z, POI_PARAMS.poiInteractR)
+  const q = poiSystem.list().find(q => SHOP_TYPES.has(q.type) && !q.hidden && _inPoiSpot(q))
   // FEAT-104: a storefront's shop too, except on the tutorial's firing day (the givers' rule, _poiInReach) — but for
   // the snack's station at its stop (DEC-304).
   if (!SHOP_TYPES.has(q?.type) || (q.type !== 'autoShop' && _firingDay() && !(_dayStop() === 'snack' && q === _snackShop()))) return null
-  return _inPoiSpot(q) ? q : null   // FEAT-178: on the lift (its park box), not just near
+  return q   // FEAT-178: on the lift (its park box), not just near
 }
 
 /** Open the screen of `shop` (a SHOP_TYPES POI): its service screen, or a storefront's (FEAT-104). Returns `store`. */
@@ -5082,9 +5076,9 @@ function _eveningBeats () {
     _eveningLessons(q, vp, stop)
   }
   // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
-  // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
+  // ground (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
   // (_playedS), so a pause or a card never counts.
-  const off = !vehicleState.parked && !_inPoiRing() && !poiSystem.nearest(vp.x, vp.z, TUT_PARAMS.safeNearPoiM)
+  const off = !vehicleState.parked && !_atPoi() && !poiSystem.nearest(vp.x, vp.z, TUT_PARAMS.safeNearPoiM)
     && campSystem.nearRoadInfo(vp.x, vp.z).lateral > (RANGER_PARAMS.roadHalfWidth ?? 5) + TUT_PARAMS.offRoadM
   _eveOffAt = off ? (_eveOffAt ?? _playedS) : null
   const left = off ? TUT_PARAMS.offRoadS - (_playedS - _eveOffAt) : 0
@@ -5854,13 +5848,12 @@ function _poiInReach () {
   // FEAT-61: a route is a job in flight, same as any other — you cannot take work while doing work,
   // and Larry's own marker must not re-offer the route you are three houses into.
   if (paperRouteSystem.isActive()) return null
-  // jobsOnly (FEAT-60): only a job source answers the park trigger. Without this the roster's
-  // other six types would each win the trigger and then have nothing to say — and mom's house,
-  // which outranks her own front door in the precedence below, would offer freight instead of bed.
-  const q = poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
-                             POI_PARAMS.poiInteractR, true)
+  // Only a job source answers the park trigger (FEAT-60). Without this the roster's other types would each win the
+  // trigger and then have nothing to say — and mom's house, which outranks her own front door in the precedence below,
+  // would offer freight instead of bed. FEAT-318: the one whose parking spot the truck is in.
+  const q = poiSystem.list().find(q => q.jobs && !q.hidden && _inPoiSpot(q))
   if (q && _jointQuiet(q.id, daySystem.clockH())) return null
-  return q && _inPoiSpot(q) ? q : null
+  return q ?? null
 }
 
 /** A giver's card opens on its live offers. */
@@ -5870,14 +5863,12 @@ function _openOffers (poi, offers) {
 
 /**
  * Is the truck in POI `q`'s parking spot? FEAT-88: a haul giver's is its drop zone, with your BED
- * over it — that is where the load lands. ASSET-74: a POI with a PARK box (the general store's lot)
- * wants the truck inside it; poiInteractR still reaches it (the box's far corner is 8.8 m from the
- * pad centre). Anything else: the ring.
+ * over it — that is where the load lands. Anything else (FEAT-318, DEC-474): the truck's centre in its PARK box —
+ * the model's (the store's stalls, the lift) or the shoulder strip in front of the pad. A POI with neither has no spot.
  */
 function _inPoiSpot (q) {
   const vp = vehicleState.position
-  if (Math.hypot(q.x - vp.x, q.z - vp.z) > POI_PARAMS.poiInteractR) return false
-  return q.drop ? _bedOverDrop(q) : !q.park || overDropZone(q, vp.x, vp.z, PARK_SLACK, q.park)
+  return q.drop ? _bedOverDrop(q) : overDropZone(q, vp.x, vp.z, PARK_SLACK, q.park)
 }
 
 /** FEAT-103: the source of a line taken at the camp while the truck is still on its way there, or null. */
@@ -5931,11 +5922,9 @@ function _updateFetchPrompt (poiEl, pulled) {
   const pickIds = missionSystem?.pickupPoiIds() ?? []
   if (pickIds.length) {
     const vp = vehicleState.position
-    // Same reach as the giver trigger: the interaction radius, and — at a POI with a PARK box (the
-    // general store's lot, ASSET-74) — inside the box, whose curtain is the halo you park in.
+    // Same reach as the giver trigger: the stop's parking spot, whose curtain is the halo you park in (FEAT-318).
     // FEAT-291: whichever owed stop the truck is at — a multi-drop's are handed over in any order.
-    const pq = poiSystem.list().find(q => pickIds.includes(q.id) && Math.hypot(q.x - vp.x, q.z - vp.z) <= POI_PARAMS.poiInteractR
-      && (!q.park || overDropZone(q, vp.x, vp.z, PARK_SLACK, q.park)))
+    const pq = poiSystem.list().find(q => pickIds.includes(q.id) && _inPoiSpot(q))
     const near = !!pq
     const j = missionSystem.mission, at = j.atPickup
     if (near && pulled && missionSystem.acquire(pq.id)) {
@@ -6076,10 +6065,11 @@ _menu('camp', () => !!_campUi, () => _closeCampUi())
 // player says "I'm shopping for ground now". It stays on until they turn it off, or break camp (BUG-142).
 let _campSeek = false
 
-/** Inside a POI's ring, the radius its park trigger answers: the place does the work there, so the
+/** On a POI's ground (its pad or its parking spot, FEAT-318): the place does the work there, so the
  *  tent and the tow stand down (owner, 2026-10-23). Mom's door is its own test (_atMomsHouse). */
-function _inPoiRing () {
-  return !!poiSystem.nearest(vehicleState.position.x, vehicleState.position.z, POI_PARAMS.poiInteractR)
+function _atPoi () {
+  const vp = vehicleState.position
+  return poiSystem.list().some(q => !q.hidden && onPoiGround(q, vp.x, vp.z, PARK_SLACK))   // FEAT-318: its pad or its spot
 }
 
 function _campPromptState () {
@@ -6091,7 +6081,7 @@ function _campPromptState () {
   if (missionSystem && missionSystem.state !== 'idle' && !missionSystem.isOnJob()) return null
   if (paperRouteSystem.isActive() && !paperRouteSystem.isCarrying()) return null
   if (_campUi || _campBusy) return null
-  if (_inPoiRing()) return null
+  if (_atPoi()) return null
   // Collapsed: nothing is paid at all — no zone scan, no ray, no grading.
   if (!_campSeek) return { collapsed: true }
   // FEAT-308 (DEC-451): at speed the card still says whether this is camping ground (the disc scan is
@@ -6439,8 +6429,8 @@ function _recoveryState () {
 /** FEAT-162: parked at a service center, the least its bench or shelf charges to cure a seized engine
  *  (the ×3 rebuild, or an engine off the shelf) and to put on one wheel, fitting included. Else null. */
 function _shopCures () {
-  const vp = vehicleState.position, q = poiSystem.nearest(vp.x, vp.z, POI_PARAMS.poiInteractR)
-  if (q?.type !== 'autoShop') return null
+  const vp = vehicleState.position, q = poiSystem.list().find(q => q.type === 'autoShop' && onPoiGround(q, vp.x, vp.z, PARK_SLACK))
+  if (!q) return null
   const tier = economySystem.tierNow(), onShelf = shelf(q.id, daySystem.clockH())
   const buy = (slot, socket) => Math.min(...onShelf.filter(e => PARTS[e?.id]?.slot === slot)
     .map(e => shelfPrice(e) * tier + serviceCenter.fitLabour(e.id, socket).price))
@@ -6475,7 +6465,7 @@ function _checkStranded () {
 function _updateRecovery () {
   const row = document.getElementById('recovery-row')
   if (!row) return
-  const show = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !fuelStop.isOpen && !serviceScreen.isOpen && !_inPoiRing()
+  const show = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !fuelStop.isOpen && !serviceScreen.isOpen && !_atPoi()
   row.style.display = show ? 'flex' : 'none'
   const live = show && !!vehicleState.parked && !damageScreen.blocked
   const icon = document.getElementById('recovery-icon')
@@ -9930,7 +9920,7 @@ const storySystem = new StorySystem({
     // ORDER MATTERS: the roster decides where mom lives, and camping is handed that answer.
     // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping
     // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
-    campSystem.build(center, radius, poiSystem.list().find(q => q.type === 'momsHouse') ?? null)
+    { const mom = poiSystem.list().find(q => q.type === 'momsHouse'); campSystem.build(center, radius, mom?.park ? dropZoneWorld(mom, mom.park) : null) }   // FEAT-318: her parking spot
     // FEAT-164: then zones until no road the planners use is more than campReachM from one.
     campSystem.fillReach(mainNodes, p => Math.hypot(p.x - center.x, p.z - center.z) <= radius - REGION_MARGIN)
     _rebuildPoiMarkers()

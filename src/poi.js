@@ -29,6 +29,7 @@ import { houseRungs, roadDistFromLarry, idKey } from './paper-route.js'   // FEA
 import { SOURCES } from '../data/offers.js'           // FEAT-67: which types post offers (→ `jobs`)
 import { hash32, mulberry32 } from './seed.js'        // per-edge / per-POI PRNG keys (byte-stable)
 import { padSd, PAD_RIM_HOLD } from './road-carve.js'   // FEAT-71: the pad's own shape, for the yard clip; FEAT-295: a house pad's gap
+import { RANGER_PARAMS } from '../data/ranger.js'      // FEAT-318: the truck's real length and width size the shoulder strip
 
 /** Tunables. Geometry + siting only — none of this may ever enter RANGER_PARAMS. */
 export const POI_PARAMS = {
@@ -77,14 +78,6 @@ export const POI_PARAMS = {
     // corners out without rejecting the ordinary crowned straight.
     poiMaxCrossSlope: 0.12,
     poiEndClearM:     55,     // m — keep clear of both edge ends (junction pads live there)
-    poiInteractR:     10,     // m — interaction radius: where the prompt shows AND where latching
-                              // the parking brake opens the offer. ONE radius on purpose — a prompt
-                              // visible further out than the trigger works would be a lie.
-                              // Tightened from 18 (owner, 2026-08-02): 18 m armed the offer from
-                              // the road itself, well short of the pad. 10 m is a little over the
-                              // pad's own half-diagonal (√(7² + 4²) ≈ 8.1), so it means "parked on
-                              // the lay-by" and nothing looser — the step toward the marker being a
-                              // highlighted parking spot you actually pull into.
     poiCubeSize:      1.6,    // m — the placeholder marker cube's edge length
 
     // ── FEAT-61: newspaper customers ────────────────────────────────────────────────────────
@@ -189,8 +182,8 @@ export const POI_PARAMS = {
  *
  * `jobs` is WHETHER PARKING HERE OPENS AN OFFER, and it is DERIVED, not hand-set (FEAT-67): a
  * type posts offers iff it has a row in data/offers.js SOURCES (the mission board's source table).
- * Mom's house has none — she only receives — so she answers no offer's park trigger; she still wears the ring
- * (FEAT-288, DEC-422), because parking in it knocks on her door (camp.js atMoms, a wider radius). A marker that wears the ring but answers
+ * Mom's house has none — she only receives — so she answers no offer's park trigger; she still has a parking spot
+ * (FEAT-288, DEC-422), because parking in it knocks on her door (camp.js atMoms). A marker that wears a spot but answers
  * nothing is the same lie as a prompt drawn wider than its trigger, which this module already
  * refuses to tell; deriving the flag from the one table that decides who posts work is what makes
  * that impossible to get out of step.
@@ -362,6 +355,28 @@ export function towSeat (q) {
 
 const SEAT_STRIP_M = 2.8   // m — a plain pad's start seat off its centre toward the road: the 14 x 8 lay-by's road-side strip
 
+// FEAT-318 (DEC-474, owner 2026-11-20): no round interaction regions. A POI's parking spot is its model's PARK box (a
+// driveway, a stall, a lift), else a SHOULDER STRIP in front of its pad: "at least two and a half car lengths and two
+// car widths, so it's easy to just fly in and park". The Ranger is 4.705 x 1.66 m (data/ranger.js bodyLength /
+// bodyWidth): 11.76 x 3.32 m, rounded up to the half metre. Always the Ranger's, never the selected vehicle's: the
+// strip is world geometry, a pure function of the seed.
+const SPOT_LEN = Math.ceil(2.5 * RANGER_PARAMS.bodyLength * 2) / 2   // 12.0 m along the road
+const SPOT_DEPTH = Math.ceil(2 * RANGER_PARAMS.bodyWidth * 2) / 2   // 3.5 m across
+const SAT_SPOT_CLEAR = 0.3   // m — a yard piece or mailbox keeps this far outside a strip, past its own half-footprint
+const SOLID_SPOT_CLEAR = 0.3   // m — and the marker's own boxes (a building, Larry's van)
+const SPOT_CLEAR = 0.1   // m from the paved edge (the lane's edge line) to the strip: it never overlaps the travel lane
+
+/** FEAT-318: a yard piece's plan reach from its centre, m: its collision's radius or half-diagonal. */
+const satReach = (key) => { const c = PROP_MODELS[key]?.collision; return c ? c.radius ?? Math.hypot(c.size[0], c.size[2]) / 2 : 0.5 }
+
+/** FEAT-318: is (x, z) on POI `q`'s ground — its pad, or its parking spot grown by `slack`? What "at a POI" means
+ *  wherever no single spot is meant (the camp prompt and the tow stand down there; main.js _atPoi). Pure. */
+export function onPoiGround (q, x, z, slack = 0) {
+    const dx = x - q.x, dz = z - q.z
+    if (q.halfLen && Math.abs(dx * q.tx + dz * q.tz) <= q.halfLen && Math.abs(dx * q.nx + dz * q.nz) <= q.halfWid) return true
+    return overDropZone(q, x, z, slack, q.park)
+}
+
 /**
  * Where a run (or the paper scenario) parks the truck at POI `q`: the burger joint at a new run, mom's on a skipped
  * opening, Larry's for the paper scenario. Pure: main.js seats the truck here, test/story-start-clear.mjs checks it.
@@ -372,6 +387,7 @@ const SEAT_STRIP_M = 2.8   // m — a plain pad's start seat off its centre towa
  */
 export function startSeat (q, roadWidth) {
     const heading = Math.atan2(-q.tx, -q.tz)
+    if (q.park) { const b = dropZoneWorld(q, q.park); return { x: b.x, z: b.z, heading } }   // FEAT-318: its parking spot
     if (PROP_MODELS[q.modelKey]?.yard) {
         const lane = roadWidth / 4   // the near lane's centre: a quarter of the paved width off the centreline
         return { x: q.roadX + q.nx * lane, z: q.roadZ + q.nz * lane, heading }
@@ -871,6 +887,12 @@ export class PoiSystem {
         // height is the road's and no pad reaches inside the shoulder edge (road.js POI_ROAD_FEATHER).
         const junctions = road.padReachNodes()
         for (const q of out) {
+            // FEAT-318 (DEC-474): every POI that answers the brake and brings no PARK box of its own (nor a drop zone)
+            // parks on the shoulder in front of it. Nothing of its yard stands in the strip.
+            if (!q.park && !q.drop && (q.jobs || q.type === 'momsHouse')) {
+                q.park = this._shoulderStrip(road, q)
+                q.satellites = q.satellites.filter(sat => !overDropZone(q, sat.x, sat.z, SAT_SPOT_CLEAR + satReach(sat.key), q.park))
+            }
             const mb = this._residenceMailbox(road, q, P, seed, junctions)
             if (mb) q.satellites.push(mb)
         }
@@ -892,6 +914,49 @@ export class PoiSystem {
      * seed picks; a blocked end tries the other, then slides along the road. Null for an RV (the model's `rv`
      * flag), a non-residence, or no viable spot. `junctions`: padReachNodes() before the POI pads are handed over.
      */
+    /**
+     * FEAT-318 (DEC-474): POI `q`'s shoulder strip, SPOT_LEN along the road by SPOT_DEPTH across, its inner edge
+     * SPOT_CLEAR off the paved edge, in front of the pad. It is straight along the pad's tangent, so on a bend its inner
+     * corners swing toward the lane: it steps out by however far the nearest road comes inside that edge. The shoulder
+     * is 3.1 m to the pad's near edge, so the strip reaches ~0.5 m onto the pad; where the model stands on that edge
+     * (a barn on its farm pad), the strip slides along the road, 1.5 m at a time, to the first place clear of it.
+     * Returned in the MODEL frame, as an authored PARK box is, so dropZoneWorld, overDropZone, towSeat and the curtain
+     * read it as one.
+     */
+    _shoulderStrip (road, q) {
+        const edge = (RANGER_PARAMS.roadHalfWidth ?? 5) + SPOT_CLEAR, hl = SPOT_LEN / 2, hd = SPOT_DEPTH / 2
+        const yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw)
+        const along = Math.abs(q.tx * cs - q.tz * sn) >= Math.SQRT1_2   // the road runs along the model's X
+        const c = q.collision, cube = POI_PARAMS.poiCubeSize
+        const solids = c?.boxes ?? [{ c: null, s: c?.size ?? [cube, cube, cube] }]
+        // The slide may carry the strip past the pad's end, onto plain shoulder, but always keeps it beside the pad (a
+        // 0.5 m overlap): a broadside barn fills its whole lay-by front.
+        const slide = (q.halfLen ?? hl) + hl - 0.5
+        let first = null
+        for (let k = 0; k <= 2 * Math.floor(slide / 1.5); k++) {
+            const a = (k & 1 ? 1 : -1) * Math.ceil(k / 2) * 1.5   // 0, 1.5, −1.5, 3, −3 …
+            let lat = edge + hd
+            for (let k = 0; k < 3; k++) {
+                let need = 0
+                for (const u of [a - hl, a, a + hl]) {
+                    const x = q.roadX + q.tx * u + q.nx * (lat - hd), z = q.roadZ + q.tz * u + q.nz * (lat - hd)
+                    const nr = road.queryNearest(x, z, edge + 1)
+                    if (nr?.point) need = Math.max(need, edge - Math.hypot(nr.point.x - x, nr.point.z - z))
+                }
+                if (need <= 0.01) break
+                lat += need + 0.05
+            }
+            // world centre → the model frame: local x along (cos y, −sin y), local z along (sin y, cos y)
+            const wx = q.roadX + q.tx * a + q.nx * lat - (q.modelX ?? q.x), wz = q.roadZ + q.tz * a + q.nz * lat - (q.modelZ ?? q.z)
+            const box = { x: wx * cs - wz * sn, z: wx * sn + wz * cs, halfX: along ? hl : hd, halfZ: along ? hd : hl, strip: true }
+            first ??= box
+            const hits = solids.some(b => Math.abs((b.c?.[0] ?? 0) - box.x) < b.s[0] / 2 + box.halfX + SOLID_SPOT_CLEAR
+                                       && Math.abs((b.c?.[2] ?? 0) - box.z) < b.s[2] / 2 + box.halfZ + SOLID_SPOT_CLEAR)
+            if (!hits) return box
+        }
+        return first   // nowhere clear along the pad: test/story-start-clear.mjs names it
+    }
+
     _residenceMailbox (road, q, P, seed, junctions) {
         if (!q.tags?.includes('residence') || !q.halfLen || PROP_MODELS[q.modelKey]?.rv) return null
         const end = hash32(`poi-mailbox-end:${seed}:${q.id}`) & 1 ? 1 : -1
@@ -920,6 +985,7 @@ export class PoiSystem {
             const nx = ct.z / tl * site.side, nz = -ct.x / tl * site.side
             const x = cp.x + nx * lat, z = cp.z + nz * lat
             if (junctions.some(nd => Math.hypot(nd.x - x, nd.z - z) <= nd.reach)) continue
+            if (overDropZone(site, x, z, SAT_SPOT_CLEAR + satReach(mailboxKey(seed, site.id)), site.park)) continue   // FEAT-318: never in the POI's parking strip
             // The nearest road must be THIS one at THIS offset: another road, or the own run doubling back (a
             // hairpin shares the run key, so _otherRoadNear passes it), would put the box on that road's lane.
             const nr = road.queryNearest(x, z, lat + 2.5)
@@ -1567,7 +1633,7 @@ export class PoiSystem {
      * POI_ROSTER). Without it, parking at mom's house would win the park trigger and answer with
      * "park to begin mission" — mom does not hand out freight.
      */
-    nearest (x, z, maxR = POI_PARAMS.poiInteractR, jobsOnly = false) {
+    nearest (x, z, maxR, jobsOnly = false) {
         let best = null, bestD = maxR
         for (const q of this._list) {
             if (q.hidden) continue                    // FEAT-102: an absent motorist answers nothing
