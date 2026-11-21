@@ -22,7 +22,7 @@
  *
  * Like src/abs.js it sees only what a real controller sees, sampled once per physics step: four
  * wheel-speed sensors, a yaw-rate gyro, the steering angle, the handbrake and the drive pedal. The
- * reference ground speed is the undriven fronts' mean, the classic rear-drive TC sensor. Oversteer is
+ * reference ground speed is the faster undriven front (BUG-248), the classic rear-drive TC sensor. Oversteer is
  * ESC's test: the truck yawing faster than its steering's kinematic (no-slip) rate, or against the
  * countersteer, by more than tracYawMargin — so a gripping, understeering truck never trips it.
  *
@@ -64,7 +64,12 @@ export function stepTraction (t, drive, vs, vForward, vLat, yawRate, params, dt)
     return
   }
   const r = params.wheelRadius, w = vs.wheelOmega
-  const vRefSigned = 0.5 * ((w[0] || 0) + (w[1] || 0)) * r          // undriven fronts
+  // The undriven fronts' FASTER wheel, as an ESC's drive-slip reference takes it (BUG-248): a front that turns slower
+  // than the ground (a collapsed hub jammed at 0, FEAT-162) must not pull the reference down. The two-wheel mean did:
+  // one jammed front halved it, the healthy rears read ~50 % slip, and the assist held the pedal at ~20 % (2 km/h
+  // where the drag allows ~68). In a turn the outer front reads up to track/2R fast (~4 % at 20 m radius).
+  const w0 = w[0] || 0, w1 = w[1] || 0
+  const vRefSigned = (Math.abs(w0) >= Math.abs(w1) ? w0 : w1) * r
   const vRef = Math.abs(vRefSigned)
   const v2 = Math.abs(w[2] || 0) * r, v3 = Math.abs(w[3] || 0) * r
   // Slip ratio as the tire sees it (s = slip × tireRelaxationLength), floored at 1 m/s so a launch from

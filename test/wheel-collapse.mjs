@@ -10,7 +10,7 @@
 //      undriven (front) or driven (rear, open diff: the other rear wheel takes the drive).
 //   3. What the truck can still do on it, at full throttle. A collapsed driven (rear) corner strands it;
 //      a collapsed front corner digs in like a tire (owner, 2026-11-06, feat162-front-drag): stuck
-//      uphill, dragged on the flat.
+//      uphill, dragged on the flat — with the throttle assist on as well (BUG-248).
 //
 // Pure node: the flat-drive harness (the Box3D engine ctx, no THREE scene, no DOM).
 import { DamageModel, DAMAGE_PARAMS as D } from '../src/damage.js'
@@ -49,11 +49,11 @@ console.log('§1b a flat, driven on, ends in a collapsed wheel')
 }
 
 /** Full throttle for `tMax` s with one corner collapsed. Logs the collapsed hub's spin and height. */
-async function run (corner, { grade = 0, tMax = 20 } = {}) {
+async function run (corner, { grade = 0, tMax = 20, ta = false } = {}) {
   const R = [0, 0, 0, 0]; R[corner] = D.wheelCollapseR
   const mu = [1, 1, 1, 1]; mu[corner] = D.wheelCollapseMu
   let spin = 0
-  const out = await drive({ grade, muScale: mu, extra: { _wheelCollapseR: R, _tireRateScale: [1, 1, 1, 1] }, tMax,
+  const out = await drive({ ta, grade, muScale: mu, extra: { _wheelCollapseR: R, _tireRateScale: [1, 1, 1, 1] }, tMax,
     input: () => ({ throttle: 1 }),
     onStep: (vs) => {
       spin = Math.max(spin, Math.abs(vs.wheelOmega[corner]))
@@ -81,6 +81,12 @@ ok(rear.speed < 15 / 3.6 && climbR.speed < 15 / 3.6,
 // and its load moves to the diagonal, so it drags ~2 kN: the engine still pulls it on the flat, not up 5 %.
 ok(front.speed > 30 / 3.6 && front.speed < 0.7 * base.speed, 'a collapsed front corner drags on the flat: moving, well under a healthy truck')
 ok(climbF.speed < 15 / 3.6, 'a collapsed front corner is stuck up 5 % (under 15 km/h)')
+// BUG-248: …with the throttle assist ON, the player's default (settings.js). Its ground reference is the undriven fronts,
+// and the jammed hub reads 0 there: a two-wheel MEAN halved the reference, saw the healthy rears slip ~50 %, and held the
+// pedal at ~20 % — the truck crawled at 2 km/h (measured in the browser, seed 6) where it should drag at ~68.
+const frontTA = await run(0, { ta: true })
+console.log(`     front-left, assist on   ${(frontTA.speed * 3.6).toFixed(1)} km/h`)
+ok(frontTA.speed > 0.9 * front.speed, 'BUG-248: the throttle assist does not strangle a truck dragging a collapsed front (≥ 0.9× assist off)')
 
 console.log(fail ? '\nFAIL — the wheel collapse has drifted' : '\nPASS — a written-off wheel collapses onto its hub and is dragged')
 process.exit(fail)

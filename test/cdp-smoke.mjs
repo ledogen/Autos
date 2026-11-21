@@ -1972,7 +1972,12 @@ const STEPS = [
     await seat(p.rx, p.rz, p.h)
     await crank()   // story seats the truck with the engine OFF (FEAT-33)
     if (await js('window.__vs.parked')) await tap(' ')   // and latched
-    const c0 = await car(); await hold('w', 6); const c1 = await car()
+    // BUG-248: 4 s, then stop. The hold steers nothing, and seed 6's road bends ~50 m out: 6 s left it at 17.5 m/s
+    // 2.5 m off the centreline, and the truck then coasted unbraked (the promise-box ticks below are wall-clock) ~20 m
+    // into the scenery at 19 m/s. Every run crashed (front armor −0.2, fronts −0.06); the bad ones wrote off a wheel
+    // or two, and the save step then could not reach 5 m/s. 4 s is ~30 m, 28 m from the marker (start zone 25 m).
+    const c0 = await car(); await hold('w', 4); const c1 = await car()
+    await park()
     const moved = Math.hypot(c1.x - c0.x, c1.z - c0.z)
     check(moved > 15, `truck moved ${moved.toFixed(0)} m on the job (need > 15)`)
     check(await until(async () => await hudText() !== staged, 3000), `job never started: HUD still "${staged}" after ${moved.toFixed(0)} m`)
@@ -1998,7 +2003,7 @@ const STEPS = [
       return { id: m?.offerId ?? null, state: ms.state, ex: m?.end.x, ez: m?.end.z, par: m?.par } })()`)
     const job0 = await jobNow()
     check(job0.id && job0.state === 'running', `the offer step left no running board job: ${JSON.stringify(job0)}`)
-    await park()   // the offer step left it driving
+    await park()   // the offer step parks it now (BUG-248); this re-latches
     check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000),
       `the truck never came to rest (${(await js('window.__vs.velocity.length()')).toFixed(2)} m/s, parked ${await js('window.__vs.parked')})`)
     await js('window.__econ.money = 123.45')
