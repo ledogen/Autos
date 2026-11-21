@@ -1,7 +1,7 @@
 ---
 id: BUG-252
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-20
 source: owner, 2026-11-20 — "When I was coming in at Mach Jesus and I hit the very first sign, I noticed it seemed like the truck stopped for a couple frames on contact. I want to say the game didn't drop frames, but the truck just froze in place before carrying speed through the sign and then it demolished as intended. Check that there's no loading that occurs on first prop strike. This was also my first prop strike of that particular run if it matters."
@@ -12,8 +12,8 @@ lane: unplaced
 # BUG-252: The truck seemed to freeze for a couple of frames on the first sign of a demolition run
 
 ## Next steps
-Not reproduced headless or in the lab. Next: a story-run browser probe of the demolition smash path (pay share, coin,
-readout, GPS re-plan) with `?hitch=1`, or the owner's run log / a `?hitch=1` run if it happens again.
+Closed: not reproduced. If it happens again, the owner reloads with `?hitch=1`, plays to the strike and runs `__hitchDump()` in
+the console (the run logger, FEAT-242, records no frame gaps), or screen-records it.
 
 ## Summary
 Physics holds nothing: a 13 kg sign at 40 m/s takes 0.33 m/s off the truck in ONE step, on the first strike and on the
@@ -49,14 +49,32 @@ PERF-32's catch-up brake drops the sim debt a long frame leaves. A 100 ms main-t
 frame for 100 ms and then the truck carries on from where it was, with no jump: it reads as "the truck froze", not as
 a stutter.
 
+### Story run, the real demolition smash handler (wip/bug-252/story-probe.mjs)
+The smoke's boot, story and expedition steps, then the camp's sign line taken and made to pay per hit (its `line`
+cleared, so `_paySiteShare` runs: payTarget, the readout, the coin). Then the truck is launched at 44 m/s, 45 m short of a
+target, so it arrives at about 38 m/s. Per frame: wall dt, sim gained, sim discarded (dt − gained), render ms,
+`renderer.info.programs`, AudioContext node calls, decodeAudioData calls, TourGuide poll+pump ms, readout DOM mutations.
+- Session A, first knock-down (small crate, 18 kg): 360 frames, worst dt 28.5 ms, worst discarded 11.8 ms, net
+  wall − sim −15 ms, 484 → 484 programs, readout shown, +$0.63. Second knock-down (another crate): contact frame dt 13.7 ms,
+  discarded −3.0 ms, speed 38.15 → 37.38 m/s; worst discarded in ±8 frames 9.1 ms (one 25.8 ms frame two before contact).
+- Session B, first knock-down: speed 38.33 → 37.37 m/s over the contact frame; the frames from −3 to +9 run 14.6–20.8 ms,
+  and each gains its full 16.7 ms of sim; no frame without a sim step; render 1.4–2.0 ms; programs 484 → 484 (no
+  shader compile); coin = 9 audio nodes at +3 frames in 0.00 ms, 0 decodes; readout DOM at +53 ms; GPS 0.00 ms; worst dt
+  of 360 frames 25.2 ms.
+- One later 2.5 s with no sim steps (session A, strike 2) came after the truck had slowed from 38 to 11 m/s, more than
+  26 m past the target. That was a crash into something off the road, not the strike. Unattributed; it does not match
+  "carried speed through the sign".
+First strike = second strike within one frame's noise (≤ 12 ms discarded).
+
 ## Tracker
 - [x] Physics trace, first vs second strike at 40 m/s (no hold)
 - [x] Lab browser probe, first strike of a session (no stall)
-- [ ] Story-run demolition smash path measured in the browser
-- [ ] Fix, once a cause is seen
+- [x] Story-run demolition smash path measured in the browser, two sessions (no stall)
+- [x] Closed as not reproduced
 
 ## Files
-`wip/bug-252/trace.mjs` · `wip/bug-252/browser.mjs` (git-ignored probes)
+`wip/bug-252/trace.mjs` · `wip/bug-252/browser.mjs` · `wip/bug-252/story-probe.mjs` (cdp-smoke + a `bug252` step; run with `SMOKE_STEPS=boot,story,expedition,bug252`) — git-ignored, in the CarGame-land-feat180 worktree
 
 ## Log
 - 2026-11-20: diagnosis on land/props-1120. Not reproduced; no src/ change.
+- 2026-11-21: story-run probe, two sessions, no stall at either first knock-down. Closed, not reproduced.
