@@ -1,7 +1,7 @@
 ---
 id: FEAT-322
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-20
 source: owner, 2026-11-20 — "the PARK(space) in blue is left over from some really early attempts at the button prompts. update it to match our current style"
@@ -12,7 +12,7 @@ lane: unplaced
 # FEAT-322: The park prompt uses the current keycap style, not the blue PARK badge
 
 ## Next steps
-Lane c2: shot of the prompt, then close on land/wave2-1120.
+None: closed on land/wave2-1120; lands with it.
 
 ## Summary
 Every "park to …" prompt led with a blue PARK badge holding the Space keycap (FEAT-90's early look). The other prompts
@@ -28,10 +28,11 @@ loses the old class it no longer needed.
 ## Tracker
 - [x] parkPrompt draws the shared keycap in line
 - [x] The badge's markup and CSS deleted
-- [ ] Shot of a park prompt in game
+- [x] Shot of a park prompt in game: "park [Space] to sleep at mom's house" (wip/feat-318/after-518337-prompt.png)
 
 ## Files
 `src/park-badge.js` · `index.html` · `src/main.js` (comment)
 
 ## Log
-- 2026-11-20: c2, land/wave2-1120.
+- 2026-11-20: c2, land/wave2-1120, 70f4185d. In game the prompt reads "park [Space] to sleep at mom's house", keycap as the
+  other prompts' (pad: RB). Gates: FEAT-318's run.
