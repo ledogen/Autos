@@ -69,10 +69,10 @@ const poi = new PoiSystem({ getRoad: () => road, getWater: () => water, getTerra
 poi.build(C, REGION_RADIUS_M, rep.mainNodes)
 const list = poi.list(), of = (t) => list.filter(q => q.type === t)
 const joint = of('foodVendor')[0], mom = of('momsHouse')[0], larry = of('larrysHouse')[0]
-// main.js onRegionLive: the camp zones after the roster (mom's house handed in), then filled to the planners' roads.
+// main.js onRegionLive: the camp zones after the roster (mom's house handed in), then grown and filled on the planners' roads.
 const camp = new CampSystem({ getRoad: () => road, getSeed: () => seed, getParams: () => P, getTerrain: () => terrain, getWater: () => water, treesNear: () => 0 })
 camp.build(C, REGION_RADIUS_M, mom ?? null)
-camp.fillReach(rep.mainNodes, p => Math.hypot(p.x - C.x, p.z - C.z) <= REGION_RADIUS_M - REGION_MARGIN)
+camp.growAreas(rep.mainNodes, p => Math.hypot(p.x - C.x, p.z - C.z) <= REGION_RADIUS_M - REGION_MARGIN)
 const ms = new MissionSystem({ getRoad: () => road, getCar: () => C, getSeed: () => seed, getRegion: () => region, teleport () {}, setMapOpen () {}, onChange () {} })
 // _homeGuide's plan: a fresh OfferBoard route stream per leg, keyed on mom's id (the real method, no board built).
 const to = (from, stop) => from && stop ? ms.planOffer(from, { rng: OfferBoard.prototype.routeRng.call({ _seed: seed >>> 0 }, { poiId: mom.id, slot: 'eve', k: 0 }),
@@ -96,10 +96,10 @@ startShelves(seed)
 check('the station has a storefront bay that sells the peanuts (DEC-323), and pumps (DEC-306)', !!station?.park && !!station?.pumpZones?.length
     && shelf(station.id, 0, 'gasStation').some(r => r?.id === 'bagOfPeanuts'),   // an always row: any hour
     `park ${!!station?.park}, pumps ${station?.pumpZones?.length ?? 0}`)
-// _campDoor: the road point nearest the centre of the camp zone nearest the station (inside its disc).
+// _campDoor: the road point the camp zone nearest the station was grown from (FEAT-299).
 let campDoor = null, bd = Infinity
 for (const zn of camp.zones()) {
-    const o = station && roadOrigin(road, zn, zn.r), d = o ? Math.hypot(o.x - station.x, o.z - station.z) : Infinity
+    const o = station && roadOrigin(road, zn, 5), d = o ? Math.hypot(o.x - station.x, o.z - station.z) : Infinity
     if (d < bd) { bd = d; campDoor = o && { ...o, id: 'camp' } }
 }
 check('the camping area nearest the station has a road door', !!campDoor)

@@ -722,7 +722,7 @@ const STEPS = [
     // FEAT-309's two-sided search: two spots where the site lands across the road from the truck.
     const s = await js(`(() => { const cs = window.__campSys(), pois = window.__poi().list()
       const clearOfPois = (q) => pois.every(p => Math.hypot(p.x - q.x, p.z - q.z) > 120)
-      const far = (q) => cs.zones().every(z => Math.hypot(z.x - q.x, z.z - q.z) > z.r + 80)
+      const far = (q) => !cs.zoneAt(q.x, q.z)
       let inZ = null, outZ = null
       for (const e of window.__roadSys()._network.values()) {
         const p = e.points
