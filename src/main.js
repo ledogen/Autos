@@ -75,7 +75,7 @@ import { applyRules, legalRules, rulesLine, addRulesGui } from './difficulty.js'
 import { createFrameCap } from './frame-cap.js'   // PERF-48 / BUG-169: the render cap skip decision (pure, gated)
 import { putRun, putTruck, loadTruck, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
-import { pad, PAD_PARAMS, BINDINGS, steerCurve, padOf, padRoleName } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
+import { pad, PAD_PARAMS, BINDINGS, steerCurve, padOf, padRoleName, padRbBrakes } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
 import { initTutGate, stepFor, allows, BETWEEN } from './tut-gate.js'   // FEAT-288 P2: the tutorial's lock and highlight
@@ -6130,7 +6130,7 @@ function _campPromptState () {
 // are, the keys, the DOM and the sound. Stepped on the fixed physics step, so a fill is 10 s of real
 // driving time and pauses when the game does.
 const fuelStop = new FuelStop()
-pad.pumpActive = () => fuelStop.isOpen   // the pad's A pumps while the pump is open (gamepad.js PUMP_KEYS)
+pad.pumpActive = () => fuelStop.isOpen   // the pad's LT pumps (DEC-467) while the pump is open (gamepad.js PUMP_KEYS)
 let _fHeld = false
 window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() === 'f') _fHeld = true })
 window.addEventListener('keyup', e => { if (e.key.toLowerCase() === 'f') _fHeld = false })
@@ -6176,6 +6176,11 @@ function _settlePump () {
   _pumpReceiptT = sale > 0 ? 2.5 : 0
 }
 _menu('pump', () => fuelStop.isOpen, _settlePump)
+// DEC-465/466 (Ventura Highway): the pad's B closes the pump and pays, as leaving by the gas does minus the driving off (the
+// truck stays parked; the gas releases the brake). Mom's forced fill-up stays forced: B does nothing there.
+pad.pumpClose = () => { if (fuelStop.isOpen && !_momMakesYouFill()) _settlePump() }
+// DEC-465: the park tap's own at-rest test (_parkLocked's _mapAtRest; park-brake.js PARK_SPEED): parked, or under 5 km/h.
+pad.atRest = () => !!vehicleState.parked || Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) < PARK_SPEED
 /** One physics step of an open pump. Handbrake down (or leaving story mode) settles the sale. */
 function _stepFuelStop (dt) {
   if (!fuelStop.isOpen) return
@@ -6230,7 +6235,9 @@ function _renderPumpDisplay (dt) {
   // a latched shutoff still reads full while the idling engine sips the tank a hair below it
   const tankFull = vehicleState.fuel.gal >= RANGER_PARAMS.fuelTankGal - 1e-6
   const full = (tankFull && !fuelStop.cans.some(c => c.cap - c.gal > 1e-6)) || (fuelStop.cutoff && !broke)
-  const pay = `release the handbrake ${keycap('Space')} to pay`   // FEAT-305: its key, in the pad's layout (DEC-431)
+  // FEAT-305: its key, in the pad's layout (DEC-431). DEC-466 Ventura Highway: A is the handbrake here and B is back (it pays).
+  const pay = padRbBrakes() ? `release the handbrake ${keycap('Space')} to pay`
+    : `<span class="kc-kb">release the handbrake ${keycap('Space')} to pay</span><span class="kc-pad">release the handbrake ${keycap('Space')} to pay · ${keycap('Esc', 'B')}back</span>`
   document.getElementById('pd-hint').innerHTML = !fuelStop.isOpen ? 'thank you — drive safe'
     : _momMakesYouFill() ? `mom says fill it up · hold ${keycap('F')} till the money's gone`   // FEAT-184 PLACEHOLDER words
     : full ? `${fuelStop.cans.length ? 'all full' : 'tank full'} · ${pay}`
@@ -7466,9 +7473,11 @@ function _renderCampUI () {
   // has none: Space never breaks a made camp. RB is named outright: on a card RB is Space in every pad layout
   // (gamepad.js CARD_KEYS), while the drive's handbrake moves (DEC-431: A in Ventura Highway).
   const html = (id, h) => { const e = document.getElementById(id); if (e) e.innerHTML = h }
-  html('cp-break', st.moms || st.truck ? `${keycap('Space', 'RB')}leave` : 'break camp')
-  html('cp-cancel', `${keycap('Space', 'RB')}abandon`)
-  html('cp-sleep-back', `${keycap('Space', 'RB')}back`)
+  // DEC-465: Ventura Highway's RB is silent on a card; its pad half is B (back).
+  const back = padRbBrakes() ? 'RB' : 'B'
+  html('cp-break', st.moms || st.truck ? `${keycap('Space', back)}leave` : 'break camp')
+  html('cp-cancel', `${keycap('Space', back)}abandon`)
+  html('cp-sleep-back', `${keycap('Space', back)}back`)
   show('cp-vibe',        isConfirm)
   show('cp-vibe-legend', isConfirm)
   if (isConfirm) _renderVibeBar(st.site, document.getElementById('cp-vibe'))
