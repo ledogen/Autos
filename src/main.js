@@ -6912,7 +6912,10 @@ function _updateBarricades () {
 // spawn in a rigid body … so it can have mass and hit the truck and tumble"): every lawn item but the fire
 // pit is knockable, at its real mass, and NOT noDamage — like a demolition target, a hit costs what the
 // wear model says (a 3.5 kg chair is far under every floor). Past ORNAMENT_OFF_M it is a model again,
-// standing where the body came to rest: a knocked gnome stays knocked for the session, never saved.
+// lying where the body came to rest — but only while the terrain chunk under it is built. FEAT-317 (DEC-473,
+// owner 2026-11-20: "reset every time that area of the world restreamed"): once that chunk is dropped the
+// model stands again at its solved pose (o.sat), so no knocked state outlives the area, and none is saved.
+// Demolition targets are not ornaments: their smashed latch is the job's (_site), and they never stand again mid-job.
 const ORNAMENT_ON_M = 60, ORNAMENT_OFF_M = 120
 const _ornQ = new THREE.Quaternion(), _ornP = new THREE.Vector3(), _ornUp = new THREE.Vector3()
 
@@ -6922,6 +6925,11 @@ function _updateOrnaments () {
   for (const o of _ornaments) {
     const half = debrisSystem.halfExtents(o.kind)
     if (!half) continue   // its collider is still loading
+    if (o.body == null && terrainSystem && !terrainSystem.hasChunkAt(o.sat.x, o.sat.z)) {   // FEAT-317: its area streamed out
+      o.mesh.position.set(o.sat.x, o.sat.y, o.sat.z)
+      o.mesh.rotation.set(0, o.sat.yaw, 0)
+      continue
+    }
     const d = Math.hypot(p.x - o.mesh.position.x, p.z - o.mesh.position.z)
     // The body sits at the model's bbox centre: half its height above a base-origin model, at the
     // origin of a centred one (the beach ball, lifted by its radius).
