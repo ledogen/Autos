@@ -36,7 +36,7 @@ import { DamageModel, DAMAGE_PARAMS, WHEEL_IDS, TIRE_IDS, fatalMph } from './dam
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen, bandColor } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
-import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90: the blue P "park first" badge
+import { parkPrompt, keycap, hintPark } from './park-badge.js'        // FEAT-90 / FEAT-322: the "park [Space] …" prompt
 import { updateVehicle, setLaunchHold, setParkLock, setThrottleCut, setControlAttenuation, setSteerRateScale } from './vehicle.js'
 import { PARK_SPEED } from './park-brake.js'
 import { makeIgnitionState, keyPosition, seized, OFF as IGN_OFF, RUNNING as IGN_RUNNING } from './ignition.js'

@@ -1,11 +1,11 @@
 /**
- * FEAT-90: the "you are not parked" badge and the keycap it is shown with. ONE owner for the markup,
- * so every "park to …" prompt draws the same mark (owner, 2026-09-29: "we should start using this
- * … everywhere possible to essentially say you are not parked"). The CSS (.park-badge / .keycap /
- * .kc-kb / .kc-pad) lives in index.html beside the other HUD styles.
+ * FEAT-90: the "park to …" prompt and the keycap every key hint is drawn with. ONE owner for the markup,
+ * so every "park to …" prompt reads the same (owner, 2026-09-29: "we should start using this
+ * … everywhere possible to essentially say you are not parked"). The CSS (.keycap / .kc-kb / .kc-pad)
+ * lives in index.html beside the other HUD styles.
  *
- * The badge is the word PARK and the key that parks (owner, 2026-10-20 — it was a blue P road sign,
- * which never read as "pull the handbrake").
+ * A park prompt is the word park and the key that parks, in line like every other key hint ("park [Space]
+ * to sleep …"; FEAT-322, owner 2026-11-20 — it was a blue PARK badge, before that a blue P road sign).
  *
  * A keycap carries BOTH labels — the key and its pad button, looked up in gamepad.js's BINDINGS — and
  * CSS shows whichever device last drove (body.pad-on, set by gamepad.js). So every prompt flips
@@ -48,9 +48,6 @@ export function keycap (label, pad = padCap(String(label).toLowerCase())) {
  *  handler answers its data-act="close". */
 export const BACK_BUTTON = `<div class="card-foot"><button class="card-back" data-act="close">${keycap('Esc')}back</button></div>`
 
-/** PARK and the handbrake's key. Read as "park first". A function: the pad's half follows the layout (DEC-431). */
-const parkBadge = () => `<span class="park-badge" aria-label="park">PARK${keycap('Space')}</span>`
-
 /** "Park first": pulse the park zone's PARK stencil (index.html .pz-badge.hint) — what V and Tab do
  *  while driving. Restarts a pulse already in flight: drop the class, force a reflow, re-add. */
 export function hintPark () {
@@ -61,8 +58,10 @@ export function hintPark () {
   b.classList.add('hint')
 }
 
-/** A "park to …" line: the badge says the "park", so a leading "park" in the text is dropped. */
+/** A "park to …" line: "park", the handbrake's key, then the rest of the text ("park [Space] to pay"). A text that
+ *  does not start with "park" gets "park [Space] · " in front. A function call per prompt: the pad's half follows the
+ *  layout (DEC-431). */
 export function parkPrompt (text) {
   const rest = text.replace(/^park /, '')
-  return `${parkBadge()}${rest === text ? '&middot; ' : ''}${rest}`
+  return `park ${keycap('Space')} ${rest === text ? '&middot; ' : ''}${rest}`
 }

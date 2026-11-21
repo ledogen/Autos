@@ -635,7 +635,6 @@
     #job-cancel.armed { background: var(--bad); border-color: var(--bad-text); color: var(--text-bright); }
     /* moving: "park to abandon" — the button is inert until the brake is latched */
     #job-cancel.unparked, #job-cancel.unparked:hover { background: rgba(0, 0, 0, 0.35); border-color: var(--line); color: var(--text-body); cursor: default; }
-    #job-cancel .park-badge { margin-right: 0.35em; }
     #job-cancel .keycap { margin-right: 0.4em; }
     #mission-hud .mh-count { font-size: 44px; color: var(--key); }
 
@@ -671,17 +670,6 @@
       pointer-events: none;
     }
 
-    /* FEAT-90: the "park first" badge — the word PARK and the handbrake's keycap on the parking
-       sign's blue (owner, 2026-10-20; was a white P sign, before that an orange P in a circle) —
-       and the keycap drawn beside key hints. One look everywhere a prompt asks you to park; the
-       markup comes from src/park-badge.js. */
-    .park-badge {
-      display: inline-flex; align-items: center; gap: 0.3em; box-sizing: border-box;
-      padding: 0.1em 0.2em 0.1em 0.4em; margin-right: 0.45em; vertical-align: -0.2em; white-space: nowrap;
-      border-radius: 0.22em; background: #0b3d91; color: #fff; border: 0.09em solid #fff;
-      font: bold 0.8em/1.2 sans-serif; letter-spacing: 0.05em; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-    }
-    .park-badge .keycap { margin: 0; letter-spacing: 0; }
     /* Key hints carry both labels (park-badge.js keycap); the device that last drove picks which shows.
        body.pad-on is gamepad.js's pad.active. */
     .kc-pad { display: none; }
@@ -1913,7 +1901,7 @@
     <div id="hud-icons">
       <div id="hud-b-hint">hold <span class="kc-pad kc-round">B</span><span class="bh-abandon">· ↑ abandon job</span></div>
       <!-- FEAT-122: the park zone — damage-screen.js and inventory-screen.js append their rows. -->
-      <div id="park-zone" class="locked"><span class="park-badge pz-badge" aria-label="park">PARK</span></div>
+      <div id="park-zone" class="locked"><span class="pz-badge" aria-label="park">PARK</span></div>
       <!-- FEAT-45 Phase D: making camp. The tent shows only where the old camp prompt did (a camp
            zone, under 20 kph, story mode, no job or route out, no POI in reach). Z or a click
            toggles "looking for a campsite"; while looking, the vibe bar + verdict card opens beside
