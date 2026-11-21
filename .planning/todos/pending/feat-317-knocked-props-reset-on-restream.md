@@ -51,4 +51,6 @@ already stand again past 200 m (FEAT-154).
 `src/main.js` · `src/poi.js` · `.planning/decisions/dec-473-knocked-props-stand-again-when-their-area-restreams.md`
 
 ## Log
-- 2026-11-20: built on land/props-1120. No headless gate can reach main.js's poll; covered by the smoke only (see the landing report).
+- 2026-11-20: built on land/props-1120 @ 0003abf9. Affected gates 42/42 green (serial, 2598 s); cdp-smoke 42 steps PASS
+  (first run hit a CDP timeout in "demolition" at load 8-9, retry green); pad-e2e ALL OK. No headless gate reaches
+  main.js's poll and no smoke step knocks an ornament: the stand-again itself is unverified until the owner's drive.
