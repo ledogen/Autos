@@ -1,7 +1,7 @@
 ---
 id: BUG-240
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-19
 source: owner, 2026-11-19 (inbox) — "The autopilot doesn't work in manual mode"
@@ -12,8 +12,7 @@ lane: unplaced (scribe: free lane; Opus for the drivetrain side)
 # BUG-240: The debug Driving AI does not work with the manual transmission
 
 ## Next steps
-Owner tries the Driving AI on the manual (branch `land/gearbox-1120`, http://m4air:8127; debug panel → Transmission
-M5OD-R1, clutch assistant off) with the `gearbox-1120-drive` card.
+Closed: the owner drove it ("the AI can drive a manual"); lands with land/gearbox-1120.
 
 ## Summary
 The autopilot (debug panel, "Driving AI", FEAT-293 / DEC-428) does nothing useful when the truck has the manual transmission.
@@ -48,7 +47,7 @@ Seed 220671609: automatic 52.6 km/h, manual assist off 52.4 (−0.4 %), assist o
 - [x] Reproduced on a manual (headless: assist off, never left N)
 - [x] The AI drives a manual (shifts and clutch from its controls)
 - [x] A headless check with a manual drivetrain (`drive-ai-manual`: 2 km, two seeds, assist off and on, vs the automatic)
-- [ ] Owner has looked
+- [x] Owner has looked
 
 ## Open questions
 - (Answered by building the first option, per the scribe's lean and DEC-084: the AI really drives the manual.)
@@ -62,3 +61,4 @@ FEAT-293.
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
 - 2026-11-20: built on land/gearbox-1120 (lane agent). shift-hunt red on main / green, drive-ai-manual green, cdp-smoke green on retry (save-step flake once), pad-e2e ALL OK; affected gates (133, --serial) 48 run, 0 red at hand-off, log /private/tmp/claude-501/-Users-ledogen-CodeShit-CarGame/bd00ae91-7bd8-4224-8f6d-35255cd45e4a/scratchpad/runall2.log. Fingerprint differs from step 93 (1.55 s, main's spin-read 1-2); identical before.
+- 2026-11-20: owner on the `gearbox-1120-drive` card: "It's beautiful, the auto gearbox works a dream, and the AI can drive a manual. Land it". Closed.

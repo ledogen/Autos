@@ -1,7 +1,7 @@
 ---
 id: BUG-244
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-19
 source: owner, 2026-11-19 (inbox) — "The automatic transmission hunts and seeks really bad and to me it feels like the gearing is a little bit long. That could be realistic though. It has enough torque in first gear."
@@ -12,7 +12,7 @@ lane: lane B (drivetrain; Opus)
 # BUG-244: The automatic hunts and seeks between gears; the gearing feels a little long
 
 ## Next steps
-Owner drives branch `land/gearbox-1120` (http://m4air:8127, a steady part-throttle climb) and answers the `gearbox-1120-drive` card. Gearing stays his call (not touched).
+Closed: the owner drove it ("the auto gearbox works a dream"); lands with land/gearbox-1120, with a 0.35 s shift time added (autoShiftTime).
 
 ## Summary
 Owner's words:
@@ -51,8 +51,8 @@ the box still swaps 1-2, but every ~20 s with each gear held ≥ 4 s, not every 
 - [x] Reproduced: headless sweep, `test/shift-hunt.mjs` (grade × input × speed), the map above
 - [x] Cause named: road load missing from the upshift look-ahead; wheelspin read as road speed; kickdown on every W press
 - [x] Hunting fixed, with a headless gate on a steady-throttle cruise and a climb (`shift-hunt`, red on main, green here)
-- [ ] Gearing: the owner decides whether to change ratios (not built from n = 1)
-- [ ] Owner has looked
+- [x] Gearing: the owner decides whether to change ratios (not built from n = 1) — no change asked on the drive
+- [x] Owner has looked
 
 ## Open questions
 - Gearing: "a little bit long ... could be realistic though". No change is asked. The scribe does not touch ratios; the owner says if he wants shorter gearing (DEC-205 covers the axle ratio as final drive, an alpha part).
@@ -67,3 +67,4 @@ FEAT-258, FEAT-159.
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
 - 2026-11-20: built on land/gearbox-1120 (lane agent). shift-hunt red on main / green, drive-ai-manual green, cdp-smoke green on retry (save-step flake once), pad-e2e ALL OK; affected gates (133, --serial) 48 run, 0 red at hand-off, log /private/tmp/claude-501/-Users-ledogen-CodeShit-CarGame/bd00ae91-7bd8-4224-8f6d-35255cd45e4a/scratchpad/runall2.log. Fingerprint differs from step 93 (1.55 s, main's spin-read 1-2); identical before.
+- 2026-11-20: owner on the card: "the auto gearbox works a dream … Add a brief shift timer to the auto box. the shifts are too instantaneous". Added autoShiftTime 0.35 s (drive cut, the manual's shift-in-flight path shared); shift-schedule §5 pins it. Closed.
