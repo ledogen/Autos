@@ -81,8 +81,10 @@ console.log(`handbrake flick, floored: yaw over 0.9 s off ${r1(fOff.yawDeg)}° /
 check(fOn.state.every((x, i) => x === fOff.state[i]), 'the assist passes the throttle through while the truck out-rotates its steering (identical run)')
 // Power-over on loose ground: the rears step out before the assist can hold them, and it then stands aside.
 const powerDrift = (t) => ({ steer: 0.15, throttle: t < 2 ? 0.25 : 1 })
-const looseOff = await drive({ mu: 0.5, v0: 8, steer0: 0.15, input: powerDrift, tMax: 4.5 })
-const looseOn = await drive({ ta: true, mu: 0.5, v0: 8, steer0: 0.15, input: powerDrift, tMax: 4.5 })
+// 5.5 s: with the assist on the rears hold until the floor kicks 2→1, and that shift's drive cut (autoShiftTime)
+// starts the drift ~0.35 s later than an instant shift did (4.5 s: 53° vs 89°; 5.5 s: 90° vs 89°).
+const looseOff = await drive({ mu: 0.5, v0: 8, steer0: 0.15, input: powerDrift, tMax: 5.5 })
+const looseOn = await drive({ ta: true, mu: 0.5, v0: 8, steer0: 0.15, input: powerDrift, tMax: 5.5 })
 const dryOff = await drive({ v0: 8, steer0: 0.15, input: powerDrift, tMax: 4.5 })
 const dryOn = await drive({ ta: true, v0: 8, steer0: 0.15, input: powerDrift, tMax: 4.5 })
 console.log(`power-over at 8 m/s: loose (μ 0.5) β off ${r1(looseOff.betaMax)}° / on ${r1(looseOn.betaMax)}° · dry β off ${r1(dryOff.betaMax)}° / on ${r1(dryOn.betaMax)}° (dry: the foot feathers it — report only)`)

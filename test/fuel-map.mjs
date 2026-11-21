@@ -99,7 +99,8 @@ const ramp = { throttle: 1, brake: 0, wheelOmega: [0, 0, 0, 0], ignition: makeIg
 const shifts = []
 for (let mph = 0, g = 1; mph < 90; mph += 0.02) {
   const v = mph * 0.44704; ramp.wheelOmega.fill(v / I45.wheelRadius); stepDrivetrain(ramp, I45, DT, v)
-  if (ramp.drivetrain.gear !== g) { shifts.push(ramp.drivetrain.coupledRPM); g = ramp.drivetrain.gear }
+  const d = ramp.drivetrain, sel = d.shifting ? d.shiftTo : d.gear   // the box's decision; autoShiftTime runs on top
+  if (sel !== g) { shifts.push(d.coupledRPM); g = sel }
 }
 check(shifts.length === 3 && shifts.every(r => Math.abs(r - I45.shiftUpRPM) < 50), `I4 + 5R55E floored: 1→2→3→4 by 90 mph, each at ~${I45.shiftUpRPM} rpm (${shifts.map(Math.round).join(', ')})`)
 
