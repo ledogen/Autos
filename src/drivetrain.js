@@ -22,6 +22,7 @@
  *
  * State lives on vehicleState.drivetrain = { engineRPM, gear, shiftTimer, activeGear }
  * (persists across steps for shift hysteresis + HUD). gear: 0 = reverse, 1..N = forward gear index.
+ * A shift in flight (both boxes): shifting / shiftT [s left] / shiftTo — beginShift / tickShift below.
  */
 
 import { TRANSMISSIONS } from '../data/transmissions.js'
@@ -50,6 +51,22 @@ export function fitTransmission (params, vehicleState, key) {
   const d = vehicleState?.drivetrain
   if (d) { d.mGear = 0; d.shiftT = 0; d.shifting = false; d.locked = false }
   params._drivenInertia = 0
+}
+
+/**
+ * A shift in flight, the ONE mechanism both boxes use: nothing drives through the box for `time` [s], then
+ * st.shiftTo lands. The manual sits in N for the synchro time (manualShiftTime × _transShiftScale: a worn box
+ * shifts slower, src/damage.js — a manual-only track); the automatic cuts drive torque for its clutch-to-clutch
+ * time (autoShiftTime; owner 2026-11-20: "the shifts are too instantaneous").
+ * ponytail: a hard cut, not a real box's torque-phase overlap and inertia-phase rpm drop (the tach falls at the land).
+ */
+function beginShift (st, to, time) { st.shiftTo = to; st.shiftT = time; st.shifting = time > 0 }
+/** Tick the shift in flight; true on the step it lands (the caller sets its own gear to st.shiftTo). */
+function tickShift (st, dt) {
+  let landed = false
+  if (st.shiftT > 0) { st.shiftT -= dt; if (st.shiftT <= 0) { st.shiftT = 0; landed = true } }
+  st.shifting = st.shiftT > 0
+  return landed
 }
 
 // Input-routing threshold, shared with physics.js's brake routing: reverse engages only when clearly
@@ -247,6 +264,7 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   // Everything above is shared and pure; branching here leaves the automatic path untouched.
   params._drivenInertia = 0   // only a locked manual clutch couples the engine's inertia to the wheels
   if (params.transmissionType === 'manual') { stepManual(vehicleState, params, dt, vForward, st, T, axleOmega, curve); return }
+  if (tickShift(st, dt)) st.gear = st.shiftTo   // st.gear (and the HUD's D-gear) is the old gear until the shift lands
 
   // ── FEAT-33 ignition gate: OFF / CRANKING short-circuit before any combustion happens ───────────
   // vehicleState.ignition ABSENT ⇒ RUNNING. That default is load-bearing: every headless gate builds
@@ -339,7 +357,7 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
   st.fuelPowerW = Math.max(params.engineIdlePowerW ?? 7000, Tair * engineRPM / RPM_PER_RAD)
 
   // ── Converter output → gearbox → final drive → axle → rear wheels ───────────────────────────────
-  const axleTorque = TR * Teng * totalRatio
+  const axleTorque = st.shifting && !reverse ? 0 : TR * Teng * totalRatio   // no drive while a shift is in flight
   splitRearAxle(T, dir * axleTorque, vehicleState, params)
 
   // ── Automatic shift schedule (forward only), keyed on the ROAD-SPEED proxy `coupled` ─────────────
@@ -441,7 +459,8 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
       // the next gear could do, and staying on the limiter is never the answer — the next gear only has
       // to land above its own downshift point (the old rule's floored bar, 2400 + 800, was no stricter).
       const band        = outOfRpm ? 0 : hysteresis
-      if (nextProj > downNext + band) { st.gear++; st.shiftTimer = holdTime }
+      // The hold counts from the LANDING (st.shiftT): the anti-hunt dwell is what it was with instant shifts.
+      if (nextProj > downNext + band) { beginShift(st, st.gear + 1, params.autoShiftTime ?? 0.35); st.shiftTimer = holdTime + st.shiftT }
     } else if (st.gear > 1 && roadCoupled < shiftDownEff
                && roadCoupled * gears[st.gear - 2] / gears[st.gear - 1] < shiftUp - hysteresis
                && roadCoupled * gears[st.gear - 2] / gears[st.gear - 1] + gain(gears[st.gear - 2]) < shiftUpWot) {
@@ -457,8 +476,8 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
       // Nor does the box drop into a gear Newton puts on the limiter within the lookahead: W feathered at 70 %
       // at 58 km/h on 15 % kicked 2→1 on every press (1st lands at 4480 rpm and pulls ~360 rpm/s), revved out
       // 0.7 s later and kicked again, a 2-1-2 every 3 s.
-      st.gear--
-      st.shiftTimer = holdTime
+      beginShift(st, st.gear - 1, params.autoShiftTime ?? 0.35)
+      st.shiftTimer = holdTime + st.shiftT
       st.upDwell = lookahead
     }
   }
@@ -537,13 +556,11 @@ function stepManual (vehicleState, params, dt, vForward, st, T, axleOmega, curve
     // speed; the real M5OD's reverse is unsynchronised and grinds unless near rest either way (owner's call, 2026-11-17).
     else if (target === -1 && vForward > REV_THRESHOLD) { /* R refused while rolling forwards */ }
     else {
-      st.shiftTo = target
-      st.shiftT  = (params.manualShiftTime ?? 0.25) * (params._transShiftScale ?? 1)
-      st.mGear   = 0
+      beginShift(st, target, (params.manualShiftTime ?? 0.25) * (params._transShiftScale ?? 1))
+      st.mGear = 0
     }
   }
-  if (st.shiftT > 0) { st.shiftT -= dt; if (st.shiftT <= 0) { st.shiftT = 0; st.mGear = st.shiftTo } }
-  st.shifting = st.shiftT > 0
+  if (tickShift(st, dt)) st.mGear = st.shiftTo
 
   const g      = st.mGear
   const ratio  = g > 0 ? gears[Math.min(g, nGears) - 1] : g < 0 ? -(params.reverseRatio || 3.4) : 0

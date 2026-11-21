@@ -184,7 +184,8 @@ export const RANGER_PARAMS = {
   // actually hold. Bigger = firmer, hunts less (holds lower gears longer on grades); too big delays
   // upshifts on the flat. rpm(coupled).
   shiftHysteresis: 800, // rpm(coupled) — headroom the higher gear must clear before upshifting
-  shiftHoldTime: 0.6,   // s — minimum dwell between shifts (anti-hunt timer)
+  shiftHoldTime: 0.6,   // s — minimum dwell between shifts (anti-hunt timer), counted from the landing
+  autoShiftTime: 0.35,  // s — a shift's duration, drive torque cut throughout; 4R44E-era boxes take 0.3–0.5 s
   // FEAT-124 (owner 2026-10-19: ONE schedule, no modes): the upshift point and the anti-hunt band both
   // slide with a time-weighted throttle average — exponential, time constant shiftThrottleTau — from
   // their light-load ends (the ENGINE's shiftUpLightRPM; shiftHysteresisLight here) at average 0 up to
