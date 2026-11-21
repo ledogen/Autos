@@ -326,9 +326,9 @@ export const THINGS = [
     { id: 'scrapDrums',  phrase: '{n} old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
       targets: [{ kinds: ['barrel', 'drumOpen'], n: [8, 12], cluster: [1, 3] }] },
     // The county is repaving: the old sign line comes down before the new one goes up, and the last job's
-    // barricades are still out. The crew is behind.
+    // barricades are still out. The crew is behind. DEC-430: the line is orange WORK signs (their own pool), never road signs.
     { id: 'oldSignLine', phrase: '{n} old signs and barricades knocked down', family: 'demolition', massKg: [0, 0], pools: ['workSite'],
-      targets: [{ kinds: ['signGrade', 'signCurves', 'signRockslide', 'signTee', 'signCross', 'signStop', 'signIcy'],
+      targets: [{ kinds: ['workSignWorker', 'workSignArrow', 'workSignBlank', 'workBoardStripes'],
                   n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
                 { kinds: ['roadBarrier'], n: [2, 3], cluster: [2, 3], face: 'road' }] },
 ]

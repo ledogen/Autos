@@ -1189,6 +1189,17 @@ export const PROP_MODELS = {
   signStop: { url: 'assets/models/sign-stop.glb', collision: SIGN_POST_BOX },
   signIcy: { url: 'assets/models/sign-icy.glb', collision: SIGN_POST_BOX },
 
+  // DEC-430 — the WORK-ZONE SIGNS, the work site's demolition line (data/offers.js oldSignLine): "Demolition signs
+  // should be from a different sign pool … visually distinct from road signs" (owner, 2026-11-18). Same generator,
+  // same 4x4 and 36 in blank as the seven above, in the barricade's orange: a worker, an arrow, a bare blank, and a
+  // striped rail board. They stand ONLY as demolition targets (src/demolition.js TARGET_TYPES, 13 kg like the road
+  // signs they replace): NO TAG, so no pool and no road-furniture pass may draw them, and no demolition line may draw
+  // a road sign (test/demolition-site.mjs holds both).
+  workSignWorker: { url: 'assets/models/work-sign-worker.glb', collision: SIGN_POST_BOX },
+  workSignArrow: { url: 'assets/models/work-sign-arrow.glb', collision: SIGN_POST_BOX },
+  workSignBlank: { url: 'assets/models/work-sign-blank.glb', collision: SIGN_POST_BOX },
+  workBoardStripes: { url: 'assets/models/work-board-stripes.glb', collision: SIGN_POST_BOX },
+
   // ASSET-77 — the TURN-BACK SIGNS, the camp's demolition line (FEAT-65, data/offers.js reqSigns): a
   // hand-sawn 0.9 x 0.6 m ply board screwed to two 2x2 stakes at a lean, 1.30 m tall, the owner's
   // words painted on. 360 tris, 4 materials, the face one baked image. One generator,

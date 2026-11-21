@@ -14,7 +14,8 @@ lane: SM-3 missions
 ## Next steps
 Built on `land/feat-267-demolition-deadline`, then DEC-403's pay per target on `land/feat-267-pay-per-target` (see Log).
 The owner drives a demolition job on the play build and answers the owed card `feat267-demolition-drive` (the slack
-number, the par stretch, the words).
+number, the par stretch, the words). DEC-430's own sign pool is built on `land/dec-430-demolition-signs`: the owner looks
+at the sheet and answers the owed card `dec430-demolition-signs-look`.
 
 ## Summary
 A demolition job becomes a hurried job like a paper round: one deadline for the whole job, priced from the planned
@@ -46,10 +47,12 @@ To build, mirroring the paper round as FEAT-266 leaves it:
 - [x] Gates and the smoke's demolition step updated; saves from before still load
 - [x] DEC-403: the base paid a share per target as each falls; the tip on time at the settle; an expiry or abandon keeps the shares
 - [ ] Owner drives a demolition job
+- [ ] DEC-430: the work site's sign line wears its own orange work-zone signs, never a road sign (built; owner look owed)
 
 ## Decisions
 - 2026-11-17, owner: DEC-399.
 - 2026-11-17, owner: DEC-403 (pay per target, tip on time only).
+- 2026-11-18, owner: DEC-430 (demolition signs from their own pool, visually distinct from road signs).
 
 ## Files
 `src/demolition.js` · `src/mission.js` · `src/par.js` · `data/offers.js`
@@ -68,3 +71,7 @@ To build, mirroring the paper round as FEAT-266 leaves it:
   errors (smoke-r2.log, no board demolition offer live at that hour; the step subset smoke-demo-r2.log took one: $0.50 a
   share, expiry keeps $1.00), pad-e2e ALL OK. Sheet
   wip/feat-267/sheet-r2.jpg (full clear: $10 → $18.99 = base $5.25 + tip $3.74 exactly).
+- 2026-11-20 (lane s): DEC-430 on land/dec-430-demolition-signs. oldSignLine's 7 ASSET-31 road signs → 4 work-zone signs
+  (road-signs.py: worker, arrow, blank, striped board; BarrierOrange; same 4x4 + blank, 13 kg, SIGN_POST_BOX, no tags).
+  demolition-site gate asserts no demolition kind is a sign-*.glb and no work-*.glb is pooled. Turn-back signs untouched
+  (hand-painted ply on stakes, already distinct). Sheet CarGame/wip/dec-430/sheet.jpg (seed 518277).
