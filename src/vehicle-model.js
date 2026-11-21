@@ -843,7 +843,7 @@ export function createVehicleModel (scene, params, spec = DEFAULT_VEHICLE_MODEL,
       // radius where it meets the road is the contact radius physics drags on: MESH == PHYSICS. The rim carries the
       // tread's runout offset there (w = 1 from RIM_R out), so k = collapseR / (RIM_R + that offset).
       const cr = params._wheelCollapseR?.[i]
-      tireMeshes[i].visible = !cr
+      tireMeshes[i].visible = !cr && !state.rimOnRoad?.[i]   // FEAT-315: a failed tire (flat and worn to 0) is off the bead too: the bare rim carries the truck
       const k = cr ? cr / (RIM_R + runoutAtContact(i, state, params)) : 1
       wheelMeshes[i].scale.set(1, k, k)
       if (camberQ) wheelMeshes[i].quaternion.premultiply(camberQ)
@@ -1222,7 +1222,7 @@ float rsBakedShade () {
     }
     if (liner && !bedLiner) {
       const w = b.innerHalfW, top = b.railY - 0.02, f = b.frontZ, t = b.tailZ - 0.003
-      const arch = (sx) => [Math.min(sx * b.wheelhouseHalfW, sx * (w + 0.003)), Math.max(sx * b.wheelhouseHalfW, sx * (w + 0.003)), b.floorY, b.wheelhouseY + e, b.archZ0 - e, b.archZ1 + e]
+      const arch = (sx) => [Math.min(sx * (b.wheelhouseHalfW - e), sx * (w + 0.003)), Math.max(sx * (b.wheelhouseHalfW - e), sx * (w + 0.003)), b.floorY, b.wheelhouseY + e, b.archZ0 - e, b.archZ1 + e]   // BUG-250: its inner face stands a skin PROUD of the wheelhouse's (it was coplanar: z-fight)
       bedLiner = _bedSolid([
         [-w, w, b.floorY - 0.005, b.floorY + 0.018, f, t],                       // floor
         [-w, w, b.floorY, top, f - 0.003, f + e],                                // front wall

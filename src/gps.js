@@ -52,19 +52,11 @@ export const START_GONE_M = 20   // m the truck travels (either way) from where 
 // FEAT-218: an objective further than this from the route's last road point is OFF the road: it gets the turn arrow, not the ring.
 const OFFROAD_M    = 3      // a demolition target stands ~5 m off the centreline; a courier's end is on it
 // FEAT-297 (DEC-434): the marker over an off-road objective: points straight down, spins about the vertical, bobs.
-const OBJ_ARROW_H   = 3.0   // m: its height (tip to tail) at close range
-const OBJ_MARGIN    = 0.8   // m: the tip hovers this far above the objective's roof (not up high: owner)
-const OBJ_NEAR_H    = 1.5   // m: parked at it the tip comes down to this height over the truck, so a roof out of the chase camera's view still holds the arrow in it
-const OBJ_NEAR_M    = 15    // m: the tip is fully down at this distance from the objective, fully on the roof from OBJ_NEAR_M + OBJ_NEAR_SPAN
-const OBJ_NEAR_SPAN = 30    // m
+const OBJ_ARROW_H   = 3.0   // m: its height, tip to tail
+const OBJ_MARGIN    = 1.5   // m: the tip hovers this far above the objective's roof; real geometry at a fixed world spot (FEAT-316, owner 11-20: no scaling, no keeping it on screen)
 const OBJ_NO_TOP    = 3.0   // m above the road: the roof of an objective that is no POI (a house, a demolition target)
 const OBJ_SPIN      = 2.0   // rad/s about the vertical: one turn in 3.1 s
 const OBJ_BOB       = 0.25  // m amplitude of the bob, at 2.4 rad/s
-const OBJ_GROW_M    = 45    // m of CAMERA distance per metre of scale: the marker keeps one apparent size (3 m / 45 m, ~7 % of the screen) from 9 m to 157 m, so it never swells as you close in
-const OBJ_MIN_D     = 14    // m: closest the marker stands to the truck
-const OBJ_PROBE_STEP = 1.0  // m: the camera-ray walk that keeps the marker out of a POI's walls
-const OBJ_PROBE_R    = 1.2  // m: the marker's half-width when it is tested against the POI's boxes
-const OBJ_SIDE      = 0.4   // rad: close in, the marker slides to within this bearing of the truck's heading, so it stays in the chase camera's frame
 const TAN_SPAN     = 20     // m of route averaged into the exit direction at a junction
 const REACQUIRE_M  = 40     // lateral error that forces a full-route re-scan
 // FEAT-61 self-overlap (a paper route drives some streets out and back). A vertex counts as a
@@ -381,7 +373,7 @@ export class GpsSystem {
    *   getRoad returns the RoadSystem, read ONLY at bake time (not per frame) for the design
    *   profile the carve actually uses — see bakeRoute's ELEVATION SOURCE note.
    */
-  constructor (scene, { getRoute, getCar, getFwd = null, getRoad = null, getObjectiveTopY = null, getCamera = null, getBlocked = null }) {
+  constructor (scene, { getRoute, getCar, getFwd = null, getRoad = null, getObjectiveTopY = null }) {
     this._scene = scene
     this._getRoute = getRoute
     this._getCar = getCar
@@ -390,9 +382,7 @@ export class GpsSystem {
     this._startPending = false   // markStart() armed, waiting for a baked route
     this._startAt = null      // {x, z}: where the truck was when the start board was placed
     this._getRoad = getRoad
-    this._getCamera = getCamera   // FEAT-297: the camera's world position, to hold the marker's apparent size
     this._getObjectiveTopY = getObjectiveTopY   // FEAT-297: (objective) -> world Y of its roof, or null when it is no POI
-    this._getBlocked = getBlocked   // FEAT-297: (x, y, z, r) -> truthy inside a POI's solid; the marker is depth-tested, so close in it stands in front of the walls, not inside them
     this._route = null
     this._src = null          // the mission object the current bake came from (identity compare)
     this._bakeRev = -1        // road._networkRev the current bake was taken at
@@ -724,38 +714,9 @@ export class GpsSystem {
     if (remain > 260) return
     const fade = Math.min(1, (260 - remain) / 60)
     if (off) {
-      const car = this._getCar()
       const top = this._getObjectiveTopY?.(o) ?? route.py[n] + OBJ_NO_TOP
-      const d = Math.hypot(car.x - o.x, car.z - o.z)
-      const roofY = top + OBJ_MARGIN, nearY = Math.min(roofY, car.y + OBJ_NEAR_H)
-      const k = Math.min(1, Math.max(0, (d - OBJ_NEAR_M) / OBJ_NEAR_SPAN))   // 0 close, 1 far
-      // Close in, swing the marker's bearing from the truck into the frame (it stays at its distance, over the objective's side).
-      let x = o.x, z = o.z
-      const f = this._getFwd?.()
-      if (f && k < 1 && d > 1e-3) {
-        const dx = o.x - car.x, dz = o.z - car.z
-        const a = Math.atan2(f.x * dz - f.z * dx, f.x * dx + f.z * dz)   // signed bearing off the heading
-        const c = Math.max(-OBJ_SIDE, Math.min(OBJ_SIDE, a)) - a          // the turn that brings it inside OBJ_SIDE
-        const cs = Math.cos(c * (1 - k)), sn = Math.sin(c * (1 - k))
-        const m = 1 + (Math.max(1, OBJ_MIN_D / d) - 1) * (1 - k)   // and out to at least OBJ_MIN_D, so a truck parked at the wall still sees it ahead, not overhead
-        x = car.x + (dx * cs - dz * sn) * m
-        z = car.z + (dx * sn + dz * cs) * m
-      }
-      const y = nearY + (roofY - nearY) * k + Math.sin(this._t * 2.4) * OBJ_BOB
-      const cam = this._getCamera?.() ?? car
-      // The marker is depth-tested (owner, 2026-11-20: never through walls or props). Close in its point is the POI's centre, so walk it
-      // back along the camera's ray to the first solid on it: it stands in front of the wall the chase camera looks at.
-      if (this._getBlocked && k < 1) {
-        const dx = x - cam.x, dz = z - cam.z, L = Math.hypot(dx, dz)
-        for (let t = OBJ_PROBE_STEP; t <= L; t += OBJ_PROBE_STEP) {
-          if (this._getBlocked(cam.x + dx / L * t, y + OBJ_ARROW_H * 0.5, cam.z + dz / L * t, OBJ_PROBE_R)) {
-            const b = Math.max(0, t - OBJ_PROBE_STEP - OBJ_PROBE_R); x = cam.x + dx / L * b; z = cam.z + dz / L * b; break
-          }
-        }
-      }
-      this._objArrow.position.set(x, y, z)
+      this._objArrow.position.set(o.x, top + OBJ_MARGIN + Math.sin(this._t * 2.4) * OBJ_BOB, o.z)   // depth-tested (DEC-462): walls and props still hide it
       this._objArrow.rotation.y = this._t * OBJ_SPIN
-      this._objArrow.scale.setScalar(Math.min(3.5, Math.max(0.25, Math.hypot(cam.x - x, cam.y - car.y, cam.z - z) / OBJ_GROW_M)))
       this._objMat.opacity = fade
       this._objArrow.visible = true
       return
