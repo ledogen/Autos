@@ -5509,8 +5509,6 @@ gpsSystem = new GpsSystem(scene, {
   // 27 m — see gps.js bakeRoute's ELEVATION SOURCE note.
   getRoad: () => roadSystem,
   // FEAT-297: the POI an objective stands for (matched by its x, z), so the route-end arrow can hover over its roof.
-  getCamera: () => camera.position,
-  getBlocked: (x, y, z, r) => poiSystem.queryContact(x, y, z, r),
   getObjectiveTopY: (o) => { const q = poiSystem.list().find(p => Math.hypot(p.x - o.x, p.z - o.z) < 1); return q ? poiTopY(q) : null },
 })
 
