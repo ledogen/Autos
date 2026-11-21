@@ -1972,7 +1972,12 @@ const STEPS = [
     await seat(p.rx, p.rz, p.h)
     await crank()   // story seats the truck with the engine OFF (FEAT-33)
     if (await js('window.__vs.parked')) await tap(' ')   // and latched
-    const c0 = await car(); await hold('w', 6); const c1 = await car()
+    // BUG-248: 4 s, then stop. The hold steers nothing, and seed 6's road bends ~50 m out: 6 s left it at 17.5 m/s
+    // 2.5 m off the centreline, and the truck then coasted unbraked (the promise-box ticks below are wall-clock) ~20 m
+    // into the scenery at 19 m/s. Every run crashed (front armor −0.2, fronts −0.06); the bad ones wrote off a wheel
+    // or two, and the save step then could not reach 5 m/s. 4 s is ~30 m, 28 m from the marker (start zone 25 m).
+    const c0 = await car(); await hold('w', 4); const c1 = await car()
+    await park()
     const moved = Math.hypot(c1.x - c0.x, c1.z - c0.z)
     check(moved > 15, `truck moved ${moved.toFixed(0)} m on the job (need > 15)`)
     check(await until(async () => await hudText() !== staged, 3000), `job never started: HUD still "${staged}" after ${moved.toFixed(0)} m`)
@@ -1998,7 +2003,7 @@ const STEPS = [
       return { id: m?.offerId ?? null, state: ms.state, ex: m?.end.x, ez: m?.end.z, par: m?.par } })()`)
     const job0 = await jobNow()
     check(job0.id && job0.state === 'running', `the offer step left no running board job: ${JSON.stringify(job0)}`)
-    await park()   // the offer step left it driving
+    await park()   // the offer step parks it now (BUG-248); this re-latches
     check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000),
       `the truck never came to rest (${(await js('window.__vs.velocity.length()')).toFixed(2)} m/s, parked ${await js('window.__vs.parked')})`)
     await js('window.__econ.money = 123.45')
@@ -3677,11 +3682,17 @@ const STEPS = [
     const vhRepark = async () => { if (!await js('window.__vs.parked')) return vhPark(); await btn(0); await btn(0)
       check(await until(() => js('window.__vs.parked'), 1000), 'Ventura Highway: A, A did not re-set the parking brake') }
     const rollOff = async (what) => {
+      // BUG-249: only gas that can drive lets the brake go, and a story seat (the teleport) hands over a dead truck
+      // (FEAT-33). A player who drove here has it running; the test starts it first: Y held until it catches.
+      if (await js('window.__vs.ignition?.state !== "running"')) {
+        await hold(3, 2000)
+        check(await until(() => js('window.__vs.ignition?.state === "running"'), 4000), `Ventura Highway, ${what}: Y did not start the engine (${await js('window.__vs.ignition?.state')})`)
+      }
       await js('__fp.b[7] = 0.6')
       const ok = await until(() => js('!window.__vs.parked && !window.__vs.handbrake'), 4000)
       const v = await js('window.__vs.velocity.length().toFixed(2)')
       await js('__fp.b[7] = 0'); await frames(3, 100)
-      check(ok, `Ventura Highway, ${what}: the gas did not let the brake go (parked ${await js('window.__vs.parked')}, handbrake ${await js('window.__vs.handbrake')})`)
+      check(ok, `Ventura Highway, ${what}: the gas did not let the brake go (parked ${await js('window.__vs.parked')}, handbrake ${await js('window.__vs.handbrake')}, ignition ${await js('window.__vs.ignition?.state')}, fuel ${await js('window.__vs.fuel?.gal')})`)
       console.log(`  pad: Ventura Highway, ${what}: the gas let the brake go (${v} m/s)`)
     }
     await seatPoi("q => q.type === 'momsHouse'"); await vhPark(); await readCards()
