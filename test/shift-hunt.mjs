@@ -78,7 +78,7 @@ export async function runCell (box, grade, pedal, kmh, ctx, { runS = RUN_S, stop
     // The driven axle's rpm in this gear as the box reads it this step: the rev-out test (engine out of rpm).
     const axleRpm = 0.5 * (vs.wheelOmega[2] + vs.wheelOmega[3]) * P.gearRatios[g - 1] * P.finalDrive * RPM_PER_RAD / P.converterCouplingSR
     stepPhysics(vs, P, DT, queryContacts, ctx)
-    const d = vs.drivetrain, ng = d.gear
+    const d = vs.drivetrain, ng = d.shifting ? d.shiftTo : d.gear   // the box's decision: autoShiftTime's drive cut runs on top
     if (ng !== g) { shifts.push({ t: s * DT, from: g, to: ng, kmh: vs.velocity.dot(fwd) * 3.6, rpm, axleRpm, spin: d.wheelspin }); g = ng }
     rpm = d.coupledRPM
     const v = vs.velocity.dot(fwd); dist += v * DT

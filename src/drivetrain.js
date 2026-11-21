@@ -478,7 +478,7 @@ export function stepDrivetrain (vehicleState, params, dt, vForward) {
       // 0.7 s later and kicked again, a 2-1-2 every 3 s.
       beginShift(st, st.gear - 1, params.autoShiftTime ?? 0.35)
       st.shiftTimer = holdTime + st.shiftT
-      st.upDwell = lookahead
+      st.upDwell = lookahead + st.shiftT   // from the landing too
     }
   }
 
