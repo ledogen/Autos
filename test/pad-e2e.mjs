@@ -632,6 +632,7 @@ await js(`(async () => { const R = (${appMod('/data/ranger.js')}).RANGER_PARAMS,
   Object.assign(R, T.m5odr1); Object.assign(__vs.drivetrain, { mGear: 0, shiftT: 0, locked: false }); window.__R = R })()`)
 await sleep(300)
 // B backing out of a screen never shifts: the inventory over neutral, B held past its close.
+await js(`window.__inv.grant('chiliDog')`)   // the slot eaten above: an empty inventory has no icon to open
 await js('__fp.b[5] = 1'); await sleep(250); await js('__fp.b[5] = 0'); await sleep(500)
 await js('__fp.b[1] = 1'); await sleep(400); await js('__fp.b[1] = 0'); await sleep(400)
 check(!await inv() && await gear() === 0 && (await vs()).parked, `VH manual: B closes the inventory and stays in neutral (gear ${await gear()})`)
