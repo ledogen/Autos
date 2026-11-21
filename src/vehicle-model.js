@@ -1222,7 +1222,7 @@ float rsBakedShade () {
     }
     if (liner && !bedLiner) {
       const w = b.innerHalfW, top = b.railY - 0.02, f = b.frontZ, t = b.tailZ - 0.003
-      const arch = (sx) => [Math.min(sx * b.wheelhouseHalfW, sx * (w + 0.003)), Math.max(sx * b.wheelhouseHalfW, sx * (w + 0.003)), b.floorY, b.wheelhouseY + e, b.archZ0 - e, b.archZ1 + e]
+      const arch = (sx) => [Math.min(sx * (b.wheelhouseHalfW - e), sx * (w + 0.003)), Math.max(sx * (b.wheelhouseHalfW - e), sx * (w + 0.003)), b.floorY, b.wheelhouseY + e, b.archZ0 - e, b.archZ1 + e]   // BUG-250: its inner face stands a skin PROUD of the wheelhouse's (it was coplanar: z-fight)
       bedLiner = _bedSolid([
         [-w, w, b.floorY - 0.005, b.floorY + 0.018, f, t],                       // floor
         [-w, w, b.floorY, top, f - 0.003, f + e],                                // front wall
