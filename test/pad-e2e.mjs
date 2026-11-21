@@ -592,7 +592,7 @@ await press(B); await sleep(4000)   // the F tap's practice-throw view runs out
 const pm = '__padMod.pad'
 const park0 = (await vs()).parked
 // The forced cards have no real card behind them, so an Escape would pause the game: eat it after __vhKeys has seen it.
-await js(`window.__ar = ${pm}.atRest; window.__pcl = ${pm}.pumpClose; window.__cA = ${pm}.cardActive; window.__cT = ${pm}.cardTabs; window.__cD = ${pm}.cardDrive; addEventListener('keydown', e => { if (window.__eat && e.key === 'Escape') e.stopImmediatePropagation() }, true); window.__eat = true`)
+await js(`window.__ar = ${pm}.atRest; window.__pcl = ${pm}.pumpClose; window.__pA = ${pm}.pumpActive; window.__cA = ${pm}.cardActive; window.__cT = ${pm}.cardTabs; window.__cD = ${pm}.cardDrive; addEventListener('keydown', e => { if (window.__eat && e.key === 'Escape') e.stopImmediatePropagation() }, true); window.__eat = true`)
 await keysSeen()
 // 1. A plain card: RB is silent (it used to be Space: decline an offer, back a camp face). A selects, B backs, LB is still the clutch.
 await js(`${pm}.cardActive = () => true`)
@@ -624,7 +624,7 @@ await js('__fp.b[6] = 1'); await sleep(300); const ltDown = await keysSeen(), lt
 await press(A); const pumpA = await keysSeen()
 await press(B); const pumpB = await keysSeen(), closes = await js('__pc')
 check(ltDown === 'f' && ltBrk === 0 && pumpA === ' ' && pumpB === '' && closes === 1, `VH pump: LT holds F ("${ltDown}", brake ${ltBrk}), A is Space ("${pumpA}"), B closes the pump once (${closes}) and sends no key ("${pumpB}")`)
-await js(`${pm}.pumpActive = __pa0; ${pm}.pumpClose = __pcl; __eat = false`)
+await js(`${pm}.pumpActive = __pA; ${pm}.pumpClose = __pcl; __eat = false`)
 if ((await vs()).parked !== park0) await press(A)   // the A at the result card above toggled the truck's brake
 await keysSeen()
 // FEAT-126 manual through Ventura Highway: B up, X down, LB clutch.
