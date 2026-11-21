@@ -268,8 +268,8 @@ function poll () {
     : card ? (pad.cardDrive() ? L.result : pad.cardTabs() ? CARD_TAB_KEYS : map ? CARD_MAP_KEYS : L.card)
     : map ? MAP_KEYS : L.drive
   const drive = keys === L.drive
-  const ltPump = keys === L.pump   // DEC-467 (supersedes DEC-466): LT pumps (F held) in both layouts; the brake does nothing there
   if (drive && pad.pumpActive()) keys = L.pump
+  const ltPump = keys === L.pump   // DEC-467 (supersedes DEC-466): LT pumps (F held) in both layouts; the brake does nothing there
   // BUG-193 (owner, 2026-11-17): LB held in the map (ArrowLeft) and the map closed — the button is down but its held key
   // is the map's, so the clutch never engaged. Back in the drive layout a held clutch / handbrake lets go of the key it
   // went down with and is read afresh as the drive's. Not the other buttons: A / Y / L3 held through a close would fire
