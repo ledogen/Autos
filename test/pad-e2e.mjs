@@ -476,7 +476,7 @@ const chart = () => js(`Object.fromEntries([...document.querySelectorAll('#cs-bi
 let ch = await chart()
 check(ch['handbrake / park (tap)'] === 'A' && ch['upshift (manual)'] === 'B' && ch['downshift (manual)'] === 'X' && ch['clutch (manual)'] === 'LB'
   && ch.inventory === 'RB (hold, ↑/↓, release)' && ch['abandon job (parked; twice)'] === 'RB + ↑ (hold RB, ↑, release)'
-  && ch['back (menus, cards, map)'] === 'B' && ch['throw paper (aiming)'] === 'right stick aims, RB tap' && ch['cards: pick / press'] === 'D-pad / A (card up)',
+  && ch['back (menus, cards, map)'] === 'B (pump: pays · result card: parked)' && ch['throw paper (aiming)'] === 'right stick aims, RB tap' && ch['cards: pick / press'] === 'D-pad / A (card up)',
   `the binding chart shows Ventura Highway's buttons: ${JSON.stringify(ch)}`)
 check(await js('document.querySelector("#hud-b-hint > .kc-pad").textContent') === 'RB', 'the side menu\'s "hold" line reads RB')
 await press(B)
@@ -592,7 +592,7 @@ await press(B); await sleep(4000)   // the F tap's practice-throw view runs out
 const pm = '__padMod.pad'
 const park0 = (await vs()).parked
 // The forced cards have no real card behind them, so an Escape would pause the game: eat it after __vhKeys has seen it.
-await js(`window.__ar = ${pm}.atRest; window.__pcl = ${pm}.pumpClose; addEventListener('keydown', e => { if (window.__eat && e.key === 'Escape') e.stopImmediatePropagation() }, true); window.__eat = true`)
+await js(`window.__ar = ${pm}.atRest; window.__pcl = ${pm}.pumpClose; window.__cA = ${pm}.cardActive; window.__cT = ${pm}.cardTabs; window.__cD = ${pm}.cardDrive; addEventListener('keydown', e => { if (window.__eat && e.key === 'Escape') e.stopImmediatePropagation() }, true); window.__eat = true`)
 await keysSeen()
 // 1. A plain card: RB is silent (it used to be Space: decline an offer, back a camp face). A selects, B backs, LB is still the clutch.
 await js(`${pm}.cardActive = () => true`)
@@ -604,7 +604,7 @@ check(cardRB === '' && cardA === 'Enter' && cardB === 'Escape', `VH plain card: 
 await js(`${pm}.cardTabs = () => true`)
 await press(4); const tabL = await keysSeen(); await press(5); const tabR = await keysSeen()
 check(tabL === 'q' && tabR === 'e', `VH tabbed card: LB is Q ("${tabL}"), RB is E ("${tabR}")`)
-await js(`${pm}.cardTabs = () => false`)
+await js(`${pm}.cardTabs = __cT`)
 // 2. The result card: A the handbrake, B back at rest / the upshift moving, RB silent, and a back never upshifts.
 await js(`${pm}.cardDrive = () => true; ${pm}.atRest = () => true`)
 await press(A); const resA = await keysSeen()
@@ -617,14 +617,14 @@ check(resA === ' ' && resBrest === 'Escape' && resBmove === 'e' && resRB === '',
 await js(`${pm}.atRest = () => true; __fp.b[1] = 1`); await sleep(200); await js(`${pm}.atRest = () => false`); await sleep(200)
 await js('__fp.b[1] = 0'); await sleep(250)
 check(await keysSeen() === 'Escape', 'VH result card: a B that began as a back stays one when the truck starts moving under it')
-await js(`${pm}.cardActive = () => false; ${pm}.cardDrive = () => false; ${pm}.atRest = __ar`)
+await js(`${pm}.cardActive = __cA; ${pm}.cardDrive = __cD; ${pm}.atRest = __ar`)
 // 3. The pump (DEC-466/467): hold LT to pump (F down, held; the brake does nothing), A is the handbrake (Space), B closes the pump (once, no key).
 await js(`window.__pc = 0; ${pm}.pumpActive = () => true; ${pm}.pumpClose = () => { __pc++ }`)
 await js('__fp.b[6] = 1'); await sleep(300); const ltDown = await keysSeen(), ltBrk = await js(`${pm}.brake`); await js('__fp.b[6] = 0'); await sleep(200)
 await press(A); const pumpA = await keysSeen()
 await press(B); const pumpB = await keysSeen(), closes = await js('__pc')
 check(ltDown === 'f' && ltBrk === 0 && pumpA === ' ' && pumpB === '' && closes === 1, `VH pump: LT holds F ("${ltDown}", brake ${ltBrk}), A is Space ("${pumpA}"), B closes the pump once (${closes}) and sends no key ("${pumpB}")`)
-await js(`${pm}.pumpActive = () => false; ${pm}.pumpClose = __pcl; __eat = false`)
+await js(`${pm}.pumpActive = __pa0; ${pm}.pumpClose = __pcl; __eat = false`)
 if ((await vs()).parked !== park0) await press(A)   // the A at the result card above toggled the truck's brake
 await keysSeen()
 // FEAT-126 manual through Ventura Highway: B up, X down, LB clutch.
