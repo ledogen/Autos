@@ -361,10 +361,10 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
     const H = clamp(v * v / (2 * Math.max(0.8, aBrk * 0.5)) + 40, 90, 260)
     let n = 0
     sx[0] = path[idx].x; sz[0] = path[idx].z; ss[0] = projS; sy[0] = path[idx].y; n = 1   // on the line: the car's own offset is no bend
-    let terminal = false
+    let terminal = false, jumpAhead = false
     for (let j = idx + 1; j < path.length && n < NS; j++) {
       const c = path[j]
-      if (c.jump || c.uturn) { terminal = true; break }
+      if (c.jump || c.uturn) { terminal = true; jumpAhead = !!c.jump; break }
       if (c.s - ss[n - 1] < 8 && j < path.length - 1) continue
       sx[n] = c.x; sz[n] = c.z; sy[n] = c.y; ss[n] = c.s; n++
       if (c.s - projS > H) break
@@ -404,8 +404,11 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
     pedals(vT, vF, grNow, dt)
     if (manual()) gearTo(vT < 0.3 && vF < 0.5 ? 1 : wantGear(vF, ap._vs?.drivetrain?.mGear ?? 0, out.throttle))
     ap.dbg = { vT, rNear, grade: grNow }
-    // Stopped at the end of the road: turn round.
-    if (terminal && vF < 0.6 && path[path.length - 1].s - projS < 25 && state === 'drive') {
+    // Stopped at the end of the road: turn round. BUG-254: the end is the last station (ss[n − 1]), not the path's last
+    // point: past a jump the path runs on along the edge jumped to, and the plan stops 8 m short of the jump, outside the
+    // 6 m 'route jump' check above, so the bench's driver stood there for good with nothing reported.
+    if (terminal && vF < 0.6 && ss[n - 1] - projS < 25 && state === 'drive') {
+      if (jumpAhead) { report('route jump'); return }
       if (!recover) { report('dead end'); return }
       go('turn')
     }
@@ -465,12 +468,14 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
 // Self-check: `node src/autopilot.js`. A kinematic bicycle (yaw rate = v·tan(steer)/wheelbase; the brake at rest is reverse,
 // as on the automatic) on (1) a 100 m ring road cut into four edges: it must hold its lane within 1.5 m, reach the ring's
 // corner speed and report no trouble; (2) a 200 m dead-end street: it must stop at the end, turn round on the 10 m deck
-// without leaving it, and drive back; (3) wheels that cannot turn: it must try reversing out, then report 'stuck'.
+// without leaving it, and drive back; (3) wheels that cannot turn: it must try reversing out, then report 'stuck'; (4) the
+// bench's mode (deadEnd 'jump', recover false) on that street with a second one to jump to: it must stop at the jump and
+// report 'route jump' (BUG-254: it stopped 8 m short, where neither the jump nor the dead-end check could see it, for good).
 if (typeof process !== 'undefined' && import.meta.url === `file://${process.argv[1]}`) {
   let s = 1; const rng = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32)
   const car = { wheelbase: 2.85, maxSteerAngle: 0.52, speedSteerRef: 15, frictionCoeff: 0.8, pacejkaD: 1, roadHalfWidth: 5 }
-  const sim = (edges, from, h0, T, { stuck = false } = {}) => {
-    const route = makeRoute(edges, rng, from), ap = createAutopilot({ car, route })
+  const sim = (edges, from, h0, T, { stuck = false, deadEnd = 'stop', recover = true } = {}) => {
+    const route = makeRoute(edges, rng, from, { deadEnd }), ap = createAutopilot({ car, route, recover })
     ap.locate(from)
     let x = from.x, z = from.z, h = h0, v = 0, steer = 0, maxLat = 0, maxV = 0, trouble = null, states = new Set(), maxDeck = 0
     for (let t = 0; t < T && !trouble; t += 1 / 60) {
@@ -495,11 +500,14 @@ if (typeof process !== 'undefined' && import.meta.url === `file://${process.argv
   const street = [{ points: Array.from({ length: 51 }, (_, i) => ({ x: 0, y: 0, z: -4 * i })) }]
   const b = sim(street, { x: 2.5, z: -20, dir: { x: 0, z: -1 } }, 0, 120)
   const c = sim(ring, { x: R, z: 0, dir: { x: 0, z: 1 } }, Math.PI, 60, { stuck: true })
+  const far = { points: Array.from({ length: 51 }, (_, i) => ({ x: 500, y: 0, z: -4 * i })) }
+  const d = sim([street[0], far], { x: 0, z: -20, dir: { x: 0, z: -1 } }, 0, 60, { deadEnd: 'jump', recover: false })
   console.log(`ring: max off its lane ${a.maxLat.toFixed(2)} m, top ${a.maxV.toFixed(1)} m/s (corner speed ${Math.sqrt(0.42 * 0.8 * G * R).toFixed(1)}), ${a.km.toFixed(2)} km, trouble ${a.trouble}`)
   console.log(`dead end: states ${[...b.states].join(' > ')}, worst off the centreline ${b.maxDeck.toFixed(2)} m, ${b.km.toFixed(2)} km, trouble ${b.trouble}`)
   console.log(`wheels locked: states ${[...c.states].join(' > ')}, trouble ${c.trouble}`)
+  console.log(`jump (bench mode): ${d.km.toFixed(2)} km, stopped at z ${d.z.toFixed(1)} (street ends at z -200), trouble ${d.trouble}`)
   const ok = a.maxLat < 1.5 && a.maxV > 15 && a.maxV < 20 && !a.trouble &&
     b.states.has('turn') && b.maxDeck < 5.5 && b.km > 0.35 && !b.trouble &&
-    c.states.has('reverse') && c.trouble === 'stuck'
+    c.states.has('reverse') && c.trouble === 'stuck' && d.trouble === 'route jump'
   console.log(ok ? 'PASS' : 'FAIL'); process.exit(ok ? 0 : 1)
 }
