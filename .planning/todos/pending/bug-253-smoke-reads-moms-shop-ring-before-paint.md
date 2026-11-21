@@ -12,7 +12,7 @@ lane: s2
 # BUG-253: the smoke reads mom's Shop-tab ring before the gate has painted it
 
 ## Next steps
-Orchestrator lands land/bug-253-opening-ring (test-only change).
+Orchestrator lands land/bug-253-opening-ring (test-only change), then closes this ticket.
 
 ## Summary
 `test/cdp-smoke.mjs` step "opening", check "checked out, mom does not point at the Shop tab", failed 5 of 5 runs on
@@ -31,8 +31,15 @@ The card turns on the HUD poll (`_untilTick`, main.js). The old check polled `un
 when its button goes). Under load that gap grows, so the one read lands inside it often.
 
 ### Evidence (page-side recorder, 2 ms poll, SMOKE_THROTTLE=4, t = 0 at the check-out click)
-Passing run: `91 ms until=svcshop · 91 ms ring=(empty) · 124 ms ring=shop` — a 33 ms empty window every time.
-The five runs below log the same ordering plus what the old one-shot read would have returned.
+Every run shows the same ordering: the card turns, the ring is empty, the next paint rings the Shop tab.
+- failing read: `103 ms until=svcshop · 148 ms ring=shop`; the old one-shot read landed in the gap and got `""`
+  (the new wait in the same run passed).
+- passing reads: `91 → 124 ms`, `135 → 176 ms`, `138 → 159 ms`, `89 → 138 ms` (card → ring), read after the ring.
+
+### Sibling race fixed in the same step
+The first throttled run then failed at DEC-357's blink: after `tap('l')` the test called `readCards()` before the HUD
+poll cleared the lights card, so readCards took it for an action card and returned, leaving mom's slow-down card up
+(it holds the blink countdown). The test now waits (bounded) for the lights card to clear first.
 
 ### Fix
 The check waits (bounded, 3 s × the smoke's load stretch) for `until === 'svcshop'` AND the ring on the Shop tab. Still
@@ -41,7 +48,7 @@ strict: a ring that never comes still fails.
 ## Tracker
 - [x] Cause found from the code and confirmed by timestamps: test race (ring follows state, 100 ms paint)
 - [x] The check waits on the condition, bounded; no fixed sleep
-- [ ] SMOKE_THROTTLE=4 opening step 5/5
+- [x] SMOKE_THROTTLE=4 opening step 5/5 (final code, stretch ×5.6–7.2)
 - [x] `node test/tut-gate.mjs` green
 
 ## Files
@@ -49,3 +56,5 @@ strict: a ring that never comes still fails.
 
 ## Log
 - 2026-11-20: instrumented run at 4× throttle: card 91 ms, ring 124 ms after check-out (pass by luck of read timing).
+- 2026-11-21: fa65d2c4 (both waits), main merged 4eb94bf2. SMOKE_THROTTLE=4 boot,opening 5/5 PASS (wip/bug-253/f4-*.log);
+  tut-gate PASS; run-all --serial --changed: only cdp-smoke selected (browser, run directly above). No src/ change.
