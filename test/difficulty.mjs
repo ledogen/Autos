@@ -1,4 +1,5 @@
-// GATE (FEAT-296, DEC-433): the difficulty rows — damage, hunger, cost scaling, endless — and the presets.
+// GATE (FEAT-296, DEC-433, DEC-475): the difficulty rows — damage, hunger, cost scaling, fuel burn, free tows, death, endless —
+// and the presets.
 //
 //   1. CLASSIC IS TODAY: applying Classic over pristine params changes nothing, and Classic after Casual / Zen / none
 //      restores DAMAGE_PARAMS, DAY_PARAMS and ECONOMY_PARAMS bit-exactly (deep-equal to a clone taken before anything ran).
@@ -18,16 +19,17 @@ import { isDeepStrictEqual } from 'node:util'
 import { DAMAGE_PARAMS, DamageModel, TIRE_IDS } from '../src/damage.js'
 import { DAY_PARAMS, DaySystem } from '../src/day.js'
 import { ECONOMY_PARAMS, dayTier } from '../src/economy.js'
-import { DIFFICULTY_PRESETS, CLASSIC_RULES } from '../data/difficulty.js'
+import { DIFFICULTY_PRESETS, DIFFICULTY_ROWS, CLASSIC_RULES } from '../data/difficulty.js'
 import { applyRules, resolveRules, legalRules } from '../src/difficulty.js'
 import { putRun, loadRun } from '../src/save.js'
+import { RANGER_PARAMS } from '../data/ranger.js'
 
 let failures = 0
 const check = (ok, msg) => { console.log(`  ${ok ? '✓' : '✗'} ${msg}`); if (!ok) failures++ }
-const pristine = () => structuredClone({ d: DAMAGE_PARAMS, y: DAY_PARAMS, e: ECONOMY_PARAMS })
+const pristine = () => structuredClone({ d: DAMAGE_PARAMS, y: DAY_PARAMS, e: ECONOMY_PARAMS, r: RANGER_PARAMS })
 const P0 = pristine()
 const { casual: CASUAL, zen: ZEN, classic: CLASSIC } = DIFFICULTY_PRESETS
-const rulesOf = (p) => ({ damage: p.damage, hunger: p.hunger, cost: p.cost, endless: p.endless })
+const rulesOf = ({ world, ...r }) => r
 const NONE = { ...CLASSIC_RULES, damage: 'none' }
 
 console.log('classic is today')
@@ -91,17 +93,29 @@ check(hLo.late.hungry && hLo.late.word === 'hungry', 'past the grace, low is hun
 // Today, 6 h past empty: ramp over 4 h (×1.25 → ×1.5) then ×1.5 for 2 h → extra = 0.25·4 + 0.25·4/2 + 0.5·2 = 2.5 h.
 // Low: 1 h grace, the extra halved over the 5 h left → 0.125·4 + 0.125·4/2 + 0.25·1 = 1.0 h.
 check(Math.abs(hN.cost - 2.5) < 1e-9 && Math.abs(hLo.cost - 1.0) < 1e-9, `6 h past empty costs ${hN.cost} h of energy today, ${hLo.cost} h on low`)
+const hOff = hunger({ ...CLASSIC_RULES, hunger: 'off' })
+check(!hOff.late.hungry && hOff.late.word === null && hOff.cost === 0, 'hunger off: never hungry, no word, no extra drain (DEC-475)')
 
 console.log('cost')
 const tier = (r, day) => { applyRules(r); const t = dayTier(day); applyRules(CLASSIC_RULES); return t }
 const CL = { ...CLASSIC_RULES, cost: 'low' }
 check(tier(CLASSIC_RULES, 12) === 2 && tier(CL, 12) < 1.5 && tier(CL, 12) > 1, `day 12 costs ×${tier(CLASSIC_RULES, 12)} today, ×${tier(CL, 12)} on low`)
 check(tier(CL, 1) === 1 && tier(CLASSIC_RULES, 1) === 1, 'day 1 is the authored price on both')
+check(tier({ ...CLASSIC_RULES, cost: 'off' }, 20) === 1, 'cost off: day 20 still pays day-1 prices (DEC-475)')
+
+console.log('fuel, tows, death (DEC-475)')
+const burn = (lv) => { applyRules({ ...CLASSIC_RULES, fuel: lv }); const b = RANGER_PARAMS.fuelBurnScale; applyRules(CLASSIC_RULES); return b }
+check(burn('normal') === P0.r.fuelBurnScale && burn('low') === P0.r.fuelBurnScale * resolveRules({ fuel: 'low' }).fuel.burn && burn('low') < burn('normal') && burn('off') === 0,
+  `fuel burn: normal ×${burn('normal')}, low ×${burn('low')}, off ×0`)
+check(['1', '3', '5', '10', 'infinite'].join() === Object.keys(DIFFICULTY_ROWS.tows).join() && resolveRules({ tows: 'infinite' }).tows.n === Infinity && resolveRules({}).tows.n === 1,
+  'free tows list 1 / 3 / 5 / 10 / infinite, Classic 1')
+check(resolveRules({}).death.on && !resolveRules({ death: 'off' }).death.on, 'death: on by default, off resolves off')
 
 console.log('endless and the presets')
 check(resolveRules(rulesOf(ZEN)).endless.on && !resolveRules(rulesOf(CASUAL)).endless.on && !resolveRules(CLASSIC_RULES).endless.on, 'endless: Zen on, Casual and Classic off')
-check(isDeepStrictEqual(CASUAL, { world: 'casual', damage: 'low', hunger: 'low', cost: 'low', endless: 'off' }), 'Casual: the Casual world, low damage / hunger / cost')
-check(isDeepStrictEqual(ZEN, { world: 'classic', damage: 'low', hunger: 'normal', cost: 'low', endless: 'on' }), 'Zen: Classic but low damage, low cost, endless on')
+check(isDeepStrictEqual(CASUAL, { world: 'casual', ...CLASSIC_RULES, damage: 'low', hunger: 'low', cost: 'low', fuel: 'low', tows: '3' }), 'Casual: the Casual world, low damage / hunger / cost / fuel, 3 free tows')
+check(isDeepStrictEqual(ZEN, { world: 'classic', ...CLASSIC_RULES, damage: 'low', cost: 'low', endless: 'on' }), 'Zen: Classic but low damage, low cost, endless on')
+check(CLASSIC_RULES.cost === 'normal' && CLASSIC_RULES.fuel === 'normal' && CLASSIC_RULES.death === 'on', 'Classic: cost normal, fuel normal, death on (DEC-475)')
 check(isDeepStrictEqual(rulesOf(CLASSIC), CLASSIC_RULES) && CLASSIC.world === 'classic', 'Classic: today on every row')
 check(Object.values(DIFFICULTY_PRESETS).every(p => p.damage !== 'none'), 'no preset uses damage none')
 
@@ -112,7 +126,9 @@ putRun({ seed: '6', rules: rulesOf(ZEN), endlessWon: true }, st)
 const back = loadRun(st)
 check(isDeepStrictEqual(legalRules(back.rules), rulesOf(ZEN)) && back.endlessWon === true, 'the rules and the endless flag round-trip through the run save')
 check(isDeepStrictEqual(legalRules(undefined), CLASSIC_RULES), 'a save from before FEAT-296 reads as Classic')
-check(isDeepStrictEqual(legalRules({ damage: 'brutal', hunger: 'low', cost: 7 }), { ...CLASSIC_RULES, hunger: 'low' }), 'unknown levels fall back to Classic row by row')
+check(isDeepStrictEqual(legalRules({ damage: 'brutal', hunger: 'low', cost: 7, tows: 'constructor' }), { ...CLASSIC_RULES, hunger: 'low' }), 'unknown levels fall back to Classic row by row')
+check(isDeepStrictEqual(legalRules({ damage: 'low', hunger: 'low', cost: 'medium', endless: 'on' }), { ...CLASSIC_RULES, damage: 'low', hunger: 'low', cost: 'normal', endless: 'on' }),
+  'a save made before DEC-475 loads: cost "medium" reads as normal, the new rows as Classic')
 
 console.log(failures ? `\nFAIL — ${failures} check(s)` : '\nPASS')
 process.exit(failures ? 1 : 0)

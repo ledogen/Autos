@@ -32,7 +32,7 @@ import { makeQueryContacts } from './world-contacts.js'   // the wheels' and bod
 import { makeFuelState } from './fuel.js'
 import { makeVehicleState } from './vehicle-state.js'   // FEAT-41: the canonical vehicleState shape, shared with the menu stage
 import { MenuStage } from './stage.js'                  // FEAT-41: the live 3D scene behind the menu AND every load
-import { DamageModel, DAMAGE_PARAMS, WHEEL_IDS, TIRE_IDS, fatalMph } from './damage.js'    // SM-3: component condition model
+import { DamageModel, DAMAGE_PARAMS, WHEEL_IDS, TIRE_IDS, TRACK_IDS, fatalMph } from './damage.js'    // SM-3: component condition model
 import { truckConfig, loadVerdict, tireCondCap, massLimits } from './load-verdict.js'   // FEAT-112: fits / warning / overload
 import { DamageHUD } from './damage-hud.js'                 // SM-3: the diagnostic condition readout (debug panel)
 import { DamageScreen, bandColor } from './damage-screen.js'   // FEAT-90: the player's damage pictogram (V, park-gated)
@@ -1579,8 +1579,9 @@ const _STOCK_BOX = RANGER_PARAMS.transmission   // 'auto' = the truck's own auto
 const _world = () => ({ t: _settings.worldTerrain, p: _settings.worldPoi, r: _settings.worldRoads })
 const _setWorld = (w) => { _settings.worldTerrain = w.t; _settings.worldPoi = w.p; _settings.worldRoads = w.r }
 /** FEAT-296: the setup page's rules, from the saved rows (settings keys rule<Row>). */
-const _RULE_KEY = { damage: 'ruleDamage', hunger: 'ruleHunger', cost: 'ruleCost', endless: 'ruleEndless' }
+const _RULE_KEY = { damage: 'ruleDamage', hunger: 'ruleHunger', cost: 'ruleCost', fuel: 'ruleFuel', tows: 'ruleTows', death: 'ruleDeath', endless: 'ruleEndless' }
 const _setupRules = () => legalRules(Object.fromEntries(Object.entries(_RULE_KEY).map(([row, k]) => [row, _settings[k]])))
+for (const [row, lv] of Object.entries(_setupRules())) _settings[_RULE_KEY[row]] = lv   // DEC-475: a renamed or junk level reads as its legal one
 const _difficultyOf = (w, r) => Object.keys(DIFFICULTY_PRESETS).find(id => {
   const p = DIFFICULTY_PRESETS[id]
   return presetOf(w) === p.world && Object.keys(_RULE_KEY).every(row => p[row] === r[row])
@@ -1600,6 +1601,9 @@ const SELECTORS = {
   ruleDamage:   _ruleRow('damage', 'damage'),
   ruleHunger:   _ruleRow('hunger', 'hunger'),
   ruleCost:     _ruleRow('cost', 'cost scaling'),
+  ruleFuel:     _ruleRow('fuel', 'fuel burn'),     // DEC-475
+  ruleTows:     _ruleRow('tows', 'free tows'),
+  ruleDeath:    _ruleRow('death', 'death'),
   ruleEndless:  _ruleRow('endless', 'endless'),
   // FEAT-205: free roam's truck — stock, or the one a won run saved. Page state, never saved; shown only with a winner to pick.
   truck:        { name: 'truck', opts: [['stock', 'stock'], ['winner', 'winning truck']], show: () => _setupMode === 'freeroam' && !!loadTruck(),
@@ -6263,7 +6267,9 @@ function _towQuote (test) {
   const dest = _nearestPoi(test)
   if (!dest) return null
   // FEAT-184 stage 4: the worst day's tow is on mom [DEFAULT] — the evening's only tow costs hours, not money.
-  return { ...dest, price: _tutDrive() ? 0 : towPrice(dest.km, economySystem.tierNow(), ECONOMY_PARAMS), hours: towHours(dest.km, ECONOMY_PARAMS) }
+  // DEC-475: a run's free tows (the tows row) come first — in a story run past the tutorial, the only place _rulesNow() is not Classic's.
+  const free = !_tutDrive() && storySystem.isActive() && _towsUsed < DIFFICULTY_ROWS.tows[_rulesNow().tows].n
+  return { ...dest, free, price: _tutDrive() || free ? 0 : towPrice(dest.km, economySystem.tierNow(), ECONOMY_PARAMS), hours: towHours(dest.km, ECONOMY_PARAMS) }
 }
 // A pump island sells fuel (until ASSET-13's station has zones); an auto shop is a service center.
 const _FUEL_SELLER = q => !!q.pumpZones
@@ -6276,6 +6282,7 @@ const _SERVICE_CENTER = q => q.type === 'autoShop'
  */
 function _towTo (t, seat) {
   if (!t || !economySystem.spend(t.price)) return
+  if (t.free) _towsUsed++   // DEC-475
   runLog.on && runLog.event('tow', { to: t.q?.type, poiId: t.q?.id, km: t.km, price: t.price, hours: t.hours, wallet: economySystem.money() })   // FEAT-242
   if (_firingDay()) _eveTowed = true   // FEAT-184 stage 5: the worst day's tow — it's night when you drive home
   _recoveryOpen = false
@@ -9441,7 +9448,7 @@ function _showPauseMenu () {
   if (storyBtn) storyBtn.textContent = storySystem.isActive() ? 'free roam' : 'story mode'
   // FEAT-41: the world code, so a random world can be shared and replayed.
   const codeEl = document.getElementById('pm-code')
-  if (codeEl) codeEl.textContent = `world ${formatWorldCode(_seedString, activeWorld())}` + (storySystem.isActive() && !_paperScenario ? ` · ${_runDifficulty()}` : '')   // FEAT-296
+  if (codeEl) codeEl.textContent = `world ${formatWorldCode(_seedString, activeWorld())}` + (storySystem.isActive() && !_paperScenario ? ` · ${_difficultyOf(activeWorld(), _runRules) ?? 'custom'}` : '')   // FEAT-296: a name, never the rows (they widened the box; the summary lists them)
   // FEAT-62: restart only means something inside a scenario.
   const restartBtn = document.getElementById('pm-restart')
   if (restartBtn) restartBtn.style.display = scenarioSystem.isActive() || _paperScenario ? '' : 'none'
@@ -10172,6 +10179,7 @@ let _runWorld = null       // ...and the world knobs, so a BUG-100 re-roll keeps
 // game starts, carried by the save, kept across the tutorial's world hop and a re-roll, Classic in a scenario.
 let _runRules = CLASSIC_RULES
 let _endlessWon = false    // FEAT-296: an endless run's camp card has been shown (saved: it never shows again)
+let _towsUsed = 0          // DEC-475: the run's free tows taken (saved); the tows row says how many it has
 /** FEAT-296: the rules in play — the run's own in a story run past its tutorial (DEC-151: the tutorial plays Classic),
  *  Classic everywhere else (free roam, the lab, the menu). */
 function _rulesNow () { return storySystem.isActive() && !_inTutorial() ? _runRules : CLASSIC_RULES }
@@ -10200,6 +10208,7 @@ async function _startStory (seed, world = _world(), gearbox = _settings.gearbox,
   _runWorld = world
   _runRules = scenario ? CLASSIC_RULES : resume ? legalRules(resume.rules) : returnSeed || rerolls ? _runRules : _setupRules()
   _endlessWon = !!resume?.endlessWon
+  _towsUsed = resume?.towsUsed ?? 0
   _seedRerolls = rerolls
   if (!rerolls) _seedSwap = null
   _pendingResume = resume   // every entry sets it: a resume that never went live cannot leak into the next run
@@ -10548,10 +10557,35 @@ const RUN_END_TITLE = {   // owner's words (2026-11-01); the day is a row below 
 // The fatal hit plays out in black and white before its card (owner, 2026-10-30).
 const CRASH_CARD_DELAY_S = 1.5
 
+/**
+ * DEC-475: death off. A death is DEC-001's lost life instead of the end ("a lost life resets the truck to the road, loses
+ * the cargo and floors condition at 25 %"): the job in hand is abandoned (its load lost, the abandon path's own card), every
+ * part is floored at 25 % with the air back in its tires, the tank at a quarter at least (else a dry, broke truck would die
+ * again 3 s later), and the truck goes back on the nearest road. Money, the day and the clock are untouched.
+ */
+const LIFE_FLOOR = 0.25   // DEC-001
+function _loseLife (kind) {
+  runLog.on && runLog.event('lifeLost', { kind, fatal: damageModel.fatalImpact, cond: runLog._cond() })
+  damageModel.fatalImpact = null
+  _strandedSince = null
+  if (paperRouteSystem.isCarrying() || missionSystem?.isActive()) {
+    const id = paperRouteSystem.isCarrying() ? paperRouteSystem.cancel() : missionSystem.cancel(_abandonCargo())
+    if (id) offerBoard?.abandon(id, daySystem.clockH())
+  }
+  for (const id of TRACK_IDS) damageModel.set(id, Math.max(LIFE_FLOOR, damageModel.get(id)))
+  damageModel.flat.fill(false)
+  damageModel.publish(RANGER_PARAMS)
+  const f = vehicleState.fuel
+  if (f) { f.gal = Math.max(f.gal, LIFE_FLOOR * RANGER_PARAMS.fuelTankGal); f.dry = false }
+  _resetToRoad()
+}
+
 /** End the run `kind` ('win' | 'crash' | 'broke' | 'towel'). The first ending wins. */
 function _endRun (kind) {
   if (_paperScenario) { _paperScenarioOver(kind); return }   // FEAT-62: never _discardRunSave — the save is the player's
   if (_runEnded) return
+  // DEC-475: death off — a fatal crash or a breakdown (DEC-001's two deaths) is a lost life; winning and giving up still end.
+  if ((kind === 'crash' || kind === 'broke') && !DIFFICULTY_ROWS.death[_rulesNow().death].on) { _loseLife(kind); return }
   if (kind === 'win') putTruck({ parts: partsSystem.snapshot(), gearbox: _runGearbox })   // FEAT-205: free roam can fit it
   // FEAT-296 (DEC-433): endless — the camp is a milestone, not the end. Its card shows once (the grade, the summary), the
   // save stays, and its one button, "keep playing", hands the run back: the board keeps posting, prices keep climbing,
@@ -10690,7 +10724,7 @@ function _runSnapshot () {
   const vs = vehicleState, p = vs.position, q = vs.quaternion
   return {
     seed: _seedString, world: activeWorld(), gearbox: _runGearbox,
-    rules: _runRules, endlessWon: _endlessWon,   // FEAT-296: the run's difficulty rows (an old save without them is Classic)
+    rules: _runRules, endlessWon: _endlessWon, towsUsed: _towsUsed,   // FEAT-296: the run's difficulty rows (an old save without them is Classic)
     day: daySystem.snapshot(), economy: runEconomy, inventory: runInventory,
     worldItems: runWorldItems.items,   // FEAT-143: a drop is player state (cold generation still holds)
     parts: partsSystem.snapshot(),   // fitted parts, every track's condition + durability, the flats
