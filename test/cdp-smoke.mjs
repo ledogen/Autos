@@ -3640,6 +3640,12 @@ const STEPS = [
     const vhRepark = async () => { if (!await js('window.__vs.parked')) return vhPark(); await btn(0); await btn(0)
       check(await until(() => js('window.__vs.parked'), 1000), 'Ventura Highway: A, A did not re-set the parking brake') }
     const rollOff = async (what) => {
+      // BUG-249: only gas that can drive lets the brake go, and a story seat (the teleport) hands over a dead truck
+      // (FEAT-33). A player who drove here has it running; the test starts it first: Y held until it catches.
+      if (await js('window.__vs.ignition?.state !== "running"')) {
+        await hold(3, 2000)
+        check(await until(() => js('window.__vs.ignition?.state === "running"'), 4000), `Ventura Highway, ${what}: Y did not start the engine (${await js('window.__vs.ignition?.state')})`)
+      }
       await js('__fp.b[7] = 0.6')
       const ok = await until(() => js('!window.__vs.parked && !window.__vs.handbrake'), 4000)
       const v = await js('window.__vs.velocity.length().toFixed(2)')
