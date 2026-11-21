@@ -112,12 +112,17 @@ export const BOSS_CHECK = [
     { speaker: 'The manager', text: `And just so you have no excuse to come back, here's your last check.` },
 ]
 
-/** FEAT-184 (DEC-305, DEC-322 → DEC-361): parked at Larry's with his old pack — the first time Billy speaks with him. Two cards
- *  at most (owner, 2026-11-17: six was "way too long"): the greasebeard line and his sketch, then the work, the pack and the
- *  camp. The wording past the owner's sketch ("hang onto my old pack, bedroll and all") is a placeholder. */
+/** FEAT-184 (DEC-305, DEC-322 -> DEC-470): parked at Larry's with his old pack — the first time Billy speaks with him. Five
+ *  cards, in person (DEC-470, owner 2026-11-20: his meeting explains jobs and the map, about 4 to 6 cards, and no longer
+ *  names the expedition camp; Katie's picnic and his later call do). Card 1 is the owner's own greasebeard line; card 5 is
+ *  the owner's words from DEC-322 (hang onto the pack). Cards 2, 3 and 4 (work around here, the map, the mission types) are
+ *  the orchestrator's [DEFAULT] wording, awaiting the owner's edit. */
 export const LARRY_PACK = [
     { speaker: 'Uncle Larry', text: `Hey sport, I heard ol' <i>greasebeard</i> let you go. It's too bad you got fired.` },
-    { speaker: 'Uncle Larry', text: `I have some work if you need it. Hang onto my old pack, bedroll and all, and remember to check out the expedition camp.` },
+    { speaker: 'Uncle Larry', text: `Tell ya what though, there's always work around here. Everybody needs something hauled somewhere.` },
+    { speaker: 'Uncle Larry', text: `Open up your map and you'll see who's asking. Park at their place and they'll tell ya what the job is.` },
+    { speaker: 'Uncle Larry', text: `It ain't all the same work, neither. Some loads just need to get there quick. Some are fragile and need to show up in one piece. Some are heavy freight. And some folks just want old junk knocked down.` },
+    { speaker: 'Uncle Larry', text: `What's that? You brought my old pack? Ah well, thanks kiddo. Say, I think it would be a great idea if you hang onto it. I think it could come in handy while you're out and about.` },
 ]
 
 /**

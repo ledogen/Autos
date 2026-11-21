@@ -3637,7 +3637,7 @@ const STEPS = [
     check(await until(() => js('window.__mission().state === "done"'), 3000), 'one B press on the armed abandon did not abandon the job')
     await btn(13); await btn(0)
     check(await until(() => js('!window.__mission().isActive()'), 2000), 'A on the abandoned job\'s result card left it up')
-    // The pump: A held pumps, RB lets go of the brake and pays.
+    // The pump: LT held pumps (DEC-467), RB lets go of the brake and pays.
     const pz = (await client.cmd('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: `(async () => {
       const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("/src/poi.js")))
       return m.towSeat(window.__poi().list().find(q => q.pumpZones?.length)) })()` })).result.result.value
@@ -3645,9 +3645,9 @@ const STEPS = [
     await seatRead(pz.x, pz.z, pz.heading); await padPark()
     check(await until(() => js('document.getElementById("pump-display").classList.contains("on")'), 3000), 'parking at the pump on the pad opened no pump')
     const g0 = await js('window.__vs.fuel.gal'), m0 = await js('window.__econ.money')
-    await hold(0, 2500)
+    await hold(6, 2500)
     const g1 = await js('window.__vs.fuel.gal')
-    check(g1 - g0 > 1, `A held 2.5 s pumped ${(g1 - g0).toFixed(2)} gal`)
+    check(g1 - g0 > 1, `LT held 2.5 s pumped ${(g1 - g0).toFixed(2)} gal`)
     // BUG-237: the map shuts every menu through its own close, and the pump's close is the checkout; so M (and the pad's
     // View, a tap) does not open the map over an open pump: the pump stays up and the wallet is untouched.
     await key('m', true); await sleep(100); await key('m', false); await sleep(300)
@@ -3666,8 +3666,8 @@ const STEPS = [
     await btn(1); await btn(1)
     check(await until(() => js('document.getElementById("camp-panel").style.display !== "block"'), 2000), 'B twice did not back out of the camp card')
     // FEAT-294 (DEC-431): Ventura Highway at the story's parked screens. A is the handbrake (park: A held to rest, A tap),
-    // B is back on every screen, and after it the gas lets the parking brake go and rolls the truck away. At the pump A
-    // pumps and the gas pays. The giver's offer, the shop and mom's card; the free-roam screens are test/pad-e2e.mjs's.
+    // B is back on every screen, and after it the gas lets the parking brake go and rolls the truck away. At the pump LT
+    // pumps (DEC-467) and the gas pays. The giver's offer, the shop and mom's card; the free-roam screens are test/pad-e2e.mjs's.
     await js(`(async () => { const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => /\\/src\\/gamepad\\.js(\\?|$)/.test(n))); m.PAD_PARAMS.padLayout = 'Ventura Highway' })()`)
     const vhPark = async () => {
       if (await js('window.__vs.parked')) { await btn(0); await frames(4, 200) }
@@ -3727,14 +3727,14 @@ const STEPS = [
     await btn(1)
     check(await until(async () => !await svcUp(), 2000) && await js('window.__vs.parked'), 'Ventura Highway: B did not close the shop, parked')
     await rollOff('the shop')
-    // The pump: A held pumps; the gas pays and rolls (the pump is not a card: no B needed, the gas is its way out).
+    // The pump: LT held pumps; the gas pays and rolls (the pump is not a card: no B needed, the gas is its way out).
     await js('window.__vs.fuel.gal = 4')
     const pumpOn = () => js('document.getElementById("pump-display").classList.contains("on")')
     await seatRead(pz.x, pz.z, pz.heading); if (!await until(pumpOn, 1500)) await vhRepark()
     check(await until(pumpOn, 3000), 'Ventura Highway: parking at the pump with A opened no pump')
     const vg0 = await js('window.__vs.fuel.gal'), vm0 = await js('window.__econ.money')
-    await hold(0, 2500)
-    check(await js('window.__vs.fuel.gal') - vg0 > 1, 'Ventura Highway: A held 2.5 s at the pump did not pump')
+    await hold(6, 2500)
+    check(await js('window.__vs.fuel.gal') - vg0 > 1, 'Ventura Highway: LT held 2.5 s at the pump did not pump')
     await rollOff('the pump')
     check(await until(() => js(`window.__econ.money < ${vm0} - 0.01`), 2000), 'Ventura Highway: the gas at the pump did not pay')
     await js(`(async () => { const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => /\\/src\\/gamepad\\.js(\\?|$)/.test(n))); m.PAD_PARAMS.padLayout = 'Professor' })()`)
