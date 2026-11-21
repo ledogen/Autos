@@ -128,9 +128,9 @@ height change against streams/causeways/POIs, gates, cost of the extra solved-pr
 - [x] Owner picks: build the design (2026-11-20)
 - [x] Built: node vertical curve (gentle bends), fitted shared plane (sharp bends), connector core deck, option 1
 - [x] Gate `connector-bend-bumps` (all four classes + capture; red on main, green here)
-- [ ] Affected gates on the final commit: 71 of 96 rerun green (hold 2026-11-20); 25 left (handoff)
+- [x] Affected gates on 953a1618: 96/96 green (71 + the 25 after the hold); smoke 42/42 (retry), pad-e2e ok
 - [x] Census 60 seeds; 400-seed sweep 0 throws (9cddcb10); node moves vs bores/streams/water
-- [ ] Owed: main topology baseline (143 of 400 seeds), fingerprints, smokes, sheet, card
+- [x] Topology identical to main on 400/400 seeds; fingerprints; sheet `sheet-built.jpg`; card `bug236-built-drive`
 - [ ] Owner drive (card `bug236-built-drive`), then land
 
 ## Decisions
@@ -179,3 +179,9 @@ CarGame-machine (git-ignored): `walk2.mjs` (deck walk), `census.mjs`, `sheet.mjs
   (793.1, 372.3) 10.4→11.5, 3936696320 (−332.1, −557.2) 7.6→8.7, 4133490816 (−608.9, −394.6) 5.8→6.7, 3273639936 (578, −314.3) 8.4→9.0.
   Node heights: 201 of 204 decks move; node median 0.12 m, 19 > 1 m, max 2.48 m. First gate run 95/96: bare-join's
   connector-join step 6.8 cm (the core's deck extended 10 m sideways over a leg's pavement) → fixed 953a1618 (0.9 cm).
+- 2026-11-21 (lane b): main merged (311038d3). Gates 96/96; cdp-smoke 42/42 on the retry (first run: FEAT-305 "mom does
+  not point at the Shop tab", a UI timing check), pad-e2e ok. Topology identical to main on 400/400 seeds. Fingerprints:
+  physics identical; world differs in profiles/junctions/surface/carve/tiles; water (tutorial): bodies identical, 22 stream-
+  bed verts draped on the moved road carve, worst 1 cm; props (capture): 444 of 4912 re-seated (median 1.2 cm, max 1.18 m),
+  11 added / 9 removed, all within 65 m of the node (moved earthwork). Tutorial 1872706826: 8 bends, > 15 cm 3 → 0, worst
+  20.8 → 11.6 cm, nodes move ≤ 0.56 m, POIs identical; tut-gate + tutorial-seed pass. Sheet `wip/bug-236/sheet-built.jpg`.
