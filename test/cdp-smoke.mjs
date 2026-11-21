@@ -3491,7 +3491,7 @@ const STEPS = [
     if (inRun) { await padTo('mm-new'); await btn(0) }
     // SMOKE_PAD_SEED=<seed>: repeat a failed pad step's world (its world code's number) — a development aid.
     if (process.env.SMOKE_PAD_SEED) await js(`document.getElementById("su-seed").value = ${JSON.stringify(process.env.SMOKE_PAD_SEED)}`)
-    await padTo('su-start'); await btn(0)
+    await padTo('su-start', 12, 40); await btn(0)   // UP: start heads the page; DEC-475's rows put it past 12 downs
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'the pad\'s new run never went live')
     if (process.env.SMOKE_PAD_SEED) console.log(`  pad: world ${await js('window.__worldCode?.()')}`)
