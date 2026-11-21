@@ -7014,7 +7014,7 @@ function _updateWorldItems () {
 // it reads in her shade and at night; it starts above the item, so it never hides it) and a 1 Hz white pulse on its own
 // materials (FEAT-97's blink) while its body is live. Read off the step every frame and nothing kept: no step (a skip,
 // the tutorial's end, a run end, a reload past the pack) or the item picked up → no mark.
-const QUEST_BEAM_R = 0.25, QUEST_BEAM_H = 6, QUEST_BEAM_GAP = 0.4   // m: radius, height, clear air above the item
+const QUEST_BEAM_R = 0.20, QUEST_BEAM_H = 6, QUEST_BEAM_GAP = 0.4   // m: radius, height, clear air above the item
 const _questBeam = new THREE.Mesh(_ringGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7,
   side: THREE.DoubleSide, depthWrite: false, alphaMap: _ringAlpha, toneMapped: false }))
 _questBeam.scale.set(QUEST_BEAM_R, QUEST_BEAM_H, QUEST_BEAM_R)
@@ -7029,10 +7029,12 @@ function _questMark () {
   if (_questLit != null && _questLit !== body) { debrisSystem.blink(_questLit, 0); _questLit = null }
   _questBeam.visible = !!half
   if (!half) return
+  const pulse = 0.5 - 0.5 * Math.cos(2 * Math.PI * performance.now() / 1000)   // the 1 Hz clock the body's blink shares
+  _questBeam.material.opacity = 0.3 + 0.55 * pulse   // FEAT-288 (owner 11-20): the beam pulses in brightness too
   if (body != null) physicsEngine.getTransform(body, _qmP, _qmQ)
   else _qmP.set(it.x, it.y, it.z)
   _questBeam.position.set(_qmP.x, _qmP.y + Math.max(half.x, half.y, half.z) + QUEST_BEAM_GAP + QUEST_BEAM_H / 2, _qmP.z)
-  if (body != null) { debrisSystem.blink(body, 0.5 - 0.5 * Math.cos(2 * Math.PI * performance.now() / 1000), [1, 1, 1]); _questLit = body }
+  if (body != null) { debrisSystem.blink(body, pulse, [1, 1, 1]); _questLit = body }
 }
 // dev handle — test/cdp-smoke.mjs: null without a mark, else whether the beam's foot is in view and the pulse is on the body
 window.__questMark = () => _questBeam.visible ? { lit: _questLit != null, onScreen: (({ x, y, z }) => Math.abs(x) < 1 && Math.abs(y) < 1 && z < 1)(
