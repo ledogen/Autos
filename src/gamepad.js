@@ -114,7 +114,7 @@ export const BINDINGS = [
   { action: 'headlights',            key: 'l',         pad: 'left stick click', button: 10 },
   { action: 'pause',                 key: 'Escape',    pad: 'Start', button: 9 },
   { action: 'back (menus, cards, map)', key: 'Esc',     pad: 'B' },
-  { action: 'map',                   key: 'm',         pad: 'View (tap)' },
+  { action: 'map',                   key: 'm',         pad: '◂ Back (tap)' },   // FEAT-305 (owner: "I call it the back button or select"): Xbox's View, named the way he does [DEFAULT]
   { action: 'map: prev / next offer', key: '← / →',     pad: 'LB / RB (map open)' },
   { action: 'map: Missions / Shopping', key: 'Q / E (mouse: click the tab)', pad: 'X (map open)' },
   { action: 'map: walk the list',    key: '↑ / ↓ (mouse: hover)', pad: 'D-pad ↑ / ↓ (map open)' },

@@ -76,7 +76,7 @@ import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearb
 import { pad, PAD_PARAMS, BINDINGS, steerCurve, padOf, padRoleName } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
-import { initTutGate, stepFor, allows, refuse, BETWEEN } from './tut-gate.js'   // FEAT-288 P2: the tutorial's lock and highlight
+import { initTutGate, stepFor, allows, BETWEEN } from './tut-gate.js'   // FEAT-288 P2: the tutorial's lock and highlight
 import { createVehicleModel } from './vehicle-model.js'
 import { Map2D } from './map2d.js'                       // FEAT-16: 2D top-down map dev/validation overlay
 import { GaugeCluster } from './cluster.js'              // FEAT-49: 1992 Ranger gauge cluster overlay
@@ -4122,19 +4122,19 @@ const dialogueSystem = new DialogueSystem(PHONE)   // DEC-354: phone calls frame
 // streams. The first press fills it (the advance handlers below), the next one turns it; one blip when full.
 const DLG_WORD_MS = 80   // [DEFAULT] ~12 words a second
 const _DLG_PAD_KEYS = new Set(['w', 's', 'm', 'v', 'tab', 'space', 'x'])   // FEAT-125: see _renderDialogue; FEAT-184: X (recovery)
-const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0, side: -1, anims: [], delay: 0 }
+const _dlg = { card: null, words: null, n: 0, t0: 0, timer: 0, anims: [], delay: 0 }
 // FEAT-288 P8 (DEC-426 Q2): a change of speaker slides, the same speaker's next card cycles in place (dialogue.js cardSlide).
-// The card going out is a copy of the panel (.dlg-ghost: no ids, takes no pointer) that leaves by the side it came in from;
+// The card going out is a copy of the panel (.dlg-ghost: no ids, takes no pointer) that leaves to the right (FEAT-305);
 // the live panel, ALREADY the new card (so the tutorial gate, menu-nav and every check read the card that is up), comes in
-// from the other side once the copy is gone. Web Animations on `translate` (composited by the browser; no per-frame JS).
+// from the left once the copy is gone. Web Animations on `translate` (composited by the browser; no per-frame JS).
 // A press mid-slide lands it at once, filled, and is spent (_dlgFill): no card is ever turned unread, none is lost.
 // prefers-reduced-motion (the browser's "avoid motion" accessibility setting): an instant swap.
 const DLG_OUT_MS = 150, DLG_IN_MS = 200   // [DEFAULT] short: 350 ms door to door on a change of speaker, 200 ms for a first card
 const _dlgOff = (s) => s < 0 ? 'calc(-100vw - 100%)' : 'calc(100vw + 100%)'   // past the screen's edge from anywhere on it
 function _dlgSlide (panel, prev, next) {
   for (const a of _dlg.anims) a.finish()   // a slide still running lands first
-  const m = cardSlide(prev, next, _dlg.side)
-  _dlg.side = m.side; _dlg.anims = []; _dlg.delay = 0
+  const m = cardSlide(prev, next)
+  _dlg.anims = []; _dlg.delay = 0
   if (!m.out && !m.in || matchMedia('(prefers-reduced-motion: reduce)').matches) return
   if (m.out) {
     const g = panel.cloneNode(true)
@@ -4196,6 +4196,10 @@ function _renderDialogue () {
   const panel = document.getElementById('dialogue-panel')
   if (!panel) return
   const card = dialogueSystem.current()
+  // FEAT-305 (owner: the inventory stayed open under Katie's talk, and B could not shut it): a card that owns every key
+  // shuts the screens under it first — nothing can work them while it is up (Katie's talk, after the peanuts; mom's
+  // send-off, after breakfast).
+  if (card && card !== _dlg.card && !card.until) { damageScreen.close(); inventoryScreen.close() }   // this order: a pick's close goes back to the inventory
   if (card !== _dlg.card) _dlgSlide(panel, _dlg.card, card)   // before the paint: the copy that leaves carries the card that was up
   panel.style.display = card ? 'block' : 'none'
   panel.classList.toggle('dlg-waits', !!card?.until)   // DEC-359: menu-nav.js lets the pad work the card under a waiting one
@@ -4210,8 +4214,9 @@ function _renderDialogue () {
     tx.innerHTML = card.text
     // FEAT-125: a key a card names reads the pad's button while the pad drives — the prompts' keycap(). Only keys the
     // pad has ONE button for: A / D (the stick steers) and F (the stick aims, RB throws) need the card's own pad words,
-    // and a grade or a phrase (B, "ten good deeds") is emphasis, never a key.
-    for (const k of tx.querySelectorAll('.dlg-key')) if (_DLG_PAD_KEYS.has(k.textContent.trim().toLowerCase())) k.innerHTML = keycap(k.textContent.trim())
+    // and a grade or a phrase (B, "ten good deeds") is emphasis, never a key. FEAT-305: a key inside a pad half (kc-pad) is
+    // already the pad's button — its X (the map's Shopping tab) is not the keyboard's X (recovery, held B).
+    for (const k of tx.querySelectorAll('.dlg-key')) if (!k.closest('.kc-pad') && _DLG_PAD_KEYS.has(k.textContent.trim().toLowerCase())) k.innerHTML = keycap(k.textContent.trim())
     for (const k of tx.querySelectorAll('[data-pad]')) k.textContent = padRoleName(k.dataset.pad)   // DEC-431: a pad half's driving button, in the layout
     clearInterval(_dlg.timer)
     Object.assign(_dlg, { card, words: _hideWords(tx), n: 0, t0: performance.now() + _dlg.delay })   // P8: streams as it slides in
@@ -4844,9 +4849,7 @@ const _fillSnack = (cards) => cards.map(c => c.hi ? { ...c, hi: c.hi.map(q => q.
 /** FEAT-288 P3b: the tutorial gate's say on a waypoint — every input that drops one (N, the pad's Y, a click on the sheet)
  *  lands here: refused unless the step allows it, and under Katie's waypoint card anywhere but her station. */
 function _tutWaypointOk (p) {
-  if (allows('map: drop / clear the waypoint') && (!p || dialogueSystem.current()?.until !== 'waypoint' || _nearSnack(p))) return true
-  refuse(null)
-  return false
+  return allows('map: drop / clear the waypoint') && (!p || dialogueSystem.current()?.until !== 'waypoint' || _nearSnack(p))
 }
 /** Mom's money (DEC-306): the bag's shelf price today in whole dollars, plus the gas money she does not mention — the
  *  wallet is topped up to it from her hand-over until the bag is bought, so spending it on something else first cannot
@@ -5338,14 +5341,14 @@ function _updateFiringCam (dt) {
   setCameraFocus(c.p, { theta: c.theta, radius: FIRING_CAM.radius, rightDrag: true })
 }
 
-// First-use cards (data/dialogue.js TUT), and Larry's welcome through the same door: queued, then
+// The tutorial's cards (data/dialogue.js TUT), and Larry's welcome through the same door: queued, then
 // played by _pumpTut on the HUD poll once no other card is up, each HOLDING the sim and the clock
-// (_cardHold) — so one may land mid-drive (the rank bar appears near the drop) without the truck
-// running on under it. Only in a run that played its opening rather than skipping it — `always` lifts that
-// for the story's own beats (the paycheck, the boss's check, Larry's call); each key once per run.
+// (_cardHold) — so one may land mid-drive without the truck running on under it. Only while the tutorial is on
+// (_inTutorial) — DEC-442 (owner, 2026-11-19): no tip interrupts the actual game, every one is taught in the tutorial —
+// and `always` lifts that for the story's own beats (the paycheck, the boss's check, Larry's call); each key once per run.
 const _tutQueue = []
 function _tut (key, cards = TUT[key], done = null, always = false) {
-  if (!always && (!dialogueSystem.has(DLG.firing) || dialogueSystem.has(DLG.skipped))) return
+  if (!always && !_inTutorial()) return
   if (dialogueSystem.has(key) || _tutQueue.some(t => t.key === key)) return
   _tutQueue.push({ key, cards, done })
 }
@@ -5372,6 +5375,10 @@ const _UNTIL = {
   cart: () => serviceCenter.cart.length > 0 || _snackBought(),   // her card unlocks the peanuts' add to cart alone
   bought: () => _snackBought(),
   shopshut: () => !serviceScreen.isOpen,
+  // FEAT-305: mom's shop beat (tut-shopfix) — the fix on mom checked out (as tut-lights reads it: the truck's flat is no
+  // proof, a queued job or an open shelf row's preview is on the truck before it is paid), or the shop left; then the Shop tab
+  patched: () => !(_momOwes.part && _momOwes.patch) || !serviceScreen.isOpen,
+  svcshop: () => serviceScreen.tab === 'shop' || !serviceScreen.isOpen,
 }
 /** On the HUD poll: clear the card on screen if it waits for an action and that action is done. */
 function _untilTick () {
@@ -5858,9 +5865,9 @@ function _poiInReach () {
   return q && _inPoiSpot(q) ? q : null
 }
 
-/** A giver's card opens on its live offers, with its first-use lessons. */
+/** A giver's card opens on its live offers. */
 function _openOffers (poi, offers) {
-  missionSystem.enterFromPoi(poi, offers, _planOffer); _tut('tut-offer')   // FEAT-147
+  missionSystem.enterFromPoi(poi, offers, _planOffer)
 }
 
 /**
@@ -6205,12 +6212,13 @@ function _renderPumpDisplay (dt) {
   // a latched shutoff still reads full while the idling engine sips the tank a hair below it
   const tankFull = vehicleState.fuel.gal >= RANGER_PARAMS.fuelTankGal - 1e-6
   const full = (tankFull && !fuelStop.cans.some(c => c.cap - c.gal > 1e-6)) || (fuelStop.cutoff && !broke)
+  const pay = `release the handbrake ${keycap('Space')} to pay`   // FEAT-305: its key, in the pad's layout (DEC-431)
   document.getElementById('pd-hint').innerHTML = !fuelStop.isOpen ? 'thank you — drive safe'
     : _momMakesYouFill() ? `mom says fill it up · hold ${keycap('F')} till the money's gone`   // FEAT-184 PLACEHOLDER words
-    : full ? `${fuelStop.cans.length ? 'all full' : 'tank full'} · release the handbrake to pay`
-    : broke ? `that's all you can afford · release the handbrake to pay`
-    : tankFull ? `tank full · hold ${keycap('F')} to fill the jerry can · release the handbrake to pay`
-    : `hold ${keycap('F')} to pump · release the handbrake to pay`
+    : full ? `${fuelStop.cans.length ? 'all full' : 'tank full'} · ${pay}`
+    : broke ? `that's all you can afford · ${pay}`
+    : tankFull ? `tank full · hold ${keycap('F')} to fill the jerry can · ${pay}`
+    : `hold ${keycap('F')} to pump · ${pay}`
 }
 
 // ── The Recovery chip (FEAT-50 running dry → SM-3 in full) ───────────────────────────────────
@@ -6292,7 +6300,7 @@ function _pickSpare (e) {
   const trap = e.flat && _firingDay()   // FEAT-184 stage 4 / FEAT-217 (xbnc): the worst day's flat spare is found out AFTER the player tries it on a corner
   damageScreen.pick({
     title: 'Fit the mounted tire',
-    corner: () => trap || !e.flat,
+    corner: (c) => trap ? damageModel.flat[c] : !e.flat,   // FEAT-305: the lesson's spare goes on the flat corner, no other
     note: _tireNote,
     about: `The mounted tire: ${condLine({ ...e, kind: 'part' })}.` + (e.flat ? ' Plug it before it goes on.' : ''),
     actions: ({ corner }) => [{ label: `Swap it on — ${formatGameDuration(spareFitHours(inventorySystem))}`, run: () => {
@@ -8233,7 +8241,7 @@ function _renderRunHud () {
   const s = economySystem.snapshot()
   // FEAT-103: the camp's gate. Every deed source settles through the wallet, and this poll reads it,
   // so this is the one place the requisition opens (openLines is idempotent).
-  if (offerBoard && !_paperScenario && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds && offerBoard.openLines(daySystem.clockH())) _tut('tut-camp')
+  if (offerBoard && !_paperScenario && s.halfPoints >= 2 * ECONOMY_PARAMS.campDeeds) offerBoard.openLines(daySystem.clockH())   // DEC-442: no card (Larry's was a played tutorial's only)
   if (daySystem.clockH() >= _eveWakeH()) _endEvening()   // FEAT-170: 07:00 reached awake ends the evening too
   _syncTutCard()       // FEAT-184: the intro's card, back after a resume
   _untilTick()         // DEC-359
@@ -8334,7 +8342,6 @@ function _updateEnergyMeter () {
   const st = daySystem.stage()
   if (st !== _emStage) {
     _emStage = st
-    if (st === 'sleepy' && !_tutDrive()) _tut('tut-sleep')   // FEAT-147 (its camp advice is free will's: DEC-308)
     _emEls.stage.textContent = st
     _emEls.stage.style.color = STAGE_COLOR[st]
   }
@@ -8644,7 +8651,6 @@ function _updateRankTimer () {
   const shown = src.near != null ? src.near : f.shown
   if (shown !== _rtShown) {
     _rtShown = shown
-    if (shown) _tut('tut-rank')   // FEAT-147: the first time the bar appears
     E.root.classList.toggle('rt-in', shown)
   }
   E.root.style.display = shown ? 'block' : 'none'

@@ -121,9 +121,8 @@ export const LARRY_PACK = [
 ]
 
 /**
- * First-use cards: each plays once, the first time the player meets the thing, and only in a run that
- * opened on the firing. They play once no other card is up and hold the sim while they are (main.js
- * _tut). Mom is the tutorial's voice; Katie calls after Larry's (the picnic, DEC-345), meets you at the camping area
+ * The tutorial's cards: each plays once, the first time the player meets the thing, and only while the tutorial is on
+ * (DEC-442: no tip after it). They play once no other card is up and hold the sim while they are (main.js _tut). Mom is the tutorial's voice; Katie calls after Larry's (the picnic, DEC-345), meets you at the camping area
  * (DEC-347). *
  * A lesson card (`until`, DEC-359) is also the tutorial gate's STEP (FEAT-288 P2, src/tut-gate.js): `allow` names the
  * locked actions it opens (gamepad.js BINDINGS names: 'inventory', 'damage screen', 'camp', 'recovery', …) and the card /
@@ -131,17 +130,10 @@ export const LARRY_PACK = [
  * and row of the in-game cards is locked while it is up. `hi` is what gets the yellow ring. test/tut-gate.mjs checks them.
  */
 export const TUT = {
-    'tut-offer': [{ speaker: 'Mom', text: `That's the job card: who's asking, what it pays, how long you've got. `
-        + `Every job has one. Take it when you're ready.` }],
-    'tut-rank': [{ speaker: 'Mom', text: `The bar up top is the clock on this job. Keep it in the good part and you'll earn the tip.` }],
     'tut-fuel': [{ speaker: 'Mom', text: `Fill up here. That old truck drinks &mdash; keep an eye on the fuel gauge on the dashboard, `
         + `because running dry out there means a tow you can't afford.` }],   // DEC-363: mom's, not Larry's (placeholder words)
     'tut-service': [{ speaker: 'Mom', text: `The shop fixes what you broke and sells what you need. `
         + `Every repair has a price on it &mdash; drive gentle and you'll keep more of your pay.` }],
-    'tut-sleep': [{ speaker: 'Uncle Larry', text: `Getting late. Find flat ground off the road and make camp, or sleep at your mom's. `
-        + `The day is all the time you've got &mdash; whatever you didn't earn by dark, you didn't earn.` }],
-    'tut-camp': [{ speaker: 'Uncle Larry', text: `That's enough good deeds. The expedition camp is taking you on &mdash; `
-        + `they've posted what they need. Bring it and you're out of here.` }],
 
     // FEAT-170 stage 4: the opening's lessons, in mom's voice, in the order they come. PLACEHOLDER words
     // (Lane A's draft, 2026-11-06; the owner writes them — FEAT-148).
@@ -157,13 +149,13 @@ export const TUT = {
         { speaker: KATIE, phone: true, text: `Hey Billy! How you doing? Sorry about yesterday&hellip;` },
         { speaker: KATIE, phone: true, text: `Anyway, since I know you got nothing going on today, why don't we go picnic out at the old McGill ranch. `
             + `I'll let you pick a spot and I'll meet you out there.` },
-        { speaker: KATIE, phone: true, text: `Grab us a bag of peanuts at the gas station on your way, would you? Park out front of the store, not at the pumps.` },
+        { speaker: KATIE, phone: true, text: `Grab us a bag of peanuts at the gas station on your way, would you?` },
         // FEAT-288 P3b (DEC-422: "explain the list on the side, setting a waypoint, direct the player to the legend"): the
         // map beat, inside her call — open the map, the Shopping list, a waypoint on her station (main.js fills {snack}
         // with its POI id; _tutWaypointOk takes a drop on it alone), the legend pointed at, the map closed. She holds the
         // line to the store (`holds`), where tut-shop picks the call up.
         { speaker: KATIE, phone: true, until: 'map', allow: [], text: `Not sure which station? Open your map: `
-            + `<span class="kc-kb"><span class="dlg-key">M</span></span><span class="kc-pad"><span class="dlg-key">View</span></span>.` },
+            + `<span class="dlg-key">M</span>.` },
         { speaker: KATIE, phone: true, until: 'shoptab', allow: [], hi: ['#map-list-head [data-tab="shopping"]'],
             text: `That list on the side shows every shop around here. Switch it to Shopping: `
             + `<span class="kc-kb"><span class="dlg-key">Q</span></span><span class="kc-pad"><span class="dlg-key">X</span></span>.` },
@@ -173,7 +165,7 @@ export const TUT = {
             + `<span class="kc-kb"><span class="dlg-key">N</span></span><span class="kc-pad"><span class="dlg-key">Y</span></span>.` },
         { speaker: KATIE, phone: true, holds: true, until: 'mapshut', allow: [], hi: ['#map-legend'],
             text: `And the key to all those little marks is down in the corner. Close the map `
-            + `(<span class="kc-kb"><span class="dlg-key">M</span></span><span class="kc-pad"><span class="dlg-key">View</span></span>) and holler when you're at the store.` },
+            + `(<span class="dlg-key">M</span>) and holler when you're at the store.` },
     ],
     // FEAT-288 P3b (DEC-422: "Katie needs to guide you through the shopping process, how to select an item, how to check
     // out"): parked at the store, the shop open, she is still on the line — the peanuts row and its add to cart only, then
@@ -217,8 +209,27 @@ export const TUT = {
     'tut-spareflat': [{ speaker: 'Mom', until: 'recovery', allow: ['recovery'], hi: ['#hud-b-hint', '#recovery-icon'], text: `The spare's flat too? Of course it is. Call a tow: `
         + `<span class="kc-kb"><span class="dlg-key">X</span> is</span><span class="kc-pad">hold <span class="dlg-key" data-pad="menu">B</span> and pick</span> the recovery menu.` }],
     'tut-tow': [{ speaker: 'Mom', text: `The tow takes you to the nearest auto shop. It's on me this time.` }],
-    // FEAT-184 (DEC-151): the tire is on mom — one mounted tire and its fitting, paid at the cart's check out (FEAT-212). PLACEHOLDER words.
-    'tut-shopfix': [{ speaker: 'Mom', text: `Get a good tire on that corner &mdash; that one's on me. Check out at the counter, then come home, it's late.` }],
+    // FEAT-184 (DEC-151): the fix is on mom — the patch, or a mounted tire and its fitting — paid at the cart's check out
+    // (FEAT-212). FEAT-305 (owner: "It should show you what buttons to click like any other menu. It should direct you to fix
+    // the tire with the patch and then show you that there's (rb) a shop where you can pick up some tire plugs or even get a
+    // new tire"): the patch first — the whole menu walkable (DEC-443), the next row down the tree to the front left's patch
+    // ringed (the open rows lose theirs), then check out — and then the Shop tab. [DEFAULT] words (the owner writes them).
+    'tut-shopfix': [
+        { speaker: 'Mom', until: 'patched',
+            allow: ['#svc-screen [data-act="node"]', '#svc-screen [data-act="tab"]', '#svc-screen [data-act="patch"][data-track="tireFL"]', '#svc-screen [data-act="checkout"]'],
+            hi: ['#svc-screen:not(:has([data-act="checkout"])) [data-act="tab"][data-tab="maint"]:not(.on)',
+                '#svc-screen:not(:has([data-act="checkout"])) .sv-line[data-d="0"][data-id="twbs"]:not(.on)',
+                '#svc-screen:not(:has([data-act="checkout"])) .sv-line[data-d="1"][data-id="tw"]:not(.on)',
+                '#svc-screen:not(:has([data-act="checkout"])) .sv-line[data-d="2"][data-id="FL"]:not(.on)',
+                '#svc-screen:not(:has([data-act="checkout"])) .sv-line[data-id="FL"].on + .sv-kids > .sv-line[data-id="tire"]:not(.on)',
+                '#svc-screen:not(:has([data-act="checkout"])) [data-act="patch"][data-track="tireFL"]',
+                '#svc-screen [data-act="checkout"]'],
+            text: `That one's on me, honey. Patch that front left tire: <span class="kc-kb"><span class="dlg-key">↑</span> <span class="dlg-key">↓</span> and <span class="dlg-key">Enter</span></span>`
+            + `<span class="kc-pad">the <span class="dlg-key">D-pad</span> and <span class="dlg-key">A</span></span> down the list, then check out at the counter.` },
+        { speaker: 'Mom', until: 'svcshop', allow: ['#svc-screen [data-act="tab"]'], hi: ['#svc-screen [data-act="tab"][data-tab="shop"]'],
+            text: `A patch won't last forever. The shop has tire plugs, and even new tires: `
+            + `<span class="kc-kb"><span class="dlg-key">E</span></span><span class="kc-pad"><span class="dlg-key">RB</span></span>. Then come home, it's late.` },
+    ],
     // Stage 5: the night drive home after the shop.
     'tut-lights': [{ speaker: 'Mom', until: 'lights', allow: [], text: `It's pitch dark out there. `
         + `<span class="kc-kb"><span class="dlg-key">L</span> turns</span><span class="kc-pad">the <span class="dlg-key">left stick</span> click turns</span> `
@@ -258,7 +269,7 @@ export const TUT = {
     // couple bucks" is the peanuts' price plus the gas money she does not mention (DEC-306). The pick-up lesson is a
     // PLACEHOLDER; its keys are the game's (D-pad ↓ / G).
     'tut-handover': [{ speaker: 'Mom', text: `Take this pack over to your uncle. He left it behind. Also, here's a couple bucks for food.` }],
-    'tut-pickup': [{ speaker: 'Mom', until: 'pickup', allow: [], hi: ['#poi-prompt'], quest: 'pack', text: `Park next to it and `
+    'tut-pickup': [{ speaker: 'Mom', until: 'pickup', allow: [], hi: ['#poi-prompt'], quest: 'pack', text: `<span class="dlg-key">Park</span> next to it and `
         + `<span class="kc-kb">press <span class="dlg-key">G</span></span><span class="kc-pad">press <span class="dlg-key">D-pad ↓</span></span> `
         + `to load anything loose nearby. Then run it over to Larry's.` }],
     // FEAT-229 (DEC-346): the tank filled, mom sends you on your way (PLACEHOLDER words); the line already runs to the
@@ -286,12 +297,12 @@ export const TUT = {
     // {deeds} are filled from the game, as RUN_INTRO's are (main.js _fillCamp).
     'tut-katie': [
         { speaker: KATIE, text: `So what are you gonna do now that you don't have a job?` },   // DEC-355: in person, no opener
-        { speaker: KATIE, text: `I hear there's an expedition camp up at the old {dir} road. I think they're looking to make a new supply route. `
+        { speaker: KATIE, text: `say, i hear theres an expedition camp up at the old {dir} road. I think they're looking to make a new supply route. `
             + `I heard them say they'd take anyone with {deeds} good deeds to their name.` },
         { speaker: KATIE, text: `Don't expect it to be easy if you join up with them, but it might be the best way to get connected back up with the outside world.` },
         { speaker: KATIE, text: `Getting a good deed is as simple as taking delivery jobs and keeping the pace. Or sometimes getting the cargo there in one piece `
-            + `is all that matters. Listen closely to the client, because they'll tell you exactly what they need.` },
-        { speaker: KATIE, text: `The client will also tell you the base pay ahead of time. Usually they tip better if you drive better. Some folks might even `
+            + `is all that matters. Listen closely to the customer, because they'll tell you exactly what they need.` },
+        { speaker: KATIE, text: `The customer will also tell you the base pay ahead of time. Usually they tip better if you drive better. Some folks might even `
             + `throw in an item.` },
         { speaker: KATIE, text: `Well, I better get going. Break camp whenever you're ready, and head on home.` },   // DEC-422: the paycheck is mom's
     ],
