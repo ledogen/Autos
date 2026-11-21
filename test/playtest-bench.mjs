@@ -132,7 +132,10 @@ for (const b of BUILDS) {
 // ── the page side: the virtual pad, the autopilot, the 1 Hz probe ─────────────────────────────────────────────────────
 // Injected once a story run is live. window.__bench.phase drives it: 'drive' (pursuit), 'home' (re-seat at the drive's start, idle, parked), 'map'
 // (stick pan/zoom), 'idle' (hands off). Everything it records is read back by the harness per phase.
-const AUTOPILOT = readFileSync(join(HERE, '../src/autopilot.js')).toString('base64')
+// autopilot.js imports ./clutch-assist.js (no imports of its own); a data: URL has no base to resolve it against, so inline it.
+const b64 = f => readFileSync(join(HERE, '../src', f)).toString('base64')
+const AUTOPILOT = Buffer.from(readFileSync(join(HERE, '../src/autopilot.js'), 'utf8')
+  .replace("'./clutch-assist.js'", `'data:text/javascript;base64,${b64('clutch-assist.js')}'`)).toString('base64')
 const PAGE = String.raw`(async () => {
   // The autopilot is src/autopilot.js (pure: state in, controls out), in the bench's old mode: centreline, no recovery
   // (every trouble is a re-seat), a dead end jumps. This is its consumer: the controls go onto
@@ -215,7 +218,7 @@ const PAGE = String.raw`(async () => {
         else if (!seating && vs.parked && rbCool <= 0) { rbHold = 4; rbCool = 40; settle = Math.max(settle, 0.5) }
       } else {
         const c = ap.step(vs, dt)
-        if (c.trouble) { seat(c.trouble); c.trouble = null }   // autopilot.js reuses its controls object and, with recover off, never clears .trouble: it would re-seat every 2.5 s for ever
+        if (c.trouble) seat(c.trouble)   // a fresh report each step (autopilot.js clears it at the top of step(), BUG-240)
         else {
           setPad(Math.max(-1, Math.min(1, -c.steer / c.steerLimit)), c.throttle, c.brake)   // the game steers −stick (vehicle.js)
           // One edge leg, a quarter of the way through the minimum distance: 60 s with the centre 5 m off the line (the

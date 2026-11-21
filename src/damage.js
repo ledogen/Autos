@@ -335,6 +335,9 @@ export const DAMAGE_PARAMS = {
   // but the damage threshold is about right" — floors stay, the reference cost drops 3% -> 2.2%.
   springBumpRefDmg:    0.022,  // one corner's loss at refN — "a bump of that severity should cause 3%", eased
   springBumpExp:       0.6,    // sub-linear: saturates, see above
+  // FEAT-296: the most one bump-stop event takes off a spring or a wheel (before wearScale). 1 = uncapped, today;
+  // the difficulty's damage row lowers it (data/difficulty.js damage.cap).
+  springEventCap:      1,
 
   // Dampers: suspension displacement RATE above a no-harm floor.
   // Two changes on 2026-08-20 (owner: "basically no damper wear, make it more sensitive to wheel
@@ -1365,7 +1368,7 @@ export class DamageModel {
     // the curve are per-axle — see springBumpRefNFront for why the front's reference force is higher.
     const refN = front ? P.springBumpRefNFront : P.springBumpRefNRear
     const t = (peakN - floorN) / (refN - floorN)
-    const dmg = Math.min(1, P.springBumpRefDmg * Math.pow(Math.max(0, t), P.springBumpExp))
+    const dmg = Math.min(P.springEventCap, P.springBumpRefDmg * Math.pow(Math.max(0, t), P.springBumpExp))
     const id = front ? 'springFront' : 'springRear'
     // durability 1 = the insult IS the damage fraction, the same idiom applyImpact uses. There is
     // no durSpring any more: for an event-priced track the CURVE is the calibration. The parts
@@ -1377,7 +1380,7 @@ export class DamageModel {
     // A flat tire's wheel is priced by the rim strike instead (the rim itself on the ground).
     if (!this.flat[corner] && params?.bumpStopStiffness) {
       const onN = wheelBumpOnsetN(floorN, params.bumpStopStiffness, params.bumpStopProgressiveM || 0.05, P.wheelBumpEnergyMult)
-      if (peakN > onN) this.wear(WHEEL_IDS[corner], Math.min(1, P.springBumpRefDmg * Math.pow((peakN - onN) / (refN - floorN), P.springBumpExp)), 1)
+      if (peakN > onN) this.wear(WHEEL_IDS[corner], Math.min(P.springEventCap, P.springBumpRefDmg * Math.pow((peakN - onN) / (refN - floorN), P.springBumpExp)), 1)
     }
 
     // PUNCTURE: the same event, read against the tire rather than the spring. FEAT-112: an overloaded

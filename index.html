@@ -92,7 +92,10 @@
       text-transform: uppercase;
       margin-bottom: 6px;
     }
-    #pause-menu .pm-code { color: var(--text-faint); font-size: 12px; margin: -10px 0 4px; user-select: text; }
+    /* FEAT-296 (DEC-475): the code line never sets the box's width (inline-size containment: it counts as 0 wide); it
+       stretches to the width the buttons set and wraps, so the pause box is as wide as on any other screen. */
+    #pause-menu .pm-code { color: var(--text-faint); font-size: 12px; margin: -10px 0 4px; user-select: text;
+      align-self: stretch; text-align: center; contain: inline-size; }
     #pause-menu button, #towel-card button, #tut-card button {
       background: none;
       border: 1px solid var(--line-control);
@@ -304,7 +307,8 @@
     #mm-setup-panel:not([data-mode="story"]):not([data-mode="freeroam"]) #su-run,
     #mm-setup-panel:not([data-mode="scenarios"]) #mm-scenario-list,
     #mm-setup-panel[data-mode="scenarios"] #su-start,
-    #mm-setup-panel:not([data-mode="story"]) #mm-save-note { display: none; }
+    #mm-setup-panel:not([data-mode="story"]) #mm-save-note,
+    #mm-setup-panel:not([data-mode="story"]) #su-rules { display: none; }
     .mm-group { color: var(--text-faint); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; margin: 14px 0 4px 18px; }
     #pause-menu .mm-group { margin: 8px 0 0 0; }
     #su-seed {
@@ -467,7 +471,7 @@
     #re-body .re-k, #re-body .re-why { color: var(--text-dim); }
     #re-body .re-gap { margin-top: 10px; }
     #re-body .re-money { color: var(--money); }
-    #re-actions { margin-top: 14px; display: flex; justify-content: center; }
+    #re-actions { margin-top: 14px; display: flex; justify-content: center; gap: 12px; }
     /* FEAT-61 aim reticle — a 20 px ring at screen centre (the brief). pointer-events none so it
        can never eat a drag, and no transition: it must appear the instant F goes down or it lies
        about when aiming started. */
@@ -635,7 +639,6 @@
     #job-cancel.armed { background: var(--bad); border-color: var(--bad-text); color: var(--text-bright); }
     /* moving: "park to abandon" — the button is inert until the brake is latched */
     #job-cancel.unparked, #job-cancel.unparked:hover { background: rgba(0, 0, 0, 0.35); border-color: var(--line); color: var(--text-body); cursor: default; }
-    #job-cancel .park-badge { margin-right: 0.35em; }
     #job-cancel .keycap { margin-right: 0.4em; }
     #mission-hud .mh-count { font-size: 44px; color: var(--key); }
 
@@ -671,22 +674,13 @@
       pointer-events: none;
     }
 
-    /* FEAT-90: the "park first" badge — the word PARK and the handbrake's keycap on the parking
-       sign's blue (owner, 2026-10-20; was a white P sign, before that an orange P in a circle) —
-       and the keycap drawn beside key hints. One look everywhere a prompt asks you to park; the
-       markup comes from src/park-badge.js. */
-    .park-badge {
-      display: inline-flex; align-items: center; gap: 0.3em; box-sizing: border-box;
-      padding: 0.1em 0.2em 0.1em 0.4em; margin-right: 0.45em; vertical-align: -0.2em; white-space: nowrap;
-      border-radius: 0.22em; background: #0b3d91; color: #fff; border: 0.09em solid #fff;
-      font: bold 0.8em/1.2 sans-serif; letter-spacing: 0.05em; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-    }
-    .park-badge .keycap { margin: 0; letter-spacing: 0; }
     /* Key hints carry both labels (park-badge.js keycap); the device that last drove picks which shows.
        body.pad-on is gamepad.js's pad.active. */
     .kc-pad { display: none; }
     body.pad-on .kc-kb { display: none; }
     body.pad-on .kc-pad { display: inline; }
+    /* DEC-469: the offer card's Q / E / LB / RB flip offers only over the open map; at a POI the buttons are the highlight's */
+    body:not(.map-open) #mp-prev > span, body:not(.map-open) #mp-next > span { display: none !important; }
     .keycap {
       display: inline-block; min-width: 1.1em; padding: 0 0.35em; margin: 0 0.1em;
       border: 1px solid #8a96a3; border-bottom-width: 2px; border-radius: 3px;
@@ -1362,7 +1356,6 @@
        a line below the machine's words. */
     #spawn-toast, #ignition-hint, #reset-countdown, #machine-word, #stranded-hint {
       position: fixed;
-      top: 8%;
       left: 50%;
       transform: translateX(-50%);
       color: var(--text-bright);
@@ -1377,15 +1370,15 @@
       transition: opacity 1s ease;
     }
     #ignition-hint .k { color: var(--key); }
-    #machine-word { top: 14%; color: var(--warn); }
+    #machine-word { color: var(--warn); }
     #machine-word.bad { color: var(--bad); }
-    #stranded-hint { top: 20%; }
-    /* BUG-204: while the rank tile is up (#rank-timer shown by main.js), the strip's words sit UNDER the job stack (rank
-       bar, tile, deed line: ~196 px tall at 1x, scaled by FEAT-248's zoom) instead of on top of the tile, "Wrong way"
-       and the GPS chevrons; the 8 % / 14 % / 20 % rows keep their spacing. */
-    body:has(#rank-timer[style*="block"]) :is(#spawn-toast, #ignition-hint, #reset-countdown) { top: 196px; }
-    body:has(#rank-timer[style*="block"]) #machine-word { top: 226px; }
-    body:has(#rank-timer[style*="block"]) #stranded-hint { top: 256px; }
+    /* BUG-204: the strip's rows never sit on the job stack (rank bar and tile, promise lines, a fragile load's bars,
+       "Wrong way" under the tile): each row is the lower of its own % and the stack's bottom (--job-stack-b, main.js
+       writes it from a ResizeObserver; unset with no job, so the 8 % / 14 % / 20 % rows stand). px rides FEAT-248's
+       zoom with the stack. */
+    :is(#spawn-toast, #ignition-hint, #reset-countdown) { top: max(8%, var(--job-stack-b, 0px)); }
+    #machine-word { top: max(14%, var(--job-stack-b, 0px) + 30px); }
+    #stranded-hint { top: max(20%, var(--job-stack-b, 0px) + 60px); }
     /* FEAT-47: the doze/blink overlay. Two eyelids that meet in the middle — a crossfade to black
        reads as a fade-out, closing lids read as a blink, which is the whole point. Above the HUD
        and panels, below the story loading screen (z 200). JS only ever writes the two transforms
@@ -1748,6 +1741,16 @@
       <button class="mm-sel" data-key="worldPoi"></button>
       <button class="mm-sel" data-key="worldRoads"></button>
       <div id="su-code"></div>
+      <!-- FEAT-296: the rule rows, story only (each row's show() hides it elsewhere; the header goes with them).
+           Run state: the run copies them at start and keeps them, never part of the world code. -->
+      <div class="mm-group" id="su-rules">rules</div>
+      <button class="mm-sel" data-key="ruleDamage"></button>
+      <button class="mm-sel" data-key="ruleHunger"></button>
+      <button class="mm-sel" data-key="ruleCost"></button>
+      <button class="mm-sel" data-key="ruleFuel"></button>
+      <button class="mm-sel" data-key="ruleTows"></button>
+      <button class="mm-sel" data-key="ruleDeath"></button>
+      <button class="mm-sel" data-key="ruleEndless"></button>
       <div class="mm-group">truck</div>
       <button class="mm-sel" data-key="gearbox"></button>
       </div>
@@ -1824,8 +1827,8 @@
          story mode, and offering it again mid-run invited a world rebuild under a live planner.) -->
     <div id="mp-actions">
       <!-- FEAT-67: step through the POI's live offers (also Q / E). Hidden when there is one. -->
-      <button id="mp-prev" title="previous offer (Q / LB)">&lsaquo; <span class="kc-kb">Q</span><span class="kc-pad">LB</span></button>
-      <button id="mp-next" title="next offer (E / RB)"><span class="kc-kb">E</span><span class="kc-pad">RB</span> &rsaquo;</button>
+      <button id="mp-prev" title="previous offer">&lsaquo; <span class="kc-kb">Q</span><span class="kc-pad">LB</span></button>
+      <button id="mp-next" title="next offer"><span class="kc-kb">E</span><span class="kc-pad">RB</span> &rsaquo;</button>
       <button id="mp-decline" title="the same brake tap that releases the truck">decline (space)</button>
       <button id="mp-retry" title="testing only — real story mode has no do-overs">retry</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>
@@ -1840,7 +1843,8 @@
   <div id="run-end">
     <div class="mp-title" id="re-title"></div>
     <div id="re-body"></div>
-    <div id="re-actions"><button id="re-menu">main menu</button></div>
+    <!-- FEAT-296: an endless run's camp card goes on (main.js _endRun); every other card has the one way out. -->
+    <div id="re-actions"><button id="re-keep" style="display:none">keep playing</button><button id="re-menu">main menu</button></div>
   </div>
   <div id="scenario-panel">
     <div class="mp-title" id="sp-title">scenario</div>
@@ -1913,7 +1917,7 @@
     <div id="hud-icons">
       <div id="hud-b-hint">hold <span class="kc-pad kc-round">B</span><span class="bh-abandon">· ↑ abandon job</span></div>
       <!-- FEAT-122: the park zone — damage-screen.js and inventory-screen.js append their rows. -->
-      <div id="park-zone" class="locked"><span class="park-badge pz-badge" aria-label="park">PARK</span></div>
+      <div id="park-zone" class="locked"><span class="pz-badge" aria-label="park">PARK</span></div>
       <!-- FEAT-45 Phase D: making camp. The tent shows only where the old camp prompt did (a camp
            zone, under 20 kph, story mode, no job or route out, no POI in reach). Z or a click
            toggles "looking for a campsite"; while looking, the vibe bar + verdict card opens beside

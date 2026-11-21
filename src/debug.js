@@ -248,6 +248,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   driveFolder.add(params, 'shiftHysteresis', 200, 2000, 50).name('Shift Hysteresis (RPM)')
   driveFolder.add(params, 'shiftHysteresisLight', 0, 1500, 50).name('Shift Hysteresis, light foot (RPM)')
   driveFolder.add(params, 'shiftHoldTime', 0.1, 1.5, 0.05).name('Shift Hold (s)')
+  driveFolder.add(params, 'autoShiftTime', 0, 1.0, 0.01).name('Shift time (s)')
   driveFolder.add(params, 'wheelspinShiftLock').name('Wheelspin Shift-Lock')
   driveFolder.add(params, 'wheelspinThreshold', 1, 20, 0.5).name('Wheelspin Lock (m/s)')
 

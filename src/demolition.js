@@ -38,7 +38,7 @@ export const DEMOLITION_PARAMS = {
  * The target kinds. `model` is the static stand-in's data/prop-models.js key. A row with a mass is
  * not a DEBRIS_TYPES kind: main.js hands it to debris.js load(kind, spec) on first use, so a cold boot
  * never fetches a sign it may not need. barrel and roadBarrier are DEBRIS_TYPES already.
- * Masses: the drums are ASSET-30's 18 kg empty; a road sign is a 4x4 timber post (~10 kg) and its
+ * Masses: the drums are ASSET-30's 18 kg empty; a work sign is a road sign's 4x4 timber post (~10 kg) and its
  * aluminium blank (~3 kg); a turn-back board (ASSET-77) is 12 mm ply (~3.9 kg) on two 2x2 stakes (~1.9 kg).
  */
 const SIGN = { massKg: 13, friction: 0.6, restitution: 0.1 }
@@ -48,13 +48,11 @@ export const TARGET_TYPES = {
     roadBarrier:   { model: 'roadBarrier' },
     drumOpen:      { model: 'drumOpen', massKg: 18, friction: 0.5, restitution: 0.3 },
     smallCrate:    { model: 'smallCrate', massKg: 18, friction: 0.6, restitution: 0.1 },
-    signGrade:     { model: 'signGrade', ...SIGN },
-    signCurves:    { model: 'signCurves', ...SIGN },
-    signRockslide: { model: 'signRockslide', ...SIGN },
-    signTee:       { model: 'signTee', ...SIGN },
-    signCross:     { model: 'signCross', ...SIGN },
-    signStop:      { model: 'signStop', ...SIGN },
-    signIcy:       { model: 'signIcy', ...SIGN },
+    // DEC-430: the work site's line wears work-zone signs, never a road sign (ASSET-31) — a target reads as a target.
+    workSignWorker:   { model: 'workSignWorker', ...SIGN },
+    workSignArrow:    { model: 'workSignArrow', ...SIGN },
+    workSignBlank:    { model: 'workSignBlank', ...SIGN },
+    workBoardStripes: { model: 'workBoardStripes', ...SIGN },
     turnBackSign:        { model: 'turnBackSign', ...BOARD },
     turnBackSignKeepOut: { model: 'turnBackSignKeepOut', ...BOARD },
     turnBackSignBeware:  { model: 'turnBackSignBeware', ...BOARD },

@@ -1656,6 +1656,17 @@ const STEPS = [
     const st = await js('(() => { const m = window.__mission(); return { s: m.state, a: !!m.mission?.approach, n: m.mission?.targets?.length } })()')
     check(st.s === 'staging' && !st.a && st.n > 0, `the camp's line did not start at the camp with a site: ${JSON.stringify(st)}`)
     check((await js('window.__cargo().site'))?.length === st.n, 'the site does not stand from accept')
+    // FEAT-320: on the way, short of the line, the job line reads the road distance to it (his words); at the line, the count.
+    const away = await js(`(() => { const m = window.__mission().mission, ts = window.__cargo().site
+      const i = m.poly.findLastIndex((p, k) => k > 0 && ts.every(t => Math.hypot(p.x - t.x, p.z - t.z) > 400))
+      if (i < 0 || i >= m.poly.length - 1) return null
+      const a = m.poly[i], b = m.poly[i + 1]; return { x: a.x, z: a.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()`)
+    if (away) {
+      await seat(away.x, away.z, away.h)
+      const hud0 = 'document.getElementById("mission-hud").textContent'
+      check(await until(() => js(`/^\\d+\\.\\d\\d km to the old sign line/.test(${hud0})`), 6000), `FEAT-320: short of the line the job line reads "${await js(hud0)}"`)
+      check(!await js('window.__site().arrived'), 'FEAT-320: the site latched arrived 400 m short of its line')
+    } else console.log('  demolition: no route point 400 m short of the line — FEAT-320\'s distance line not exercised')
     // Seat on the route's centreline beside the first target: within onM its targets become bodies.
     const at = await js(`(() => { const m = window.__mission().mission, t = window.__cargo().site[0]
       let bi = 0, bd = Infinity
@@ -1694,6 +1705,13 @@ const STEPS = [
     check(await js('window.__site().gps?.noRing === true'), 'the demolition GPS leg carries a destination circle (FEAT-187)')
     check(await js('window.__mission().state') === 'running', `arriving with targets standing settled the line: ${await js('window.__mission().state')}`)
     check(await until(() => js('document.getElementById("rank-timer").checkVisibility()'), 3000), 'no rank bar on the demolition job at its site (DEC-399: hurried)')
+    // BUG-204: the alerts row ("Wrong way") sits under the job stack, with a fragile load's bars added too.
+    const clash = () => js(`(() => { const s = document.getElementById('job-stack').getBoundingClientRect(), w = document.getElementById('machine-word').getBoundingClientRect()
+      return w.top < s.bottom ? Math.round(s.bottom) + ' / ' + Math.round(w.top) : '' })()`)
+    const c204 = [await clash()]
+    await js(`document.head.appendChild(Object.assign(document.createElement('style'), { id: 'bug204', textContent: '#job-g { display: flex !important }' }))`)
+    await frames(4, 60); c204.push(await clash()); await js(`document.getElementById('bug204').remove()`)
+    check(c204.every(c => !c), `the alerts row sits on the job stack (stack bottom / alert top, rank only then + fragile bars): ${JSON.stringify(c204)}`)
     // Fell the leg's cluster: the next plan moves the leg on to another standing one.
     const c0 = await js(`${legEnd}.id`)
     await js(`${legEnd}.members.forEach(i => { window.__site().targets[i].smashed = true })`)
@@ -1972,7 +1990,12 @@ const STEPS = [
     await seat(p.rx, p.rz, p.h)
     await crank()   // story seats the truck with the engine OFF (FEAT-33)
     if (await js('window.__vs.parked')) await tap(' ')   // and latched
-    const c0 = await car(); await hold('w', 6); const c1 = await car()
+    // BUG-248: 4 s, then stop. The hold steers nothing, and seed 6's road bends ~50 m out: 6 s left it at 17.5 m/s
+    // 2.5 m off the centreline, and the truck then coasted unbraked (the promise-box ticks below are wall-clock) ~20 m
+    // into the scenery at 19 m/s. Every run crashed (front armor −0.2, fronts −0.06); the bad ones wrote off a wheel
+    // or two, and the save step then could not reach 5 m/s. 4 s is ~30 m, 28 m from the marker (start zone 25 m).
+    const c0 = await car(); await hold('w', 4); const c1 = await car()
+    await park()
     const moved = Math.hypot(c1.x - c0.x, c1.z - c0.z)
     check(moved > 15, `truck moved ${moved.toFixed(0)} m on the job (need > 15)`)
     check(await until(async () => await hudText() !== staged, 3000), `job never started: HUD still "${staged}" after ${moved.toFixed(0)} m`)
@@ -1998,7 +2021,7 @@ const STEPS = [
       return { id: m?.offerId ?? null, state: ms.state, ex: m?.end.x, ez: m?.end.z, par: m?.par } })()`)
     const job0 = await jobNow()
     check(job0.id && job0.state === 'running', `the offer step left no running board job: ${JSON.stringify(job0)}`)
-    await park()   // the offer step left it driving
+    await park()   // the offer step parks it now (BUG-248); this re-latches
     check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000),
       `the truck never came to rest (${(await js('window.__vs.velocity.length()')).toFixed(2)} m/s, parked ${await js('window.__vs.parked')})`)
     await js('window.__econ.money = 123.45')
@@ -2271,6 +2294,16 @@ const STEPS = [
     check(await until(() => js('/grayscale/.test(document.querySelector("canvas").style.filter)'), 1000), 'a fatal hit did not turn the world black and white')
     check(!await card(), 'the crash card skipped the beat')
     await ended(/died/, /hit at 90 mph — front · at 30 % armor the front could take 48 mph; fresh it takes 65/)
+    // DEC-475: death off — the same fatal hit is a lost life (DEC-001): no card, the run goes on, every part at 25 % or more.
+    await js('window.__settings.ruleDeath = "off"')
+    await newRun()
+    await js("window.__damage.set('engine', 0.05); window.__damage.fatalImpact = { region: 'front', v: 40, mph: 90, armor: 0.3 }")
+    await sleep(2500)
+    check(!await card() && await js(`window.__damage.fatalImpact === null && window.__damage.get('engine') >= 0.25 && ${live}`),
+      `DEC-475: death off — a fatal hit ended the run or left the truck as it was: ${JSON.stringify(await js("({ fatal: window.__damage.fatalImpact, engine: window.__damage.get('engine') })"))}`)
+    await js('window.__settings.ruleDeath = "on"')
+    await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+    await ended(/gave up/)
     // Broke down (FEAT-162): an empty tank, no gas can — the Recovery card offers the tows while there
     // is money; at $0 the run ends by itself once the truck has sat still a few seconds.
     await newRun()
@@ -2278,6 +2311,17 @@ const STEPS = [
     const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = window.__poi().barricades()[1]
       const ux = q.roadX - b.x, uz = q.roadZ - b.z, l = Math.hypot(ux, uz)
       return { x: q.roadX + ux / l * 60, z: q.roadZ + uz / l * 60, h: Math.atan2(-ux, -uz) } })()`)
+    await seat(away.x, away.z, away.h)
+    // DEC-475: Classic's one free tow — a run's first tow costs nothing. Spent here, so the dry truck below pays for its own.
+    await js('window.__econ.money = 1000')
+    await park(true); await tap('x')
+    check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towShop]:not([disabled])")'), 3000), 'DEC-475: no shop tow on the Recovery card')
+    await js('document.querySelector("#recovery-card [data-act=towShop]").click()')
+    check(await until(() => js('/\\$0\\.00/.test(document.querySelector("#recovery-card [data-act=towGo]")?.textContent)'), 2000),
+      `DEC-475: the run's first tow is not free: "${await js('document.getElementById("recovery-card").textContent')}"`)
+    await js('document.querySelector("#recovery-card [data-act=towGo]").click()')
+    check(await until(() => js('window.__econ.money === 1000 && document.getElementById("svc-screen").checkVisibility()'), 8000), 'DEC-475: the free tow cost money or never reached the shop')
+    await tap('Escape'); await sleep(300)
     await seat(away.x, away.z, away.h)
     await js(`(() => { const inv = window.__inv; for (const r of [...inv.list()].reverse()) if (r.id === 'emergencyGas' || r.gal > 0.05) inv.drop(r.index)
       window.__econ.money = 1000 })()`)
@@ -2334,6 +2378,27 @@ const STEPS = [
       const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
       for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
     await ended(/beat the alpha/)
+    // FEAT-296 (DEC-433): an endless run's win is a milestone — the card's one button is "keep playing", the save stays,
+    // the card never comes back, and the run still ends the ordinary ways (here the towel).
+    await js('window.__settings.ruleEndless = "on"')
+    await newRun()
+    await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)
+    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), 'endless: no requisition')
+    await js(`(() => { const b = window.__board(), h = window.__day().clockH()
+      const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
+      for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
+    const et = await until(card, 5000)
+    check(et && /beat the alpha/.test(et) && await js('document.getElementById("re-keep").offsetParent !== null && document.getElementById("re-menu").offsetParent === null'),
+      `endless: the win card offers only "keep playing" ("${et}")`)
+    check(/endless on/.test(await js('document.getElementById("re-body").textContent')), 'endless: the summary does not name the run\'s rules')
+    await sleep(1500)   // past an autosave tick
+    check(await saved() && await js('JSON.parse(localStorage.getItem("autos-run/1")).data.endlessWon === true'), 'endless: the win discarded the save or lost the flag')
+    await js('document.getElementById("re-keep").click()')
+    await sleep(1500)
+    check(await js(`document.getElementById("run-end").style.display !== "block" && ${live}`), 'endless: "keep playing" did not hand the run back (or the card came back)')
+    await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+    await ended(/gave up/)
+    await js('window.__settings.ruleEndless = "off"')
   }],
   ['opening', async () => {
     // FEAT-147: a new run starts PARKED AT THE BURGER JOINT, the firing's cards over a slow orbit of it with the sim held.
@@ -3014,7 +3079,8 @@ const STEPS = [
     check(await until(() => js('!window.__damage.flat[0]'), 2000) && !await lightsUp() && await js('window.__tutorial().until') === 'patched',
       "FEAT-305: the patch in the cart: the flat is not fixed, or the lesson moved on before the check-out")
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')   // FEAT-212: the cart
-    check(await until(async () => await js('window.__tutorial().until') === 'svcshop', 3000) && (await ringed()).join() === 'shop',
+    // BUG-253: the card turns on the HUD poll and its ring lands on the gate's next 100 ms paint, so wait for both
+    check(await until(async () => await js('window.__tutorial().until') === 'svcshop' && (await ringed()).join() === 'shop', 3000),
       `FEAT-305: checked out, mom does not point at the Shop tab: ${JSON.stringify({ tut: await js('window.__tutorial()'), ringed: await ringed() })}`)
     await gateShot('20-shop-tab-rb'); await padShot('20-shop-tab-rb-pad')
     await tap('e')   // the keyboard's tab step (the pad's RB)
@@ -3025,7 +3091,8 @@ const STEPS = [
     await tap('Escape'); await tap(' ')   // out of the shop, off the brake: the night drive, under the lights' card
     await readCards()   // up to the lights' card, which waits for L (DEC-359)
     check(await js('window.__tutorial().until') === 'lights', `the headlights card does not wait for L: ${JSON.stringify(await js('window.__tutorial()'))}`)
-    await tap('l'); await readCards()   // it clears on the lights; her slow-down card follows
+    await tap('l')   // it clears on the lights, on the HUD poll (BUG-253: read on before it does and her next card is left up, holding the blink)
+    await until(async () => await js('window.__tutorial().until') !== 'lights', 2000); await readCards()   // her slow-down card follows
     // DEC-357: the tire fixed, the driver is SLEEPY, and blinks on the held clock's drive (day.js blinkOnly).
     check(await js('window.__day().stage()') === 'sleepy', `the tire fixed, the driver is not sleepy (DEC-357): ${await js('window.__day().energyH()')} h`)
     { const h1 = await clock(); await js('window.__day()._nextBlinkH = 1e-4')
@@ -3433,7 +3500,7 @@ const STEPS = [
     if (inRun) { await padTo('mm-new'); await btn(0) }
     // SMOKE_PAD_SEED=<seed>: repeat a failed pad step's world (its world code's number) — a development aid.
     if (process.env.SMOKE_PAD_SEED) await js(`document.getElementById("su-seed").value = ${JSON.stringify(process.env.SMOKE_PAD_SEED)}`)
-    await padTo('su-start'); await btn(0)
+    await padTo('su-start', 12, 40); await btn(0)   // UP: start heads the page; DEC-475's rows put it past 12 downs
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'the pad\'s new run never went live')
     if (process.env.SMOKE_PAD_SEED) console.log(`  pad: world ${await js('window.__worldCode?.()')}`)
@@ -3588,7 +3655,7 @@ const STEPS = [
     check(await until(() => js('window.__mission().state === "done"'), 3000), 'one B press on the armed abandon did not abandon the job')
     await btn(13); await btn(0)
     check(await until(() => js('!window.__mission().isActive()'), 2000), 'A on the abandoned job\'s result card left it up')
-    // The pump: A held pumps, RB lets go of the brake and pays.
+    // The pump: LT held pumps (DEC-467), RB lets go of the brake and pays.
     const pz = (await client.cmd('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression: `(async () => {
       const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => n.includes("/src/poi.js")))
       return m.towSeat(window.__poi().list().find(q => q.pumpZones?.length)) })()` })).result.result.value
@@ -3596,9 +3663,9 @@ const STEPS = [
     await seatRead(pz.x, pz.z, pz.heading); await padPark()
     check(await until(() => js('document.getElementById("pump-display").classList.contains("on")'), 3000), 'parking at the pump on the pad opened no pump')
     const g0 = await js('window.__vs.fuel.gal'), m0 = await js('window.__econ.money')
-    await hold(0, 2500)
+    await hold(6, 2500)
     const g1 = await js('window.__vs.fuel.gal')
-    check(g1 - g0 > 1, `A held 2.5 s pumped ${(g1 - g0).toFixed(2)} gal`)
+    check(g1 - g0 > 1, `LT held 2.5 s pumped ${(g1 - g0).toFixed(2)} gal`)
     // BUG-237: the map shuts every menu through its own close, and the pump's close is the checkout; so M (and the pad's
     // View, a tap) does not open the map over an open pump: the pump stays up and the wallet is untouched.
     await key('m', true); await sleep(100); await key('m', false); await sleep(300)
@@ -3617,8 +3684,8 @@ const STEPS = [
     await btn(1); await btn(1)
     check(await until(() => js('document.getElementById("camp-panel").style.display !== "block"'), 2000), 'B twice did not back out of the camp card')
     // FEAT-294 (DEC-431): Ventura Highway at the story's parked screens. A is the handbrake (park: A held to rest, A tap),
-    // B is back on every screen, and after it the gas lets the parking brake go and rolls the truck away. At the pump A
-    // pumps and the gas pays. The giver's offer, the shop and mom's card; the free-roam screens are test/pad-e2e.mjs's.
+    // B is back on every screen, and after it the gas lets the parking brake go and rolls the truck away. At the pump LT
+    // pumps (DEC-467) and the gas pays. The giver's offer, the shop and mom's card; the free-roam screens are test/pad-e2e.mjs's.
     await js(`(async () => { const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => /\\/src\\/gamepad\\.js(\\?|$)/.test(n))); m.PAD_PARAMS.padLayout = 'Ventura Highway' })()`)
     const vhPark = async () => {
       if (await js('window.__vs.parked')) { await btn(0); await frames(4, 200) }
@@ -3635,11 +3702,17 @@ const STEPS = [
     const vhRepark = async () => { if (!await js('window.__vs.parked')) return vhPark(); await btn(0); await btn(0)
       check(await until(() => js('window.__vs.parked'), 1000), 'Ventura Highway: A, A did not re-set the parking brake') }
     const rollOff = async (what) => {
+      // BUG-249: only gas that can drive lets the brake go, and a story seat (the teleport) hands over a dead truck
+      // (FEAT-33). A player who drove here has it running; the test starts it first: Y held until it catches.
+      if (await js('window.__vs.ignition?.state !== "running"')) {
+        await hold(3, 2000)
+        check(await until(() => js('window.__vs.ignition?.state === "running"'), 4000), `Ventura Highway, ${what}: Y did not start the engine (${await js('window.__vs.ignition?.state')})`)
+      }
       await js('__fp.b[7] = 0.6')
       const ok = await until(() => js('!window.__vs.parked && !window.__vs.handbrake'), 4000)
       const v = await js('window.__vs.velocity.length().toFixed(2)')
       await js('__fp.b[7] = 0'); await frames(3, 100)
-      check(ok, `Ventura Highway, ${what}: the gas did not let the brake go (parked ${await js('window.__vs.parked')}, handbrake ${await js('window.__vs.handbrake')})`)
+      check(ok, `Ventura Highway, ${what}: the gas did not let the brake go (parked ${await js('window.__vs.parked')}, handbrake ${await js('window.__vs.handbrake')}, ignition ${await js('window.__vs.ignition?.state')}, fuel ${await js('window.__vs.fuel?.gal')})`)
       console.log(`  pad: Ventura Highway, ${what}: the gas let the brake go (${v} m/s)`)
     }
     await seatPoi("q => q.type === 'momsHouse'"); await vhPark(); await readCards()
@@ -3672,14 +3745,14 @@ const STEPS = [
     await btn(1)
     check(await until(async () => !await svcUp(), 2000) && await js('window.__vs.parked'), 'Ventura Highway: B did not close the shop, parked')
     await rollOff('the shop')
-    // The pump: A held pumps; the gas pays and rolls (the pump is not a card: no B needed, the gas is its way out).
+    // The pump: LT held pumps; the gas pays and rolls (the pump is not a card: no B needed, the gas is its way out).
     await js('window.__vs.fuel.gal = 4')
     const pumpOn = () => js('document.getElementById("pump-display").classList.contains("on")')
     await seatRead(pz.x, pz.z, pz.heading); if (!await until(pumpOn, 1500)) await vhRepark()
     check(await until(pumpOn, 3000), 'Ventura Highway: parking at the pump with A opened no pump')
     const vg0 = await js('window.__vs.fuel.gal'), vm0 = await js('window.__econ.money')
-    await hold(0, 2500)
-    check(await js('window.__vs.fuel.gal') - vg0 > 1, 'Ventura Highway: A held 2.5 s at the pump did not pump')
+    await hold(6, 2500)
+    check(await js('window.__vs.fuel.gal') - vg0 > 1, 'Ventura Highway: LT held 2.5 s at the pump did not pump')
     await rollOff('the pump')
     check(await until(() => js(`window.__econ.money < ${vm0} - 0.01`), 2000), 'Ventura Highway: the gas at the pump did not pay')
     await js(`(async () => { const m = await import(performance.getEntriesByType("resource").map(r => r.name).find(n => /\\/src\\/gamepad\\.js(\\?|$)/.test(n))); m.PAD_PARAMS.padLayout = 'Professor' })()`)

@@ -52,6 +52,7 @@ for (const kmh of [60, 80]) {
   const seat = (m) => { const r = ap.resume(m); Object.assign(vs, fresh(r.x, (w.road.sampleRoadTopY(r.x, r.z) ?? 0) + 0.9, r.z, r.heading)); w.stream(r.x, r.z) }
   seat(0)
   sent.length = 0
+  const t0ms = simMs   // the sim clock never runs backwards between runs: the driver's send timer (sentAt) would stall the whole next run and hold a stale jolt peak
   let t = 0, quietSteps = 0, steps = 0, loud = null, vSum = 0
   const quiet = []   // [t0, t1) windows in which nothing should rumble
   while (t < 40) {
@@ -68,7 +69,7 @@ for (const kmh of [60, 80]) {
     stepContactAudio(vs, P._tireFz, DT)
     const loose = looseAt(vs.position.x, vs.position.z)
     R.stepPadRumble(vs, P, dmg.flat, loose, DT)
-    t += DT; simMs = t * 1000
+    t += DT; simMs = t0ms + t * 1000
     const n0 = sent.length
     R.flushPadRumble(true)
     if (t < 6) continue   // the seat's drop and the run-up
