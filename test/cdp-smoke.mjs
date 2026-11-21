@@ -3056,7 +3056,8 @@ const STEPS = [
     check(await until(() => js('!window.__damage.flat[0]'), 2000) && !await lightsUp() && await js('window.__tutorial().until') === 'patched',
       "FEAT-305: the patch in the cart: the flat is not fixed, or the lesson moved on before the check-out")
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')   // FEAT-212: the cart
-    check(await until(async () => await js('window.__tutorial().until') === 'svcshop', 3000) && (await ringed()).join() === 'shop',
+    // BUG-253: the card turns on the HUD poll and its ring lands on the gate's next 100 ms paint, so wait for both
+    check(await until(async () => await js('window.__tutorial().until') === 'svcshop' && (await ringed()).join() === 'shop', 3000),
       `FEAT-305: checked out, mom does not point at the Shop tab: ${JSON.stringify({ tut: await js('window.__tutorial()'), ringed: await ringed() })}`)
     await gateShot('20-shop-tab-rb'); await padShot('20-shop-tab-rb-pad')
     await tap('e')   // the keyboard's tab step (the pad's RB)
@@ -3067,7 +3068,8 @@ const STEPS = [
     await tap('Escape'); await tap(' ')   // out of the shop, off the brake: the night drive, under the lights' card
     await readCards()   // up to the lights' card, which waits for L (DEC-359)
     check(await js('window.__tutorial().until') === 'lights', `the headlights card does not wait for L: ${JSON.stringify(await js('window.__tutorial()'))}`)
-    await tap('l'); await readCards()   // it clears on the lights; her slow-down card follows
+    await tap('l')   // it clears on the lights, on the HUD poll (BUG-253: read on before it does and her next card is left up, holding the blink)
+    await until(async () => await js('window.__tutorial().until') !== 'lights', 2000); await readCards()   // her slow-down card follows
     // DEC-357: the tire fixed, the driver is SLEEPY, and blinks on the held clock's drive (day.js blinkOnly).
     check(await js('window.__day().stage()') === 'sleepy', `the tire fixed, the driver is not sleepy (DEC-357): ${await js('window.__day().energyH()')} h`)
     { const h1 = await clock(); await js('window.__day()._nextBlinkH = 1e-4')
