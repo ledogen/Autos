@@ -43,8 +43,8 @@ export const RUMBLE_GAINS = {
   engineSeize: [0.70, 0.10],   // the running engine seizes
   abs:         [0.40, 0.70],   // ABS dumped a cylinder (the pedal kick-back); also the left trigger where the pad has one
   slip:        [0.00, 0.35],   // tyre slip / wheelspin
-  jolt:        [0.40, 0.40],   // a sharp change of ground slope under a wheel: a kerb lip, a pothole edge, a rock (BUG-206)
-  rough:       [0.00, 0.40],   // loose-surface texture (gravel, dirt), scaled by speed; asphalt is silent (BUG-206)
+  jolt:        [1.00, 1.00],   // a sharp change of ground slope under a wheel: a kerb lip, a pothole edge, a rock (BUG-206; 0.40 -> 1.00 with JOLT_SLOPE_FULL 0.3 -> 0.10, FEAT-247 owner 11-20: the kerb strike was lost under the shoulder's rumble)
+  rough:       [0.00, 0.15],   // loose-surface texture (gravel, dirt), scaled by speed; asphalt is silent (BUG-206; 0.40 -> 0.15, FEAT-247 owner 11-20: a persistent rumble, but the kerb strike must stand over it)
   flat:        [0.45, 0.15],   // running on a flat tyre
   bent:        [0.25, 0.10],   // a bent (out-of-round) wheel
 }
@@ -73,21 +73,24 @@ export function rumbleMix (sig, gains = RUMBLE_GAINS, master = RUMBLE_PARAMS.vib
 export function continuousSignals (vs, params, flat, loose = 0, strutHp = 0, phase = null) {
   const v = vs.velocity, speed = v ? Math.hypot(v.x, v.z) : 0
   const grip = vs.slipVel, wc = params?._wheelCondition
-  let slip = 0, bent = 0, anyFlat = false
+  let slip = 0, bent = 0, flatLvl = 0
   for (let i = 0; i < 4; i++) {
     slip = Math.max(slip, grip?.[i] || 0)
     bent = Math.max(bent, bentLevel(wc?.[i] ?? 1, speed) * (phase ? 0.5 + 0.5 * Math.cos(phase[i]) : 1))
-    if (flat?.[i]) anyFlat = true
+    if (flat?.[i]) flatLvl = Math.max(flatLvl, phase ? flatPulse(phase[i]) : 1)   // FEAT-247: one thump per turn of the flat wheel
   }
-  const roll = ramp(speed, 1, 12)   // a flat and a wobble are felt rolling; at a standstill there is none
+  const flatFade = ramp(speed, 5 * MPH, 15 * MPH)   // the flat's thump fades in over 5..15 mph (owner 11-20)
   return {
     slip: ramp(slip, 2, 10),
     jolt: ramp(strutHp / Math.max(speed, 2), JOLT_SLOPE_FLOOR, JOLT_SLOPE_FULL),
     rough: ramp(loose, params?.dustPavedFactor ?? 0.1, 1) * ramp(speed, 2, 20),
-    flat: anyFlat ? roll : 0,
+    flat: flatLvl * flatFade,
     bent,
   }
 }
+
+/** The flat tyre's "ka-thunk": one sharp thump per turn of the wheel (phase 0 = the flat spot's slap), 0 between. */
+const flatPulse = (ph) => (0.5 + 0.5 * Math.cos(ph)) ** 3
 
 // FEAT-287 / DEC-420: a bent wheel is felt only when it is really bad. Condition >= 60 %: never. 25..60 %: only in a
 // 10..25 mph band, a half-cosine up to the 17 mph peak and a half-cosine down (zero at both ends), amplitude 0.3 at 60 %
@@ -127,7 +130,7 @@ export function bentPhaseStep (phase, vs, params, dt) {
 // 90 km/h): high-passed strut velocity ÷ speed on asphalt p99 0.011, max 0.014 (deck facets); off-road max 0.068.
 const JOLT_HP_HZ = 6             // Hz — above the body's heave/pitch modes, below the wheel hop
 const JOLT_SLOPE_FLOOR = 0.03    // ground-slope change: silent below (2× the asphalt maximum) …
-const JOLT_SLOPE_FULL = 0.3      // … full at a kerb lip's
+const JOLT_SLOPE_FULL = 0.1      // … full at a kerb lip's (a measured kerb crossing reads 0.06..0.14, the sim's kerb is a blended edge)
 
 /** First-order high-pass of each corner's strut velocity at JOLT_HP_HZ; returns the largest |output|. `st` holds the
  *  filter's memory ({ x: [4], y: [4] }), so a gate can run its own. */
@@ -146,7 +149,7 @@ const kicks = {}        // name → { s, t0 } (level at the time it was struck, 
 let cont = {}, contAt = 0
 const bentPhase = [0, 0, 0, 0]
 const hp = { x: [0, 0, 0, 0], y: [0, 0, 0, 0] }
-let sentAt = 0, quiet = true
+let sentAt = 0, quiet = true, joltPeak = 0
 const SEND_MS = 50, EFFECT_MS = 100, STALE_MS = 100
 
 /** Strike a kick source with level `s` (0..1); a harder strike while one is still ringing wins. */
@@ -167,6 +170,7 @@ export function kickLevels (now = performance.now()) {
 export function stepPadRumble (vs, params, flat, loose, dt) {
   bentPhaseStep(bentPhase, vs, params, dt)
   cont = continuousSignals(vs, params, flat, loose, strutHighPass(vs.strutCompVel, dt, hp), bentPhase)
+  joltPeak = Math.max(joltPeak, cont.jolt)   // a strike is ONE physics step (17 ms) and the pad is sent every 50 ms: hold the peak until the next send
   contAt = performance.now()
 }
 
@@ -176,7 +180,8 @@ export function flushPadRumble (padActive) {
   const now = performance.now()
   if (now - sentAt < SEND_MS) return
   const sig = kickLevels(now)
-  if (now - contAt < STALE_MS) Object.assign(sig, cont)
+  if (now - contAt < STALE_MS) { Object.assign(sig, cont); sig.jolt = joltPeak }
+  joltPeak = 0
   const m = padActive ? rumbleMix(sig) : { strong: 0, weak: 0 }
   const silent = m.strong < 0.01 && m.weak < 0.01
   if (silent && quiet) return
