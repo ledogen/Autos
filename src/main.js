@@ -4966,7 +4966,7 @@ function _tutLeg () {
 }
 
 /** The line the GPS shows for `base`: its re-plan from the truck when there is one. */
-const _tutLine = base => _tutDetour?.base === base ? _tutDetour.route : base
+const _tutLine = base => _tutDetour && _tutDetour.base === base ? _tutDetour.route : base   // DEC-475: no leg (undefined) with no detour (null) is no line, not a throw
 
 /** On the run-HUD poll: re-plan the tutorial's GPS from the truck once it is off the line. */
 function _tutDetourTick () {
