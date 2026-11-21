@@ -906,7 +906,7 @@ export class PoiSystem {
      * than this offset (another road, or a hairpin of its own), water. Its height is sampleRoadTopY: inside the road footprint that IS the surface the
      * truck drives on (main.js _groundSampleY), so the base sits on it (`onRoad`: the yard's analyticHeight
      * re-seat, the carved dirt 0.25 m under it, leaves it alone). A knockable satellite like the lawn furniture:
-     * knocked, it lies where it fell until the markers are rebuilt (the next run or reload); nothing is saved.
+     * knocked, it lies where it fell until its terrain chunk streams out (FEAT-317, DEC-473), then stands again; nothing is saved.
      */
     _shoulderMailbox (road, site, arcs, P, seed, junctions) {
         const ed = site.aId != null && road.edgeParData(site.aId, site.bId)
