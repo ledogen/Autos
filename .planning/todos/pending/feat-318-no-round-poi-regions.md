@@ -49,7 +49,7 @@ the fetch and multi-drop hand-over, the camp prompt and the tow hint (`_inPoiRin
   11.76 x 3.32 m, rounded up to **12.0 x 3.5 m**. Inner edge 0.1 m outside the paved edge (5.0 m off the centreline,
   where the lane's edge line is); outer edge 8.6 m, so it reaches 0.5 m onto the pad (the shoulder plus the pad gap is
   only 3.1 m). Centred on the pad; on a bend it steps out until no point is inside the lane; where the model stands on
-  the pad's road edge (the barn) it slides along the road in 1.5 m steps to the first place clear of the model.
+  the pad's road edge (the barn) it slides along the road in 0.5 m steps to the first place clear of the model (a broadside barn on a 14 m lay-by clears at 12.35 m of a 12.5 m slide; a 1.5 m step missed it).
   Stored as the POI's `park` box in the model frame (`park.strip = true`), so every PARK-box reader takes it unchanged:
   the curtain, the trigger, `towSeat`, the smoke. Built cold from the road in `PoiSystem.build`, never saved.
 - **Its yard**: a lawn piece or a mailbox whose footprint would stand in the strip is not placed (the mailbox tries its
@@ -82,7 +82,8 @@ the fetch and multi-drop hand-over, the camp prompt and the tow hint (`_inPoiRin
 - [x] Triggers, mom's door, start seats, service screen, hand-over read the spot; no radius left
 - [x] Circle code deleted (`poiInteractR`, the round curtain, `campMomsRadiusM`)
 - [x] Gate: story-start-clear part 4
-- [ ] Sheet wip/feat-318/sheet.jpg and the owner's look
+- [x] Sheet wip/feat-318/sheet.jpg (16 types on seeds 518337 and 2741906, two chase-camera views, BUG-251, FEAT-322)
+- [ ] The owner's look (owed card feat318-poi-regions-look)
 - [ ] Owner: the start ring and the job's end (open questions)
 
 ## Open questions
@@ -100,3 +101,7 @@ Sheet: `wip/feat-318/sheet.jpg` (git-invisible). Owed card: `feat318-poi-regions
 
 ## Log
 - 2026-11-20: c2, land/wave2-1120: built as above.
+- 2026-11-21: c2: the strip slides 0.5 m at a time (a broadside barn on a lay-by needs 12.35 m of its 12.5 m slide). The
+  smoke's line-source seat is the PARK box's centre again (towSeat puts a gas station's truck at its pump), and the
+  firing's orbit is read off the camera's aim point (the truck now starts in the joint's strip, ~8 m from the ring).
+  The stranded motorist is hidden until its job, so the sheet has no row for it; its strip is built the same way.
