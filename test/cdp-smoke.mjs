@@ -1621,7 +1621,7 @@ const STEPS = [
     check((await st()).a, 'arriving at the source started the line before the brake')
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
     await tap(' ')
-    check(await until(async () => { const b = await st(); return b.s === 'staging' && !b.a }, 2000), `parking at the source did not start the line: ${JSON.stringify(await st())}`)
+    check(await until(async () => { const b = await st(); return b.s === 'staging' && !b.a }, 2000), `parking at the source did not start the line: ${JSON.stringify(await st())} · source ${JSON.stringify(await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)}); return { type: q.type, model: q.modelKey, park: q.park, drop: !!q.drop, hidden: !!q.hidden } })()`))} · seat ${JSON.stringify(src)} · truck ${JSON.stringify(await js('window.__car()'))}`)
     check(await until(() => js('window.__cargo().freight?.key === "drum"'), 5000), `parking at the source strapped no drum: ${JSON.stringify(await js('window.__cargo().freight'))}`)
     // Cancel (parked, two clicks) → the line goes back on the camp's list.
     await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')

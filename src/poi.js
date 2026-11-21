@@ -919,7 +919,7 @@ export class PoiSystem {
      * SPOT_CLEAR off the paved edge, in front of the pad. It is straight along the pad's tangent, so on a bend its inner
      * corners swing toward the lane: it steps out by however far the nearest road comes inside that edge. The shoulder
      * is 3.1 m to the pad's near edge, so the strip reaches ~0.5 m onto the pad; where the model stands on that edge
-     * (a barn on its farm pad), the strip slides along the road, 1.5 m at a time, to the first place clear of it.
+     * (a barn on its farm pad), the strip slides along the road, 0.5 m at a time, to the first place clear of it.
      * Returned in the MODEL frame, as an authored PARK box is, so dropZoneWorld, overDropZone, towSeat and the curtain
      * read it as one.
      */
@@ -930,11 +930,12 @@ export class PoiSystem {
         const c = q.collision, cube = POI_PARAMS.poiCubeSize
         const solids = c?.boxes ?? [{ c: null, s: c?.size ?? [cube, cube, cube] }]
         // The slide may carry the strip past the pad's end, onto plain shoulder, but always keeps it beside the pad (a
-        // 0.5 m overlap): a broadside barn fills its whole lay-by front.
+        // 0.5 m overlap): a broadside barn (12.1 m) fills its whole 14 m lay-by front, so its strip clears at 12.35 m of
+        // the 12.5 m slide — a coarser step than 0.5 m missed it and left the strip in the barn.
         const slide = (q.halfLen ?? hl) + hl - 0.5
         let first = null
-        for (let k = 0; k <= 2 * Math.floor(slide / 1.5); k++) {
-            const a = (k & 1 ? 1 : -1) * Math.ceil(k / 2) * 1.5   // 0, 1.5, −1.5, 3, −3 …
+        for (let k = 0; k <= 2 * Math.floor(slide / 0.5); k++) {
+            const a = (k & 1 ? 1 : -1) * Math.ceil(k / 2) * 0.5   // 0, 0.5, −0.5, 1, −1 …
             let lat = edge + hd
             for (let k = 0; k < 3; k++) {
                 let need = 0
