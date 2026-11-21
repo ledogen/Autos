@@ -12,8 +12,8 @@
 // 4. Release (BUG-183) and the quest mark (P5): no step → everything allowed, and main.js hands the gate null outside the tutorial and after a
 //    run's end (the browser half — nothing marked after a skip — is test/cdp-smoke.mjs's opening step).
 // 5. P8's speaker slide (src/dialogue.js cardSlide, DEC-426 Q2): over every played script as framed, the same speaker cycles
-//    in place, a change of speaker slides the old card out by the side it came in from and the new one in from the other,
-//    the sides alternate per change, the first card enters from the left and the last leaves by its side. (The browser
+//    in place, a change of speaker slides the old card out to the right and the new one in from the left (FEAT-305: one
+//    way, every change), the first card enters from the left and the last leaves to the right. (The browser
 //    half — the slide on screen, a press mid-slide, reduced motion — is test/cdp-smoke.mjs's opening step.)
 
 import { readFileSync, readdirSync } from 'node:fs'
@@ -31,6 +31,7 @@ const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
 const src = readdirSync(new URL('../src/', import.meta.url)).filter(f => f.endsWith('.js'))
   .map(f => readFileSync(new URL('../src/' + f, import.meta.url), 'utf8')).join('\n')
 const idExists = (id) => html.includes(`id="${id}"`) || new RegExp(`id\\s*[=:]\\s*['"\`]${id}['"\`]|id="${id}"|getElementById\\(['"]${id}['"]\\)`).test(src)
+const svcSrc = readFileSync(new URL('../src/service-screen.js', import.meta.url), 'utf8')
 const actions = new Set(BINDINGS.map(b => b.action))
 const cards = [...Object.entries(DLG.TUT).flatMap(([k, cs]) => cs.map((c, i) => [`${k}[${i}]`, c])),
   ...['MOM_CALL', 'FIRING', 'LARRY_CALL', 'PAYCHECK', 'BOSS_CHECK', 'LARRY_PACK'].flatMap(k => (DLG[k] ?? []).map((c, i) => [`${k}[${i}]`, c]))]
@@ -42,7 +43,8 @@ for (const [name, c] of cards) {
   for (const q of [...(c.allow ?? []), ...(c.hi ?? [])]) {
     if (!isSelector(q)) { ok(LOCKED.includes(q), `${name}: '${q}' is a locked action`); continue }
     for (const [, id] of q.matchAll(/#([\w-]+)/g)) ok(idExists(id), `${name}: #${id} exists (index.html or src/)`)
-    for (const [, id] of q.matchAll(/data-id="(\w+)"/g)) ok(!!ITEMS[id], `${name}: data-id ${id} is an item`)
+    // an inventory slot's data-id is an item; a service-screen tree row's is a node of its tree (FEAT-305)
+    for (const [, sv, id] of q.matchAll(/(\.sv-line[^\s]*)?\[data-id="(\w+)"\]/g)) ok(sv ? svcSrc.includes(`'${id}'`) : !!ITEMS[id], `${name}: data-id ${id} is ${sv ? 'a service-screen node' : 'an item'}`)
   }
   for (const q of c.hi ?? []) ok(isSelector(q), `${name}: hi '${q}' is a selector`)
   if (c.quest) ok(!!ITEMS[c.quest], `${name}: quest '${c.quest}' is an item`)
@@ -152,20 +154,17 @@ ok(/function _questMark \(\) \{\n  const id = _tutStep\(\)\?\.quest\n/.test(main
 // skip, the night's end or a reload (fresh DOM, _firingDay() read off the save) leaves Sleep live.
 ok(/go\.disabled = _firingDay\(\) && /.test(main) && !/cp-sleep-go[^\n]*disabled = true/.test(main), 'main.js: Sleep is greyed only while _firingDay() (DEC-426 Q1)')
 
-// ── 5. P8: the speaker slide ──
+// ── 5. P8: the speaker slide (FEAT-305: one way, out to the right, in from the left) ──
 { const S = (speaker) => ({ speaker })
-  const walk = (cards) => { let side = -1, prev = null; const out = []
-    for (const c of [...cards, null]) { const m = cardSlide(prev, c, side); out.push(m); side = m.side; prev = c }
+  const walk = (cards) => { let prev = null; const out = []
+    for (const c of [...cards, null]) { out.push(cardSlide(prev, c)); prev = c }
     return out }
-  // Katie, Katie, the manager, then nothing: cycle; out left + in right; out right.
+  // Katie, Katie, the manager, then nothing: in from the left; cycle; out right + in left; out right.
   const w = walk([S('Katie'), S('Katie'), S('The manager')])
   ok(w[0].out === 0 && w[0].in === -1, `P8: the first card enters from the left, nothing leaves: ${JSON.stringify(w[0])}`)
   ok(w[1].out === 0 && w[1].in === 0, `P8: the same speaker's next card cycles in place: ${JSON.stringify(w[1])}`)
-  ok(w[2].out === -1 && w[2].in === 1, `P8: a change of speaker: out by the side it came in (left), in from the other: ${JSON.stringify(w[2])}`)
-  ok(w[3].out === 1 && w[3].in === 0, `P8: the last card leaves by its own side: ${JSON.stringify(w[3])}`)
-  // A, B, A: per change, not per person — A's second turn enters from the right's opposite (left), not "A's side".
-  const a = walk([S('A'), S('B'), S('A'), S('C')])
-  ok(a.slice(0, 4).map(m => m.in).join() === '-1,1,-1,1', `P8: sides alternate per change of speaker: ${a.map(m => m.in)}`)
+  ok(w[2].out === 1 && w[2].in === -1, `FEAT-305: a change of speaker: out to the right, in from the left: ${JSON.stringify(w[2])}`)
+  ok(w[3].out === 1 && w[3].in === 0, `FEAT-305: the last card leaves to the right: ${JSON.stringify(w[3])}`)
   // Every played script, framed as main.js frames it (DEC-354's ring and <click> cards included): each step obeys the rule.
   const dlg = new DialogueSystem(DLG.PHONE)
   const scripts = [...Object.values(DLG.TUT), ...['FIRING', 'MOM_CALL', 'LARRY_CALL', 'PAYCHECK', 'BOSS_CHECK', 'LARRY_PACK', 'RUN_INTRO', 'PAPER_ROUTE_INTRO'].map(k => DLG[k])]
@@ -176,11 +175,29 @@ ok(/go\.disabled = _firingDay\(\) && /.test(main) && !/cp-sleep-go[^\n]*disabled
     for (let i = 1; i < f.length; i++) {
       const same = f[i].speaker === f[i - 1].speaker
       if (!same) changes++
-      ok(same ? !m[i].out && !m[i].in : m[i].out === m[i - 1].side && m[i].in === -m[i].out,
+      ok(same ? !m[i].out && !m[i].in : m[i].out === 1 && m[i].in === -1,
         `P8: ${f[i - 1].speaker} → ${f[i].speaker} (${same ? 'cycle' : 'slide'}): ${JSON.stringify(m[i])}`)
     }
   }
   ok(changes > 5, `P8: the scripts hold ${changes} changes of speaker (the ring card → the caller counts)`) }
+
+// ── 6. FEAT-305 (tutorial round 5) ──
+{ const nav = readFileSync(new URL('../src/menu-nav.js', import.meta.url), 'utf8'), hud = readFileSync(new URL('../src/hud-menu.js', import.meta.url), 'utf8')
+  // DEC-443: the highlight and the B menu walk every item; a locked one is refused only when pressed (the click listener)
+  ok(/const live = \(c\) => \[\.\.\.c\.querySelectorAll\(ITEMS\)\]\.filter\(el => el\.offsetParent !== null\)\n/.test(nav), 'DEC-443: menu-nav live() fences nothing')
+  ok(/if \(!allowsEl\(cur\)\) return/.test(nav), "DEC-443: a locked slider takes no arrow step")
+  ok(/^const items = usable$/m.test(hud) && !/refuse\(/.test(hud), 'DEC-443: the B menu walks every usable icon, and a wrong pick is silent')
+  ok(/ \.tut-locked \{ opacity: 0\.35 !important; \}/.test(html) && /input\.tut-locked \{ pointer-events: none/.test(html),
+    'DEC-443: a locked element keeps the pointer and the highlight (only a locked slider takes no drag)')
+  // DEC-442: no tip after the tutorial — every non-story card is gated on _inTutorial(), and the three that only ever came after it are gone
+  ok(/function _tut \(key, cards = TUT\[key\], done = null, always = false\) \{\n  if \(!always && !_inTutorial\(\)\) return\n/.test(main), 'DEC-442: _tut plays only inside the tutorial (or a story beat, `always`)')
+  for (const k of ['tut-offer', 'tut-rank', 'tut-sleep', 'tut-camp']) ok(!(k in DLG.TUT) && !main.includes(`'${k}'`), `DEC-442: the after-the-tutorial tip ${k} is gone`)
+  // item 4: a key inside a pad half is the pad's own button (the map's X), never put through the keyboard's keycap
+  ok(/if \(!k\.closest\('\.kc-pad'\) && _DLG_PAD_KEYS\.has/.test(main), 'item 4: a pad half\'s dlg-key is not re-read as a keyboard key')
+  ok(Object.values(DLG.TUT).flat().every(c => !/>View</.test(c.text)), 'item 6: no card names the pad\'s View')
+  // item 11: a press-any card shuts the screens under it; item 12: the lesson's spare fits only the flat corner
+  ok(/if \(card && card !== _dlg\.card && !card\.until\) \{ damageScreen\.close\(\); inventoryScreen\.close\(\) \}/.test(main), 'item 11: a card that owns every key shuts the inventory under it')
+  ok(/corner: \(c\) => trap \? damageModel\.flat\[c\] : !e\.flat/.test(main), 'item 12: the trap\'s spare is offered the flat corner alone') }
 
 console.log(fails ? `tut-gate: ${fails} FAIL` : `tut-gate: PASS (${steps} steps)`)
 process.exit(fails ? 1 : 0)

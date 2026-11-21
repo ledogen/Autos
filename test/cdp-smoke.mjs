@@ -2403,6 +2403,12 @@ const STEPS = [
         await js(`document.documentElement.dataset.uiScale = '${sc}'`); await sleep(400)
         writeFileSync(join(process.env.GATE_SHOTS, `${name}-${sc}.png`), Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
       await js(`document.documentElement.dataset.uiScale = '${was}'`) }
+    // FEAT-305 look sheet: one frame as it stands (no UI-size pass), and a gateShot with the pad's halves showing
+    const shot = async (name) => { if (!process.env.GATE_SHOTS) return; mkdirSync(process.env.GATE_SHOTS, { recursive: true })
+      writeFileSync(join(process.env.GATE_SHOTS, `${name}.png`), Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    const padShot = async (name) => { if (!process.env.GATE_SHOTS) return
+      const was = await js('document.body.classList.contains("pad-on")')
+      await js('document.body.classList.add("pad-on")'); await gateShot(name); if (!was) await js('document.body.classList.remove("pad-on")') }
     // DEC-320: the firing opens on Katie's call, wrapping up as Billy arrives; then the manager.
     check(await until(async () => await speaker() === 'Katie', 3000), `the run did not open on the firing's call (speaker "${await speaker()}")`)
     // FEAT-288 P8 (DEC-426 Q2): every card shown from here, with the slide it came with — the copy leaving (.dlg-ghost's
@@ -2455,8 +2461,8 @@ const STEPS = [
     // BUG-136: the days before the clock's zero; the HUD read day 0 as "Day 0, -6 am".
     const hudClock = () => js('document.querySelector("#run-hud .rh-clock")?.textContent')
     check(await until(async () => await hudClock() === 'Day 0, 7 am', 3000), `the HUD clock at the firing reads "${await hudClock()}", want "Day 0, 7 am" (BUG-136)`)
-    // FEAT-288 P8: Katie's <click> cycles in place; the manager is a change of speaker: Katie's card leaves by the left (she
-    // came in from there, the first card of a showing), his comes in from the right, and leaves by the right at the end.
+    // FEAT-288 P8: Katie's <click> cycles in place; the manager is a change of speaker. FEAT-305 (owner: "flip this"): every
+    // change runs one way: Katie's card leaves by the right, his comes in from the left, and leaves by the right at the end.
     // A press mid-slide (here a click, dispatched in the same task as the press that started the slide, so it IS mid-slide
     // on any load) lands his card whole and is spent: he is still up. Then presses as fast as CDP sends them, keys and
     // clicks: the cards shown are the framed script's, none lost.
@@ -2476,8 +2482,8 @@ const STEPS = [
         `P8: the firing's cards shown are not its script's (${want.length} framed, the first read before): ${JSON.stringify(R)}`)
       check(cards[0]?.tx === '<click>', "the firing's call did not hang up (<click>) before the manager (DEC-354)")
       check(cards[0]?.out === 0 && cards[0]?.in === 0, `P8: Katie's <click> slid — the same speaker must cycle in place: ${JSON.stringify(cards[0])}`)
-      check(cards[1]?.sp === 'The manager' && cards[1].out === -1 && cards[1].in === 1, `P8: Katie's card did not leave by the left, the manager's come in from the right: ${JSON.stringify(cards[1])}`)
-      check(R.at(-1)?.end && R.at(-1).out === 1, `P8: the manager's card did not leave by the right, the side it came in from: ${JSON.stringify(R.at(-1))}`) }
+      check(cards[1]?.sp === 'The manager' && cards[1].out === 1 && cards[1].in === -1, `FEAT-305: Katie's card did not leave by the right, the manager's come in from the left: ${JSON.stringify(cards[1])}`)
+      check(R.at(-1)?.end && R.at(-1).out === 1, `FEAT-305: the manager's card did not leave by the right: ${JSON.stringify(R.at(-1))}`) }
     // The card: up, the sim held under it; "play" on seed 6 loads the tutorial seed with seed 6 to come back to.
     check(await until(() => js('document.getElementById("tut-card").style.display === "flex"'), 3000), `the firing did not end on the tutorial card: ${JSON.stringify(await tut())}`)
     check((await tut()).phase === 'card', `the card is up but the tutorial reads ${JSON.stringify(await tut())}`)
@@ -2630,6 +2636,7 @@ const STEPS = [
     // DEC-305 (DEC-238's errand): the pack lands by her steps; parked beside it, G loads it; parked at Larry's, he gives it you.
     check(await until(async () => !!(await tut()).pack, 3000), `mom's toss put no pack on the ground: ${JSON.stringify(await tut())}`)
     await readCards()   // the pick-up lesson
+    await gateShot('p5-pickup-card')   // FEAT-305 item 2: 'Park' in the key colour
     // FEAT-288 P5: the pick-up lesson's step names the pack, so the tossed pack wears the quest mark (beam + white pulse).
     check(await until(() => js('!!window.__questMark()'), 3000), `the tossed pack wears no quest mark (card up: ${JSON.stringify(await tut())})`)
     const pk = (await tut()).pack, mq = await js(`(() => { const q = window.__poi().list().find(q => q.type === 'momsHouse'); return { x: q.roadX, z: q.roadZ } })()`)
@@ -2650,6 +2657,14 @@ const STEPS = [
     await readCards(800, 'Uncle Larry')
     if (await speaker() !== 'Uncle Larry') { await simFor(1); await park(true) }
     check(await until(async () => await speaker() === 'Uncle Larry', 5000), `parked at Larry's with his pack, no hand-over (speaker "${await speaker()}", ${JSON.stringify(await tut())})`)
+    if (process.env.GATE_SHOTS) {   // FEAT-305 look sheet: Katie's ring card → Katie (one sequence), the slide held at two points
+      await readCards(800, 'Phone'); await sleep(1500)
+      said.push(`Phone: ${await js('document.getElementById("dlg-text").textContent')}`)
+      const at = (out, inn) => js(`(() => { for (const a of document.getAnimations()) { if (a.id === 'dlg-out') a.currentTime = ${out}; if (a.id === 'dlg-in') a.currentTime = ${inn} } })()`)
+      await js(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); for (const a of document.getAnimations()) if (a.id === 'dlg-out' || a.id === 'dlg-in') a.pause() })()`)
+      await at(60, 60); await sleep(150); await shot('p8-1-slide-out-right')
+      await at(149, 240); await sleep(150); await shot('p8-2-slide-in-left')
+      await js(`for (const a of document.getAnimations()) if (a.id === 'dlg-out' || a.id === 'dlg-in') a.finish()`) }
     await readCards()
     check((await tut()).stop === 'snack' && await js("window.__inv.list().some(r => r.id === 'pack')"), `Larry's hand-over did not leave the pack on board and send the day for the snack: ${JSON.stringify(await tut())}`)
     // DEC-345: his cards over, Katie calls — the picnic at the old McGill ranch, a snack from the station on the way.
@@ -2667,7 +2682,7 @@ const STEPS = [
     // within a second, not on the instant
     const hi = (q) => until(() => js(`!!document.querySelector(${JSON.stringify(q)})?.classList.contains('tut-hi')`), 1000)
     check(await waits() === 'map' && !await js('window.__map2d().isOpen()'), `her call did not stop on "open your map": ${JSON.stringify(await tut())}`)
-    await gateShot('10-map-card')
+    await gateShot('10-map-card'); await padShot('10-map-card-pad')   // FEAT-305 item 6: the pad's ◂ Back
     await padOn(); await js('__fp.b[8] = 1'); await frames(2, 60); await js('__fp.b[8] = 0'); await frames(2, 60)   // View, a tap (a hold is the skip)
     check(await until(async () => await waits() === 'shoptab', 3000) && await js('window.__map2d().isOpen()'), `the pad's View did not open the map and turn her card: ${JSON.stringify(await tut())}`)
     check(await hi('#map-list-head [data-tab="shopping"]'), 'the map card: the Shopping tab is not ringed')
@@ -2723,13 +2738,22 @@ const STEPS = [
     check(await hi('#svc-screen .sv-line[data-item="bagOfPeanuts"]'), 'the shop card: the peanuts row is not ringed')
     await gateShot('14-shop-peanuts')
     await padOn()   // the fake pad: the D-pad walks the peanuts row and its add to cart alone, A presses
+    // DEC-443 (FEAT-305): the highlight goes anywhere on the card; A on a wrong row does nothing, A on the right one acts
     const walk = []
-    for (let i = 0; i < 12 && await waits() === 'cart'; i++) {
-      const f = await js(`(e => !e ? 'none' : e.dataset.act === 'stow' ? 'stow' : e.matches('.sv-line[data-item=bagOfPeanuts]:not(.on)') ? 'row' : 'other:' + (e.dataset.act ?? e.textContent.trim().slice(0, 20)))(document.querySelector('#svc-screen .nav-focus'))`)
-      walk.push(f); await btn(f === 'row' || f === 'stow' ? 0 : 13)
+    let inert = null
+    for (let i = 0; i < 24 && await waits() === 'cart'; i++) {
+      const f = await js(`(e => !e ? 'none' : e.dataset.act === 'stow' ? 'stow' : e.matches('.sv-line[data-item=bagOfPeanuts]:not(.on)') ? 'row' : (e.classList.contains('tut-locked') ? 'locked:' : 'other:') + (e.dataset.act ?? e.dataset.item ?? e.textContent.trim().slice(0, 20)))(document.querySelector('#svc-screen .nav-focus'))`)
+      walk.push(f)
+      if (f.startsWith('locked:') && inert === null) {   // A on it: the shop stays open, the card still waits, nothing opened
+        const shelf = () => js('document.getElementById("svc-screen").textContent.length')
+        const s0 = await shelf(); await btn(0); await sleep(250)
+        inert = await shopUp() && await waits() === 'cart' && await shelf() === s0
+      }
+      await btn(f === 'row' || f === 'stow' ? 0 : 13)
     }
     await padOff()
     check(await until(async () => await waits() === 'bought', 3000), `the pad did not put the peanuts in the cart: ${JSON.stringify({ tut: await tut(), f: await navFocus(), walk })}`)
+    check(inert === true, `DEC-443: the highlight never reached a locked element of the shop, or A on it did something (${inert}): ${JSON.stringify(walk)}`)
     check(await hi('#svc-screen [data-act="checkout"]'), 'the check out card: check out is not ringed')
     await gateShot('15-shop-checkout')
     await js('document.querySelector("#svc-screen [data-act=discard]").click()')   // the mouse: discard is refused
@@ -2769,7 +2793,9 @@ const STEPS = [
     await hold('f', 1); await tap(' '); await readCards()
     check(await js('document.getElementById("pump-display").classList.contains("on") && !window.__worstDay().pump.done'),
       `the brake let go at the pump with money left: ${JSON.stringify(await wd())}, $${await js('window.__econ.money')}`)
-    await hold('f', 6); await tap(' ')   // pump till the money runs out, then the brake off pays
+    await hold('f', 6)   // pump till the money runs out, then the brake off pays
+    await sleep(300); await gateShot('17-pump-pay'); await padShot('17-pump-pay-pad')   // FEAT-305 item 7: the handbrake's key
+    await tap(' ')
     check(await until(async () => (await wd()).pump.done, 3000), `filling up did not end the station's beat: ${JSON.stringify(await wd())}`)
     check(await js('window.__econ.money < 0.05'), `the fill-up left money in the wallet: $${await js('window.__econ.money')}`)
     check(await until(async () => (await tut()).stop === 'camp', 3000), `the fill-up did not send the day to the camping area: ${JSON.stringify(await tut())}`)
@@ -2831,8 +2857,11 @@ const STEPS = [
     check(!await js('!!window.__map2d()._getWaypoint()') && !/McGill/.test((await eve()).hud || ''), 'camped, the ranch pin or its line is still up (DEC-356)')
     await readCards()
     check(!await shown('cp-sleep'), 'the camp offers sleep on the firing day (DEC-308)')
+    await js('document.getElementById("cp-item").click()')   // FEAT-305: eaten from the inventory she names, left open
+    check(await until(() => js('document.getElementById("inv-screen").classList.contains("open")'), 1000), "the camp card's inventory button opened no inventory")
     check(await js("window.__inv.use('bagOfPeanuts')"), 'the peanuts could not be eaten')
     check(await until(() => js('/now that you don.t have a job/.test(document.getElementById("dlg-text")?.textContent ?? "")'), 5000), `eating in camp brought no call from Katie: ${JSON.stringify(await tut())}`)
+    check(!await js('document.getElementById("inv-screen").classList.contains("open")'), "FEAT-305: the inventory is still open under Katie's talk")
     await stamped(17, "Katie's call")
     check(await js('!/\\{dir\\}|\\{deeds\\}/.test(document.getElementById("dialogue-panel").textContent)'), "Katie's call left a fill unfilled")
     // FEAT-288 P3a: under Katie's talk the camp card is locked (break camp refused: a press-any-key card locks what lies under
@@ -2943,6 +2972,12 @@ const STEPS = [
     await js('window.__inv.use("spareTire")')
     check(await until(() => js('document.getElementById("dmg-screen").classList.contains("picking")'), 1000), 'the spare opened no tire picker')
     await gateShot('3-spare-picker')
+    // FEAT-305 (owner: "allows you to put the spare on the wrong corner"): only the flat corner (the front left) takes it
+    { const g = await js(`(() => { const d = document.getElementById("dmg-screen")
+        for (const c of ["FR", "RL", "RR"]) d.querySelector(".ds-pbtn[data-track=tire" + c + "]").click()
+        return { on: d.querySelector(".ds-pbtn.on")?.dataset.track ?? null, act: !!d.querySelector("[data-act=pick-do]"),
+          off: ["FR", "RL", "RR"].every(c => d.querySelector(".ds-pbtn[data-track=tire" + c + "]").disabled), fl: !d.querySelector(".ds-pbtn[data-track=tireFL]").disabled } })()`)
+      check(!g.on && !g.act && g.off && g.fl, `FEAT-305: the spare's picker took a corner that is not the flat one: ${JSON.stringify(g)}`) }
     await js('document.querySelector("#dmg-screen .ds-pbtn[data-track=tireFL]").click()')
     await js('document.querySelector("#dmg-screen [data-act=pick-do]").click()'); await readCards()   // the spare: flat too (waits for X)
     check(await js('window.__tutorial().until') === 'recovery', `the spare's card does not wait for the recovery menu: ${JSON.stringify(await js('window.__tutorial()'))}`)
@@ -2973,20 +3008,37 @@ const STEPS = [
         return s && { fromSeat: +Math.hypot(p.x - s.x, p.z - s.z).toFixed(1), fromMarker: +Math.hypot(p.x - q.x, p.z - q.z).toFixed(1) } })(), h: window.__day().clockH(), trace: window.__towTrace })`)}`)
     check((await wd()).towed, 'the tow was not counted (the night beat)')
     console.log('  worst day: the shop')
-    await readCards()   // the shop's cards
+    await readCards()   // the shop's cards, up to mom's patch lesson (FEAT-305), which waits for the patch's check out
+    check(await js('window.__tutorial().until') === 'patched', `FEAT-305: the shop's card does not wait for the patch: ${JSON.stringify(await js('window.__tutorial()'))}`)
+    const m0 = await js('window.__econ.money')
+    // DEC-443: the Shop tab is browsable under it, but a tire for the front left does not buy (the wrong option does nothing)
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     const fit = 'document.querySelector("#svc-screen button[data-act=buy][data-socket=tireFL]:not([disabled])")'
     // FEAT-196: a shelf row's options show only while it is selected — select each in turn until one fits the front left.
     await js(`(() => { const lines = () => [...document.querySelectorAll("#svc-screen button[data-act=node][data-slot]")]
       for (let i = 0; i < lines().length && !${fit}; i++) lines()[i].click() })()`)
-    check(await until(() => js(`!!${fit}`), 2000), 'the shop offers no tire for the front left')
-    const m0 = await js('window.__econ.money')
-    await js(`${fit}.click()`)
-    check(await until(() => js('!window.__damage.flat[0]'), 2000), 'buying a tire for the flat corner did not fix it')
+    if (await js(`!!${fit}`)) { await js(`${fit}.click()`); await sleep(200)
+      check(await js('!document.querySelector("#svc-screen [data-act=checkout]") && window.__tutorial().until === "patched"'), 'DEC-443: under the patch lesson a tire bought on the Shop tab') }   // (an open tire row previews it on the truck: the flat reads fixed until the row closes)
+    // the lesson's path: Maintenance, then each row ringed in turn down to the front left's patch, then check out
+    const ringed = () => js('[...document.querySelectorAll("#svc-screen .tut-hi")].map(e => e.dataset.id ?? e.dataset.tab ?? e.dataset.act)')
+    const path = []
+    for (const q of ['[data-tab=maint]', '.sv-line[data-d="0"][data-id=twbs]', '.sv-line[data-d="1"][data-id=tw]', '.sv-line[data-d="2"][data-id=FL]',
+      '.sv-line[data-id=FL].on + .sv-kids > .sv-line[data-id=tire]', '[data-act=patch][data-track=tireFL]']) {
+      await sleep(250); path.push((await ringed()).join('+'))
+      if (path.length === 4) { await gateShot('18-shop-patch-path'); await padShot('18-shop-patch-path-pad') }   // the ring on the front left, the highlight elsewhere
+      await js(`document.querySelector('#svc-screen ${q}').click()`)
+    }
+    await sleep(250); path.push((await ringed()).join('+'))
+    await gateShot('19-shop-patch')
+    check(path.join() === 'maint,twbs,tw,FL,tire,patch,checkout', `FEAT-305: the patch lesson does not ring one next row at a time: ${path.join()}`)
     const lightsUp = () => js('/headlights/.test(document.getElementById("dlg-text")?.textContent ?? "") && document.getElementById("dialogue-panel").checkVisibility()')
-    await sleep(300)
-    check(!await lightsUp(), "FEAT-288 P4: the headlights card came up with the tire still in the cart (it waits for the check-out)")
+    check(await until(() => js('!window.__damage.flat[0]'), 2000) && !await lightsUp() && await js('window.__tutorial().until') === 'patched',
+      "FEAT-305: the patch in the cart: the flat is not fixed, or the lesson moved on before the check-out")
     await js('document.querySelector("#svc-screen [data-act=checkout]").click()')   // FEAT-212: the cart
+    check(await until(async () => await js('window.__tutorial().until') === 'svcshop', 3000) && (await ringed()).join() === 'shop',
+      `FEAT-305: checked out, mom does not point at the Shop tab: ${JSON.stringify({ tut: await js('window.__tutorial()'), ringed: await ringed() })}`)
+    await gateShot('20-shop-tab-rb'); await padShot('20-shop-tab-rb-pad')
+    await tap('e')   // the keyboard's tab step (the pad's RB)
     check(await until(async () => await lightsUp() && await js('document.getElementById("svc-screen").checkVisibility()'), 3000),
       `FEAT-288 P4 (DEC-422): the tire's check-out put no headlights card up in the shop (it waited for the shift): ${await js('JSON.stringify({ tut: window.__tutorial(), dlg: document.getElementById("dlg-text")?.textContent.slice(0, 60), shop: document.getElementById("svc-screen").checkVisibility(), flat: window.__damage.flat, wd: window.__worstDay() })')}`)
     check(await js('window.__econ.money') === m0, `the tire was not on mom (FEAT-184): $${m0} → $${await js('window.__econ.money')}`)
@@ -3423,7 +3475,7 @@ const STEPS = [
     const lessonCap = () => js('(k => k && JSON.stringify({ kb: getComputedStyle(k.querySelector(".kc-kb")).display, pad: getComputedStyle(k.querySelector(".kc-pad")).display, key: k.querySelector(".kc-kb").textContent, text: k.querySelector(".kc-pad").textContent }))(document.querySelector("#dlg-text .dlg-key .keycap"))')
     for (let i = 0; i < 30 && await dlg() && !await lessonCap(); i++) { await btn(0); await sleep(150) }
     const cap = JSON.parse(await lessonCap() ?? 'null')
-    check(cap && cap.kb === 'none' && cap.pad !== 'none' && /^(RT|LT|View|B|RB)$/.test(cap.text), `a lesson's key does not read the pad's button: ${JSON.stringify(cap)}`)
+    check(cap && cap.kb === 'none' && cap.pad !== 'none' && /^(RT|LT|◂ Back|B|RB)$/.test(cap.text), `a lesson's key does not read the pad's button: ${JSON.stringify(cap)}`)
     // FEAT-174: a line that differs by input says it once, for the device driving, and swaps live. The drive lesson
     // reads "the left stick" on the pad; one keyboard press (Shift alone: hands the keyboard control, turns no card)
     // re-reads it as "A and D".

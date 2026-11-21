@@ -51,7 +51,7 @@
        top-level 2D element, never on the WebGL canvas (the first <canvas>, a direct child of body). Small = 1 = today.
        Big is for a TV; the factor is the one number below (see FEAT-248). */
     html { --ui-zoom: 1; }
-    html[data-ui-scale=big] { --ui-zoom: 1.5; }
+    html[data-ui-scale=big] { --ui-zoom: 1.4; }
     html[data-ui-scale=big] body > :not(canvas:first-child) { zoom: var(--ui-zoom); }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #111; overflow: hidden; }
@@ -283,6 +283,12 @@
     #mm-settings-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
     #main-menu.settings #mm-root { display: none; }
     #main-menu.settings #mm-settings-panel { display: flex; }
+    /* BUG-247 (DEC-455): a list that changes size keeps its top line. The pause box and the main menu are CENTRED, so a row that
+       grows (the centre-softening graph) re-centred the whole list; on the settings and setup pages the top is pinned instead and
+       the list grows downwards. % is the screen's, so Big's zoom (FEAT-248) leaves it alone. */
+    #pause-menu.settings { top: 12%; transform: translateX(-50%); max-height: 86%; overflow-y: auto; }
+    #main-menu.settings::before, #main-menu.setup::before { content: ''; flex: 0 0 10%; }
+    #main-menu.settings, #main-menu.setup { justify-content: flex-start; }
     #pause-menu.settings > :not(#mm-settings-panel) { display: none; }
     #pause-menu.settings #mm-settings-panel { display: flex; align-items: stretch; gap: 8px; }
     #mm-bindings-panel { display: none; flex-direction: column; gap: 2px; align-items: flex-start; }
@@ -888,15 +894,16 @@
       box-shadow: 0 0 0 1px var(--accent-story), 0 0 12px rgba(127, 194, 255, 0.45);
     }
 
-    /* FEAT-288 P2: the tutorial's gate (src/tut-gate.js). .tut-hi rings what the card on screen is about in the
-       "press this" yellow, pulsing once a second; .tut-locked dims what the lesson does not use and takes no pointer;
-       .tut-nudge is the quiet "not that" of a refused press: a short shake, no sound. */
-    .tut-hi { outline: 2px solid var(--key); outline-offset: 2px; animation: tut-hi 1s ease-in-out infinite; }
-    @keyframes tut-hi { 50% { outline-color: color-mix(in srgb, var(--key) 40%, transparent); } }
-    .tut-locked { opacity: 0.35 !important; pointer-events: none !important; }
-    .tut-nudge { animation: tut-nudge 0.3s ease-in-out; }
-    .tut-hi.tut-nudge { animation: tut-nudge 0.3s ease-in-out, tut-hi 1s ease-in-out infinite; }
-    @keyframes tut-nudge { 25% { translate: -4px 0; } 75% { translate: 4px 0; } }
+    /* FEAT-288 P2: the tutorial's gate (src/tut-gate.js). .tut-hi marks what the card on screen is about — the quest
+       element. DEC-443 / FEAT-305 (owner: "difficult to differentiate the selector outline from the quest UI element
+       outline … tone down the quest UI element a little"): its own outline, quieter than the highlight's 2 px solid
+       (.nav-focus): 1 px dashed "press this" yellow at 70%, set 4 px out, breathing slowly. Where the highlight lands on
+       it, the highlight wins. .tut-locked dims what the lesson does not use; it still takes the pointer and the
+       highlight (the whole UI is walkable), and a press on it does nothing (tut-gate.js). A slider takes no drag. */
+    .tut-hi { outline: 1px dashed color-mix(in srgb, var(--key) 70%, transparent); outline-offset: 4px; animation: tut-hi 2s ease-in-out infinite; }
+    @keyframes tut-hi { 50% { outline-color: color-mix(in srgb, var(--key) 30%, transparent); } }
+    .tut-locked { opacity: 0.35 !important; }
+    input.tut-locked { pointer-events: none !important; }
 
     /* FEAT-53: the run wallet — top-right, story mode only. Money and good deeds are RUN state,
        not mission state: visible whenever the region is live, including mid-drive (owner,
@@ -1541,6 +1548,7 @@
        colour-code note on .vseg-*) so the reader can tie a word to a segment; the vibe number
        itself is neutral white because it is the sum of all four. */
     .cp-stat  { color: var(--text-bright); }
+    .cp-perk  { color: var(--text-body); }   /* FEAT-312: the packed gear's lines under the site stats */
     .cp-flat  { color: #e8d44a; }
     .cp-view  { color: #b98ae0; }
     .cp-trees { color: #7fd86a; }
@@ -1577,7 +1585,7 @@
     #map-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
     #map-list .ml-row { display: flex; align-items: center; gap: 8px; padding: 6px 14px; cursor: pointer;
                         border-left: 2px solid transparent; transition: background-color 0.1s, border-color 0.1s; }
-    #map-list .ml-row.on { background: rgba(255,255,255,0.09); border-left-color: var(--accent-system); color: var(--text-bright); }
+    #map-list .ml-row.on { background: rgba(255,255,255,0.2); border-left-color: var(--accent-system); color: var(--text-bright); }   /* FEAT-305: lighter (was 0.09), more contrast */
     #map-list .ml-fams { flex: 0 0 auto; display: flex; gap: 3px; }
     #map-list .ml-fams i { width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid rgba(0,0,0,0.6); }
     #map-list .ml-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
