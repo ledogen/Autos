@@ -1656,6 +1656,17 @@ const STEPS = [
     const st = await js('(() => { const m = window.__mission(); return { s: m.state, a: !!m.mission?.approach, n: m.mission?.targets?.length } })()')
     check(st.s === 'staging' && !st.a && st.n > 0, `the camp's line did not start at the camp with a site: ${JSON.stringify(st)}`)
     check((await js('window.__cargo().site'))?.length === st.n, 'the site does not stand from accept')
+    // FEAT-320: on the way, short of the line, the job line reads the road distance to it (his words); at the line, the count.
+    const away = await js(`(() => { const m = window.__mission().mission, ts = window.__cargo().site
+      const i = m.poly.findLastIndex((p, k) => k > 0 && ts.every(t => Math.hypot(p.x - t.x, p.z - t.z) > 400))
+      if (i < 0 || i >= m.poly.length - 1) return null
+      const a = m.poly[i], b = m.poly[i + 1]; return { x: a.x, z: a.z, h: Math.atan2(-(b.x - a.x), -(b.z - a.z)) } })()`)
+    if (away) {
+      await seat(away.x, away.z, away.h)
+      const hud0 = 'document.getElementById("mission-hud").textContent'
+      check(await until(() => js(`/^\\d+\\.\\d\\d km to the old sign line/.test(${hud0})`), 6000), `FEAT-320: short of the line the job line reads "${await js(hud0)}"`)
+      check(!await js('window.__site().arrived'), 'FEAT-320: the site latched arrived 400 m short of its line')
+    } else console.log('  demolition: no route point 400 m short of the line — FEAT-320\'s distance line not exercised')
     // Seat on the route's centreline beside the first target: within onM its targets become bodies.
     const at = await js(`(() => { const m = window.__mission().mission, t = window.__cargo().site[0]
       let bi = 0, bd = Infinity
@@ -3482,7 +3493,7 @@ const STEPS = [
     if (inRun) { await padTo('mm-new'); await btn(0) }
     // SMOKE_PAD_SEED=<seed>: repeat a failed pad step's world (its world code's number) — a development aid.
     if (process.env.SMOKE_PAD_SEED) await js(`document.getElementById("su-seed").value = ${JSON.stringify(process.env.SMOKE_PAD_SEED)}`)
-    await padTo('su-start'); await btn(0)
+    await padTo('su-start', 12, 40); await btn(0)   // UP: start heads the page; DEC-475's rows put it past 12 downs
     const live = 'getComputedStyle(document.getElementById("run-hud")).display !== "none" && !document.body.classList.contains("stage-on") && window.__map2d()._getPois().length > 0'
     check(await until(() => js(live), 45000, 250), 'the pad\'s new run never went live')
     if (process.env.SMOKE_PAD_SEED) console.log(`  pad: world ${await js('window.__worldCode?.()')}`)

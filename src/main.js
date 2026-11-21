@@ -7109,7 +7109,7 @@ function _standRow (row) {
 // cancelled, expired) the site goes the moment nothing of it is within offM — never in view.
 const _siteGroup = new THREE.Group()
 scene.add(_siteGroup)
-let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], halos, guide (paper-route.js TourGuide: the GPS leg, the tour in flight) } — or null
+let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], halos, guide (paper-route.js TourGuide: the GPS leg, the tour in flight), arrived (FEAT-320: the truck has reached the line) } — or null
 const _siteP = new THREE.Vector3(), _siteQ = new THREE.Quaternion(), _siteY = new THREE.Vector3(0, 1, 0)
 
 /** Stand mission `m`'s targets as models; `smashed` lists the indices already down (a resume). */
@@ -7159,6 +7159,11 @@ function _siteLine () {
   if (!missionSystem?.mission?.targets || !missionSystem.isOnJob() || _site?.mission !== missionSystem.mission || !_site.guide.tour) return null   // no job first: _site is declared below the map
   return { ...missionSystem.markers(), poly: _site.guide.tour.poly }
 }
+/** FEAT-320: road m from the truck to the line's nearer end (the guide tour's first stop) — null once arrived or unplanned. */
+function _siteApproachM () {
+  const t = _site?.guide.tour, p = vehicleState.position
+  return !_site || _site.arrived || !t?.first || !t.polyCum ? null : routeLeftM(t, p.x, p.z, t.first.p)
+}
 /** { smashed, of } of mission `m`'s site — nothing smashed when its site isn't the one standing. */
 function _siteCount (m) {
   return { smashed: _site?.mission === m ? _site.targets.filter(t => t.smashed).length : m.siteDown ?? 0, of: m.targets?.length ?? 0 }
@@ -7196,6 +7201,9 @@ function _updateSite () {
     m.cleared = !standing.length
     const down = _site.targets.length - standing.length
     if (down > _site.down) { _site.down = m.siteDown = down; _paySiteShare(m, down) }   // siteDown: the count once the site is gone
+    // FEAT-320: ARRIVED (latched) at the first knock-down, or once the road to the tour's first cluster — the nearer end of
+    // the line, whichever way the truck comes in — is inside onM (where the targets become bodies). The HUD switches then.
+    const a = _siteApproachM(); if (down > 0 || (a != null && a < D.onM)) _site.arrived = true
     _site.guide.poll(roadSystem, p, siteStops(m, standing), storySystem.region(), performance.now() / 1000)   // BUG-212: keepM
   }
   // FEAT-187: a cluster's halo is lit while the job is live, any of it stands, and the truck is near (the paper's rule).
@@ -7910,7 +7918,10 @@ function _renderMissionUI () {
       // BUG-205 follow-up (owner 11-18): the whole job's road distance left in parentheses, when it is not the same number
       // ("1.2 km (7.4 km)", his form: no "to go", which keeps the big-UI line clear of the wallet card).
       const toGo = () => { const a = km(m.routeRemaining()), t = km(m.routeTotalRemaining()); return a === t ? `${a} to go` : `${a} (${t})` }
-      hudText.textContent = beat ?? (site ? `${site.smashed} / ${site.of} smashed` : toGo())
+      // FEAT-320 (owner 11-21): until the truck reaches the line (_updateSite's `arrived`), the road distance to its nearer
+      // end, in his words — whichever way the truck comes in. Then the running total.
+      const toLine = site && _site?.mission === m.mission ? _siteApproachM() : null
+      hudText.textContent = beat ?? (toLine != null ? `${km(toLine)} to the old sign line` : site ? `${site.smashed} / ${site.of} smashed` : toGo())
         + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
           : ` · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.curLeg())}`)   // FEAT-89; FEAT-291: the stop the GPS leads to
         + _dueSuffix()
