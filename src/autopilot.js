@@ -254,7 +254,7 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
     locate (p) { idx = nearest(p, 0, path.length); reset() },
     /** Where to re-seat the car to carry on: `m` metres ahead on the route, facing along it (the bench's teleport). */
     resume (m = 25) {
-      idx = path[idx + 1]?.jump ? idx + 1 : ahead(idx, m)
+      idx = ahead(idx, m); if (path[idx + 1]?.jump) idx++   // BUG-254: a jump inside `m` is taken, never a seat at the dead end before it
       while (path.length - idx < 300 && route.extend()) { /* grow */ }
       const a = path[idx], b = path[Math.min(idx + 3, path.length - 1)]
       detour = null; reset()
@@ -502,12 +502,13 @@ if (typeof process !== 'undefined' && import.meta.url === `file://${process.argv
   const c = sim(ring, { x: R, z: 0, dir: { x: 0, z: 1 } }, Math.PI, 60, { stuck: true })
   const far = { points: Array.from({ length: 51 }, (_, i) => ({ x: 500, y: 0, z: -4 * i })) }
   const d = sim([street[0], far], { x: 0, z: -20, dir: { x: 0, z: -1 } }, 0, 60, { deadEnd: 'jump', recover: false })
+  const dSeat = d.ap.resume()   // the bench's re-seat: on the street jumped to, not again at the dead end
   console.log(`ring: max off its lane ${a.maxLat.toFixed(2)} m, top ${a.maxV.toFixed(1)} m/s (corner speed ${Math.sqrt(0.42 * 0.8 * G * R).toFixed(1)}), ${a.km.toFixed(2)} km, trouble ${a.trouble}`)
   console.log(`dead end: states ${[...b.states].join(' > ')}, worst off the centreline ${b.maxDeck.toFixed(2)} m, ${b.km.toFixed(2)} km, trouble ${b.trouble}`)
   console.log(`wheels locked: states ${[...c.states].join(' > ')}, trouble ${c.trouble}`)
-  console.log(`jump (bench mode): ${d.km.toFixed(2)} km, stopped at z ${d.z.toFixed(1)} (street ends at z -200), trouble ${d.trouble}`)
+  console.log(`jump (bench mode): ${d.km.toFixed(2)} km, stopped at z ${d.z.toFixed(1)} (street ends at z -200), trouble ${d.trouble}, re-seat at x ${dSeat.x.toFixed(0)}`)
   const ok = a.maxLat < 1.5 && a.maxV > 15 && a.maxV < 20 && !a.trouble &&
     b.states.has('turn') && b.maxDeck < 5.5 && b.km > 0.35 && !b.trouble &&
-    c.states.has('reverse') && c.trouble === 'stuck' && d.trouble === 'route jump'
+    c.states.has('reverse') && c.trouble === 'stuck' && d.trouble === 'route jump' && dSeat.x === 500
   console.log(ok ? 'PASS' : 'FAIL'); process.exit(ok ? 0 : 1)
 }
