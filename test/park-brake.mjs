@@ -95,7 +95,7 @@ const MANUAL = { ...RANGER_PARAMS, transmissionType: 'manual' }
   const toN = parked(MANUAL); land(toN, 0)
   const sitting = parked(MANUAL); sitting.drivetrain = { shifting: false, mGear: 2 }; step(sitting, MANUAL, 100)
   const auto = parked(); auto.drivetrain = { shifting: true, gear: 1 }; step(auto); auto.drivetrain.shifting = false; step(auto)
-  check('4. manual: a shift landing in 1st or R releases it; into N, or sitting in a gear, does not; the automatic\'s shifts never',
+  check('4. manual, engine running (DEC-435, owner 2026-11-20): a shift landing in 1st or R releases it; into N, or sitting in a gear, does not; the automatic\'s shifts never',
     !into1.parked && !intoR.parked && toN.parked && sitting.parked && auto.parked,
     `1st ${into1.parked}, R ${intoR.parked}, N ${toN.parked}, sitting ${sitting.parked}, auto ${auto.parked}`)
 }

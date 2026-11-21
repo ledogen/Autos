@@ -29,13 +29,12 @@ A manual shift landing in a gear still releases it with the engine running (DEC-
 - [x] Engine off: W, RT, the automatic's LT and a manual shift into gear leave the brake set (test/park-brake.mjs §8)
 - [x] Engine on, manual: W in N or with the clutch held in leaves it set; in gear with the clutch out W releases (§8)
 - [x] Engine on, automatic: W / RT / LT-reverse release as before (§2b, §3 unchanged)
+- [x] Engine on, manual: a shift landing in a gear releases it (DEC-435, owner 2026-11-20; §4)
 - [ ] Owner has driven it
 
 ## Decisions
 - 2026-11-20, owner: "gate the automatic brake release on an action that actually moves the truck".
-
-## Open questions
-- DEC-435 keeps "shifting out of gear" as a release with the engine on, and the code releases on a shift that LANDS in a gear (clutch in, so it does not move the truck by itself). Does a gear landing still release it, or only a pedal that drives? Kept as it was (DEC-435 stands) until the owner says.
+- 2026-11-20, owner (chat, on whether a manual shift into gear still releases it): "shifting with engine on should release the brake. either you stall and the engine holds the truck on an incline or there is enough rotational energy to get the truck moving." DEC-435 stands as built; pinned by park-brake §4 (engine on, landing in 1st / R releases) and §8 (engine off, it does not).
 
 ## Files
 `src/vehicle.js` · `src/park-brake.js` (header) · `test/park-brake.mjs`
