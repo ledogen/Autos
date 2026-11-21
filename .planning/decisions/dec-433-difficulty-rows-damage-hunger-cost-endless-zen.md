@@ -1,6 +1,6 @@
 ---
 id: DEC-433
-status: standing
+status: superseded
 decided: 2026-11-19
 area: story
 governs: FEAT-296, FEAT-41, DEC-046, difficulty, casual, zen, damage low, hunger low, cost scaling, endless

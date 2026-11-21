@@ -75,6 +75,13 @@ for (const w of [20.5, 48]) {   // wheel rate [rad/s]; the rim spins at w/2pi Hz
 }
 const sv = (z, ph) => continuousSignals({ velocity: { x: 0, y: 0, z: -z }, slipVel: [0, 0, 0, 0] }, { _wheelCondition: [0.3, 1, 1, 1] }, [], 0, 0, [ph, 0, 0, 0]).bent
 ok(sv(7.6, 0) > 0.85 && sv(7.6, Math.PI) < 1e-9, 'the level is modulated: full at phase 0, zero at phase pi')
+// FEAT-247 (owner 11-20): a flat tyre thumps once per turn of its wheel ("ka-thunk"), fading in over 5..15 mph.
+const fl = (mph, ph) => continuousSignals({ velocity: { x: 0, y: 0, z: -mph * MPH }, slipVel: [0, 0, 0, 0] }, {}, [true, false, false, false], 0, 0, [ph, 0, 0, 0]).flat
+ok(fl(30, 0) > 0.99 && fl(30, Math.PI) < 1e-9 && fl(30, Math.PI / 2) < 0.2, 'a flat is a pulse: full at phase 0, zero opposite, narrow')
+ok(fl(4.9, 0) === 0 && fl(10, 0) > 0.4 && fl(10, 0) < 0.6 && fl(15, 0) > 0.99, `a flat fades in over 5..15 mph (${fl(4.9, 0)} / ${fl(10, 0).toFixed(2)} / ${fl(15, 0).toFixed(2)})`)
+// FEAT-247 (owner 11-20): the kerb strike must stand over the shoulder's rumble (measured test/_kerb: 3x+ on the weak motor at 10..25 m/s)
+const shoulder = rumbleMix({ rough: 1 }), strike = rumbleMix({ rough: 1, jolt: 0.4 })
+ok(strike.weak >= 3 * shoulder.weak && strike.strong > 0.3 && shoulder.strong === 0 && shoulder.weak > 0.1, `kerb strike over full-speed loose ground: weak ${strike.weak.toFixed(2)} vs ${shoulder.weak.toFixed(2)} (x${(strike.weak / shoulder.weak).toFixed(1)}), strong ${strike.strong.toFixed(2)} vs 0`)
 console.log('curve (level at 5/10/14/17/21/25/40 mph):')
 for (const c of [0.7, 0.5, 0.3, 0.1]) console.log(`  ${c * 100}%: ` + [5, 10, 14, 17, 21, 25, 40].map(m => bentLevel(c, m * MPH).toFixed(2)).join(' '))
 

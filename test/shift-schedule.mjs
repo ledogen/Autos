@@ -100,7 +100,7 @@ console.log('\n4. kickdown: a held floor drops a gear, a feathered tap does not'
     for (let i = 0; i < 3 / DT; i++) {
       vs.throttle = i * DT < tapS ? 1 : 0.2
       stepDrivetrain(vs, P, DT, v)
-      if (downAt === null && vs.drivetrain.gear < g0) downAt = i * DT
+      if (downAt === null && (vs.drivetrain.shifting ? vs.drivetrain.shiftTo : vs.drivetrain.gear) < g0) downAt = i * DT   // the decision
     }
     return { g0, downAt }
   }
@@ -108,6 +108,27 @@ console.log('\n4. kickdown: a held floor drops a gear, a feathered tap does not'
   check(floor.downAt !== null && floor.downAt >= P.kickdownDelay - DT && floor.downAt < P.kickdownDelay + 0.2,
     `floored from gear ${floor.g0} at 40 mph: kicks down after ${floor.downAt?.toFixed(2)} s (kickdownDelay ${P.kickdownDelay} s)`)
   check(tap.downAt === null, `a 0.3 s tap at the floor does not (gear ${tap.g0} held)`)
+}
+
+console.log('\n5. a shift takes time (owner 2026-11-20: "the shifts are too instantaneous"): drive is cut for autoShiftTime')
+{
+  const P = { ...RANGER_PARAMS }
+  // Floored from rest on the ramp: from the step 1→2 is decided to the step it lands, no drive torque reaches the axle.
+  const vs = { throttle: 1, brake: 0, wheelOmega: [0, 0, 0, 0], ignition: makeIgnitionState(RUNNING) }
+  let t0 = null, t1 = null, maxT = 0
+  for (let i = 0; i < 30 / DT && t1 === null; i++) {
+    const v = 5 * i * DT * MS_PER_MPH   // 5 mph/s: past 1st's floored upshift by ~7 s
+    vs.wheelOmega.fill(v / P.wheelRadius)
+    const inFlight = !!vs.drivetrain?.shifting   // a shift was in flight coming into this step
+    stepDrivetrain(vs, P, DT, v)
+    const d = vs.drivetrain
+    if (t0 === null && d.shifting) t0 = i * DT
+    if (inFlight && d.gear === 1) maxT = Math.max(maxT, Math.abs(P._driveTorque[2]) + Math.abs(P._driveTorque[3]))
+    if (t0 !== null && d.gear === 2) t1 = i * DT
+  }
+  const dur = t1 - t0
+  check(P.autoShiftTime > 0 && t0 !== null && t1 !== null && Math.abs(dur - P.autoShiftTime) <= 1.5 * DT && maxT === 0,
+    `1→2 takes ${dur.toFixed(3)} s (autoShiftTime ${P.autoShiftTime} s), drive torque ${maxT} N·m throughout`)
 }
 
 console.log(`\nSHIFT-SCHEDULE GATE: ${failures ? `${failures} FAILURE(S)` : 'all checks passed ✓'}`)

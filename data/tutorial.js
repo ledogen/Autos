@@ -8,9 +8,9 @@
 export const TUTORIAL = { seed: '1872706826' }
 
 // FEAT-184 (DEC-238): where mom's toss lands Larry's old pack — model-local m on her trailer-home-a (it faces −Z: the door
-// spans x 0.6–1.5, the stoop runs out to z −2.8), beside the stoop's foot, dropped from y m so it falls to the ground.
+// spans x 0.6–1.5, the stoop runs out to z −2.8), out in the yard (FEAT-288, owner 11-20: it used to land 1.6 m off the siding; now ~3 m once settled (the fresh item is set 0.6 m toward the house of where it is dropped), 0.1 m inside the pad's road-side edge at z −5.7), dropped from y m so it falls to the ground.
 // Measured off the GLB; test/tutorial-seed.mjs holds it in reach of the road. dropZoneWorld's box shape (src/poi.js).
-export const PACK_TOSS = { x: 2.2, z: -3.5, y: 1.2 }
+export const PACK_TOSS = { x: 2.2, z: -5.6, y: 1.2 }
 
 // FEAT-288 P4 (DEC-422: "Move the flat to be a little bit earlier in the sequence before you go into the tunnel"; DEC-426
 // Q5: about 250 m into the drive home, "depending on the seed"): the flat goes off once the truck is closer to mom's, by

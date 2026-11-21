@@ -33,6 +33,11 @@ export async function drive ({ ta = false, tc = false, mu = 0.8, muScale = [1, 1
     return gd > 0 ? [{ normal: n.clone(), depth: gd, contactPoint: new THREE.Vector3(cx - n.x * dist, cy - n.y * dist, cz - n.z * dist) }] : []
   }
   const w = v0 / P.wheelRadius
+  // A rolling start sits in the gear a cruising box holds at v0: the highest one above the cruise downshift point.
+  // Started in 1st, the automatic's upshifts (autoShiftTime each, drive cut) would land inside the scripted input.
+  const coupledAt = (g) => w * P.gearRatios[g - 1] * P.finalDrive * 60 / (2 * Math.PI) / (P.converterCouplingSR ?? 0.86)
+  let gear0 = 1
+  while (gear0 < P.gearRatios.length && coupledAt(gear0 + 1) > (P.shiftDownRPM ?? 1300)) gear0++
   const vs = {
     position: new THREE.Vector3(0, eq.bodyY, 0), velocity: new THREE.Vector3(0, 0, -v0),
     quaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.atan(slope))
@@ -44,7 +49,7 @@ export async function drive ({ ta = false, tc = false, mu = 0.8, muScale = [1, 1
     wheelOmega: [w, w, w, w], wheelPhase: [0, 0, 0, 0], slipLong: [0, 0, 0, 0], slipLat: [0, 0, 0, 0],
     slipVel: [0, 0, 0, 0],
     strutComp: [...eq.strutComp], strutCompVel: [0, 0, 0, 0], handbrake: false,
-    drivetrain: { engineRPM: 750, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 },
+    drivetrain: { engineRPM: 750, gear: gear0, shiftTimer: 0, activeGear: gear0, SR: 0, TR: 2 },
   }
   if (traction) vs.traction = makeTraction()
   const ctx = await makeEngineCtx(vs, P, { groundFn, extent: 512, cell: 4 })

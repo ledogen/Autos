@@ -1,6 +1,6 @@
 ---
 id: DEC-434
-status: standing
+status: superseded
 decided: 2026-11-19
 area: ui
 governs: FEAT-297, FEAT-218, src/gps.js, poi arrow, route end, turn arrow

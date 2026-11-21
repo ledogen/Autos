@@ -22,12 +22,16 @@
 //                                deck right of the centreline, tapered to the centre in tight bends), the look-ahead 0.8 s of
 //                                travel, cut to 0.8·R in a tight bend so it does not chord a hairpin.
 //   actuation                    a PI speed loop with grade feed-forward onto throttle / brake (never the brake at a
-//                                standstill: on the automatic that IS reverse), the handbrake to hold, gears on a manual.
+//                                standstill: on the automatic that IS reverse), the handbrake to hold. On a manual the
+//                                driver's own clutch foot and gear hand (footwork, below; BUG-240): it works with the
+//                                player's clutch assistant on or off.
 //   recovery                     stalled → crank; stuck → reverse out and try again (3 times); off the deck → drive back
 //                                onto it; dead end → three-point turn. What a driver cannot fix — on its side or roof, a
 //                                flat, an empty tank, a dead engine, three failed tries — stops it with `trouble` set,
 //                                handbrake on. The consumer decides what then (hand back, a tow, a re-seat).
 // Not here yet (an AI car needs them, the player's truck does not): other cars, right of way at junctions, obstacles.
+
+import { makeClutchAssist, stepClutchAssist } from './clutch-assist.js'
 
 const hyp = (ax, az, bx, bz) => Math.hypot(bx - ax, bz - az)
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a))
@@ -136,7 +140,7 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
   const halfW = car.roadHalfWidth ?? 5
   const NS = 40, sx = new Float64Array(NS), sz = new Float64Array(NS), sy = new Float64Array(NS), ss = new Float64Array(NS), sv = new Float64Array(NS)
   let idx = 0, dist = 0, clock = 0, ended = false, retryT = 0, detour = null
-  let state = 'drive', stateT = 0, trouble = null, leg = 0, legs = 0, tries = [], integ = 0, shiftCool = 0
+  let state = 'drive', stateT = 0, trouble = null, leg = 0, legs = 0, tries = [], integ = 0, shiftCool = 0, gearWant = null, grNow = 0
   let offNow = 0, bore = false, boreT = 0, thrLast = 0, stuckT = 0, flipT = 0, offT = 0, crankT = 0, revFrom = null, lat = 0, latC = 0, vTlast = 0
   const out = { steer: 0, throttle: 0, brake: 0, hand: false, key: false, shift: 0, clutch: 0, steerLimit: 0, trouble: null, state: 'drive' }
 
@@ -164,15 +168,16 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
   const manual = () => car.transmissionType === 'manual'
   const reset = () => { stuckT = flipT = offT = crankT = 0; integ = 0; trouble = null; tries = []; go('drive') }
 
-  // The gear a manual box should be in at forward speed v (m/s): the lowest gear that keeps the revs under ~78 % of the
-  // redline, held in a higher one until the revs fall under ~1700 (no bogging), one below when the climb has the throttle
-  // pinned under 2200 rpm.
+  // The gear a manual box should be in at forward speed v (m/s), by engine speed and load: up once the revs pass a point
+  // that rises with the throttle (2500 rpm at a light foot, ~78 % of the redline floored) AND the next gear lands at 2000
+  // or more (300 over the lugging line below, so it never drops straight back); down when the revs fall under ~1700 (no
+  // bogging), or one below when the climb has the throttle pinned under 2200 rpm.
   const rpmIn = (g, v) => Math.abs(v) / (car.wheelRadius ?? 0.368) * car.gearRatios[g - 1] * (car.finalDrive ?? 3.73) * 60 / (2 * Math.PI)
   const wantGear = (v, cur, thr) => {
     const n = car.gearRatios.length, red = car.engineRedlineRPM ?? 5500
     if (cur < 1) return 1
     let g = cur
-    if (g < n && rpmIn(g, v) > 0.78 * red) g++
+    if (g < n && rpmIn(g, v) > 2500 + thr * (0.78 * red - 2500) && rpmIn(g + 1, v) > 2000) g++
     else if (g > 1 && (rpmIn(g, v) < 1700 || (thr > 0.95 && rpmIn(g, v) < 2200 && rpmIn(g - 1, v) < 0.7 * red))) g--
     return g
   }
@@ -201,7 +206,7 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
   const creep = (vT, vF, steer, dt) => {
     out.steer = steer
     const back = vT < 0
-    if (manual()) gearTo(back ? -1 : 1, vF)
+    if (manual()) gearTo(back ? -1 : 1)
     if (back) {
       if (vF > 0.5) { out.brake = 0.5; return }            // still rolling forwards: stop first
       const u = clamp(0.25 + 0.25 * (vF - vT), 0, 0.7)     // vF − vT > 0 means slower backwards than asked
@@ -211,13 +216,31 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
       out.throttle = clamp(0.25 + 0.25 * (vT - vF), 0, 0.7)
     }
   }
-  let gearOut = 0
-  const gearTo = (g, vF) => {
-    const dtr = ap._vs?.drivetrain
-    const cur = dtr?.shifting ? dtr.shiftTo ?? 0 : dtr?.mGear ?? 0
-    if (shiftCool > 0 || cur === g) return
-    if (g === -1 && vF > 0.5) return
-    out.shift = Math.sign(g - cur); shiftCool = 0.35; gearOut = g
+  const gearTo = (g) => { gearWant = g }
+  // BUG-240: the manual's footwork, after the speed loop has set the throttle. The clutch foot is the clutch assistant's own
+  // law (src/clutch-assist.js) on a private instance, so it is a driver's foot whatever the player's setting: it bites as
+  // the revs rise and slips into a launch, dips before the engine can be dragged to a stall, opens for a shift and comes
+  // back as the revs match. The pedal it ends on goes out as out.clutch (1 = down); with the player's assistant on as
+  // well, the sim takes the less engaged of the two. The gear hand: one press at a time towards gearWant, 0.35 s apart
+  // (FEAT-185 lets a press move a shift in flight), never R rolling forwards. The right foot during a shift matches the
+  // revs to the gear coming in: off for an upshift, a blip for a downshift. Hill start: the handbrake stays on until the
+  // clutch carries the grade's holding torque at the disc, m·g·sinθ·r / (gear · final drive).
+  const foot = makeClutchAssist(), footCar = Object.create(car, { clutchAssist: { value: true } })
+  const footwork = (vs, vF, dt) => {
+    const d = vs.drivetrain ?? {}, rpm = d.engineRPM ?? 0, cur = d.shifting ? d.shiftTo ?? 0 : d.mGear ?? 0
+    let edge = 0
+    if (gearWant !== null && gearWant !== cur && shiftCool <= 0 && !(gearWant < 0 && vF > 0.5)) { edge = Math.sign(gearWant - cur); shiftCool = 0.35 }
+    const f = stepClutchAssist(foot, { pedal: 0, shift: edge, throttle: out.throttle }, { rpm, shifting: !!d.shifting }, footCar, dt)
+    out.clutch = 1 - f.clutch; out.shift = f.shiftRequest
+    if (foot.pending || d.shifting) {
+      const g = d.shifting ? d.shiftTo : gearWant, idle = car.engineIdleRPM ?? 750
+      out.throttle = g > 0 ? clamp((Math.max(idle, rpmIn(g, vF)) - rpm) / 1500, 0, 0.5) : 0
+    }
+    const g = d.mGear ?? 0
+    if (g > 0 && out.throttle > 0 && vF < 0.3 && grNow > 0.02) {
+      const hold = (car.mass + (car.stowedKg || 0)) * G * grNow / Math.sqrt(1 + grNow * grNow) * (car.wheelRadius ?? 0.368) / (car.gearRatios[g - 1] * (car.finalDrive ?? 3.73))
+      if (f.clutch * (car.clutchMaxTorque ?? 450) < hold) out.hand = true
+    }
   }
 
   const ap = {
@@ -248,14 +271,14 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
     /** One control step. Returns the reused controls object (copy what you keep). */
     step (vs, dt) {
       ap._vs = vs
-      clock += dt; stateT += dt; shiftCool -= dt
+      clock += dt; stateT += dt; shiftCool -= dt; gearWant = null; grNow = 0
       const p = vs.position, q = vs.quaternion
       const v = Math.hypot(vs.velocity.x, vs.velocity.z)
       const fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y))   // forward is −Z rotated by q
       const fl = Math.hypot(fx, fz) || 1, vF = (vs.velocity.x * fx + vs.velocity.z * fz) / fl
       const upY = 1 - 2 * (q.x * q.x + q.z * q.z)
       dist += v * dt
-      out.steer = out.throttle = out.brake = out.shift = out.clutch = 0; out.hand = out.key = false
+      out.steer = out.throttle = out.brake = out.shift = out.clutch = 0; out.hand = out.key = false; out.trouble = null
       out.steerLimit = car.maxSteerAngle / (1 + v / car.speedSteerRef)
 
       // ── where on the route ──
@@ -277,10 +300,10 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
       if (vs.fuel && vs.fuel.gal <= 0) return report('out of fuel')
       if ((vs.engineHealth ?? 1) <= 0) return report('engine seized')
       if (flat()) return report('flat tire')
-      if (state === 'stopped') { out.hand = true; out.trouble = trouble; out.state = state; return out }
+      if (state === 'stopped') { out.hand = true; out.clutch = manual() ? 1 : 0; out.trouble = trouble; out.state = state; return out }
       if (ign && ign !== 'running') {
         if (!recover) return report('engine off')
-        crankT += dt; out.key = true; out.hand = true; out.state = 'crank'
+        crankT += dt; out.key = true; out.hand = true; out.clutch = manual() ? 1 : 0; out.state = 'crank'
         if (crankT > 8) return report('engine will not start')
         return out
       }
@@ -293,6 +316,7 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
       else if (state === 'reverse') reverseStep(p, vF, dt)
       else if (state === 'rejoin') rejoinStep(p, fx / fl, fz / fl, v, vF, dt)
       if (out.trouble) return out
+      if (manual()) footwork(vs, vF, dt)
 
       // ── trouble a driver can do something about ──
       const pushing = out.throttle > 0.45 || (!manual() && out.brake > 0.3 && vF < 0.6)
@@ -313,7 +337,7 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
 
   function report (why) {
     if (recover) giveUp(why)
-    out.steer = 0; out.throttle = 0; out.brake = 0; out.hand = true; out.trouble = why; out.state = recover ? 'stopped' : state
+    out.steer = 0; out.throttle = 0; out.brake = 0; out.hand = true; out.clutch = manual() ? 1 : 0; out.trouble = why; out.state = recover ? 'stopped' : state
     return out
   }
 
@@ -358,7 +382,6 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
       if (k === 1) sv[0] = sv[1]   // the bend the car is in already
     }
     if (terminal) sv[n - 1] = 0
-    let grNow = 0
     for (let k = n - 2; k >= 0; k--) {
       const ds = Math.max(0.1, ss[k + 1] - ss[k])
       const gr = clamp((sy[k + 1] - sy[k]) / ds, -0.6, 0.6)
@@ -378,8 +401,8 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
     if (Math.abs(want) > 0.95 * out.steerLimit) vT = Math.min(vT, Math.max(3, 0.7 * v))   // at full lock: ease off, never to a stall
     out.steer = clamp(want, -out.steerLimit, out.steerLimit)
     vTlast = vT
-    if (manual()) gearTo(vT < 0.3 && vF < 0.5 ? 1 : wantGear(vF, ap._vs?.drivetrain?.mGear ?? 0, out.throttle), vF)
     pedals(vT, vF, grNow, dt)
+    if (manual()) gearTo(vT < 0.3 && vF < 0.5 ? 1 : wantGear(vF, ap._vs?.drivetrain?.mGear ?? 0, out.throttle))
     ap.dbg = { vT, rNear, grade: grNow }
     // Stopped at the end of the road: turn round.
     if (terminal && vF < 0.6 && path[path.length - 1].s - projS < 25 && state === 'drive') {
@@ -422,6 +445,7 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
     if (stateT > 25) { giveUp('off the road'); report(trouble); return }
     out.steer = clamp(pursue(p, hx, hz, 12, 0), -out.steerLimit, out.steerLimit)
     pedals(4, vF, 0, dt)
+    if (manual()) gearTo(wantGear(vF, ap._vs?.drivetrain?.mGear ?? 0, out.throttle))
   }
 
   // The bench's off-road leg: out to `to`, back onto the route at `back`.
@@ -432,6 +456,7 @@ export function createAutopilot ({ car, route, inBore = () => false, flat = () =
     const alpha = wrap(Math.atan2(tg.x - p.x, tg.z - p.z) - Math.atan2(hx, hz))
     out.steer = clamp(Math.atan2(2 * car.wheelbase * Math.sin(alpha), clamp(hyp(tg.x, tg.z, p.x, p.z), 4, 15)), -out.steerLimit, out.steerLimit)
     pedals(9, vF, 0, dt)
+    if (manual()) gearTo(wantGear(vF, ap._vs?.drivetrain?.mGear ?? 0, out.throttle))
   }
 
   return ap

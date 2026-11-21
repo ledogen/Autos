@@ -14,7 +14,7 @@
  */
 
 import { getCameraMode } from './camera.js'
-import { stepIgnition } from './ignition.js'
+import { stepIgnition, seized } from './ignition.js'
 import { pad, PAD_PARAMS } from './gamepad.js'
 import { padHit } from './pad-rumble.js'   // FEAT-247
 import { makeClutchAssist, stepClutchAssist } from './clutch-assist.js'
@@ -175,19 +175,27 @@ export function updateVehicle (vehicleState, params, dt) {
   // Near rest: a Space TAP latches vehicleState.parked ON (the same held state a spawn/teleport starts
   // in — see _reseatTruckAtSpawn). Latched, a Space tap, the throttle (W / RT) or — manual — a shift
   // landing in a gear lets it go; the brake pedal never does (FEAT-194). Steering does NOT release it.
+  // BUG-249 (owner 2026-11-20: "gate the automatic brake release on an action that actually moves the truck"):
+  // the pedal releases it only when it can drive — the engine running and, on the manual, a gear in (not N, not
+  // mid-shift) with the clutch biting (out past clutchShiftMax, the shift rule's "clutch in" line). Engine off,
+  // neither the pedal nor a shift does: only the handbrake button (DEC-435).
   // Held through free-cam so the truck stays put while you fly.
   const handKey = ai ? ai.hand : !freecamActive && keys[' ']
   const shifting = !!vehicleState.drivetrain?.shifting
-  const gearIn = params.transmissionType === 'manual' && _prevShifting && !shifting && (vehicleState.drivetrain?.mGear ?? 0) !== 0
+  const manual = params.transmissionType === 'manual'
+  const running = (vehicleState.ignition?.state ?? 'running') === 'running' && !seized(vehicleState)
+  const gearIn = running && manual && _prevShifting && !shifting && (vehicleState.drivetrain?.mGear ?? 0) !== 0
   _prevShifting = shifting
+  const drives = running && (!manual || ((vehicleState.drivetrain?.mGear ?? 0) !== 0 && !shifting
+    && (vehicleState.clutch ?? 1) > (params.clutchShiftMax ?? 0.15)))
   // DEC-255: on the AUTOMATIC, S / LT at rest IS the reverse pedal (drivetrain.js autoReverse), so it is gas, not brake, and
   // releases the latch. On the manual it is only a brake and never does. ponytail: speed magnitude stands in for forward
   // speed — the latch only holds near rest, so the two agree where it matters.
-  const autoReverse = params.transmissionType !== 'manual' && rawBrake > 0 && rawThrottle <= 0
+  const autoReverse = !manual && rawBrake > 0 && rawThrottle <= 0
     && Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) <= REV_THRESHOLD
   vehicleState.parked = stepParkBrake(!!vehicleState.parked, {
     tap: handKey && !_prevHandKey,                                // rising edge (press this frame)
-    throttle: (!freecamActive && !_throttleCut && keys.w) || rawThrottle > 0 || autoReverse,
+    throttle: drives && ((!freecamActive && !_throttleCut && keys.w) || rawThrottle > 0 || autoReverse),
     gearIn,
     speed: Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z),
     lock: _parkLock,

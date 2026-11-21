@@ -1,7 +1,7 @@
 ---
 id: FEAT-223
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-15
 source: owner, 2026-11-15 — "more visual juice: i think we want shadows on the truck itself. including driving into shade. its very obvious the truck is still lit inside tunnels."
@@ -74,3 +74,5 @@ src/vehicle-model.js, src/main.js, src/debris.js
 - 2026-11-16 (Lane U): built on land/feat-223 (1f2b5c57, a3d978a8). Affected gates 18/18 green (no smoke, per the
   brief). Cost below noise (B/A 0.97–1.01, IQR ±5 %). Unverified: a drive at speed under trees (tracking is by
   construction: near map per moving frame, atlas per pixel), the Low tier in the browser. Branch is 13 behind main.
+
+- 2026-11-20: owner signed off on the owed card ("Looks right"). Closed.

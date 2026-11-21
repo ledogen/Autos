@@ -1,7 +1,7 @@
 ---
 id: FEAT-267
 type: feature
-status: open
+status: closed
 severity: major
 opened: 2026-11-17
 source: owner, 2026-11-17 — "demolition should follow the papers, timer, and route planning. I'm happy with the clustered placement of the barrels. ... i think we just make demo a straight hurried job."
@@ -75,3 +75,5 @@ To build, mirroring the paper round as FEAT-266 leaves it:
   (road-signs.py: worker, arrow, blank, striped board; BarrierOrange; same 4x4 + blank, 13 kg, SIGN_POST_BOX, no tags).
   demolition-site gate asserts no demolition kind is a sign-*.glb and no work-*.glb is pooled. Turn-back signs untouched
   (hand-painted ply on stakes, already distinct). Sheet CarGame/wip/dec-430/sheet.jpg (seed 518277).
+
+- 2026-11-20: owner signed off on the owed card ("Drove it: good, close it"; par unchanged; follow-ups FEAT-320 (distance to the sign line on the HUD) and BUG-252 (hitch on first prop strike)). Closed.

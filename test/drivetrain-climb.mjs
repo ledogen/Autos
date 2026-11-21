@@ -77,7 +77,10 @@ function runScenario (gradePct, steps, label, opts = {}) {
     const accel = (vfwd - prevV) / DT; prevV = vfwd
     const driveT = P._driveTorque ? P._driveTorque[2] : 0
     if (s > 3) minDriveT = Math.min(minDriveT, driveT)   // skip first ticks (RPM settling)
-    if (vs.drivetrain.activeGear !== prevGear) { gearChanges.push({ t: s * DT, from: prevGear, to: vs.drivetrain.activeGear, rpm: lastCoupled }); prevGear = vs.drivetrain.activeGear }
+    // The box's DECISION (the gear a shift in flight is heading for): shift points and kickdown latency read it;
+    // the shift time (autoShiftTime) runs on top of it.
+    const d = vs.drivetrain, sel = d.shifting && d.activeGear !== 0 ? d.shiftTo : d.activeGear
+    if (sel !== prevGear) { gearChanges.push({ t: s * DT, from: prevGear, to: sel, rpm: lastCoupled }); prevGear = sel }
     lastCoupled = vs.drivetrain.coupledRPM
     samples.push({ t: s * DT, vfwd, gear: vs.drivetrain.activeGear, rpm: vs.drivetrain.engineRPM, driveT, accel })
   }
@@ -254,8 +257,8 @@ console.log('FEAT-23 drivetrain — climb + taper gate\n')
     const vs = { throttle: 1, brake: 0, wheelOmega: [w, w, w, w], drivetrain: { engineRPM: 5000, gear: 1, shiftTimer: 0, activeGear: 1, SR: 0, TR: 2 } }
     stepDrivetrain(vs, P, DT, w * R)
     console.log(`  grip (matched wheels) wheelspin ${vs.drivetrain.wheelspin.toFixed(1)} m/s → gear ${vs.drivetrain.gear} (started 1)`)
-    if (vs.drivetrain.gear === 2) pass('still upshifts under grip (lock does not block normal shifts)')
-    else fail(`failed to upshift under grip (gear ${vs.drivetrain.gear}) — lock too aggressive`)
+    if (vs.drivetrain.shiftTo === 2 && vs.drivetrain.shifting) pass('still upshifts under grip (lock does not block normal shifts)')
+    else fail(`failed to upshift under grip (gear ${vs.drivetrain.gear}, shift to ${vs.drivetrain.shiftTo}) — lock too aggressive`)
   }
 }
 
