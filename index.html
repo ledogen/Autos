@@ -92,7 +92,10 @@
       text-transform: uppercase;
       margin-bottom: 6px;
     }
-    #pause-menu .pm-code { color: var(--text-faint); font-size: 12px; margin: -10px 0 4px; user-select: text; }
+    /* FEAT-296 (DEC-475): the code line never sets the box's width (inline-size containment: it counts as 0 wide); it
+       stretches to the width the buttons set and wraps, so the pause box is as wide as on any other screen. */
+    #pause-menu .pm-code { color: var(--text-faint); font-size: 12px; margin: -10px 0 4px; user-select: text;
+      align-self: stretch; text-align: center; contain: inline-size; }
     #pause-menu button, #towel-card button, #tut-card button {
       background: none;
       border: 1px solid var(--line-control);
@@ -304,7 +307,8 @@
     #mm-setup-panel:not([data-mode="story"]):not([data-mode="freeroam"]) #su-run,
     #mm-setup-panel:not([data-mode="scenarios"]) #mm-scenario-list,
     #mm-setup-panel[data-mode="scenarios"] #su-start,
-    #mm-setup-panel:not([data-mode="story"]) #mm-save-note { display: none; }
+    #mm-setup-panel:not([data-mode="story"]) #mm-save-note,
+    #mm-setup-panel:not([data-mode="story"]) #su-rules { display: none; }
     .mm-group { color: var(--text-faint); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; margin: 14px 0 4px 18px; }
     #pause-menu .mm-group { margin: 8px 0 0 0; }
     #su-seed {
@@ -467,7 +471,7 @@
     #re-body .re-k, #re-body .re-why { color: var(--text-dim); }
     #re-body .re-gap { margin-top: 10px; }
     #re-body .re-money { color: var(--money); }
-    #re-actions { margin-top: 14px; display: flex; justify-content: center; }
+    #re-actions { margin-top: 14px; display: flex; justify-content: center; gap: 12px; }
     /* FEAT-61 aim reticle — a 20 px ring at screen centre (the brief). pointer-events none so it
        can never eat a drag, and no transition: it must appear the instant F goes down or it lies
        about when aiming started. */
@@ -1748,6 +1752,16 @@
       <button class="mm-sel" data-key="worldPoi"></button>
       <button class="mm-sel" data-key="worldRoads"></button>
       <div id="su-code"></div>
+      <!-- FEAT-296: the rule rows, story only (each row's show() hides it elsewhere; the header goes with them).
+           Run state: the run copies them at start and keeps them, never part of the world code. -->
+      <div class="mm-group" id="su-rules">rules</div>
+      <button class="mm-sel" data-key="ruleDamage"></button>
+      <button class="mm-sel" data-key="ruleHunger"></button>
+      <button class="mm-sel" data-key="ruleCost"></button>
+      <button class="mm-sel" data-key="ruleFuel"></button>
+      <button class="mm-sel" data-key="ruleTows"></button>
+      <button class="mm-sel" data-key="ruleDeath"></button>
+      <button class="mm-sel" data-key="ruleEndless"></button>
       <div class="mm-group">truck</div>
       <button class="mm-sel" data-key="gearbox"></button>
       </div>
@@ -1840,7 +1854,8 @@
   <div id="run-end">
     <div class="mp-title" id="re-title"></div>
     <div id="re-body"></div>
-    <div id="re-actions"><button id="re-menu">main menu</button></div>
+    <!-- FEAT-296: an endless run's camp card goes on (main.js _endRun); every other card has the one way out. -->
+    <div id="re-actions"><button id="re-keep" style="display:none">keep playing</button><button id="re-menu">main menu</button></div>
   </div>
   <div id="scenario-panel">
     <div class="mp-title" id="sp-title">scenario</div>

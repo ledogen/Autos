@@ -2271,6 +2271,16 @@ const STEPS = [
     check(await until(() => js('/grayscale/.test(document.querySelector("canvas").style.filter)'), 1000), 'a fatal hit did not turn the world black and white')
     check(!await card(), 'the crash card skipped the beat')
     await ended(/died/, /hit at 90 mph — front · at 30 % armor the front could take 48 mph; fresh it takes 65/)
+    // DEC-475: death off — the same fatal hit is a lost life (DEC-001): no card, the run goes on, every part at 25 % or more.
+    await js('window.__settings.ruleDeath = "off"')
+    await newRun()
+    await js("window.__damage.set('engine', 0.05); window.__damage.fatalImpact = { region: 'front', v: 40, mph: 90, armor: 0.3 }")
+    await sleep(2500)
+    check(!await card() && await js(`window.__damage.fatalImpact === null && window.__damage.get('engine') >= 0.25 && ${live}`),
+      `DEC-475: death off — a fatal hit ended the run or left the truck as it was: ${JSON.stringify(await js("({ fatal: window.__damage.fatalImpact, engine: window.__damage.get('engine') })"))}`)
+    await js('window.__settings.ruleDeath = "on"')
+    await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+    await ended(/gave up/)
     // Broke down (FEAT-162): an empty tank, no gas can — the Recovery card offers the tows while there
     // is money; at $0 the run ends by itself once the truck has sat still a few seconds.
     await newRun()
@@ -2278,6 +2288,17 @@ const STEPS = [
     const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = window.__poi().barricades()[1]
       const ux = q.roadX - b.x, uz = q.roadZ - b.z, l = Math.hypot(ux, uz)
       return { x: q.roadX + ux / l * 60, z: q.roadZ + uz / l * 60, h: Math.atan2(-ux, -uz) } })()`)
+    await seat(away.x, away.z, away.h)
+    // DEC-475: Classic's one free tow — a run's first tow costs nothing. Spent here, so the dry truck below pays for its own.
+    await js('window.__econ.money = 1000')
+    await park(true); await tap('x')
+    check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towShop]:not([disabled])")'), 3000), 'DEC-475: no shop tow on the Recovery card')
+    await js('document.querySelector("#recovery-card [data-act=towShop]").click()')
+    check(await until(() => js('/\\$0\\.00/.test(document.querySelector("#recovery-card [data-act=towGo]")?.textContent)'), 2000),
+      `DEC-475: the run's first tow is not free: "${await js('document.getElementById("recovery-card").textContent')}"`)
+    await js('document.querySelector("#recovery-card [data-act=towGo]").click()')
+    check(await until(() => js('window.__econ.money === 1000 && document.getElementById("svc-screen").checkVisibility()'), 8000), 'DEC-475: the free tow cost money or never reached the shop')
+    await tap('Escape'); await sleep(300)
     await seat(away.x, away.z, away.h)
     await js(`(() => { const inv = window.__inv; for (const r of [...inv.list()].reverse()) if (r.id === 'emergencyGas' || r.gal > 0.05) inv.drop(r.index)
       window.__econ.money = 1000 })()`)
@@ -2334,6 +2355,27 @@ const STEPS = [
       const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
       for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
     await ended(/beat the alpha/)
+    // FEAT-296 (DEC-433): an endless run's win is a milestone — the card's one button is "keep playing", the save stays,
+    // the card never comes back, and the run still ends the ordinary ways (here the towel).
+    await js('window.__settings.ruleEndless = "on"')
+    await newRun()
+    await js(`window.__econ.halfPoints = ${2 * ECONOMY_PARAMS.campDeeds}`)
+    check(await until(() => js('/requisition 0 \\/ 5/.test(document.getElementById("run-hud").textContent)'), 2000), 'endless: no requisition')
+    await js(`(() => { const b = window.__board(), h = window.__day().clockH()
+      const camp = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp')
+      for (const o of b.offers(camp.id, h)) { b.take(o.id, h, 300); b.complete(o.id, h) } })()`)
+    const et = await until(card, 5000)
+    check(et && /beat the alpha/.test(et) && await js('document.getElementById("re-keep").offsetParent !== null && document.getElementById("re-menu").offsetParent === null'),
+      `endless: the win card offers only "keep playing" ("${et}")`)
+    check(/endless on/.test(await js('document.getElementById("re-body").textContent')), 'endless: the summary does not name the run\'s rules')
+    await sleep(1500)   // past an autosave tick
+    check(await saved() && await js('JSON.parse(localStorage.getItem("autos-run/1")).data.endlessWon === true'), 'endless: the win discarded the save or lost the flag')
+    await js('document.getElementById("re-keep").click()')
+    await sleep(1500)
+    check(await js(`document.getElementById("run-end").style.display !== "block" && ${live}`), 'endless: "keep playing" did not hand the run back (or the card came back)')
+    await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+    await ended(/gave up/)
+    await js('window.__settings.ruleEndless = "off"')
   }],
   ['opening', async () => {
     // FEAT-147: a new run starts PARKED AT THE BURGER JOINT, the firing's cards over a slow orbit of it with the sim held.
