@@ -6829,9 +6829,11 @@ export class RoadSystem {
      * through run is sliced there (_v2SliceRun: its deck does not move) and the other run's two halves are rebuilt as
      * departures landing on P (_v2BuildDeparture re-solves each onto P's deck). Either run may be the through one; the
      * pair whose four mouths accept ships, else the best-ranked (a junction always beats a ramp). No road is deleted
-     * (DEC-070): +1 node and +2 runs per site. Not this backstop's: a crossing within one node's hold reach (the hold
-     * owns it, _legsOfOneNode) or under MINREG from a run's end. A bore is no exemption: FEAT-40 clips every bore
-     * clear of a crossing, so no crossing ships grade-separated (DEC-446). Pure in the registered runs, like the overlap join, so window-invariant wherever both runs register.
+     * (DEC-070): +1 node and +2 runs per site. Only a crossing under MINREG from a run's end is not this backstop's (the
+     * node there owns it). Two legs of ONE node are no exemption: a T's side road that wanders back across its trunk
+     * 47 m out ships a 94 % lift (seed 2080966469). Nor is a bore: FEAT-40 clips every bore clear of a crossing, so no
+     * crossing ships grade-separated (DEC-446). Pure in the registered runs, like the overlap join, so window-invariant
+     * wherever both runs register.
      */
     _v2JoinCrossings(g) {
         const declined = new Set()
@@ -6865,7 +6867,6 @@ export class RoadSystem {
             if (!ix) continue
             const sA = A.a0 + (A.a1 - A.a0) * ix.t, sB = B.a0 + (B.a1 - B.a0) * ix.u
             if (Math.min(sA, eA.polyCum.at(-1) - sA) < MINREG || Math.min(sB, eB.polyCum.at(-1) - sB) < MINREG) continue
-            if (this._legsOfOneNode(A, B, ix)) continue
             const sig = `${A.runKey}|${B.runKey}|${Math.round(ix.x)},${Math.round(ix.z)}`
             if (declined.has(sig)) continue
             if (!best || A.runKey < best.kA || (A.runKey === best.kA && (B.runKey < best.kB || (B.runKey === best.kB && sA < best.sA))))
