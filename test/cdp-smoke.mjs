@@ -2284,6 +2284,11 @@ const STEPS = [
     // Broke down (FEAT-162): an empty tank, no gas can — the Recovery card offers the tows while there
     // is money; at $0 the run ends by itself once the truck has sat still a few seconds.
     await newRun()
+    // 60 m down the camp's road, away from its barricades: out of every POI's ring, inside the wall.
+    const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = window.__poi().barricades()[1]
+      const ux = q.roadX - b.x, uz = q.roadZ - b.z, l = Math.hypot(ux, uz)
+      return { x: q.roadX + ux / l * 60, z: q.roadZ + uz / l * 60, h: Math.atan2(-ux, -uz) } })()`)
+    await seat(away.x, away.z, away.h)
     // DEC-475: Classic's one free tow — a run's first tow costs nothing. Spent here, so the dry truck below pays for its own.
     await js('window.__econ.money = 1000')
     await park(true); await tap('x')
@@ -2294,10 +2299,6 @@ const STEPS = [
     await js('document.querySelector("#recovery-card [data-act=towGo]").click()')
     check(await until(() => js('window.__econ.money === 1000 && document.getElementById("svc-screen").checkVisibility()'), 8000), 'DEC-475: the free tow cost money or never reached the shop')
     await tap('Escape'); await sleep(300)
-    // 60 m down the camp's road, away from its barricades: out of every POI's ring, inside the wall.
-    const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = window.__poi().barricades()[1]
-      const ux = q.roadX - b.x, uz = q.roadZ - b.z, l = Math.hypot(ux, uz)
-      return { x: q.roadX + ux / l * 60, z: q.roadZ + uz / l * 60, h: Math.atan2(-ux, -uz) } })()`)
     await seat(away.x, away.z, away.h)
     await js(`(() => { const inv = window.__inv; for (const r of [...inv.list()].reverse()) if (r.id === 'emergencyGas' || r.gal > 0.05) inv.drop(r.index)
       window.__econ.money = 1000 })()`)
