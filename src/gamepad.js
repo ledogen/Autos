@@ -77,6 +77,7 @@ export const padRbBrakes = () => roleBtn(5) === 5
 export const padRoleName = (role) => NAMES[roleBtn({ menu: 1, brake: 5 }[role])]
 
 // menuActive: set by src/menu-nav.js — true while a menu owns the screen (the pad then speaks MENU_KEYS).
+// menuDrives: set by src/menu-nav.js — that menu is the pause menu (its settings page, the give-up card): the truck still drives.
 // cardActive: set by src/menu-nav.js — true while an in-game card is up (the pad then speaks CARD_KEYS).
 // mapActive: set by src/map2d.js — true while the map is open (the pad then speaks MAP_KEYS).
 // panX / panY: the left stick while the map is open (map2d.js pans with it); 0 otherwise.
@@ -90,7 +91,7 @@ export const padRoleName = (role) => NAMES[roleBtn({ menu: 1, brake: 5 }[role])]
 // pressed). While false, hover is ignored — menu-nav.js's pointer highlight, map2d.js's list rows and its mouse cursor —
 // so a mouse left resting on the UI cannot hold a highlight or the map's centre while the pad drives.
 export const pad = { active: false, mouseLive: true, throttle: 0, brake: 0, steer: 0, lookX: 0, lookY: 0, panX: 0, panY: 0, zoom: 0,
-  menuActive: () => false, cardActive: () => false, cardTabs: () => false, cardDrive: () => false,
+  menuActive: () => false, menuDrives: () => false, cardActive: () => false, cardTabs: () => false, cardDrive: () => false,
   mapActive: () => false, canThrow: () => false, throwReady: () => false,
   pumpActive: () => false, skipHold: () => false, cardHolds: () => false, hudMenu: null,
   // DEC-465 (Ventura Highway): atRest — the truck is parked or under PARK_SPEED (the result card's B is back, else the
@@ -262,6 +263,9 @@ function poll () {
   // picking one — two pads on the desk both work. Per-player pads would need a real assignment.
   let thr = 0, brk = 0, steer = 0, lookX = 0, lookY = 0, panX = 0, panY = 0, any = false, viewDown = false, rbDown = false
   const menu = pad.menuActive(), card = !menu && pad.cardActive(), map = !menu && pad.mapActive()
+  // FEAT-319 (DEC-477, owner 2026-11-21: "if you steer with left stick in the background it should still steer"): the pause
+  // menu takes the D-pad, A and B; the left stick and the triggers stay the truck's. The world runs behind it.
+  const menuHolds = menu && !pad.menuDrives()
   const L = LAYOUT_KEYS[PAD_PARAMS.padLayout] ?? LAYOUT_KEYS.Professor
   const menuBtn = roleBtn(1), rbMenu = menuBtn === RB   // DEC-431: the side menu's button; RB's drive role is the menu
   let keys = menu ? MENU_KEYS
@@ -306,7 +310,7 @@ function poll () {
     if (gp.buttons[RIGHT]?.pressed) rightDown = true
     const mapOnly = map && !card   // FEAT-239: the map's own layout leaves D-pad ← / → spare (the shoulders flip)
     if (menu || card || map) for (const [k, b] of NAV) if (!(mapOnly && (b === 14 || b === 15)) && gp.buttons[b]?.pressed) nav.add(k)
-    if (menu) {   // the left stick navigates a menu; on a card it is still steering
+    if (menuHolds) {   // the left stick navigates a menu that holds the truck; on a card and the pause menu it is still steering
       const ax = gp.axes[0], ay = gp.axes[1]
       if (ay < -NAV_STICK) nav.add('ArrowUp'); if (ay > NAV_STICK) nav.add('ArrowDown')
       if (ax < -NAV_STICK) nav.add('ArrowLeft'); if (ax > NAV_STICK) nav.add('ArrowRight')
@@ -315,8 +319,8 @@ function poll () {
   pad.panX = map ? panX : 0
   pad.panY = map ? panY : 0
   pad.zoom = map ? -lookY : 0
-  // The sticks and triggers are the menu's; on the map only the left stick is (its pan), never the pedals.
-  if (menu) thr = brk = steer = 0
+  // The sticks and triggers are a holding menu's; on the map only the left stick is (its pan), never the pedals.
+  if (menuHolds) thr = brk = steer = 0
   else if (map) steer = 0
   pad.throttle = thr
   pad.brake = ltPump ? 0 : brk

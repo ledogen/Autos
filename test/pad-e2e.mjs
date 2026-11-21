@@ -440,8 +440,33 @@ const saved = await js('localStorage.getItem("autos-settings/1")')
 check(saved && JSON.parse(saved).worldTerrain === 80 && JSON.parse(saved).worldRoads === 290 && JSON.parse(saved).gearbox === 'manual', `saved: ${saved}`)
 // Start = pause; the pad then walks the pause list into settings and flips the steering assist.
 const shown = (id) => js(`getComputedStyle(document.getElementById("${id}")).display !== "none"`)
+// FEAT-319 (DEC-477): with the pause menu up the left stick, the triggers and W / S / A / D still reach the truck; the
+// D-pad and the arrow keys walk the list. Called with the list open on its first item; leaves it there, the truck braked.
+const pauseDrives = async (tag) => {
+  const top = await navText()
+  await js('__fp.axes[0] = -1'); await sleep(600)
+  let p = await vs()
+  check(p.steer > 0.05 && await navText() === top, `${tag}: paused, the left stick steers (${p.steer.toFixed(3)}) and walks no list (${await navText()})`)
+  await js('__fp.axes[0] = 0; __fp.b[6] = 1'); await sleep(400)
+  p = await vs(); check(p.brk > 0.5, `${tag}: paused, LT brakes (${p.brk.toFixed(2)})`)
+  await js('__fp.b[6] = 0; __fp.b[7] = 0.4'); await sleep(400)
+  p = await vs(); check(p.thr > 0.3, `${tag}: paused, RT throttles (${p.thr.toFixed(2)})`)
+  await js('__fp.b[7] = 0'); await sleep(200)
+  await keyEvent(c, 'a', true); await sleep(600)
+  p = await vs(); check(Math.abs(p.steer) > 0.05, `${tag}: paused, keyboard A steers (${p.steer.toFixed(3)})`)
+  await keyEvent(c, 'a', false); await keyEvent(c, 'w', true); await sleep(800)
+  p = await vs(); check(p.thr > 0.3, `${tag}: paused, keyboard W throttles (${p.thr.toFixed(2)})`)
+  await keyEvent(c, 'w', false)
+  await keyEvent(c, 'ArrowDown', true); await keyEvent(c, 'ArrowDown', false); await sleep(150)
+  const kd = await navText()
+  await keyEvent(c, 'ArrowUp', true); await keyEvent(c, 'ArrowUp', false); await sleep(150)
+  check(kd !== top && await navText() === top, `${tag}: paused, the arrow keys walk the list (${top} → ${kd} → ${await navText()})`)
+  await js('__fp.b[6] = 1'); await sleep(1000); await js('__fp.b[6] = 0'); await sleep(200)
+  check(await shown('pause-menu'), `${tag}: the pause menu is still up after driving under it`)
+}
 await press(START)
 check(await shown('pause-menu'), 'Start pauses')
+await pauseDrives('Professor')
 await press(DOWN, 3)   // the pause list opens on resume (no placing press any more)
 check(await navText() === 'settings', `pause list: down ×3 from resume reaches settings (${await navText()})`)
 await press(A)
@@ -519,6 +544,11 @@ const reset = async () => { await js('__fp.b[7] = 0; __fp.b[15] = 1'); await sle
 const repark = async () => { await reset(); await press(A); await waitParked(false); await press(A); await waitParked(true); await sleep(300)
   check((await vs()).parked, `VH: re-parked with A after the roll-away (keys "${await js('__vhKeys.join()')}")`) }
 const zone = () => js('JSON.stringify({ menu: document.body.classList.contains("hud-menu-on"), zone: document.getElementById("park-zone").className, parked: __vs.parked, inv: document.querySelector("#inv-screen.open") !== null })')
+await press(START)   // FEAT-319 (DEC-477): the same pause-menu driving in Ventura Highway
+check(await shown('pause-menu'), 'VH: Start pauses')
+await pauseDrives('VH')
+await press(START)
+check(!await shown('pause-menu'), 'VH: Start resumes')
 await js('__fp.b[7] = 0.5'); await sleep(400); await js('__fp.b[7] = 0'); await sleep(200)   // the pad drives; the boot's latch let go
 await reset()
 s = await vs(); check(s.parked && s.v < 0.2, `VH: D-pad → hold parks the truck at rest (parked=${s.parked})`)
