@@ -271,12 +271,15 @@ await js('__fp.b[13] = 1'); await sleep(100); await js('__fp.b[13] = 0'); await 
 const mlPad = await js('__padMod.pad.mouseLive')
 await c.cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 300, y: 300 }); await c.cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 340, y: 320 }); await sleep(150)
 check(mlPad === false && await js('__padMod.pad.mouseLive') === true, `pad input sets pad mode (mouseLive ${mlPad}); a mouse move ends it (${await js('__padMod.pad.mouseLive')})`)
-// The pump has A (owner, 2026-10-21): while it is open (pumpActive forced), A is F held, not the upshift.
+// DEC-467 (owner, 2026-11-20): LT pumps in both layouts. While the pump is open (pumpActive forced), LT is F held and A is
+// the plain drive's upshift, not F.
 // Off the pump F also aims a practice throw, so let that view hold run out after.
 await js('window.__pa0 = __padMod.pad.pumpActive; __padMod.pad.pumpActive = () => true; __fk = 0')
+await js('__fp.b[6] = 1'); await sleep(250); await js('__fp.b[6] = 0'); await sleep(150)
+const fkLT = await js('__fk')
 await js('__fp.b[0] = 1'); await sleep(150); await js('__fp.b[0] = 0'); await sleep(150)
 await js('__padMod.pad.pumpActive = __pa0')
-check(await js('__fk') === 1, `pump open: A sends F (${await js('__fk')}x)`)
+check(fkLT === 1 && await js('__fk') === 1, `pump open: LT sends F (${fkLT}x), A sends none (${await js('__fk')}x total)`)
 await sleep(4000)
 // The icon menu (owner, 2026-10-21): hold B, the column lights with a pick; D-pad ↑/↓ under B walks
 // it; releasing B opens the pick. Parked here, so the inventory opens.
@@ -584,6 +587,46 @@ const heldMenu = await menuOn(), heldKeys = await keysSeen()
 await js('__fp.b[5] = 0; __padMod.pad.throwReady = __tr0'); await sleep(500)
 check(heldMenu && !/[f ]/.test(heldKeys) && await inv(), `VH aiming: RB held past the tap is the side menu (menu ${heldMenu}, keys "${heldKeys}"), its release opens the pick`)
 await press(B); await sleep(4000)   // the F tap's practice-throw view runs out
+// ── FEAT-314 (DEC-465): Ventura Highway's three reworked cells, read through gamepad.js's own hooks (pad.cardActive /
+// cardTabs / cardDrive / atRest / pumpActive / pumpClose are forced, as throwReady is above): the keys are the contract.
+const pm = '__padMod.pad'
+const park0 = (await vs()).parked
+// The forced cards have no real card behind them, so an Escape would pause the game: eat it after __vhKeys has seen it.
+await js(`window.__ar = ${pm}.atRest; window.__pcl = ${pm}.pumpClose; addEventListener('keydown', e => { if (window.__eat && e.key === 'Escape') e.stopImmediatePropagation() }, true); window.__eat = true`)
+await keysSeen()
+// 1. A plain card: RB is silent (it used to be Space: decline an offer, back a camp face). A selects, B backs, LB is still the clutch.
+await js(`${pm}.cardActive = () => true`)
+await press(5); const cardRB = await keysSeen()
+await press(A); const cardA = await keysSeen()
+await press(B); const cardB = await keysSeen()
+check(cardRB === '' && cardA === 'Enter' && cardB === 'Escape', `VH plain card: RB sends nothing ("${cardRB}"), A is Enter ("${cardA}"), B is Escape ("${cardB}")`)
+// A card with tabs: LB / RB flip them (Q / E), as before.
+await js(`${pm}.cardTabs = () => true`)
+await press(4); const tabL = await keysSeen(); await press(5); const tabR = await keysSeen()
+check(tabL === 'q' && tabR === 'e', `VH tabbed card: LB is Q ("${tabL}"), RB is E ("${tabR}")`)
+await js(`${pm}.cardTabs = () => false`)
+// 2. The result card: A the handbrake, B back at rest / the upshift moving, RB silent, and a back never upshifts.
+await js(`${pm}.cardDrive = () => true; ${pm}.atRest = () => true`)
+await press(A); const resA = await keysSeen()
+await press(B); const resBrest = await keysSeen()
+await press(5); const resRB = await keysSeen()
+await js(`${pm}.atRest = () => false`)
+await press(B); const resBmove = await keysSeen()
+check(resA === ' ' && resBrest === 'Escape' && resBmove === 'e' && resRB === '', `VH result card: A is Space ("${resA}"), B at rest is Escape ("${resBrest}"), moving is E ("${resBmove}"), RB sends nothing ("${resRB}")`)
+// The press belongs to the context it began in: B down at rest (a back), the truck then moving, B still held: no upshift.
+await js(`${pm}.atRest = () => true; __fp.b[1] = 1`); await sleep(200); await js(`${pm}.atRest = () => false`); await sleep(200)
+await js('__fp.b[1] = 0'); await sleep(250)
+check(await keysSeen() === 'Escape', 'VH result card: a B that began as a back stays one when the truck starts moving under it')
+await js(`${pm}.cardActive = () => false; ${pm}.cardDrive = () => false; ${pm}.atRest = __ar`)
+// 3. The pump (DEC-466/467): hold LT to pump (F down, held; the brake does nothing), A is the handbrake (Space), B closes the pump (once, no key).
+await js(`window.__pc = 0; ${pm}.pumpActive = () => true; ${pm}.pumpClose = () => { __pc++ }`)
+await js('__fp.b[6] = 1'); await sleep(300); const ltDown = await keysSeen(), ltBrk = await js(`${pm}.brake`); await js('__fp.b[6] = 0'); await sleep(200)
+await press(A); const pumpA = await keysSeen()
+await press(B); const pumpB = await keysSeen(), closes = await js('__pc')
+check(ltDown === 'f' && ltBrk === 0 && pumpA === ' ' && pumpB === '' && closes === 1, `VH pump: LT holds F ("${ltDown}", brake ${ltBrk}), A is Space ("${pumpA}"), B closes the pump once (${closes}) and sends no key ("${pumpB}")`)
+await js(`${pm}.pumpActive = () => false; ${pm}.pumpClose = __pcl; __eat = false`)
+if ((await vs()).parked !== park0) await press(A)   // the A at the result card above toggled the truck's brake
+await keysSeen()
 // FEAT-126 manual through Ventura Highway: B up, X down, LB clutch.
 await js(`(async () => { const R = (${appMod('/data/ranger.js')}).RANGER_PARAMS, T = (${appMod('/data/transmissions.js')}).TRANSMISSIONS
   Object.assign(R, T.m5odr1); Object.assign(__vs.drivetrain, { mGear: 0, shiftT: 0, locked: false }); window.__R = R })()`)
