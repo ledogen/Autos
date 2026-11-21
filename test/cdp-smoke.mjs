@@ -2449,10 +2449,10 @@ const STEPS = [
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
       // FEAT-318: the truck starts in the joint's shoulder strip, ~8 m from the camera's ring, so the orbit is read off its
       // aim point (the model, FIRING_CAM.lift up), not off the truck.
-      return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - q.modelX, c.y - q.baseY - ${FIRING_CAM.lift}, c.z - q.modelZ), h: window.__day().clockH() } })()`)
+      return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), orbit: Math.hypot(c.x - q.modelX, c.y - q.baseY - ${FIRING_CAM.lift}, c.z - q.modelZ), h: window.__day().clockH() } })()`)
     const a = await at(); await sleep(1000); const b = await at()
     check(a.truck < 8, `the truck is ${a.truck.toFixed(1)} m from the burger joint's pad, want < 8`)
-    check(Math.abs(b.cam - FIRING_CAM.radius) < 2, `the camera is ${b.cam.toFixed(1)} m from the joint's aim point, want ${FIRING_CAM.radius} — not on its orbit`)
+    check(Math.abs(b.orbit - FIRING_CAM.radius) < 2, `the camera is ${b.orbit.toFixed(1)} m from the joint's aim point, want ${FIRING_CAM.radius} — not on its orbit`)
     check(b.h === a.h, `the day clock ran under the firing (${a.h} → ${b.h})`)
     await watchWrongWay()   // BUG-203: counted from here to the pedals card
     // FEAT-288 P6 (FIRING_CAM, data/tutorial.js): the orbit turns on its own (0.05 rad/s); the right stick and a RIGHT drag
