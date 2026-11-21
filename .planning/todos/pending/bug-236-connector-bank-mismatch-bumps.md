@@ -14,7 +14,7 @@ lane: unplaced
 ## Next steps
 Owner picked "Build the proposed design" (2026-11-20). BUILT on land/bug-236-bumps-kink (lane b), not landed. Owner:
 drive it (card `bug236-built-drive`), then the orchestrator lands it. Open: 6 sharp bends worse than main by 0.6–2.7 cm
-(list in the Log); the ≥ 60° bends keep a shared plane (see Decisions).
+(list in the Log); the ≥ 60° bends keep a shared plane (see Decisions; both are deviations from DEC-461).
 
 ## Summary
 Two runs meet at a degree-2 node with a 42° kink; a connector arc (R ≈ 24 m) carries the road round it. BUG-90 runs
@@ -134,12 +134,14 @@ height change against streams/causeways/POIs, gates, cost of the extra solved-pr
 - [ ] Owner drive (card `bug236-built-drive`), then land
 
 ## Decisions
+- 2026-11-20, owner: "Build the proposed design" (DEC-461).
 - Sharp bends (kink ≥ 60°) keep ONE shared plane while the legs' pavements overlap, now fitted to the two runs' own
   grades through the node (`_deg2BendPlane`, cap 24 %). Replacing it by the curve broke junction-stitch (legs 2.3 m
   apart where their pavements overlap). 7 % cap measured 10 bends > 15 cm against 5; 12 % / 16 % no better overall.
 - DEC-065 (no longitudinal grade smoother; crest priced by par's corner speed): the node curve is not a smoother (one
   curve per node grade break, from the two solved grades, ≤ 45 % of either run). It does replace the corner-speed
   recovery at connector nodes with the open-road rule (vMax 28 m/s) — the design the owner picked; a DEC may want writing.
+
 
 ## Open questions
 - Which fix (card `bug236-bumps-kink`). Is the "small kink" the crease or the dash stub at the node?

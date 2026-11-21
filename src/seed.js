@@ -115,3 +115,9 @@ export const smooth01 = (e0, e1, x) => {
   if (x <= e0) return 0; if (x >= e1) return 1
   const t = (x - e0) / (e1 - e0); return t * t * (3 - 2 * t)
 }
+
+// BUG-226 (DEC-459): where a REFUSED seed goes. Derived, never random, so everyone who types it lands on the same
+// replacement (a refused replacement re-rolls again from itself: the chain is deterministic too). String in, string out.
+export function rerollSeed(seed) {
+  return String(seedFor(parseWorldSeed(seed), 'reroll'))
+}

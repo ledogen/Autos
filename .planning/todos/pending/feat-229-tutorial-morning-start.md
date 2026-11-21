@@ -64,7 +64,7 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
   sleepy after the tire (with blinks on the held clock), the 06:30 alarm, "work"; smoke `opening` walks each
 - [ ] Owner: round 2's placeholders and the mom-lesson-cards-as-calls question (DEC-354)
 - [x] Tutorial seed re-pinned to 1872706826 (DEC-402): data/tutorial.js, the seed gate's census constants, smoke literals
-- [ ] Owner: drives the tutorial on 1872706826 (card `tutorial-seed-1872706826-drive`)
+- [x] Owner: drives the tutorial on 1872706826 (card `tutorial-seed-1872706826-drive`)
 
 ## Decisions
 - DEC-299 (owner, 2026-11-15/16): the tutorial is 24 in-game hours, fired about 07:00, free will about 07:00 the next
@@ -135,3 +135,9 @@ The "exactly 24 h" is DEC-152 (the paycheck's clock goes to 19:30, `FREE_WILL` i
   seed's only flat shoulder is 264 m out; the 4 m grid around the truck found none). Walk + sheet: wip/tut-repin/sheet.jpg. Flagged:
   the flat lands on a 17.7 % climb beside a tunnel mouth. Full smoke PASS (wip/tut-repin/smoke.log); run 1 failed once at the DEC-357
   blink check (2 s window; passed in both other runs, the check now prints its state). pad-e2e ALL OK. Unverified: a real drive.
+- 2026-11-20: owner, card tutorial-seed-1872706826-drive: "Drove it: good". The seed box is ticked; the ticket stays open for the dialogue boxes. The card also reported "Wrong way. Turn around" showing over the opening's cards on both seeds (not seed-specific); the owner did not comment, no ticket minted by the scribe.
+
+- 2026-11-17: seed search round 2 (lane u, `land/tut-seed-search-r2`, study in git-invisible `wip/tut-seed-search-r2/`). Pinned
+  3590618618 Larry's → station: steepest 10 m 38.7 %, 1005 m > 12 %. 1000 random seeds, 900 valid, 14 pass a 20 % / 150 m
+  limit; no seed has a whole day under 20 % (the router's 38 % ceiling). 5 candidates + the pin on owed card
+  `tutorial-seed-pick-r2` (sheets in the wip folder). Pin unchanged.

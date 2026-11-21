@@ -17,15 +17,14 @@
  * FEAT-288 P8 (DEC-426 Q2, owner: "each subsequent message from the same person can just be a card that cycles, but when
  * one person finishes speaking, their card slides out of frame, and when the next person starts speaking, their card
  * slides into frame from the opposite side"). How the card on screen moves from `prev` to `next` (either may be null:
- * nothing up). `side` is where the card now up came in from: -1 left, +1 right. Returns `{ out, in, side }`: the side
- * the old card leaves by (0 = it does not slide), the side the new one enters from (0 = it does not), and the new `side`.
- * The same speaker cycles in place. A card leaves by the side it came in from, so the next speaker enters from the other:
- * sides alternate per change of speaker, not per person. The first card of a showing enters from the left.
+ * nothing up). Returns `{ out, in }`: the side
+ * the old card leaves by (0 = it does not slide) and the side the new one enters from (0 = it does not): -1 left, +1 right.
+ * The same speaker cycles in place. FEAT-305 (owner, 2026-11-19: "her card slides out left and his slides in from the right.
+ * flip this"): every change of speaker runs one way, the old card out to the right and the new one in from the left.
  */
-export function cardSlide (prev, next, side) {
-    if (prev && next && prev.speaker === next.speaker) return { out: 0, in: 0, side }
-    const enter = next ? (prev ? -side : -1) : 0
-    return { out: prev ? side : 0, in: enter, side: enter || side }
+export function cardSlide (prev, next) {
+    if (prev && next && prev.speaker === next.speaker) return { out: 0, in: 0 }
+    return { out: prev ? 1 : 0, in: next ? -1 : 0 }
 }
 
 export class DialogueSystem {

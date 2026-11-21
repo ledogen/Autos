@@ -1115,7 +1115,7 @@ export class PoiSystem {
             }
             if (!ok) continue
             const baseY = topY - (P.roadClearanceMargin ?? 0.25)
-            return { id: h.id, key, modelX: X0, modelZ: Z0, baseY, modelYaw: h.yaw, collision: col,
+            return { id: h.id, key, variant: hash32(`poi-route-house-paint:${seed}:${h.id}`) & 0x7fffffff, modelX: X0, modelZ: Z0, baseY, modelYaw: h.yaw, collision: col,
                      floorY: baseY + pc.c[1] + pc.s[1] / 2, pad, rect }
         }
         return null
@@ -1601,6 +1601,14 @@ export class PoiSystem {
                 const h = s && this._boxesContact(s, cube, cx, cy, cz, r)
                 if (h) return h
             }
+        }
+        // BUG-246: and the route houses (FEAT-295). Their boxes were engine colliders only (main.js _syncPoiPhysics), so
+        // the body met a porch floor but the tires — this query — rolled through it: the 0.40 m deck and the 0.50 m porch
+        // stand at or under the bumper blade's bottom edge, the chamfer slid the body up onto them, and the truck crept on
+        // with its front wheels inside the porch until the house wall stopped it. Both halves of MESH == PHYSICS here too.
+        for (const h of this._routeHouses) {
+            const hit = this._boxesContact(h, cube, cx, cy, cz, r)
+            if (hit) return hit
         }
         return null
     }
