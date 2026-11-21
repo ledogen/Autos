@@ -1357,6 +1357,16 @@ function _paintAlerts (dt) {
   if (a && el.textContent !== a.text) { el.textContent = a.text; el.classList.toggle('bad', !!a.bad) }
   el.style.opacity = a ? '1' : '0'
 }
+// BUG-204: the alert strip's rows sit under the job stack whatever it holds (index.html --job-stack-b). Written on a
+// size change only; an empty stack (no job) unsets it, so the rows keep their own % heights.
+{
+  const stack = document.getElementById('job-stack')
+  if (stack) new ResizeObserver(() => {
+    const h = stack.offsetHeight
+    if (h > 0) document.body.style.setProperty('--job-stack-b', `${stack.offsetTop + h + 8}px`)
+    else document.body.style.removeProperty('--job-stack-b')
+  }).observe(stack)
+}
 
 // ── FEAT-33 "hold I to start the truck" hint ──────────────────────────────────────────────
 // Raised by vehicle.js whenever the driver asks for throttle with the key off. Re-raised every

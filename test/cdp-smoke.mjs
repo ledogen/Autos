@@ -1705,6 +1705,13 @@ const STEPS = [
     check(await js('window.__site().gps?.noRing === true'), 'the demolition GPS leg carries a destination circle (FEAT-187)')
     check(await js('window.__mission().state') === 'running', `arriving with targets standing settled the line: ${await js('window.__mission().state')}`)
     check(await until(() => js('document.getElementById("rank-timer").checkVisibility()'), 3000), 'no rank bar on the demolition job at its site (DEC-399: hurried)')
+    // BUG-204: the alerts row ("Wrong way") sits under the job stack, with a fragile load's bars added too.
+    const clash = () => js(`(() => { const s = document.getElementById('job-stack').getBoundingClientRect(), w = document.getElementById('machine-word').getBoundingClientRect()
+      return w.top < s.bottom ? Math.round(s.bottom) + ' / ' + Math.round(w.top) : '' })()`)
+    const c204 = [await clash()]
+    await js(`document.head.appendChild(Object.assign(document.createElement('style'), { id: 'bug204', textContent: '#job-g { display: flex !important }' }))`)
+    await frames(4, 60); c204.push(await clash()); await js(`document.getElementById('bug204').remove()`)
+    check(c204.every(c => !c), `the alerts row sits on the job stack (stack bottom / alert top, rank only then + fragile bars): ${JSON.stringify(c204)}`)
     // Fell the leg's cluster: the next plan moves the leg on to another standing one.
     const c0 = await js(`${legEnd}.id`)
     await js(`${legEnd}.members.forEach(i => { window.__site().targets[i].smashed = true })`)

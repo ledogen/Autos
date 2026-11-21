@@ -1,7 +1,7 @@
 ---
 id: BUG-209
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-17
 source: owner, 2026-11-17 (inbox) — "Cooking a potato at camp with your inventory full doesn't warn you that your inventory is full, it just passes time without doing anything."
@@ -12,7 +12,7 @@ lane: bug (alpha by default)
 # BUG-209: Cooking with a full inventory passes time and warns nothing
 
 ## Next steps
-Add the room check before the cook starts (and before time runs).
+None. Closed 2026-11-21: fixed on main by eba37742 (the cook refuses up front).
 
 ## Summary
 At camp, cooking a potato with a full inventory shows no warning and just passes the time without producing anything.
@@ -40,3 +40,4 @@ src/camp*.js · the cook flow in src/main.js
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118061918-0bvh).
 - 2026-11-17 ui-1117b: InventorySystem.canConvert refuses before the fade; camp card shows "inventory full" (.cp-warn). Gate inventory extended. Look pending.
+- 2026-11-21 lane s2 (land/bugs-1121): CLOSED, fixed on main (eba37742). test/inventory.mjs BUG-209 check green; all three cook buttons (potato, beans, groceries) route through the one canConvert guard in main.js, and each button shows only with its raw aboard, so the "inventory full" note never reads for a missing item. The open question resolved as "refuse": the Tracker's "no time passes when nothing can be produced". The wording "inventory full" is the ui-1117b lane's [DEFAULT]; the ui-1117b look card went unanswered.

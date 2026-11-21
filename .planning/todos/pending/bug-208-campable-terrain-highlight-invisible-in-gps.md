@@ -12,7 +12,7 @@ lane: bug (alpha by default)
 # BUG-208: The yellow campable-terrain highlight is not visible through the GPS
 
 ## Next steps
-Check the highlight's colour and blend against the GPS's road line and background.
+Owner look + answer (Open questions). The job line's halo fix is on main (05c6afe3); the waypoint line is untouched.
 
 ## Summary
 The yellow highlight that marks campable terrain is hard to see through the GPS (map).
@@ -28,7 +28,8 @@ Owner's words, verbatim (inbox 20261118061907-sgl1):
 ## Decisions
 
 ## Open questions
-- Which GPS view: the minimap, the full map, or both?
+- Which GPS view: the minimap, the full map, or both? (Fact: there is no minimap; only the full map draws a route.)
+- Which line: the job line (halo 7 px, now 50 % clear) or the waypoint / GPS line (FEAT-211: halo 5 px at 95 %, dashed blue 2.5 px, still over the 6 px casing)? And the look: a see-through halo, or the casing drawn wider than the route so the yellow shows either side?
 
 ## Links
 FEAT-164, FEAT-210, FEAT-72
@@ -39,3 +40,4 @@ the camp zone highlight (src/camp*.js, src/map*.js)
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118061907-sgl1).
 - 2026-11-17 ui-1117b: the route halo alpha 0.95 -> 0.5 so the 6 px camp casing shows through the 7 px halo. Only the full map has this line (not the minimap). Not screenshotted. Look pending.
+- 2026-11-21 lane s2: NOT closed. No minimap exists; the waypoint line (map2d.js _drawWaypoint) still draws a 95 % paper halo over the casing. The ui-1117b look card went unanswered, so whether 50 % reads clearly is the owner's call. Questions above.

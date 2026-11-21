@@ -43,6 +43,9 @@ import { RANGER_PARAMS } from '../data/ranger.js'
 import { PARTS, SLOTS, REPAIRS, REPAIR_SETUP as SU, REPAIR_CAP, SEIZED_REPAIR_X, PATCH, OIL_CHANGE, BEAD, HUB } from '../data/parts.js'
 import { repairTargets } from '../src/service.js'
 import { worstUnder } from '../src/service-screen.js'
+import { applyRules } from '../src/difficulty.js'
+import { CLASSIC_RULES } from '../data/difficulty.js'
+import { dayTier } from '../src/economy.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -140,6 +143,18 @@ check('an exchange off the tires pays the minimum charge too, × tier', svc.fitL
   && (tier = 2, svc.fitLabour('springsHD', 'springsFront').price === 2 * SU.price) && (tier = 1))
 check('the air filter fits for a third of the minimum charge, in 15 min (owner, 2026-11-06)',
   svc.fitLabour('airFilterStock', 'airFilter').price === Math.round(SU.price / 3 * 100) / 100 && svc.fitLabour('airFilterStock', 'airFilter').hours === 0.25)
+// BUG-213 / DEC-475: labour rides the difficulty's cost row exactly as the part does, "off" included (day 12 = day 1).
+{
+  const labour = () => [svc.fitLabour('springsHD', 'springsFront').price, svc.fitLabour('airFilterStock', 'airFilter').price,
+    svc.beadQuote().price, svc.oilQuote().price], part = () => svc.sellValue('dampersOEM')
+  const at = (lv, day) => { applyRules({ ...CLASSIC_RULES, cost: lv }); tier = dayTier(day); return { l: labour(), p: part(), t: tier } }
+  const rows = ['off', 'low', 'normal'].map(lv => ({ lv, d1: at(lv, 1), d12: at(lv, 12) }))
+  applyRules(CLASSIC_RULES); tier = 1
+  for (const r of rows) console.log(`  cost ${r.lv}: tier day12 ${r.d12.t}; labour day1 ${r.d1.l} → day12 ${r.d12.l}; part ${r.d1.p} → ${r.d12.p}`)
+  check('BUG-213: every labour line scales day 1 → day 12 by the same ratio as the part, per cost level; "off" holds day-1 prices',
+    rows.every(r => r.d12.l.every((x, i) => Math.abs(x / r.d1.l[i] / (r.d12.p / r.d1.p) - 1) < 0.02))
+    && rows[0].d12.l.every((x, i) => x === rows[0].d1.l[i]) && rows[2].d12.t > rows[1].d12.t && rows[1].d12.t > 1)
+}
 {
   const w0 = wallet, h0 = hours
   damage.set('oil', 0.3); tier = 2
