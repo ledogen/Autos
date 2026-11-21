@@ -1612,16 +1612,17 @@ const STEPS = [
     check(a.s === 'staging' && a.a, `a line taken at the camp is not an untimed approach: ${JSON.stringify(a)}`)
     await sleep(500)
     check(!await js('window.__cargo().freight'), `the fuel line strapped its drum at the camp: ${JSON.stringify(await js('window.__cargo().freight'))}`)
-    // A source with a park box (the gas station's storefront bays; FEAT-318: any giver's strip) is parked IN it, as a
-    // tow seats it (poi.js towSeat: the truck's long axis along the box).
-    const src = await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)})
-      if (!q.park) return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) }
-      const s = window.__towSeat(q); return { x: s.x, z: s.z, h: s.heading } })()`)
+    // A source with a park box (the gas station's storefront bays; FEAT-318: any giver's shoulder strip) is parked IN
+    // it — poi.js dropZoneWorld's mapping. Not towSeat: a gas station's tow lands at its pump, not in its bay.
+    const src = await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)}), b = q.park
+      if (!b) return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) }
+      const yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
+      return { x: ox + b.x * cs + b.z * sn, z: oz - b.x * sn + b.z * cs, h: yaw } })()`)
     await seat(src.x, src.z, src.h)
     check((await st()).a, 'arriving at the source started the line before the brake')
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
     await tap(' ')
-    check(await until(async () => { const b = await st(); return b.s === 'staging' && !b.a }, 2000), `parking at the source did not start the line: ${JSON.stringify(await st())} · source ${JSON.stringify(await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)}); return { type: q.type, model: q.modelKey, park: q.park, drop: !!q.drop, hidden: !!q.hidden } })()`))} · seat ${JSON.stringify(src)} · truck ${JSON.stringify(await js('window.__car()'))}`)
+    check(await until(async () => { const b = await st(); return b.s === 'staging' && !b.a }, 2000), `parking at the source did not start the line: ${JSON.stringify(await st())}`)
     check(await until(() => js('window.__cargo().freight?.key === "drum"'), 5000), `parking at the source strapped no drum: ${JSON.stringify(await js('window.__cargo().freight'))}`)
     // Cancel (parked, two clicks) → the line goes back on the camp's list.
     await js('document.getElementById("job-cancel").click()'); await js('document.getElementById("job-cancel").click()')
