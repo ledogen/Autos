@@ -71,9 +71,9 @@ To build, mirroring the paper round as FEAT-266 leaves it:
   errors (smoke-r2.log, no board demolition offer live at that hour; the step subset smoke-demo-r2.log took one: $0.50 a
   share, expiry keeps $1.00), pad-e2e ALL OK. Sheet
   wip/feat-267/sheet-r2.jpg (full clear: $10 → $18.99 = base $5.25 + tip $3.74 exactly).
-
-- 2026-11-20: owner signed off on the owed card ("Drove it: good, close it"; par unchanged; follow-ups FEAT-320 (distance to the sign line on the HUD) and BUG-252 (hitch on first prop strike)). Closed.
 - 2026-11-20 (lane s): DEC-430 on land/dec-430-demolition-signs. oldSignLine's 7 ASSET-31 road signs → 4 work-zone signs
   (road-signs.py: worker, arrow, blank, striped board; BarrierOrange; same 4x4 + blank, 13 kg, SIGN_POST_BOX, no tags).
   demolition-site gate asserts no demolition kind is a sign-*.glb and no work-*.glb is pooled. Turn-back signs untouched
   (hand-painted ply on stakes, already distinct). Sheet CarGame/wip/dec-430/sheet.jpg (seed 518277).
+
+- 2026-11-20: owner signed off on the owed card ("Drove it: good, close it"; par unchanged; follow-ups FEAT-320 (distance to the sign line on the HUD) and BUG-252 (hitch on first prop strike)). Closed.
