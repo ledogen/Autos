@@ -690,14 +690,12 @@ const STEPS = [
     await js('document.getElementById("cp-sleep").click()')
     check(await js('document.getElementById("cp-body").textContent.includes("campsites provide more rest")'),
       'the truck sleep face is missing its disclaimer')
-    // FEAT-310 (DEC-449): a sleep that outlasts a food says so on the timer — a fresh breakfast burrito keeps 8 h.
+    // FEAT-310 (DEC-479): the sleep card does not warn about spoiling food (a fresh breakfast burrito keeps 8 h; sleep 10).
     await js('document.getElementById("cp-hours").value = "10"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
-    check(await until(() => js('/breakfast burrito spoils in 8h 00m/.test(document.getElementById("cp-energy-text").textContent)'), 1500),
-      `FEAT-310: a 10 h sleep did not warn about the 8 h burrito: "${await js('document.getElementById("cp-energy-text").textContent')}"`)
-    if (process.env.NOTES1119_SHOTS) { mkdirSync('wip/notes-1119b', { recursive: true }); await sleep(300)
-      writeFileSync('wip/notes-1119b/sleep.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
-    await js('document.getElementById("cp-hours").value = "6"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
-    check(!await js('/spoils in/.test(document.getElementById("cp-energy-text").textContent)'), 'FEAT-310: a 6 h sleep warned about an 8 h burrito')
+    await sleep(300)
+    check(!await js('/spoils in/.test(document.getElementById("cp-energy-text").textContent)'), 'FEAT-310: the sleep card warned about spoiling food')
+    if (process.env.NOTES1121_SHOTS) { mkdirSync('wip/notes-1121', { recursive: true })
+      writeFileSync('wip/notes-1121/sleep.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
     await js('document.getElementById("cp-sleep-back").click()')
     // Owner, 2026-10-27: an unmade card keeps the tent up and lit, and Z there closes the card and
     // calls the hunt off — so later parks open nothing.
@@ -937,34 +935,31 @@ const STEPS = [
     if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
   }],
   ['freshBar', async () => {
-    // FEAT-230 slice 2 (DEC-338): a chili dog's freshness bar sits at 6 o'clock over its thumbnail and shortens as the clock
-    // runs (2 h of its 16: 100 % → 87.5 %). Runs after inventory: SMOKE_STEPS=boot,story,inventory,freshBar. Picture:
-    // wip/fresh/bar.png. Leaves no row, no screen open, and the energy as it found it.
+    // FEAT-230 slice 2 / FEAT-310 (DEC-479): a chili dog's thumbnail reads the time until it spoils, as text, no bar, and the
+    // time shortens as the clock runs (2 h of its 16: 16h 00m → 14h 00m). Runs after inventory: SMOKE_STEPS=boot,story,inventory,freshBar.
+    // Leaves no row, no screen open, and the energy as it found it.
     const open = () => js('document.getElementById("inv-screen").classList.contains("open")')
     const wasParked = await js('window.__vs.parked')
     if (!wasParked) { await tap(' '); check(await until(() => js('window.__vs.parked'), 1000), 'Space did not park') }
     await js(`window.__inv.grant('chiliDog')`)
     await sleep(100)   // a fixed step: the fresh clock seats the new unit
-    const bar = () => js(`(() => { const i = window.__inv.list().findIndex(r => r.id === 'chiliDog')
-      const s = document.querySelector('#inv-screen .inv-slot[data-slot="' + i + '"]'), b = s?.querySelector('.sl-fresh'), f = b?.firstChild
-      if (!f) return null
-      const S = s.getBoundingClientRect(), B = b.getBoundingClientRect()
-      return { w: f.getBoundingClientRect().width / b.clientWidth, dx: (B.left + B.right) / 2 - (S.left + S.right) / 2, dy: S.bottom - B.bottom } })()`)
+    const tm = () => js(`(() => { const i = window.__inv.list().findIndex(r => r.id === 'chiliDog')
+      const s = document.querySelector('#inv-screen .inv-slot[data-slot="' + i + '"]')
+      return { t: s?.querySelector('.sl-spoil')?.textContent ?? null, bar: !!s?.querySelector('.sl-fresh') } })()`)
     await tap('Tab'); check(await until(open, 1000), 'Tab opened no inventory screen while parked')
-    const b0 = await bar()
-    check(b0 && b0.w > 0.99, `no full freshness bar on a new chili dog: ${JSON.stringify(b0)}`)
-    check(b0 && Math.abs(b0.dx) < 1.5 && b0.dy >= 0 && b0.dy < 8, `the bar is not at 6 o'clock over the thumbnail: ${JSON.stringify(b0)}`)
-    check(await js(`document.querySelector('#inv-screen .inv-slot[data-slot="0"] .sl-fresh') === null`), 'the Pack (no fresh time) shows a bar')
+    const b0 = await tm()
+    check(b0.t && /^15h 5\dm$|^16h 00m$/.test(b0.t) && !b0.bar, `a new chili dog's thumbnail reads ${JSON.stringify(b0)}, not its ~16 h and no bar`)
+    check(await js(`document.querySelector('#inv-screen .inv-slot[data-slot="0"] .sl-spoil') === null`), 'the Pack shows a spoil time')
     await tap('Escape'); await until(async () => !await open(), 1000)
     const e0 = await js('window.__day().energyH()')
     await js('window.__day().advanceMinutes(120)')
     await sleep(100)
     await tap('Tab'); await until(open, 1000)
-    const b1 = await bar()
-    check(b1 && Math.abs(b1.w - 0.875) < 0.02, `after 2 h the bar is ${b1 && (b1.w * 100).toFixed(1)} %, not 87.5 %`)
+    const b1 = await tm()
+    check(b1.t && /^13h 5\dm$|^14h 0\dm$/.test(b1.t), `after 2 h the thumbnail reads "${b1.t}", not ~14 h`)
     await sleep(200)
-    const shot = await client.cmd('Page.captureScreenshot', { format: 'png' })
-    mkdirSync('wip/fresh', { recursive: true }); writeFileSync('wip/fresh/bar.png', Buffer.from(shot.result.data, 'base64'))
+    if (process.env.NOTES1121_SHOTS) { mkdirSync('wip/notes-1121', { recursive: true })
+      writeFileSync('wip/notes-1121/inv.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
     // FEAT-310 (DEC-449): the selected food's line reads its time to spoil — 14 h of the chili dog's 16 are left.
     const ci = await js(`window.__inv.list().findIndex(r => r.id === 'chiliDog')`)
     await js(`document.querySelector('#inv-screen .inv-slot[data-slot="${ci}"]').click()`)
@@ -2354,6 +2349,23 @@ const STEPS = [
         writeFileSync('wip/notes-1119b/tow-pad.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')); await padOff() }
       await js('document.querySelector("#recovery-card [data-act=towBack]").click()')
       check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towFuel]")'), 2000), 'FEAT-307: back did not return to the tow list') }
+    // DEC-479: the tire service is asked for twice too. A flat tire makes the card offer it; the button opens the confirm
+    // (service, price, time, call / back); nothing is spent until "call", and back returns to the list.
+    { const m0 = await js('window.__econ.money')
+      await js('window.__damage.flat[0] = true')
+      check(await until(() => js('!!document.querySelector("#recovery-card [data-act=tireService]:not([disabled])")'), 3000),
+        `DEC-479: no tire service on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
+      await js('document.querySelector("#recovery-card [data-act=tireService]").click()')
+      check(await until(() => js('/call the tire service/.test(document.querySelector("#recovery-card [data-act=towGo]")?.textContent ?? "")'), 2000),
+        `DEC-479: the tire service button showed no confirm: "${await js('document.getElementById("recovery-card").textContent')}"`)
+      check(await js('window.__econ.money') === m0, 'DEC-479: asking for the tire service already spent the money')
+      if (process.env.NOTES1121_SHOTS) { mkdirSync('wip/notes-1121', { recursive: true }); await sleep(400)
+        writeFileSync('wip/notes-1121/tire-key.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+        await padOn(); await btn(13); await sleep(400)
+        writeFileSync('wip/notes-1121/tire-pad.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')); await padOff() }
+      await js('document.querySelector("#recovery-card [data-act=towBack]").click()')
+      check(await until(() => js('!!document.querySelector("#recovery-card [data-act=tireService]")'), 2000), 'DEC-479: back did not return to the list')
+      await js('window.__damage.flat[0] = false') }
     // BUG-113: pad B is the general back on the Recovery card too — it closes the card, it does not pause.
     await padOn(); await btn(1); await padOff()
     check(await until(() => js('document.getElementById("recovery-card").style.display === "none"'), 2000), 'pad B left the Recovery card open (BUG-113)')
