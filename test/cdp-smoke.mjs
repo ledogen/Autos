@@ -2271,9 +2271,29 @@ const STEPS = [
     check(await until(() => js('/grayscale/.test(document.querySelector("canvas").style.filter)'), 1000), 'a fatal hit did not turn the world black and white')
     check(!await card(), 'the crash card skipped the beat')
     await ended(/died/, /hit at 90 mph — front · at 30 % armor the front could take 48 mph; fresh it takes 65/)
+    // DEC-475: death off — the same fatal hit is a lost life (DEC-001): no card, the run goes on, every part at 25 % or more.
+    await js('window.__settings.ruleDeath = "off"')
+    await newRun()
+    await js("window.__damage.set('engine', 0.05); window.__damage.fatalImpact = { region: 'front', v: 40, mph: 90, armor: 0.3 }")
+    await sleep(2500)
+    check(!await card() && await js(`window.__damage.fatalImpact === null && window.__damage.get('engine') >= 0.25 && ${live}`),
+      `DEC-475: death off — a fatal hit ended the run or left the truck as it was: ${JSON.stringify(await js("({ fatal: window.__damage.fatalImpact, engine: window.__damage.get('engine') })"))}`)
+    await js('window.__settings.ruleDeath = "on"')
+    await js('document.getElementById("pm-towel").click(); document.getElementById("tc-end").click()')
+    await ended(/gave up/)
     // Broke down (FEAT-162): an empty tank, no gas can — the Recovery card offers the tows while there
     // is money; at $0 the run ends by itself once the truck has sat still a few seconds.
     await newRun()
+    // DEC-475: Classic's one free tow — a run's first tow costs nothing. Spent here, so the dry truck below pays for its own.
+    await js('window.__econ.money = 1000')
+    await park(true); await tap('x')
+    check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towShop]:not([disabled])")'), 3000), 'DEC-475: no shop tow on the Recovery card')
+    await js('document.querySelector("#recovery-card [data-act=towShop]").click()')
+    check(await until(() => js('/\\$0\\.00/.test(document.querySelector("#recovery-card [data-act=towGo]")?.textContent)'), 2000),
+      `DEC-475: the run's first tow is not free: "${await js('document.getElementById("recovery-card").textContent')}"`)
+    await js('document.querySelector("#recovery-card [data-act=towGo]").click()')
+    check(await until(() => js('window.__econ.money === 1000 && document.getElementById("svc-screen").checkVisibility()'), 8000), 'DEC-475: the free tow cost money or never reached the shop')
+    await tap('Escape'); await sleep(300)
     // 60 m down the camp's road, away from its barricades: out of every POI's ring, inside the wall.
     const away = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'expeditionCamp'), b = window.__poi().barricades()[1]
       const ux = q.roadX - b.x, uz = q.roadZ - b.z, l = Math.hypot(ux, uz)
