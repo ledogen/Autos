@@ -92,7 +92,10 @@
       text-transform: uppercase;
       margin-bottom: 6px;
     }
-    #pause-menu .pm-code { color: var(--text-faint); font-size: 12px; margin: -10px 0 4px; user-select: text; }
+    /* FEAT-296 (DEC-475): the code line never sets the box's width (inline-size containment: it counts as 0 wide); it
+       stretches to the width the buttons set and wraps, so the pause box is as wide as on any other screen. */
+    #pause-menu .pm-code { color: var(--text-faint); font-size: 12px; margin: -10px 0 4px; user-select: text;
+      align-self: stretch; text-align: center; contain: inline-size; }
     #pause-menu button, #towel-card button, #tut-card button {
       background: none;
       border: 1px solid var(--line-control);
