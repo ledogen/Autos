@@ -22,8 +22,6 @@ const N = +(arg('n') ?? 400)
 const rnd = mulberry32(hash32('feat-299 census'))
 const SEEDS = Array.from({ length: N }, () => Math.floor(rnd() * 4294967296)).filter((s) => s !== 6)
 
-if (process.argv.includes('--dump')) await dump()
-else report()
 
 async function dump () {
     const THREE = await import('three')
@@ -82,7 +80,22 @@ export function standInRoad (d) {
 }
 
 /** Pieces of a set of road stretches `[{ka, kb, L, s0, s1}]` joined through shared ends and junctions. */
-function pieces (spans) {
+function pieces (raw) {
+    // One road's stretches from several zones: canonical orientation, overlaps merged.
+    const by = new Map()
+    for (const s of raw) {
+        const f = s.ka < s.kb, k = f ? s.ka + '|' + s.kb : s.kb + '|' + s.ka
+        if (!by.has(k)) by.set(k, { ka: f ? s.ka : s.kb, kb: f ? s.kb : s.ka, L: s.L, iv: [] })
+        by.get(k).iv.push(f ? [s.s0, s.s1] : [s.L - s.s1, s.L - s.s0])
+    }
+    const spans = []
+    for (const r of by.values()) {
+        let cur = null
+        for (const [a, b] of r.iv.sort((p, q) => p[0] - q[0])) {
+            if (cur && a <= cur.s1) cur.s1 = Math.max(cur.s1, b)
+            else spans.push(cur = { ka: r.ka, kb: r.kb, L: r.L, s0: a, s1: b })
+        }
+    }
     const par = spans.map((_, i) => i), find = (i) => (par[i] === i ? i : (par[i] = find(par[i])))
     const at = new Map()   // node key → span indices touching it
     const touch = (k, i) => { if (!at.has(k)) at.set(k, []); at.get(k).push(i) }
@@ -115,14 +128,27 @@ function discSpans (d, q) {
     return out
 }
 
+/** Metres of road in the union of `spans` (several zones may cover one stretch). */
+function union (spans) {
+    const by = new Map()
+    for (const s of spans) { const k = s.ka < s.kb ? s.ka + '|' + s.kb : s.kb + '|' + s.ka, f = s.ka < s.kb
+        if (!by.has(k)) by.set(k, []); by.get(k).push(f ? [s.s0, s.s1] : [s.L - s.s1, s.L - s.s0]) }
+    let m = 0
+    for (const iv of by.values()) {
+        let end = -Infinity
+        for (const [a, b] of iv.sort((p, q) => p[0] - q[0])) { if (b > end) { m += b - Math.max(a, end); end = b } }
+    }
+    return m
+}
+
 const pct = (xs, p) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : NaN }
 const dist = (xs) => `median ${pct(xs, 0.5).toFixed(0)} · p10 ${pct(xs, 0.1).toFixed(0)} · p90 ${pct(xs, 0.9).toFixed(0)} · mean ${(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(0)}`
 const hist = (xs) => { const h = {}; for (const x of xs) h[x >= 6 ? '6+' : x] = (h[x >= 6 ? '6+' : x] ?? 0) + 1; return JSON.stringify(h) }
 
 function report () {
     const files = fs.readdirSync(DIR).filter((f) => f.endsWith('.json'))
-    const today = { n: 0, multi: 0, pc: [], len: [], gridLen: [], fillLen: [], none: 0, regionsMulti: 0, perRegion: [] }
-    const now = { n: 0, multi: 0, pc: [], len: [], target: [], perRegion: [], overlap: 0, reach: [] }
+    const today = { seen: [], share: [], n: 0, multi: 0, pc: [], len: [], gridLen: [], fillLen: [], none: 0, regionsMulti: 0, perRegion: [] }
+    const now = { seen: [], share: [], n: 0, multi: 0, pc: [], len: [], target: [], perRegion: [], overlap: 0, reach: [] }
     for (const f of files) {
         const d = JSON.parse(fs.readFileSync(path.join(DIR, f)))
         let rm = false
@@ -138,7 +164,7 @@ function report () {
         const road = standInRoad(d)
         const camp = new CampSystem({ getSeed: () => d.seed, getParams: () => ({}), getRoad: () => road })
         camp.build(d.C, 2500)
-        const areas = camp.fillReach(new Set(Object.keys(d.nodes)), () => true)
+        const areas = camp.growAreas(new Set(Object.keys(d.nodes)), () => true)
         now.perRegion.push(areas.length)
         for (const a of areas) {
             if (!a.spans) continue   // camp.js still on discs: nothing to report for NOW
@@ -147,22 +173,38 @@ function report () {
             if (pcs.length > 1) now.multi++
         }
         const seen = new Map()
+        let shared = false
         for (const a of areas) for (const s of a.spans ?? []) {
             const k = s.ka + '|' + s.kb, prev = seen.get(k) ?? []
-            if (prev.some((p) => p.a !== a && p.s0 < s.s1 && s.s0 < p.s1)) { now.overlap++; break }
+            if (prev.some((p) => p.a !== a && p.s0 < s.s1 && s.s0 < p.s1)) shared = true
             prev.push({ a, s0: s.s0, s1: s.s1 }); seen.set(k, prev)
         }
+        if (shared) now.overlap++
+        // The share of the region's road inside any zone, today vs now.
+        const roadM = d.edges.reduce((t, [, , k]) => t + d.runs[k].c.at(-1), 0)
+        // What the map shows: every zone's road together, in pieces (overlapping or touching zones read as one).
+        today.seen.push(...pieces(d.all.flatMap((q) => discSpans(d, q))))
+        if (areas[0]?.spans) now.seen.push(...pieces(areas.flatMap((a) => a.spans)))
+        today.share.push(union(d.all.flatMap((q) => discSpans(d, q))) / roadM)
+        if (areas[0]?.spans) now.share.push(union(areas.flatMap((a) => a.spans)) / roadM)
     }
     console.log(`${files.length} regions (random seeds)`)
     console.log(`TODAY (circle ∩ roads): ${today.n} zones on road (${today.none} touch none of the planners' roads), ${today.perRegion.reduce((a, b) => a + b, 0) / files.length} zones a region`)
     console.log(`  in more than one piece: ${today.multi} = ${(100 * today.multi / today.n).toFixed(1)} %; regions with at least one broken zone: ${today.regionsMulti} = ${(100 * today.regionsMulti / files.length).toFixed(0)} %`)
     console.log(`  pieces per zone: ${hist(today.pc)}`)
     console.log(`  road in a zone, m: ${dist(today.len)}`)
+    console.log(`  share of the region's road in a zone: ${dist(today.share.map((x) => 100 * x))} %`)
+    console.log(`  as the map shows them (all zones together, joined where they touch): ${(today.seen.length / files.length).toFixed(1)} pieces a region, ${dist(today.seen)} m`)
     console.log(`    grid zones: ${dist(today.gridLen)} (n ${today.gridLen.length}) · fill zones: ${dist(today.fillLen)} (n ${today.fillLen.length})`)
     if (!now.n) return console.log('NOW: camp.js has no road runs yet')
     console.log(`NOW (camp.js): ${now.n} areas, ${now.perRegion.reduce((a, b) => a + b, 0) / files.length} a region`)
     console.log(`  in more than one piece: ${now.multi}; pieces per area: ${hist(now.pc)}`)
     console.log(`  road in an area, m: ${dist(now.len)}`)
     console.log(`  target, m: ${dist(now.target)}`)
-    console.log(`  regions where two areas share road: ${now.overlap}`)
+    console.log(`  share of the region's road in a zone: ${dist(now.share.map((x) => 100 * x))} %`)
+    console.log(`  as the map shows them: ${(now.seen.length / files.length).toFixed(1)} pieces a region, ${dist(now.seen)} m`)
+    console.log(`  regions where two areas share road: ${now.overlap} = ${(100 * now.overlap / files.length).toFixed(0)} %`)
 }
+
+if (process.argv.includes('--dump')) await dump()
+else report()

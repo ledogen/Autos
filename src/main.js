@@ -4885,7 +4885,7 @@ function _tutWaypointOk (p) {
  *  wallet is topped up to it from her hand-over until the bag is bought, so spending it on something else first cannot
  *  strand the errand. */
 const _momCash = () => Math.ceil(shelfPrice({ id: TUT_SNACK }) * economySystem.tierNow()) + TUT_PARAMS.gasCash
-/** The camping area's door: the road point nearest the centre of the camp zone nearest the station (inside its disc), as
+/** The camping area's door: the road point the camp zone nearest the station was grown from (its middle, FEAT-299), as
  *  the waypoint's door is (`_setWaypoint`). Looked for until found, then kept for the region (onRegionLive clears it). */
 let _snackCampDoor = null
 function _campDoor () {
@@ -4893,7 +4893,7 @@ function _campDoor () {
   if (_snackCampDoor || !shop || !roadSystem) return _snackCampDoor
   let best = null, bz = null, bd = Infinity
   for (const zn of campSystem.zones()) {
-    const o = roadOrigin(roadSystem, zn, zn.r), d = o ? Math.hypot(o.x - shop.x, o.z - shop.z) : Infinity
+    const o = roadOrigin(roadSystem, zn, 5), d = o ? Math.hypot(o.x - shop.x, o.z - shop.z) : Infinity
     if (d < bd) { bd = d; best = o; bz = zn }
   }
   return (_snackCampDoor = best && { ...best, id: 'camp', label: 'the old McGill ranch', zone: bz })   // DEC-345: Katie's picnic spot
@@ -9993,8 +9993,9 @@ const storySystem = new StorySystem({
     // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping
     // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
     campSystem.build(center, radius, poiSystem.list().find(q => q.type === 'momsHouse') ?? null)
-    // FEAT-164: then zones until no road the planners use is more than campReachM from one.
-    campSystem.fillReach(mainNodes, p => Math.hypot(p.x - center.x, p.z - center.z) <= radius - REGION_MARGIN)
+    // FEAT-299: then the zones grow along the planners' roads, and FEAT-164 adds zones until no road is more
+    // than campReachM from one.
+    campSystem.growAreas(mainNodes, p => Math.hypot(p.x - center.x, p.z - center.z) <= radius - REGION_MARGIN)
     _rebuildPoiMarkers()
     _placeBarricades()   // FEAT-154: the road closures
     // Only the chunks a pad reaches: pads are the one carve input that changed here. Pads never bump

@@ -474,8 +474,8 @@ export class Map2D {
         this._hoverPoi = null      // the source POI under the cursor, or null
         this._hoverIdx = 0         // which of its live offers the card shows (Q / E)
         this._hoverView = null     // this frame's board view for it (card + route)
-        // FEAT-45: story-mode dispersed-camping zones — `{x,z,r}[]`, empty outside story mode. NOT
-        // drawn as discs: see _drawCampZones.
+        // FEAT-45: story-mode dispersed-camping zones (camp.js zones(): runs of road), empty outside
+        // story mode. See _drawCampZones.
         this._getCampZones = getCampZones || (() => null)
         // The play WaterSystem. Read-only, and OPTIONAL — without it the sheet simply prints no
         // rivers and the cover raster stops rejecting trees for standing in water, which is a
@@ -2765,62 +2765,23 @@ export class Map2D {
     // background: zones are built at story-mode entry, by which time the bg may already be baked.
     // Because the roads are already in that baked bitmap, the casing is laid down WIDE and the road
     // stroke is then re-drawn narrow on top of it — same visual result as an under-stroke, without
-    // needing the bg rebuilt. The in-zone runs are memoized on (road instance, _networkRev, network
-    // size, zones array): the region carries ~163 edges (the BUG-68 measurement) and the membership
-    // test is one point-in-disc per vertex per zone, too much to redo every frame. Every _network
-    // rebuild/adopt bumps _networkRev, and camp.js replaces its zone list (never mutates it) on
-    // rebuild, so the key changes whenever the answer can.
+    // needing the bg rebuilt. A zone IS a run of road (FEAT-299): camp.js hands its polylines
+    // (`lines`, already minus the bores — you cannot camp inside a tunnel, so the casing that
+    // advertises where camping is legal has no business running through one, and re-stroking a bore
+    // as solid road would hide it). One Path2D, memoized on the zones array: camp.js replaces the list
+    // (never mutates it) whenever it changes.
     _drawCampZones(ctx) {
         const zones = this._getCampZones()
         if (!zones || !zones.length) return
-        const road = this._road
-        if (!road || !road._network) return
-        const memo = this._campRunsMemo
-        let runs = (memo && memo.road === road && memo.rev === road._networkRev
-                    && memo.size === road._network.size && memo.zones === zones) ? memo.runs : null
+        let runs = this._campRunsMemo?.zones === zones ? this._campRunsMemo.runs : null
         if (!runs) {
-            const inZone = (p) => {
-                for (const q of zones) {
-                    const dx = q.x - p.x, dz = q.z - p.z
-                    if (dx * dx + dz * dz <= q.r * q.r) return true
-                }
-                return false
-            }
-
-            // Collect the in-zone sub-polylines once (one Path2D), then stroke it twice (casing, then road colour).
-            //
-            // Sourced from _surfaceSlices, NOT the raw run polyline: this pass re-lays the black road
-            // on top of its casing, and over a bored stretch that re-stroke was painting the tunnel
-            // back in as solid road — which then showed through the lighter bore drawn after it and
-            // made a tunnel inside a camping area read as an ordinary road. Skipping the bores is also
-            // the correct claim on its own terms: you cannot camp inside a tunnel, so the casing that
-            // advertises where camping is legal has no business running through one.
             runs = new Path2D()
-            let any = false
-            for (const e of road._network.values()) {
-                if (!e.points || e.points.length < 2) continue
-                for (const points of this._surfaceSlices(e)) {
-                    if (!points || points.length < 2) continue
-                    let cur = null
-                    let prevIn = inZone(points[0])
-                    for (let i = 1; i < points.length; i++) {
-                        const nowIn = inZone(points[i])
-                        // A segment belongs to a zone when BOTH endpoints do — the conservative read,
-                        // so the casing never claims road that leaves the zone.
-                        if (prevIn && nowIn) {
-                            if (!cur) { cur = true; any = true; runs.moveTo(points[i - 1].x, points[i - 1].z) }
-                            runs.lineTo(points[i].x, points[i].z)
-                        } else {
-                            cur = null
-                        }
-                        prevIn = nowIn
-                    }
-                }
+            for (const q of zones) for (const l of q.lines ?? []) {
+                runs.moveTo(l[0].x, l[0].z)
+                for (let i = 1; i < l.length; i++) runs.lineTo(l[i].x, l[i].z)
             }
-            if (!any) runs = null
-            this._campRunsMemo = { road, rev: road._networkRev, size: road._network.size, zones, runs }
+            this._campRunsMemo = { zones, runs }
         }
-        if (!runs) return
 
         // PERF-38: one world-space Path2D (memoized above), stroked through the view transform — it was
         // re-projected vertex by vertex every frame (~3 ms a frame with the map open).
