@@ -36,11 +36,16 @@ import { fitTransmission } from '../src/drivetrain.js'
 
 const arg = (k, d) => { const a = process.argv.find(s => s.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d }
 const GATE = process.argv.includes('--gate') || process.argv[1]?.endsWith('drive-ai.mjs')
+// Run as test/drive-ai-manual.mjs (BUG-240's gate): the same 2 km drive on two pinned random seeds, on the automatic and
+// on the manual with the clutch assistant OFF (the AI's own clutch foot alone) and, on the first seed, ON (both feet).
+const MGATE = process.argv[1]?.endsWith('drive-ai-manual.mjs')
+const MSEEDS = [220671609, 1385724447], MKM = 2, MTOL = 0.10   // mean-speed tolerance, manual vs automatic
 const BOX = arg('box', null)   // --box=m5odr1: the manual (data/transmissions.js), driven through the clutch assistant as vehicle.js does
+const ASSIST = arg('assist', 'on') !== 'off'   // --assist=off: the manual with the clutch assistant off (the player's setting), the AI's own clutch foot
 const DT = 1 / 60, SLEW = 4.8   // rad/s — PAD_PARAMS.steerSlewRate
 // The gate's stretch: seed 909892992 [DEFAULT], 600 m from the network edge nearest the origin in an 800 m region: 480 m
 // of it under 8 %, two junctions (one a near-hairpin turn taken at full lock), a short 15 % descent.
-const KM = GATE ? 0.6 : +arg('km', 5), RADIUS = GATE ? 800 : +arg('radius', 1500), OUT = arg('out', GATE ? null : 'wip/feat-293/soak.jsonl')
+const KM = GATE ? 0.6 : MGATE ? MKM : +arg('km', 5), RADIUS = GATE ? 800 : +arg('radius', 1500), OUT = arg('out', GATE ? null : 'wip/feat-293/soak.jsonl')
 const seeds = GATE ? [+arg('seed', 909892992)] : arg('seed') ? arg('seed').split(',').map(Number) : Array.from({ length: +arg('seeds', 4) }, () => (Math.random() * 2 ** 31) >>> 0)
 const BANDS = [0.08, 0.15, 0.24, Infinity], BAND_NAMES = ['<8%', '8-15%', '15-24%', '>24%']
 const band = g => BANDS.findIndex(b => Math.abs(g) < b)
@@ -60,8 +65,8 @@ function freshState (P, x, y, z, heading) {
 }
 const pct = (a, q) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(q * s.length))] }
 
-async function soakSeed (seed) {
-  const P = { ...RANGER_PARAMS }
+async function soakSeed (seed, { box = BOX, assist = ASSIST } = {}) {
+  const P = { ...RANGER_PARAMS, clutchAssist: assist }
   P._tireFz = [0, 0, 0, 0]; P._suspForceAccum = [0, 0, 0, 0]; P._hubNormalXZ = [0, 1, 2, 3].map(() => ({ x: 0, y: 0, z: 0 }))
   let s = seed >>> 0
   const rng = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32)
@@ -80,7 +85,7 @@ async function soakSeed (seed) {
     const top = w.road.sampleRoadTopY(a.x, a.z) ?? w.terr.analyticHeight(a.x, a.z)
     const f = freshState(P, a.x, top + 1.0, a.z, Math.atan2(-(b.x - a.x), -(b.z - a.z)))
     for (const k in f) if (vs[k]?.isVector3 || vs[k]?.isQuaternion) vs[k].copy(f[k]); else vs[k] = f[k]   // the rig holds the vectors
-    if (BOX) fitTransmission(P, vs, BOX)
+    if (box) fitTransmission(P, vs, box)
     vs.engineHealth = 1   // the damage model writes it each step; a tow comes back running
     w.stream(a.x, a.z)
     ap.locate(a)
@@ -151,6 +156,24 @@ async function soakSeed (seed) {
   return rec
 }
 
+if (MGATE) {
+  let bad = 0
+  for (const [k, seed] of MSEEDS.entries()) {
+    const runs = [['automatic', {}], ['manual, assist off', { box: 'm5odr1', assist: false }], ...(k === 0 ? [['manual, assist on', { box: 'm5odr1', assist: true }]] : [])]
+    let vAuto = null
+    for (const [name, cfg] of runs) {
+      const r = await soakSeed(seed, cfg), meanV = r.vSum / Math.max(1, r.n)
+      vAuto ??= meanV
+      const dv = Math.abs(meanV - vAuto) / vAuto
+      const ok = r.km >= MKM - 0.01 && !r.interventions.length && !r.reseats && !r.stalls && !r.missShift && dv <= MTOL
+      if (!ok) bad++
+      console.log(`  ${ok ? '✓' : '✗'} seed ${seed} ${name}: ${r.km.toFixed(2)} km in ${r.simS} s, mean ${(meanV * 3.6).toFixed(1)} km/h (${(dv * 100).toFixed(1)} % off the automatic, ≤ ${MTOL * 100} %), ` +
+        `${r.interventions.length} interventions${r.interventions.length ? ` (${r.interventions.map(i => i.why).join(', ')})` : ''}, ${r.reseats} reseats, ${r.stalls} stall steps, ${r.missShift} missed shifts`)
+    }
+  }
+  console.log(`drive-ai-manual gate: ${bad ? `${bad} FAILURE(S)` : 'PASS'}`)
+  process.exit(bad ? 1 : 0)
+}
 const all = []
 for (const seed of seeds) {
   const r = await soakSeed(seed)

@@ -14,6 +14,7 @@
 //      deadline run on at the driving rate (spendParked), and the board's slot locks on the moved line, also
 //      after a save replay. Released, the clock runs again; the job's elapsed is driven + parked time, par
 //      never moves. A handbrake slide holds nothing.
+//   8. BUG-249 / DEC-435: only a pedal that can drive releases it — engine running, and on the manual a gear in, clutch out.
 //   7. FEAT-217 (DEC-272): the throttle cut (the tutorial's flat) — W / RT give no throttle and W cannot release the latch;
 //      the brake and steering still work; off, W drives as before. (DEC-270) routeLeftM reads the arc left, not the crow.
 //
@@ -94,7 +95,7 @@ const MANUAL = { ...RANGER_PARAMS, transmissionType: 'manual' }
   const toN = parked(MANUAL); land(toN, 0)
   const sitting = parked(MANUAL); sitting.drivetrain = { shifting: false, mGear: 2 }; step(sitting, MANUAL, 100)
   const auto = parked(); auto.drivetrain = { shifting: true, gear: 1 }; step(auto); auto.drivetrain.shifting = false; step(auto)
-  check('4. manual: a shift landing in 1st or R releases it; into N, or sitting in a gear, does not; the automatic\'s shifts never',
+  check('4. manual, engine running (DEC-435, owner 2026-11-20): a shift landing in 1st or R releases it; into N, or sitting in a gear, does not; the automatic\'s shifts never',
     !into1.parked && !intoR.parked && toN.parked && sitting.parked && auto.parked,
     `1st ${into1.parked}, R ${intoR.parked}, N ${toN.parked}, sitting ${sitting.parked}, auto ${auto.parked}`)
 }
@@ -113,6 +114,28 @@ const MANUAL = { ...RANGER_PARAMS, transmissionType: 'manual' }
   setParkLock(false)
   step(w); tap(w, 'w')
   check('   lock off, W releases as before', !w.parked && !w.handbrake, `parked ${w.parked}, hb ${w.handbrake}`)
+}
+
+// 8. BUG-249 (owner 2026-11-20: "gate the automatic brake release on an action that actually moves the truck") / DEC-435:
+//    the pedal releases the latch only when it can drive. Engine off: W, RT, the automatic's reverse pedal and a manual
+//    shift landing in a gear all leave it set. Engine on, manual: W in N, or in gear with the clutch held in, leaves it set;
+//    in gear, clutch out, W releases.
+{
+  const off = (params = RANGER_PARAMS) => { const vs = makeVehicleState(params, 'off'); vs.parked = false; tap(vs, ' ', params); return vs }
+  const w = off(); key('w', true); step(w, RANGER_PARAMS, 50); key('w', false)
+  const rt = off(); pad.active = true; pad.throttle = 1; step(rt, RANGER_PARAMS, 50); pad.throttle = 0; pad.active = false
+  const lt = off(); pad.active = true; pad.brake = 0.6; step(lt, RANGER_PARAMS, 50); pad.brake = 0; pad.active = false
+  const gear = off(MANUAL); gear.drivetrain = { shifting: true, mGear: 0 }; step(gear, MANUAL); gear.drivetrain.shifting = false; gear.drivetrain.mGear = 1; step(gear, MANUAL)
+  const mw = off(MANUAL); mw.drivetrain = { shifting: false, mGear: 1 }; key('w', true); step(mw, MANUAL, 50); key('w', false)
+  check('8. engine off: W, RT, the automatic\'s LT (reverse) and a manual shift into 1st all leave the parking brake set',
+    w.parked && rt.parked && lt.parked && gear.parked && mw.parked && w.ignition.state === 'off',
+    `W ${w.parked}, RT ${rt.parked}, LT ${lt.parked}, gear ${gear.parked}, manual W ${mw.parked}, ignition ${w.ignition.state}`)
+  const inN = parked(MANUAL); inN.drivetrain = { shifting: false, mGear: 0 }; key('w', true); step(inN, MANUAL, 50); key('w', false)
+  const clutchIn = parked(MANUAL); clutchIn.drivetrain = { shifting: false, mGear: 1 }
+  key('Shift', true); key('w', true); step(clutchIn, MANUAL, 50); key('w', false); key('Shift', false); step(clutchIn, MANUAL)
+  const drive = parked(MANUAL); drive.drivetrain = { shifting: false, mGear: 1, engineRPM: 2500 }; key('w', true); step(drive, MANUAL, 50); key('w', false)   // revved: the clutch assistant bites
+  check('   engine on, manual: W in N or with the clutch held in leaves it set; in 1st with the clutch out, W releases',
+    inN.parked && clutchIn.parked && !drive.parked, `N ${inN.parked}, clutch in ${clutchIn.parked}, 1st ${drive.parked}`)
 }
 
 // 6. Each step is main.js's order: updateVehicle (the latch), stepFuel (inside stepPhysics), the clock through

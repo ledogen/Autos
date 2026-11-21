@@ -75,7 +75,7 @@ import { applyRules, legalRules, rulesLine, addRulesGui } from './difficulty.js'
 import { createFrameCap } from './frame-cap.js'   // PERF-48 / BUG-169: the render cap skip decision (pure, gated)
 import { putRun, putTruck, loadTruck, loadRun, hasRun, clearRun, logBoard } from './save.js'   // FEAT-42: the run's one rolling save
 import { fitTransmission } from './drivetrain.js'          // FEAT-41: the gearbox run setting
-import { pad, PAD_PARAMS, BINDINGS, steerCurve, padOf, padRoleName } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
+import { pad, PAD_PARAMS, BINDINGS, steerCurve, padOf, padRoleName, padRbBrakes } from './gamepad.js'        // FEAT-41: steering assist + the binding chart
 import { initMenuNav } from './menu-nav.js'               // FEAT-41: arrows/Enter (and the pad) drive the menus
 import './hud-menu.js'                                     // the pad's B-hold icon menu (registers pad.hudMenu)
 import { initTutGate, stepFor, allows, BETWEEN } from './tut-gate.js'   // FEAT-288 P2: the tutorial's lock and highlight
@@ -6120,7 +6120,7 @@ function _campPromptState () {
 // are, the keys, the DOM and the sound. Stepped on the fixed physics step, so a fill is 10 s of real
 // driving time and pauses when the game does.
 const fuelStop = new FuelStop()
-pad.pumpActive = () => fuelStop.isOpen   // the pad's A pumps while the pump is open (gamepad.js PUMP_KEYS)
+pad.pumpActive = () => fuelStop.isOpen   // the pad's LT pumps (DEC-467) while the pump is open (gamepad.js PUMP_KEYS)
 let _fHeld = false
 window.addEventListener('keydown', e => { if (!e.repeat && e.key.toLowerCase() === 'f') _fHeld = true })
 window.addEventListener('keyup', e => { if (e.key.toLowerCase() === 'f') _fHeld = false })
@@ -6166,6 +6166,11 @@ function _settlePump () {
   _pumpReceiptT = sale > 0 ? 2.5 : 0
 }
 _menu('pump', () => fuelStop.isOpen, _settlePump)
+// DEC-465/466 (Ventura Highway): the pad's B closes the pump and pays, as leaving by the gas does minus the driving off (the
+// truck stays parked; the gas releases the brake). Mom's forced fill-up stays forced: B does nothing there.
+pad.pumpClose = () => { if (fuelStop.isOpen && !_momMakesYouFill()) _settlePump() }
+// DEC-465: the park tap's own at-rest test (_parkLocked's _mapAtRest; park-brake.js PARK_SPEED): parked, or under 5 km/h.
+pad.atRest = () => !!vehicleState.parked || Math.hypot(vehicleState.velocity.x, vehicleState.velocity.z) < PARK_SPEED
 /** One physics step of an open pump. Handbrake down (or leaving story mode) settles the sale. */
 function _stepFuelStop (dt) {
   if (!fuelStop.isOpen) return
@@ -6220,7 +6225,9 @@ function _renderPumpDisplay (dt) {
   // a latched shutoff still reads full while the idling engine sips the tank a hair below it
   const tankFull = vehicleState.fuel.gal >= RANGER_PARAMS.fuelTankGal - 1e-6
   const full = (tankFull && !fuelStop.cans.some(c => c.cap - c.gal > 1e-6)) || (fuelStop.cutoff && !broke)
-  const pay = `release the handbrake ${keycap('Space')} to pay`   // FEAT-305: its key, in the pad's layout (DEC-431)
+  // FEAT-305: its key, in the pad's layout (DEC-431). DEC-466 Ventura Highway: A is the handbrake here and B is back (it pays).
+  const pay = padRbBrakes() ? `release the handbrake ${keycap('Space')} to pay`
+    : `<span class="kc-kb">release the handbrake ${keycap('Space')} to pay</span><span class="kc-pad">release the handbrake ${keycap('Space')} to pay · ${keycap('Esc', 'B')}back</span>`
   document.getElementById('pd-hint').innerHTML = !fuelStop.isOpen ? 'thank you — drive safe'
     : _momMakesYouFill() ? `mom says fill it up · hold ${keycap('F')} till the money's gone`   // FEAT-184 PLACEHOLDER words
     : full ? `${fuelStop.cans.length ? 'all full' : 'tank full'} · ${pay}`
@@ -6902,7 +6909,10 @@ function _updateBarricades () {
 // spawn in a rigid body … so it can have mass and hit the truck and tumble"): every lawn item but the fire
 // pit is knockable, at its real mass, and NOT noDamage — like a demolition target, a hit costs what the
 // wear model says (a 3.5 kg chair is far under every floor). Past ORNAMENT_OFF_M it is a model again,
-// standing where the body came to rest: a knocked gnome stays knocked for the session, never saved.
+// lying where the body came to rest — but only while the terrain chunk under it is built. FEAT-317 (DEC-473,
+// owner 2026-11-20: "reset every time that area of the world restreamed"): once that chunk is dropped the
+// model stands again at its solved pose (o.sat), so no knocked state outlives the area, and none is saved.
+// Demolition targets are not ornaments: their smashed latch is the job's (_site), and they never stand again mid-job.
 const ORNAMENT_ON_M = 60, ORNAMENT_OFF_M = 120
 const _ornQ = new THREE.Quaternion(), _ornP = new THREE.Vector3(), _ornUp = new THREE.Vector3()
 
@@ -6912,6 +6922,11 @@ function _updateOrnaments () {
   for (const o of _ornaments) {
     const half = debrisSystem.halfExtents(o.kind)
     if (!half) continue   // its collider is still loading
+    if (o.body == null && terrainSystem && !terrainSystem.hasChunkAt(o.sat.x, o.sat.z)) {   // FEAT-317: its area streamed out
+      o.mesh.position.set(o.sat.x, o.sat.y, o.sat.z)
+      o.mesh.rotation.set(0, o.sat.yaw, 0)
+      continue
+    }
     const d = Math.hypot(p.x - o.mesh.position.x, p.z - o.mesh.position.z)
     // The body sits at the model's bbox centre: half its height above a base-origin model, at the
     // origin of a centred one (the beach ball, lifted by its radius).
@@ -7084,7 +7099,7 @@ function _standRow (row) {
 // cancelled, expired) the site goes the moment nothing of it is within offM — never in view.
 const _siteGroup = new THREE.Group()
 scene.add(_siteGroup)
-let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], halos, guide (paper-route.js TourGuide: the GPS leg, the tour in flight) } — or null
+let _site = null   // { mission, targets: [{ kind, pos, q, mesh, body, p0, smashed }], halos, guide (paper-route.js TourGuide: the GPS leg, the tour in flight), arrived (FEAT-320: the truck has reached the line) } — or null
 const _siteP = new THREE.Vector3(), _siteQ = new THREE.Quaternion(), _siteY = new THREE.Vector3(0, 1, 0)
 
 /** Stand mission `m`'s targets as models; `smashed` lists the indices already down (a resume). */
@@ -7134,6 +7149,11 @@ function _siteLine () {
   if (!missionSystem?.mission?.targets || !missionSystem.isOnJob() || _site?.mission !== missionSystem.mission || !_site.guide.tour) return null   // no job first: _site is declared below the map
   return { ...missionSystem.markers(), poly: _site.guide.tour.poly }
 }
+/** FEAT-320: road m from the truck to the line's nearer end (the guide tour's first stop) — null once arrived or unplanned. */
+function _siteApproachM () {
+  const t = _site?.guide.tour, p = vehicleState.position
+  return !_site || _site.arrived || !t?.first || !t.polyCum ? null : routeLeftM(t, p.x, p.z, t.first.p)
+}
 /** { smashed, of } of mission `m`'s site — nothing smashed when its site isn't the one standing. */
 function _siteCount (m) {
   return { smashed: _site?.mission === m ? _site.targets.filter(t => t.smashed).length : m.siteDown ?? 0, of: m.targets?.length ?? 0 }
@@ -7171,6 +7191,9 @@ function _updateSite () {
     m.cleared = !standing.length
     const down = _site.targets.length - standing.length
     if (down > _site.down) { _site.down = m.siteDown = down; _paySiteShare(m, down) }   // siteDown: the count once the site is gone
+    // FEAT-320: ARRIVED (latched) at the first knock-down, or once the road to the tour's first cluster — the nearer end of
+    // the line, whichever way the truck comes in — is inside onM (where the targets become bodies). The HUD switches then.
+    const a = _siteApproachM(); if (down > 0 || (a != null && a < D.onM)) _site.arrived = true
     _site.guide.poll(roadSystem, p, siteStops(m, standing), storySystem.region(), performance.now() / 1000)   // BUG-212: keepM
   }
   // FEAT-187: a cluster's halo is lit while the job is live, any of it stands, and the truck is near (the paper's rule).
@@ -7456,9 +7479,11 @@ function _renderCampUI () {
   // has none: Space never breaks a made camp. RB is named outright: on a card RB is Space in every pad layout
   // (gamepad.js CARD_KEYS), while the drive's handbrake moves (DEC-431: A in Ventura Highway).
   const html = (id, h) => { const e = document.getElementById(id); if (e) e.innerHTML = h }
-  html('cp-break', st.moms || st.truck ? `${keycap('Space', 'RB')}leave` : 'break camp')
-  html('cp-cancel', `${keycap('Space', 'RB')}abandon`)
-  html('cp-sleep-back', `${keycap('Space', 'RB')}back`)
+  // DEC-465: Ventura Highway's RB is silent on a card; its pad half is B (back).
+  const back = padRbBrakes() ? 'RB' : 'B'
+  html('cp-break', st.moms || st.truck ? `${keycap('Space', back)}leave` : 'break camp')
+  html('cp-cancel', `${keycap('Space', back)}abandon`)
+  html('cp-sleep-back', `${keycap('Space', back)}back`)
   show('cp-vibe',        isConfirm)
   show('cp-vibe-legend', isConfirm)
   if (isConfirm) _renderVibeBar(st.site, document.getElementById('cp-vibe'))
@@ -7883,7 +7908,10 @@ function _renderMissionUI () {
       // BUG-205 follow-up (owner 11-18): the whole job's road distance left in parentheses, when it is not the same number
       // ("1.2 km (7.4 km)", his form: no "to go", which keeps the big-UI line clear of the wallet card).
       const toGo = () => { const a = km(m.routeRemaining()), t = km(m.routeTotalRemaining()); return a === t ? `${a} to go` : `${a} (${t})` }
-      hudText.textContent = beat ?? (site ? `${site.smashed} / ${site.of} smashed` : toGo())
+      // FEAT-320 (owner 11-21): until the truck reaches the line (_updateSite's `arrived`), the road distance to its nearer
+      // end, in his words — whichever way the truck comes in. Then the running total.
+      const toLine = site && _site?.mission === m.mission ? _siteApproachM() : null
+      hudText.textContent = beat ?? (toLine != null ? `${km(toLine)} to the old sign line` : site ? `${site.smashed} / ${site.of} smashed` : toGo())
         + (!m.mission?.legs ? '' : m.mission.fetch ? (m.leg === 0 ? '   · to pickup' : `   · back to ${_fetchHomeLabel(m.mission)}`)
           : ` · stop ${m.leg + 1} of ${m.mission.legs.length}: ${_legLabel(m.mission, m.curLeg())}`)   // FEAT-89; FEAT-291: the stop the GPS leads to
         + _dueSuffix()

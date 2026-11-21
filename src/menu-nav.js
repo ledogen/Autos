@@ -14,7 +14,7 @@
 //
 // The menus that count: the run's end (FEAT-146), the pause menu (or the settings page inside it),
 // the story refusal dialog, and the main-menu page on the stage. A menu holds the truck (gamepad.js
-// zeroes the pedals).
+// zeroes the pedals) — except the pause menu (FEAT-319, DEC-477): there the stick and triggers still drive.
 //
 // FEAT-133: the in-game CARDS are navigated the same way — the offer / result cards, the paper
 // route, the scenario finish, camp, the fuel recovery card, and the inventory and damage screens.
@@ -221,6 +221,8 @@ export function initMenuNav () {
     if (c && el && c.contains(el)) highlight(el, false)
   })
   pad.menuActive = () => menuContainer() !== null
+  // FEAT-319 (DEC-477): the pause menu, its settings page and the give-up card hold nothing — the truck still drives.
+  pad.menuDrives = () => { const c = menuContainer(); return !!c && (c.id === 'towel-card' || !!c.closest('#pause-menu')) }
   pad.cardActive = () => cardContainer() !== null
   // BUG-109: a card with tabs takes the bumpers for them; a RESULT card (data-result, main.js) lets
   // the pad drive through it — shifts, clutch, handbrake — until the D-pad puts its highlight on it.

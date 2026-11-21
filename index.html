@@ -679,6 +679,8 @@
     .kc-pad { display: none; }
     body.pad-on .kc-kb { display: none; }
     body.pad-on .kc-pad { display: inline; }
+    /* DEC-469: the offer card's Q / E / LB / RB flip offers only over the open map; at a POI the buttons are the highlight's */
+    body:not(.map-open) #mp-prev > span, body:not(.map-open) #mp-next > span { display: none !important; }
     .keycap {
       display: inline-block; min-width: 1.1em; padding: 0 0.35em; margin: 0 0.1em;
       border: 1px solid #8a96a3; border-bottom-width: 2px; border-radius: 3px;
@@ -1826,8 +1828,8 @@
          story mode, and offering it again mid-run invited a world rebuild under a live planner.) -->
     <div id="mp-actions">
       <!-- FEAT-67: step through the POI's live offers (also Q / E). Hidden when there is one. -->
-      <button id="mp-prev" title="previous offer (Q / LB)">&lsaquo; <span class="kc-kb">Q</span><span class="kc-pad">LB</span></button>
-      <button id="mp-next" title="next offer (E / RB)"><span class="kc-kb">E</span><span class="kc-pad">RB</span> &rsaquo;</button>
+      <button id="mp-prev" title="previous offer">&lsaquo; <span class="kc-kb">Q</span><span class="kc-pad">LB</span></button>
+      <button id="mp-next" title="next offer"><span class="kc-kb">E</span><span class="kc-pad">RB</span> &rsaquo;</button>
       <button id="mp-decline" title="the same brake tap that releases the truck">decline (space)</button>
       <button id="mp-retry" title="testing only — real story mode has no do-overs">retry</button>
       <button id="mp-regen" title="testing only — real story mode has no do-overs">regenerate</button>

@@ -326,9 +326,9 @@ export const THINGS = [
     { id: 'scrapDrums',  phrase: '{n} old drums crushed',   family: 'demolition', massKg: [0, 0], pools: ['farm'],
       targets: [{ kinds: ['barrel', 'drumOpen'], n: [8, 12], cluster: [1, 3] }] },
     // The county is repaving: the old sign line comes down before the new one goes up, and the last job's
-    // barricades are still out. The crew is behind.
+    // barricades are still out. The crew is behind. DEC-430: the line is orange WORK signs (their own pool), never road signs.
     { id: 'oldSignLine', phrase: '{n} old signs and barricades knocked down', family: 'demolition', massKg: [0, 0], pools: ['workSite'],
-      targets: [{ kinds: ['signGrade', 'signCurves', 'signRockslide', 'signTee', 'signCross', 'signStop', 'signIcy'],
+      targets: [{ kinds: ['workSignWorker', 'workSignArrow', 'workSignBlank', 'workBoardStripes'],
                   n: [4, 6], cluster: [1, 1], side: 'right', face: 'traffic' },
                 { kinds: ['roadBarrier'], n: [2, 3], cluster: [2, 3], face: 'road' }] },
 ]
@@ -429,7 +429,7 @@ export const REWARDS = [
 /** FEAT-168: the reward category of a vehicle part with no REWARDS row, by its slot (data/parts.js). */
 export const PART_REWARD_CAT = {
     tire: 'tires', wheel: 'tires', brakesFront: 'brakes', brakesRear: 'brakes',
-    springs: 'suspension', dampers: 'suspension',
+    springs: 'springs', dampers: 'springs',   // FEAT-321: their own category, so the gas station hands out these two alone
     arbFront: 'suspension', arbRear: 'suspension', lift: 'suspension',
     engine: 'engine', radiator: 'engine', airFilter: 'engine', headlight: 'engine', diff: 'drivetrain', axle: 'drivetrain',
     // FEAT-204 bolt-ons [DEFAULT] (DEC-342 draft): with the bed upgrades (FEAT-115 files the rack and light bar there; DEC-028
@@ -448,15 +448,15 @@ export const RARITY_GATES = { common: ['B', 'A'], uncommon: ['A', 'S'], rare: ['
  *          and the office's are [DEFAULT]; the school's is its lunch.
  * Larry's paper route rolls from every category (owner, 2026-10-31: "give him every item").
  */
-const ALL_CATS = ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch', 'produce', 'groceries', 'snack', 'gasSnack', 'grill', 'homemade', 'cooler', 'iceKing']
+const ALL_CATS = ['tires', 'brakes', 'suspension', 'springs', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch', 'produce', 'groceries', 'snack', 'gasSnack', 'grill', 'homemade', 'cooler', 'iceKing']
 export const REWARD_CATS = {
-    autoShop:         { cats: ['tires', 'brakes', 'suspension', 'engine', 'drivetrain', 'recovery'] },
-    gasStation:       { cats: ['fuel', 'drink', 'food', 'engine', 'tires', 'snack', 'gasSnack'] },
+    autoShop:         { cats: ['tires', 'brakes', 'suspension', 'springs', 'engine', 'drivetrain', 'recovery'] },
+    gasStation:       { cats: ['fuel', 'drink', 'food', 'engine', 'tires', 'snack', 'gasSnack', 'springs'] },   // springs: FEAT-321 (DEC-476)
     strandedMotorist: { cats: ['tires', 'recovery', 'fuel', 'engine'] },
-    farm:             { cats: ['tires', 'suspension', 'drivetrain', 'recovery', 'food', 'camp', 'produce', 'groceries', 'homemade'] },
-    workSite:         { cats: ['tires', 'suspension', 'recovery', 'bed'] },
+    farm:             { cats: ['tires', 'suspension', 'springs', 'drivetrain', 'recovery', 'food', 'camp', 'produce', 'groceries', 'homemade'] },
+    workSite:         { cats: ['tires', 'suspension', 'springs', 'recovery', 'bed'] },
     firewoodYard:     { cats: ['bed', 'recovery', 'camp'] },
-    residence:        { cats: ['food', 'homemade', 'camp', 'brakes', 'drivetrain', 'iceKing'], rare: ['tires', 'suspension', 'engine'] },
+    residence:        { cats: ['food', 'homemade', 'camp', 'brakes', 'drivetrain', 'iceKing'], rare: ['tires', 'suspension', 'springs', 'engine'] },
     foodVendor:       { cats: ['food', 'drink', 'grill', 'homemade'] },
     generalStore:     { cats: ['food', 'drink', 'snack', 'groceries', 'camp', 'recovery', 'fuel'] },
     doctor:           { cats: ['drink', 'food'] },
@@ -717,9 +717,11 @@ export const EXPIRY_NOISE = 0.3
 
 // ── Roll shares (owner, 2026-09-26) ─────────────────────────────────────────────────────────
 
-/** 0..1 — share of offers that carry a bonus item. FEAT-168 [DEFAULT]: 0.25 → 0.40 (owner, 2026-11-05:
- *  "not enough item rewards"). */
-export const BONUS_CHANCE = 0.40
+/** 0..1 — share of offers, at a source that has rewards, that carry a bonus item. FEAT-168 [DEFAULT]: 0.25 → 0.40
+ *  (owner, 2026-11-05: "not enough item rewards"). FEAT-321 (DEC-476, owner 2026-11-21: "half of all missions offer
+ *  item rewards"): 0.40 gave 36.3 of 100 offers an item over all sources (some post none: a light freight load, …),
+ *  so the roll is set to what lands the whole board at 50 (wip/feat-321/census.mjs). */
+export const BONUS_CHANCE = 0.55
 // An offer carrying an item plans no leg shorter than this (road metres): a 0.3 km courier handed
 // out a mounted tire on S (owner, 2026-10-25: "increase the item reward floor to 1.5 or 2 km").
 // Enforced by the planner (src/mission.js minM) so the card never has to strip a promised tip —
