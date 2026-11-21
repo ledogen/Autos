@@ -43,3 +43,4 @@ nearer end, in the owner's words. On arriving (or at the first knock-down) it sw
 
 ## Log
 - 2026-11-21 (lane a): built on land/wave3-1120.
+- 2026-11-21 (lane a): proofs on land/wave3-1120: affected gates 65/65 green (--serial, 67 selected, 2 browser), tut-gate 21/21, cdp-smoke 41/42 then pad step green after a test-only fix (12 downs no longer reach the setup page's start, DEC-475 rows; 3a), pad-e2e ALL OK. Open for the owner's wording of the drums' and turn-back signs' line.

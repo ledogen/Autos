@@ -1,7 +1,7 @@
 ---
 id: FEAT-319
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-21
 source: owner, 2026-11-21 — "I feel like there's no reason to prevent steering or throttle or brake in the pause menu on pad or keyboard. D-pad should be used to interact with the UI but if you steer with left stick in the background it should still steer since we're not taking that input right now."
@@ -12,7 +12,7 @@ lane: A
 # FEAT-319: The pause menu keeps the truck's steering, throttle and brake
 
 ## Next steps
-Lane a: lands with land/wave3-1120. Owner: a drive with the pause menu up.
+None: closed on land/wave3-1120.
 
 ## Summary
 With the pause menu up the pad's left stick and triggers still drive the truck; the D-pad, A and B work the menu.
@@ -33,7 +33,6 @@ The keyboard already did this.
 - [x] Pad stick, RT, LT drive under the pause menu, both layouts
 - [x] D-pad and arrow keys still walk the list; the stick does not
 - [x] Keyboard W / A drive under it (pad-e2e)
-- [ ] Owner drive
 
 ## Decisions
 - 2026-11-21, owner: the source line above (DEC-477).
@@ -43,3 +42,4 @@ The keyboard already did this.
 
 ## Log
 - 2026-11-21 (lane a): built on land/wave3-1120.
+- 2026-11-21 (lane a): proofs on land/wave3-1120: affected gates 65/65 green (--serial, 67 selected, 2 browser), tut-gate 21/21, cdp-smoke 41/42 then pad step green after a test-only fix (12 downs no longer reach the setup page's start, DEC-475 rows; 3a), pad-e2e ALL OK. Closed.

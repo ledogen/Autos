@@ -1,7 +1,7 @@
 ---
 id: FEAT-321
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-21
 source: owner, 2026-11-21 (card reward-pool-dilution) — "raise the item reward share to about 50%. i.e. half of all missions offer item rewards. add shocks/springs to the gas station pool."
@@ -12,7 +12,7 @@ lane: A
 # FEAT-321: Half of all missions offer an item reward; springs and shocks at the gas station
 
 ## Next steps
-Lane a: lands with land/wave3-1120. Nothing owed.
+None: closed on land/wave3-1120.
 
 ## Summary
 The card's census had 63.7 of 100 offers paying cash only. The owner wants about half of them to offer an item,
@@ -57,3 +57,4 @@ item takes off the cash, ITEM_COST_FRAC 0.5) $1.29 → $1.78.
 
 ## Log
 - 2026-11-21 (lane a): built on land/wave3-1120; offer-board, shop-stock, inventory gates green.
+- 2026-11-21 (lane a): proofs on land/wave3-1120: affected gates 65/65 green (--serial, 67 selected, 2 browser), tut-gate 21/21, cdp-smoke 41/42 then pad step green after a test-only fix (12 downs no longer reach the setup page's start, DEC-475 rows; 3a), pad-e2e ALL OK. Closed.
