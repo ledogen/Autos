@@ -681,7 +681,7 @@ const STEPS = [
     await seat(q.ox, q.oz, 0)
     const text2 = await until(card, 2000)
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
-    await js('window.__inv.grant("breakfastBurrito")'); await sleep(200)   // for FEAT-310's sleep-card check below: an inventory change with the card up made Z flaky
+    await js('window.__inv.grant("breakfastBurrito")'); await sleep(200)   // food in the bag for the sleep-card check below (FEAT-310 / DEC-479); an inventory change with the card up made Z flaky
     await tap(' ')
     check(await until(panel, 2000), `parking off the ribbon with the card up ("${text2}") opened no camp panel`)
     const title = () => js('document.getElementById("cp-title").textContent')
@@ -694,6 +694,7 @@ const STEPS = [
     await js('document.getElementById("cp-hours").value = "10"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
     await sleep(300)
     check(!await js('/spoils in/.test(document.getElementById("cp-energy-text").textContent)'), 'FEAT-310: the sleep card warned about spoiling food')
+    await js('document.getElementById("cp-hours").value = "6"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
     if (process.env.NOTES1121_SHOTS) { mkdirSync('wip/notes-1121', { recursive: true })
       writeFileSync('wip/notes-1121/sleep.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
     await js('document.getElementById("cp-sleep-back").click()')
@@ -701,6 +702,7 @@ const STEPS = [
     // calls the hunt off — so later parks open nothing.
     const lit = () => js('document.getElementById("camp-row").style.display === "flex" && document.getElementById("camp-icon").classList.contains("on")')
     check(await until(lit, 1000), 'the tent is not up and lit beside the truck face')
+    await sleep(500)
     await tap('z')
     check(await until(async () => !await panel(), 2000), 'Z did not close the truck face')
     check(!await lit(), 'Z closed the truck face but left the hunt on')
@@ -958,7 +960,7 @@ const STEPS = [
     const b1 = await tm()
     check(b1.t && /^13h 5\dm$|^14h 0\dm$/.test(b1.t), `after 2 h the thumbnail reads "${b1.t}", not ~14 h`)
     await sleep(200)
-    if (process.env.NOTES1121_SHOTS) { mkdirSync('wip/notes-1121', { recursive: true })
+    if (process.env.NOTES1121_SHOTS) { mkdirSync('wip/notes-1121', { recursive: true }); await js(`document.getElementById('inv-tip').style.display = 'none'`)
       writeFileSync('wip/notes-1121/inv.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
     // FEAT-310 (DEC-449): the selected food's line reads its time to spoil — 14 h of the chili dog's 16 are left.
     const ci = await js(`window.__inv.list().findIndex(r => r.id === 'chiliDog')`)
@@ -985,7 +987,7 @@ const STEPS = [
     if (!wasParked) await tap(' ')
     const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
-    console.log(`  freshBar: ${(b0.w * 100).toFixed(1)} % → ${(b1.w * 100).toFixed(1)} % after 2 h; centred ${b0.dx.toFixed(1)} px, ${b0.dy.toFixed(1)} px off the bottom`)
+    console.log(`  freshBar: thumbnail time ${b0.t} → ${b1.t} after 2 h, no bar`)
   }],
   ['campGear', async () => {
     // FEAT-66: what is packed is what stands at camp. A pad at the truck, a packed tent → the tent

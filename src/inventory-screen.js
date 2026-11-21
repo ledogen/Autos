@@ -56,8 +56,8 @@ const CSS = `
 .inv-slot .sl-n { position: absolute; right: 3px; bottom: 1px; font-size: 12px; color: var(--text);
   text-shadow: 0 1px 2px #000; pointer-events: none; }
 .inv-slot .keycap { position: absolute; left: -5px; top: -6px; margin: 0; font-size: 12px; background: #1b2026; }
-/* FEAT-310 (DEC-479): food shows the time until its soonest unit spoils, as text at the thumbnail's foot, no bar */
-.inv-slot .sl-spoil { position: absolute; left: 3px; bottom: 1px; font-size: 12px; color: var(--text); white-space: nowrap;
+/* FEAT-310 (DEC-479): food shows the time until its soonest unit spoils, as text at the thumbnail's top right, no bar */
+.inv-slot .sl-spoil { position: absolute; right: 3px; top: 2px; font-size: 12px; color: var(--text); white-space: nowrap;
   text-shadow: 0 1px 2px #000; pointer-events: none; }
 /* FEAT-230 (DEC-338): a cooler's ice bar at 6 o'clock over the thumbnail, full when fresh, empty when gone */
 .inv-slot .sl-fresh { position: absolute; left: 30%; width: 40%; bottom: 4px; height: 5px; box-sizing: border-box;
