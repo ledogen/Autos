@@ -6828,7 +6828,11 @@ export class RoadSystem {
      * seed 1960791808). Each crossing becomes a four-leg promoted node P on the through run's nearest vertex: the
      * through run is sliced there (_v2SliceRun: its deck does not move) and the other run's two halves are rebuilt as
      * departures landing on P (_v2BuildDeparture re-solves each onto P's deck). Either run may be the through one; the
-     * pair whose four mouths accept ships, else the best-ranked (a junction always beats a ramp). No road is deleted
+     * pair whose four mouths accept ships, else the best-ranked (a junction always beats a ramp). The swap is the
+     * fallback that builds the 55 m site (1960791808: the shorter road through, the other descending onto it). Where
+     * neither road's deck can be reached from the other inside the grade ceiling (1315540905: a side road that would
+     * climb 28 m in 56 m, or the through road 43 m in 102 m; no deck between the two solves either) the crossing
+     * declines and ships as before: 2 of 45 in the 400-seed census. No road is deleted
      * (DEC-070): +1 node and +2 runs per site. Only a crossing under MINREG from a run's end is not this backstop's (the
      * node there owns it). Two legs of ONE node are no exemption: a T's side road that wanders back across its trunk
      * 47 m out ships a 94 % lift (seed 2080966469). Nor is a bore: FEAT-40 clips every bore clear of a crossing, so no
@@ -6882,63 +6886,40 @@ export class RoadSystem {
     _v2CrossOne(g, f) {
         const MINREG = 30, Rmin = this._params?.roadMinTurnRadius ?? 12
         const decline = (why) => { this._v2MergeSkipped('x-junction', `${f.kA} x ${f.kB} declined: ${why}`); return false }
-        // run R's two departures from its vertex i onto P (judged, then ranked, when `judge` is given), or null
-        const halvesOf = (R, i, P, judge) => {
-            const out = []
+        let best = null
+        // the longer run is tried as the through road first; the other way round wins only on a better rank
+        const LA = this._network.get(f.kA).polyCum.at(-1), LB = this._network.get(f.kB).polyCum.at(-1)
+        const ways = [[f.kA, f.sA, f.kB, f.sB], [f.kB, f.sB, f.kA, f.sA]]
+        if (LB > LA) ways.reverse()
+        for (const [tk, tArc, sk, sArc] of ways) {
+            const T = this._network.get(tk), S = this._network.get(sk)
+            const iP = _nearestVertexAtCum(T.polyCum, tArc), iL = _nearestVertexAtCum(S.polyCum, sArc)
+            if (Math.min(T.polyCum[iP], T.polyCum.at(-1) - T.polyCum[iP]) < MINREG) continue
+            if (Math.min(S.polyCum[iL], S.polyCum.at(-1) - S.polyCum[iL]) < MINREG) continue
+            const P = T.points[iP], pid = _promotedId(P.x, P.z), pKey = g.key(pid)
+            if (this._promoted.has(pKey)) continue
+            const grade = _trunkGradeAt(T, iP)
+            const halves = []
             for (const nAtStart of [false, true]) {
-                const farCell = nAtStart ? R.cellB : R.cellA
+                const farCell = nAtStart ? S.cellB : S.cellA
                 const farY = _isPromotedId(farCell) ? this._promoted.get(g.key(farCell))?.pos.y : undefined
                 let built = null, why = null
                 for (const RB of [4 * Rmin, 3 * Rmin, 2 * Rmin, Rmin]) {
-                    const b = this._v2BuildDeparture(R, i, nAtStart, P, RB, farY)
+                    const b = this._v2BuildDeparture(S, iL, nAtStart, P, RB, farY)
                     if (!b) continue
-                    const w = judge ? judge(b) : null
+                    const w = this._v2DepartureAccepts(b, T, P, grade)
                     if (!w) { built = b; why = null; break }
                     if (!built || b._score < built._score) { built = b; why = w }
                 }
-                if (!built) return null
-                out.push({ nAtStart, built, why })
+                if (!built) break
+                halves.push({ nAtStart, built, why })
             }
-            return out
-        }
-        // the longer run is tried as the through road first; the other way round wins only on a better rank
-        const LA = this._network.get(f.kA).polyCum.at(-1), LB = this._network.get(f.kB).polyCum.at(-1)
-        const ways = [[f.kA, f.sA, f.kB, f.sB], [f.kB, f.sB, f.kA, f.sA]].map(([tk, tArc, sk, sArc]) => {
-            const T = this._network.get(tk), S = this._network.get(sk)
-            const iP = _nearestVertexAtCum(T.polyCum, tArc), iL = _nearestVertexAtCum(S.polyCum, sArc)
-            const P = T.points[iP], pid = _promotedId(P.x, P.z), pKey = g.key(pid)
-            const ok = Math.min(T.polyCum[iP], T.polyCum.at(-1) - T.polyCum[iP]) >= MINREG
-                && Math.min(S.polyCum[iL], S.polyCum.at(-1) - S.polyCum[iL]) >= MINREG && !this._promoted.has(pKey)
-            return ok ? { tk, sk, T, S, iP, iL, P, pid, pKey } : null
-        }).filter(Boolean)
-        if (LB > LA) ways.reverse()
-        let best = null
-        for (const w of ways) {
-            const grade = _trunkGradeAt(w.T, w.iP)
-            const halves = halvesOf(w.S, w.iL, w.P, (b) => this._v2DepartureAccepts(b, w.T, w.P, grade))
-            if (!halves) continue
+            if (halves.length < 2) continue
             const score = halves.reduce((s, h) => s + (h.why ? h.built._score : 0), 0)
-            if (!best || score < best.score) best = { ...w, grade, halves, score }
+            if (!best || score < best.score) best = { tk, sk, T, S, iP, P, pid, pKey, grade, halves, score }
             if (!score) break
         }
-        // FALLBACK, when neither road's deck can be reached from the other within the grade ceiling (seed 1315540905:
-        // a side road that would climb 28 m in 56 m to the through road, or the through road 43 m in 102 m to it):
-        // the decks MEET IN THE MIDDLE. All four legs are rebuilt as departures onto one deck between the two, the
-        // through road's with no offset (it keeps its line, only its profile re-solves). Each must solve legally.
-        for (const w of best ? [] : ways) {
-            for (const u of [0.5, 0.25, 0.75]) {
-                const P = new THREE.Vector3(w.P.x, w.P.y + (w.S.points[w.iL].y - w.P.y) * u, w.P.z)
-                const trunkHalves = halvesOf(w.T, w.iP, P, null), halves = trunkHalves && halvesOf(w.S, w.iL, P, null)
-                if (!halves) continue
-                const [h0, h1] = trunkHalves.map((h) => h.built), L0 = h0.polyCum.at(-1)
-                const grade = _trunkGradeAt({ points: [...h0.pts, ...h1.pts.slice(1)], polyCum: [...h0.polyCum, ...[...h1.polyCum].slice(1).map((c) => c + L0)] }, h0.pts.length - 1)
-                best = { ...w, P, grade, halves, trunkHalves }
-                this._v2MergeSkipped('promote-residual', `${w.sk} x ${w.tk} X junction met in the middle, ${(100 * u).toFixed(0)} % of the way from the through deck`)
-                break
-            }
-            if (best) break
-        }
-        if (!best) return decline('no X builds either way, nor meeting in the middle')
+        if (!best) return decline('no X builds either way')
         const { T, S, iP, P, pid, pKey, halves } = best
         for (const h of halves) if (h.why) this._v2MergeSkipped('promote-residual', `${best.sk} X junction shipped as the best available — ${h.why}`)
         this._network.delete(best.tk); this._network.delete(best.sk)
@@ -6949,23 +6930,17 @@ export class RoadSystem {
             while (this._network.has(k) || this._network.has(flip + k.slice(flip.length))) k += PARALLEL_SUFFIX
             this._network.set(k, run)
         }
-        const putHalves = (R, list) => {
-            for (const { nAtStart, built } of list) {
-                const cA = nAtStart ? pid : R.cellA, cB = nAtStart ? R.cellB : pid
-                put(cA, cB, {
-                    points: built.pts, arcOrigin: 0, centerline: built.centerline,
-                    polyCum: built.polyCum, clArc: built.clArc, cellA: cA, cellB: cB,
-                    tunnelSpans: built.tunnelSpans, offCurveSpans: built.offCurveSpans,
-                    condemned: R.condemned, rerouted: R.rerouted,
-                })
-            }
+        put(T.cellA, pid, this._v2SliceRun(T, 0, iP, T.cellA, pid))
+        put(pid, T.cellB, this._v2SliceRun(T, iP, T.points.length - 1, pid, T.cellB))
+        for (const { nAtStart, built } of halves) {
+            const cA = nAtStart ? pid : S.cellA, cB = nAtStart ? S.cellB : pid
+            put(cA, cB, {
+                points: built.pts, arcOrigin: 0, centerline: built.centerline,
+                polyCum: built.polyCum, clArc: built.clArc, cellA: cA, cellB: cB,
+                tunnelSpans: built.tunnelSpans, offCurveSpans: built.offCurveSpans,
+                condemned: S.condemned, rerouted: S.rerouted,
+            })
         }
-        if (best.trunkHalves) putHalves(T, best.trunkHalves)
-        else {
-            put(T.cellA, pid, this._v2SliceRun(T, 0, iP, T.cellA, pid))
-            put(pid, T.cellB, this._v2SliceRun(T, iP, T.points.length - 1, pid, T.cellB))
-        }
-        putHalves(S, halves)
         this._promoted.set(pKey, { id: pid, pos: new THREE.Vector3(P.x, P.y, P.z), gx: best.grade.gx, gz: best.grade.gz })
         this._v2MergeSkipped('x-junction', `${best.sk} x ${best.tk} crossed at (${P.x.toFixed(0)}, ${P.z.toFixed(0)})`)
         return true
