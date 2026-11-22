@@ -2620,13 +2620,23 @@ const STEPS = [
     check(await js('window.__worstDay().held'), 'the tutorial does not hold the truck: a crash would cost damage (FEAT-184, DEC-151)')
     check(await js('window.__day().clockH()') === h0, `the clock ran on the evening's drive (${h0} → ${await js('window.__day().clockH()')})`)
     const lat = (x, z) => `(() => { const q = window.__roadSys().queryNearest(${x}, ${z}, 200); return q?.point ? Math.hypot(q.point.x - ${x}, q.point.z - ${z}) : 999 })()`
-    const off = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
-      const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
-      for (const along of [0, 100, -100, 160, -160]) for (const d of [25, -25, 35, -35, 45, -45]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
-        // FEAT-217: past the 20 m no-reset radius of every place (TUT_PARAMS.safeNearPoiM, DEC-281), and 15+ m from the road (10 m past its side)
-        if (window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
-        const q = window.__roadSys().queryNearest(x, z, 100); if (!q?.point || Math.hypot(q.point.x - x, q.point.z - z) > 15) return { x, z } }
-      return null })()`)
+    // BUG-256: both spots (off the road here, the shoulder below) are the flattest point within 300 m of the joint at a given
+    // distance from the road — graded under 1.5 % (under the rolling resistance, so a truck with the brake off stays put),
+    // clear of hard props within 6 m, 90 m from every place — on a 2 m grid centred on the joint (~1 s). The old off-road
+    // pick was the first point 25–45 m beside the road wherever the 5 s of W had left the truck (wall time, so it varied run
+    // to run); some picks sat on a slope that rolled the truck, brake off, 38 m down into the 10 m band DEC-219 keeps safe
+    // (6.2 m from the centreline), so no reset came. The game was right; the fixture was not.
+    const flatSpot = (lo, hi) => js(`(() => { const v = window.__poi().list().find(p => p.type === 'foodVendor'), H = window.terrain; let best = null
+      for (let dx = -300; dx <= 300; dx += 2) for (let dz = -300; dz <= 300; dz += 2) { const x = v.x + dx, z = v.z + dz
+        const g = Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
+        if (g >= 0.015 || g < 1e-9 || (best && g >= best.g)) continue   // g === 0: height not streamed in yet (3590618618 read a flat 0 at a 35 % slope), not a flat spot
+        const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
+        if (lt < ${lo} || lt > ${hi} || window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
+        if (!window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length) best = { x, z, g } }
+      return best })()`)
+    // FEAT-217: past the 20 m no-reset radius of every place (TUT_PARAMS.safeNearPoiM, DEC-281), and 20–45 m from the road
+    // (5+ m past the 15 m where the countdown starts)
+    const off = await flatSpot(20, 45)
     check(off, 'no off-road spot beside the joint')
     await seat(off.x, off.z, 0)
     // DEC-321: no reset is taught — off the road the HUD names no key; R still works, untaught.
@@ -2642,7 +2652,8 @@ const STEPS = [
     check(await until(() => js('document.getElementById("reset-countdown").style.opacity === "1" && /back on it in \\d/.test(document.getElementById("reset-countdown").textContent)'), 3000), 'FEAT-217: off the road, no reset countdown showed')
     // The reset counts 4 s of PLAY time (_playedS: real frame seconds while live, each frame clamped to 0.25 s), not wall
     // time, so a loaded box under 4 fps accrues it slower than the clock: poll long (a pass costs nothing extra).
-    check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), 'off the road with the brake off, the evening did not put the truck back on it')
+    check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), `off the road with the brake off, the evening did not put the truck back on it: ${await js(`(() => { const v = window.__vs.position
+      return JSON.stringify({ lat: window.__campSys().nearRoadInfo(v.x, v.z).lateral.toFixed(1), fromSeat: Math.hypot(v.x - ${off.x}, v.z - ${off.z}).toFixed(1), kmh: (window.__vs.velocity.length() * 3.6).toFixed(1), parked: window.__vs.parked, tut: window.__tutorial().phase }) })()`)}`)
     await strayCheck('in the evening')
     // FEAT-217 (of3s, DEC-219): the shoulder (≤ 10 m past the road's side) is safe to sit on with the brake off — no countdown, no reset.
     // BUG-173 (DEC-230): the spot is the flattest point within 300 m that is on the shoulder (11–14 m from the centreline:
@@ -2653,14 +2664,7 @@ const STEPS = [
     // The check below is unchanged. FEAT-229 (DEC-402): on 1872706826 the only such spot within 400 m is one ~10 m patch
     // 264 m north of the joint, so the search centres on the joint (not wherever R left the truck) on a 2 m grid (the 4 m
     // one stepped over the 3 m band; ~1 s).
-    const sh = await js(`(() => { const v = window.__poi().list().find(p => p.type === 'foodVendor'), H = window.terrain; let best = null
-      for (let dx = -300; dx <= 300; dx += 2) for (let dz = -300; dz <= 300; dz += 2) { const x = v.x + dx, z = v.z + dz
-        const g = Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
-        if (g >= 0.015 || g < 1e-9 || (best && g >= best.g)) continue   // g === 0: height not streamed in yet (3590618618 read a flat 0 at a 35 % slope), not a flat spot
-        const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
-        if (lt < 11 || lt > 14 || window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
-        if (!window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length) best = { x, z, g } }
-      return best })()`)
+    const sh = await flatSpot(11, 14)
     check(sh, 'FEAT-217: no shoulder spot found')
     await seat(sh.x, sh.z, 0); await readCards(300)
     if (await js('window.__vs.parked')) await tap(' ')
