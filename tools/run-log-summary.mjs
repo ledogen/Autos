@@ -36,7 +36,7 @@ const FOOD_RE = /food|eat|meal|cook|chili|lunch|burger|peanut|coffee|drink/i
 const MAINT_RE = /repair|fit|oil|filter|align|tire|wheel|brake|spring|damper|engine|swap|service|patch|plug|bead|radiator|part/i
 /** A purchase line's money class: maintenance · food · gear (everything else, incl. spare parts' opposite: gear/other). */
 export function purchaseClass (l) {
-  const item = Object.values(ITEMS).find(i => l.label === `Buy ${i.name}`)
+  const id = Object.keys(ITEMS).find(k => l.label === `Buy ${ITEMS[k].name}`), item = id && { ...ITEMS[id], id }
   if (l.eat > 0 || item?.kind === 'food' || item?.id === 'coffee' || (!item && FOOD_RE.test(l.m ?? ''))) return 'food'
   if (item?.kind === 'part' || (!item && MAINT_RE.test(`${l.m} ${l.label}`))) return 'maint'
   return 'gear'
