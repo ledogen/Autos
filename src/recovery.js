@@ -188,7 +188,7 @@ export function fitRoadside (parts, inventory, index) {
   const off = parts.fit(r.id, r.cond, p.slot)
   if (!off) return -1
   inventory.take(index)
-  runLog.on && runLog.event('fit', { act: 'roadside', id: r.id, cond: r.cond ?? null, off: off.id, offCond: off.cond })
+  runLog.on && runLog.event('fit', { act: 'roadside', slot: p.slot, id: r.id, cond: r.cond ?? null, off: off.id, offCond: off.cond })
   if (off.id && PARTS[off.id].massKg > 0) inventory.grant(off.id, 1, { cond: off.cond }, 'roadside')
   return SLOTS[p.slot].hours
 }
