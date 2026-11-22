@@ -19,7 +19,7 @@ import { createServer } from 'node:net'
 import { cpus, loadavg } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
+import { CHROME, launchChrome, connect, sleep, freezeProbe } from './lib/cdp.mjs'
 import { ECONOMY_PARAMS } from '../src/economy.js'
 import { DAY_PARAMS } from '../src/day.js'
 import { summarize, parseLines, report } from '../tools/run-log-summary.mjs'   // the runlog step reads its real log back
@@ -3783,7 +3783,10 @@ for (const [name, fn] of STEPS) {
   step = name
   const t0 = performance.now()
   // A step on a random world (the pad step's blank seed box) names it, so a miss can be replayed (Lane A, 2026-11-06).
-  try { await fn() } catch (e) { failed = { step: name, msg: `${e.message} · ${await js('window.__worldCode?.()').catch(() => 'world code unreadable')}` } }
+  try { await fn() } catch (e) {
+    failed = { step: name, msg: `${e.message} · ${await js('window.__worldCode?.()').catch(() => 'world code unreadable')}` }
+    if (/CDP timeout/.test(e.message)) console.log(await freezeProbe(client))
+  }
   times.push(`${name} ${((performance.now() - t0) / 1000).toFixed(1)}s`)
   if (failed || errors.length) break
 }
