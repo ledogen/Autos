@@ -56,9 +56,10 @@ const CSS = `
 .inv-slot .sl-n { position: absolute; right: 3px; bottom: 1px; font-size: 12px; color: var(--text);
   text-shadow: 0 1px 2px #000; pointer-events: none; }
 .inv-slot .keycap { position: absolute; left: -5px; top: -6px; margin: 0; font-size: 12px; background: #1b2026; }
-/* FEAT-310 (DEC-479): food shows the time until its soonest unit spoils, as text at the thumbnail's top right, no bar */
-.inv-slot .sl-spoil { position: absolute; right: 3px; top: 2px; font-size: 12px; color: var(--text); white-space: nowrap;
-  text-shadow: 0 1px 2px #000; pointer-events: none; }
+/* FEAT-310 (DEC-479): food shows the time until its soonest unit spoils, as text along the thumbnail's bottom edge, no bar */
+.inv-slot .sl-spoil { position: absolute; left: 0; right: 0; bottom: 1px; text-align: center; font-size: 12px; color: var(--text);
+  white-space: nowrap; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.inv-slot .sl-spoil + .sl-n { bottom: 14px; }   /* the count sits above the time, clear of the key badge at the top left */
 /* FEAT-230 (DEC-338): a cooler's ice bar at 6 o'clock over the thumbnail, full when fresh, empty when gone */
 .inv-slot .sl-fresh { position: absolute; left: 30%; width: 40%; bottom: 4px; height: 5px; box-sizing: border-box;
   border: 1px solid var(--line-control); border-radius: 2px; background: var(--hud-bg); pointer-events: none; }
@@ -119,8 +120,8 @@ function slotHtml (it, attrs = '', cls = '') {
   return `<div class="inv-slot full${it.equipped ? ' worn' : ''} ${cls}" data-id="${it.id}" ${attrs}${tint}>`   // data-id: FEAT-288 P2's lesson selectors
     + `<img src="${THUMB(it.id)}" alt="" onerror="this.parentNode.classList.add('noimg'); this.remove()">`
     + `<span class="sl-name">${it.name}</span>`
-    + (it.n > 1 ? `<span class="sl-n">&times;${it.n}</span>` : '')
     + (it.spoilH != null ? `<span class="sl-spoil">${formatGameDuration(it.spoilH)}</span>` : '')   // FEAT-310 (DEC-479): the time, not a bar
+    + (it.n > 1 ? `<span class="sl-n">&times;${it.n}</span>` : '')
     + (it.fresh != null && it.spoilH == null ? `<span class="sl-fresh"><i style="width:${(it.fresh * 100).toFixed(1)}%"></i></span>` : '')
     + (it.key ? keycap(it.key, false) : '')   // the quick-slot keys: the pad walks the slots instead
     + `</div>`
