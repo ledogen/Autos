@@ -123,7 +123,7 @@ export function summarize (events) {
         c[cls] += l.price ?? 0; c.sold += l.earn ?? 0
         if (cls === 'gear' && !s.firstOther) s.firstOther = { e, label: l.label ?? l.m }
         s.fixes.push({ e, text: `${l.m} ${l.label} ${JSON.stringify(l.args ?? '')}` })
-        if (l.m === 'buyAndFit' && /^tire/.test(l.args?.[1] ?? '')) s.fitLines.push({ c: CORNERS.indexOf(l.args[1].slice(4)), e, what: l.label })
+        if ((l.m === 'buyAndFit' || l.m === 'exchange') && /^tire/.test(l.args?.[1] ?? '')) s.fitLines.push({ c: CORNERS.indexOf(l.args[1].slice(4)), e, what: l.label })
       }
     }
     if (e.e === 'fuel' && e.sale != null) { s.fuel.gal += e.gal; s.fuel.sale += e.sale; s.fuel.visits++; day$(e.day).fuel += e.sale }
