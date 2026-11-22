@@ -12,8 +12,8 @@ lane: Engine & world
 # BUG-234: Two different runs cross with no junction there, and the at-grade lift builds a ramp
 
 ## Next steps
-- Owed runs (held 2026-11-20 13:47 by the owner's quiet-machine order): the last 17 census seeds, the 4 "no-ctx" sites, the 4 "never discovered" sites, and the sheet. Exact commands are in the lane p handoff.
-- Owner pick between the fix options below (card `bug234-crossing-fix-pick`). Recommended: option 2, an X junction at the crossing.
+- Owner drive + sheet look (card `bug234-built-drive`), then the orchestrator lands `land/bug-234-x-junction`.
+- Owner call: the one pair that cannot become an X (seed 1315540905, below, Open questions).
 
 ## Summary
 Two different road runs cross in plan view where the network has no junction. The FEAT-19 at-grade crossing lift then raises the lower deck onto the upper one. Where the solved decks were far apart that makes a ramp far over the grade cap.
@@ -47,17 +47,18 @@ No site comes from the shove.
 - [x] Cause traced on the three worst sites: 1960791808 is class F; 1315540905 and 2080966469 are class B. All 30 are classed.
 - [x] Fix options, simplest first (above).
 - [x] Census complete: 300 classic seeds, plus 30 at the owner's world settings; every site classed; sheet made.
-- [ ] Owner pick (card bug234-crossing-fix-pick).
-- [ ] Gate, fingerprint, 400-seed sweep.
+- [x] Owner pick: X junction + wider overlap join (DEC-471).
+- [x] Built (`_v2JoinCrossings` after `_v2JoinOverlaps`, src/road.js); gate `test/x-junction.mjs`; 400-seed census 45 → 2 crossings.
+- [ ] Owner drive and sheet look (card bug234-built-drive).
 - [ ] Landed on main (orchestrator).
 
 ## Decisions
 - 2026-11-19, owner (card bug232-spiral-tunnels): "No spirals: refuse the loop". Recorded as DEC-446: the router refuses a path that crosses itself; no grade separation (no tunnel under, no bridge over) is added for spirals or for BUG-234's no-junction crossings. The same card covered this ticket ("BUG-234 over/under passes"): no over/under passes.
-None yet.
+- 2026-11-20, owner (card bug234-crossing-fix-pick): "follow recommendation", recorded as DEC-471: an X junction at a no-junction crossing, no road deleted, and a wider overlap join.
 
 ## Open questions
-- (Answered by DEC-446: no over/under passes.)
-- X junction (option 1) or honest sanction (option 2)? The X junction contradicts a code-comment ruling of 2026-08-25 above `_v2CededExtents` ("nodes are the only intersections… the T/X promotion concept is retired"). That ruling has no decision record. DEC-070 (connectivity only goes up) is the later standing record. This is the owner's call.
+- (Answered by DEC-446: no over/under passes. Answered by DEC-471: X junction.)
+- Seed 1315540905 (1305, −1628) and (1350, −1578): one pair of roads crosses twice 70 m apart with decks 12 m apart, and no X solves. The side road would have to climb 28 m in 56 m to the through deck, or the through road 43 m in 102 m to the side's; no deck between the two solves either (tried at 5 % steps). It ships as on main (a 95-97 % lift). DEC-471 rules out deleting a road and DEC-446 rules out a pass under. Options: leave it (2 of 45 crossings in 400 seeds), or allow an X whose legs ship over the grade ceiling. Recommendation: leave it.
 
 ## Links
 BUG-232 (the same lift, one run crossing itself).
@@ -71,3 +72,4 @@ BUG-232 (the same lift, one run crossing itself).
 - 2026-11-20 (lane p, land/bug-234-crossing-trace @ main f6e58c57): census plus a plan-layer trace on 283 of 300 seeds. 23 sites remain; classes A 1, B 10, D 4, E 4, unresolved 4. Heavy runs held at 13:47 (owner's quiet machine). The last 17 seeds and the sheet are owed. No src/ change.
 - 2026-11-20: owner capture seed 2711103901 (custom world T50/R290) classified as a class-B variant: the sanctioned extent covers the loser's departure blend, and the crossing road also overlaps for 164 m. It exists on main. Tool `wip/bug-234/near.mjs` (CAP= takes a capture's params).
 - 2026-11-20 22:10: census complete. Classic world, 300 seeds: 30 sites on 21; classes A 3, B 14, D 4, E 4, F 5 (restored sides). Owner's world settings, 30 seeds: 0 sites. Sheet in main's wip/bug-234/sheet.jpg. Card bug234-crossing-fix-pick written.
+- 2026-11-21 (land/bug-234-x-junction): built. Census, 400 random seeds: crossings 45 → 2 (28 seeds → 1), 65 X junctions, runs +130, components and every seed's run count unchanged, 0 throws with every profile built. Fallback = the other road as the through road (builds the 55 m site). 100/100 affected gates green (demolition-site re-judged), physics and world fingerprints identical to main. Two Xs ship a departure over the 38 % cap (39.9 %, 43.7 %).
