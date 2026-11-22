@@ -184,6 +184,10 @@ console.log('\n§5 FEAT-324 blocks and stitching')
   const low = report(summarize([...A.slice(0, 1), at('route', 1, 9, { pos: [0, 0, 0], cond: { ...cond(0.3, 0.4), airFilter: 0.2 } })]))
   ok(/airFilter: minimum 20\.0 % and NO alert/.test(low) && /tireFL: minimum 30\.0 % and NO alert/.test(low) && /oil: minimum 40\.0 % and NO alert|w14/.test(low), 'a track under 50 % with no alert is named')
   ok(/ratio 0\.750 · B/.test(text) && /next rank 0 s faster|next rank 5 s faster/.test(text) && /5 s to spare/.test(text), 'job: ratio, rank, seconds to the next rank threshold and to spare')
+  // the owner's 2026-11-22 log: a fragile job at 0.695 of par lettered S on its condition, which the time lines alone grade A
+  const frag = report(summarize([at('mission', 1, 15, { state: 'done', offer: { type: 'residence' }, spec: { family: 'fragile', thingId: 'diningChairs' },
+    job: { distance: 4995.7, cargoKg: 24, terms: { region: 1, thresholds: { S: 0.652, A: 0.707, B: 0.794, C: 1 } } }, result: { par: 357.34, elapsed: 248.32, ratio: 0.695, letter: 'S', health: 0.9555 } })]))
+  ok(/condition 95\.5 % · S on its condition \(lines S 80\.0 % A 73\.0 %/.test(frag) && !/would grade/.test(frag), 'a fragile job is checked on its condition lines, not on time')
   ok(/hungry 0\.\d+ h/.test(text) && /5\.00 h of fed time left when eaten/.test(text), 'hours hungry; the meal with its fed time left')
   const mid = report(summarize([at('header', 1, 16.85, { how: 'on', cond: cond(0.6, 0.4) }), at('route', 1, 17, { pos: [0, 0, 0] })]))
   ok(/WARNING: this log does not start at the run's start/.test(mid), 'a log that starts mid-run says so plainly')
