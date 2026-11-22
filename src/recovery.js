@@ -130,7 +130,7 @@ export function tireServiceQuote (damage, shopTow, tier, params) {
 
 /** Do quoted tire service `q`: the new parts on, every flat holding air. The wallet and the clock are the caller's. */
 export function tireService (parts, damage, q) {
-  runLog.on && runLog.event('tire', { act: 'tireService', jobs: q.jobs, price: q.price, hours: q.hours })
+  runLog.on && runLog.event('tire', { act: 'tireService', jobs: q.jobs, price: q.price, hours: q.hours, old: q.jobs.map(j => damage.get(TIRE_IDS[j.corner])) })
   for (const { corner, tire, wheel } of q.jobs) {
     if (tire) parts.fit(stockPart(TIRE_IDS[corner]), 1, TIRE_IDS[corner])
     if (wheel) parts.fit(stockPart(WHEEL_IDS[corner]), 1, WHEEL_IDS[corner])
@@ -152,7 +152,7 @@ export function fitSpare (parts, damage, inventory, index, corner) {
   const r = inventory.list()[index]
   if (r?.id !== 'spareTire' || r.flat || !(corner >= 0 && corner < 4)) return -1
   runLog.on && runLog.event('tire', { act: 'fitSpare', corner, spareCond: r.cond ?? null, offCond: damage.get(TIRE_IDS[corner]), offFlat: damage.flat[corner] })
-  inventory.grant('spareTire', 1, parts.fitMounted(inventory.take(index), corner))
+  inventory.grant('spareTire', 1, parts.fitMounted(inventory.take(index), corner), 'roadside')
   return corner
 }
 
@@ -189,7 +189,7 @@ export function fitRoadside (parts, inventory, index) {
   if (!off) return -1
   inventory.take(index)
   runLog.on && runLog.event('fit', { act: 'roadside', id: r.id, cond: r.cond ?? null, off: off.id, offCond: off.cond })
-  if (off.id && PARTS[off.id].massKg > 0) inventory.grant(off.id, 1, { cond: off.cond })
+  if (off.id && PARTS[off.id].massKg > 0) inventory.grant(off.id, 1, { cond: off.cond }, 'roadside')
   return SLOTS[p.slot].hours
 }
 

@@ -55,5 +55,5 @@ export function rollJalopy ({ parts, damage, inventory }, seed) {
     if (t.cls === 'alignment') damage._bendWheel(t.wheel, span([0, 1 - range[0]]))
     else damage.set(id, span(range))
   }
-  inventory.grant('spareTire', 1, { tire: JALOPY_SPARE.tire, cond: span(JALOPY_SPARE.cond) })
+  inventory.grant('spareTire', 1, { tire: JALOPY_SPARE.tire, cond: span(JALOPY_SPARE.cond) }, 'start')
 }
