@@ -24,7 +24,7 @@ or delete a file, update the relevant line here in the same commit — it's one 
 | `.planning/decisions/` | Decision records (INFRA-10): `dec-NNN-<slug>.md`, one standing ruling each, frozen once standing (check: `tools/dashboard/decisions.check.mjs`). Shown on the dashboard's Decisions tab and on each governed ticket. Format: CLAUDE.md § Workflow. |
 | `.planning/dives/` | Deep dives (INFRA-12): `<TICKET-ID>-<slug>.html`, an explainer whose `<dive-q>` tags are the owner's answer form; served at `/dives/`, linked from an owed card and its ticket. `TEMPLATE.html` is the pattern to copy. Answers live in the private data folder, never here. |
 | `tools/lanes.sh` | `bash tools/lanes.sh` — one table of every worktree: branch, commits ahead/behind main, uncommitted files, dev server up/down (+ the dashboard). The first thing the orchestrator runs after a crash or relaunch; its port map mirrors the orchestrator handoff's lanes table. |
-| `tools/run-log-summary.mjs` | `node tools/run-log-summary.mjs <part.jsonl>…` — FEAT-242: a run summary (days, km, jobs by type with time/pay/deeds, money per day, wear by cause, damage events with the top ones and every puncture against its threshold, purchases, sleeps) from the run logger's downloaded parts. Gate: `test/run-log.mjs`. |
+| `tools/run-log-summary.mjs` | `node tools/run-log-summary.mjs <run.jsonl>…` (several files of one run are stitched) — FEAT-242/FEAT-324: a run summary (coverage + warning, START/END truck, days, km, jobs by type with time/pay/deeds, money per day, wear by cause, damage events with the top ones and every puncture against its threshold, purchases, money by category, grants with sources, tires per wheel, alerts vs low condition, hunger) from the run logger's downloaded files. Gate: `test/run-log.mjs`. |
 | `tools/chrome-slot.sh` | `tools/chrome-slot.sh node test/cdp-smoke.mjs` — runs a headless-Chrome job (cdp-smoke, pad-e2e, run-soak, CDP screenshots) in one of `$CHROME_SLOTS` (default 2) machine-wide slots, waiting for a free one, so parallel lanes never stack browsers past what the box can judge. `lockf(1)` locks in `/tmp`, released on exit. |
 | `tools/audio-proto/` | FEAT-120 sound PROTOTYPES (synthesized voices awaiting or past the owner's ear) and `offline.mjs`, which renders one to a WAV + spectrogram in headless Chrome. Not shipped: an approved voice is lifted into `src/*-audio.js`. Renders go to the git-invisible `wip/audio-render/out/`. |
 | `.planning/pages/` | Source of the owner's published artifact pages (mission-feel review; the Alpha Lanes page retired into the dashboard's Lanes tab, INFRA-11). The `page-scripts` gate parses every inline script. |
@@ -136,8 +136,8 @@ until the FEAT-42 save file; the hook is documented in its header).
 
 **Dev & harness bridge** — `debug.js` (lil-gui panel, HUD) · `damage-hud.js` (SM-3 diagnostic damage readout, opened from
 the debug panel's Damage folder) · `capture.js` (game↔harness capture
-schema) · `logger.js` (frame logger + IC loader) · `run-log.js` (FEAT-242 / DEC-358 opt-in run logger: events +
-a 1 s route sample as JSON Lines parts, auto-downloaded; read by `tools/run-log-summary.mjs`) · `perf.js` (bucketed profiler) · `version.js`
+schema) · `logger.js` (frame logger + IC loader) · `run-log.js` (FEAT-242 / DEC-481 run logger (on by default from a story run's go-live): events +
+a 1 s route sample as JSON Lines parts in IndexedDB, ONE file downloaded in the click of save & exit or the run-end card; read by `tools/run-log-summary.mjs`) · `perf.js` (bucketed profiler) · `version.js`
 (build marker).
 
 **Menus & shell** — `stage.js` (FEAT-41 MenuStage: the live 3D scene behind the main menu AND

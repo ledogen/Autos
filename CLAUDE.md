@@ -205,13 +205,16 @@ not pick is random too (owner, 2026-11-06): free roam, the world built behind th
   (≥ 3 km, new chunks) is INVALID, never a number. `--b` alternates A-B-A-B to cancel heat drift; `--record` appends to
   `.planning/perf/history.jsonl` (the health check). About 7 min a session; wants a quiet machine. Not in `npm test`.
   The driver is `src/autopilot.js` (FEAT-293, also the debug panel's Driving AI): pure, state in → controls out, meant to grow into in-game AI cars.
-- **Run logger (FEAT-242, DEC-358 — the one diagnostic that ships in `src/`, opt-in, off by default):** debug panel
-  (backtick) → *Run logging (FEAT-242)* → tick *Run logging*. `src/run-log.js` then records the run's events (missions,
-  every damage event with its measured force/speed and the threshold it was read against, wear by cause, purchases,
-  fuel, eating, sleep, camp, tows, resets, alerts, run end) plus a 1 s route sample, keeps the log as JSON Lines parts in IndexedDB (BUG-199: Chrome blocks a second automatic download, so
-  nothing downloads per day) and downloads ONE file, `autos-run-<seed>-<start>.jsonl` (the browser's download folder),
-  at the run end and from the folder's *Save log now* button (which then clears the store; after a reload or crash the
-  same button offers the stored parts). Read it with `node tools/run-log-summary.mjs <file…>`; for one event, `grep`/`jq` it.
+- **Run logger (FEAT-242, DEC-481 — the one diagnostic that ships in `src/`, ON by default):** a story run logs from its go-live
+  (tutorial included) with nothing to tick; the debug panel (backtick) → *Run logging (FEAT-242)* → *Run logging* switches it off.
+  `src/run-log.js` records the run's events (the start state as rolled, missions with their terms and rank, every damage event with its
+  measured force/speed and the threshold it was read against, wear by cause, purchases, every item grant with its SOURCE, fuel, eating,
+  sleep, camp, tows, resets, alerts, the exit/run-end state) plus a 1 s route sample, keeps the log as JSON Lines parts in IndexedDB
+  (BUG-199: Chrome blocks a second automatic download) and downloads ONE file, `autos-run-<seed>-<start>.jsonl`, inside the click of
+  save & exit and of the run-end card's button (win and the other endings), and from the debug panel's *Save log now*; a download
+  clears the store, so a run saved twice and won leaves three self-contained files. Read it with
+  `node tools/run-log-summary.mjs <file…>` (several files of one run are stitched by first timestamp; a log that does not start at the
+  run's start gets a WARNING); for one event, `grep`/`jq` it.
 - **Physics identity proof:** `node test/fingerprint-physics.mjs --out=a.json [--compare=b.json]` — running full-state hash over 900 steps on bumpy ground, round and out-of-round tires.
 - **Regression gates (registered in `test/gates.mjs`):** `npm test` runs **only the AFFECTED gates** — those
   whose transitive import closure (computed live by `run-all.mjs`, + each gate's `extraDeps`) intersects
