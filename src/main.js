@@ -6439,11 +6439,8 @@ const _RC_LABEL = {
 // FEAT-307 (DEC-450): a tow is asked for twice. The card's tow buttons only name the tow (`_rcAsk`); the card then shows its
 // price and time with "tow" and "back", and only "tow" calls it. Closing the card forgets the ask.
 let _rcAsk = null
-const _RC_GO = { towFuel: _towToFuel, towShop: _towToShop }
-const _RC_ACT = {
-  towFuel: () => { _rcAsk = 'towFuel'; _updateRecovery() }, towShop: () => { _rcAsk = 'towShop'; _updateRecovery() },
-  towGo: () => { const go = _RC_GO[_rcAsk]; _rcAsk = null; go?.() },
-  towBack: () => { _rcAsk = null; _updateRecovery() },
+const _RC_GO = {
+  towFuel: _towToFuel, towShop: _towToShop,
   tireService: () => {   // FEAT-162 amendment 5: fixed where it stands; the wait and the fitting on the clock
     const q = _recoveryState().tireService
     if (!q || !economySystem.spend(q.price)) return
@@ -6451,6 +6448,12 @@ const _RC_ACT = {
     _recoveryOpen = false
     _afterRoadsideWork(q.hours)
   },
+}
+const _RC_ACT = {
+  towFuel: () => { _rcAsk = 'towFuel'; _updateRecovery() }, towShop: () => { _rcAsk = 'towShop'; _updateRecovery() },
+  tireService: () => { _rcAsk = 'tireService'; _updateRecovery() },   // DEC-479: the tire service is asked for twice too
+  towGo: () => { const go = _RC_GO[_rcAsk]; _rcAsk = null; go?.() },
+  towBack: () => { _rcAsk = null; _updateRecovery() },
 }
 
 /** What the Recovery card reads (src/recovery.js recoveryCard) — the truck, the wallet, the tows. */
@@ -6531,8 +6534,8 @@ function _updateRecovery () {
   if (!ask) _rcAsk = null
   const html = ask   // FEAT-307 [DEFAULT] wording
     ? `<div class="rc-head">${c.head}</div><div class="rc-dim">${_RC_LABEL[ask.act](ask)}</div>`
-      + `<div class="rc-dim">${formatGameDuration(ask.tow.hours)} on the hook</div>`
-      + `<button class="rc-opt" data-act="towGo">call the tow &mdash; $${formatMoney(ask.tow.price)}</button>`
+      + `<div class="rc-dim">${formatGameDuration(ask.tow.hours)} ${ask.act === 'tireService' ? 'to come out and fit it' : 'on the hook'}</div>`   // DEC-479 [DEFAULT] wording
+      + `<button class="rc-opt" data-act="towGo">call the ${ask.act === 'tireService' ? 'tire service' : 'tow'} &mdash; $${formatMoney(ask.tow.price)}</button>`
       + `<button class="rc-opt" data-act="towBack">back</button><div class="rc-dim">you have $${formatMoney(money)}</div>`
     : `<div class="rc-head">${c.head}</div>`
     + c.opts.filter(o => _RC_LABEL[o.act]).map(o => `<button class="rc-opt" data-act="${o.act}"${o.enabled ? '' : ' disabled'}>${_RC_LABEL[o.act](o)}</button>`
@@ -7438,8 +7441,6 @@ function _syncSleepRow () {
     e.innerHTML = `energy ${now.toFixed(1)} → ${wake.toFixed(1)} / ${full.toFixed(0)} h`
       + `  ·  wake <span style="color:${STAGE_COLOR[daySystem.stageFor(wake)]}">${daySystem.stageFor(wake)}</span>`
       + (daySystem.coffeeDebt() > 0 ? `  ·  coffee debt ${daySystem.coffeeDebt().toFixed(0)} h at wake` : '')
-      // FEAT-310 (DEC-449) [DEFAULT]: the food this sleep would outlast. Item names are catalog strings.
-      + inventorySystem.spoilingWithin(h).map(x => `<br>the ${x.name.toLowerCase()} spoils in ${formatGameDuration(x.h)}`).join('')
   }
 }
 

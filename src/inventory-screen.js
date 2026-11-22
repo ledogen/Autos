@@ -56,7 +56,10 @@ const CSS = `
 .inv-slot .sl-n { position: absolute; right: 3px; bottom: 1px; font-size: 12px; color: var(--text);
   text-shadow: 0 1px 2px #000; pointer-events: none; }
 .inv-slot .keycap { position: absolute; left: -5px; top: -6px; margin: 0; font-size: 12px; background: #1b2026; }
-/* FEAT-230 (DEC-338): the freshness bar at 6 o'clock over the thumbnail, full when fresh, empty when gone */
+/* FEAT-310 (DEC-479): food shows the time until its soonest unit spoils, as text at the thumbnail's top right, no bar */
+.inv-slot .sl-spoil { position: absolute; right: 3px; top: 2px; font-size: 12px; color: var(--text); white-space: nowrap;
+  text-shadow: 0 1px 2px #000; pointer-events: none; }
+/* FEAT-230 (DEC-338): a cooler's ice bar at 6 o'clock over the thumbnail, full when fresh, empty when gone */
 .inv-slot .sl-fresh { position: absolute; left: 30%; width: 40%; bottom: 4px; height: 5px; box-sizing: border-box;
   border: 1px solid var(--line-control); border-radius: 2px; background: var(--hud-bg); pointer-events: none; }
 .inv-slot .sl-fresh i { display: block; height: 100%; background: var(--text-body); }
@@ -117,7 +120,8 @@ function slotHtml (it, attrs = '', cls = '') {
     + `<img src="${THUMB(it.id)}" alt="" onerror="this.parentNode.classList.add('noimg'); this.remove()">`
     + `<span class="sl-name">${it.name}</span>`
     + (it.n > 1 ? `<span class="sl-n">&times;${it.n}</span>` : '')
-    + (it.fresh != null ? `<span class="sl-fresh"><i style="width:${(it.fresh * 100).toFixed(1)}%"></i></span>` : '')
+    + (it.spoilH != null ? `<span class="sl-spoil">${formatGameDuration(it.spoilH)}</span>` : '')   // FEAT-310 (DEC-479): the time, not a bar
+    + (it.fresh != null && it.spoilH == null ? `<span class="sl-fresh"><i style="width:${(it.fresh * 100).toFixed(1)}%"></i></span>` : '')
     + (it.key ? keycap(it.key, false) : '')   // the quick-slot keys: the pad walks the slots instead
     + `</div>`
 }

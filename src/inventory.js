@@ -397,12 +397,6 @@ export class InventorySystem {
         return left <= cold ? left / rate : k.c.iceH + left - cold
     }
 
-    /** FEAT-310: the foods that spoil within `h` game hours, soonest first, as { name, h } (the sleep card's warning). */
-    spoilingWithin (h) {
-        return runInventory.entries.map(e => ({ name: ITEMS[e.id].name, h: this.spoilH(e) }))
-            .filter(x => x.h != null && x.h <= h).sort((a, b) => a.h - b.h)
-    }
-
     /**
      * FEAT-230 slice 2 (DEC-338): advance the fresh clock to world time `nowH` (daySystem.clockH(), every fixed step; a
      * sleep's jump lands on the next step). Every unit ages on its own and goes alone at freshH. The iced coolers, best
