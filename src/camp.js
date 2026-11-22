@@ -45,7 +45,7 @@ import { runLog } from './run-log.js'   // FEAT-242: the opt-in run log (every h
 export const CAMP_PARAMS = {
     campCellM:      1024,   // m — macro cell; one zone seed roll per cell
     campZoneChance: 0.26,   // P(a cell carries a zone) — the FEAT-45 density, kept by FEAT-299
-    campAreaMeanM:  1500, // m of road in a zone, mean — FEAT-299: the measured median of the old discs
+    campAreaMeanM:  930,  // m of road in a zone, mean — FEAT-299: the measured median of the old discs
     campAreaVar:    0.5, // ± fraction: a zone's target is mean × (1 ± var), uniform, rolled per zone
     campReachM:     2000,   // m — FEAT-164: the longest drive from any road in the region to a camp zone;
                             // growAreas adds zones until it holds (owner 2026-11-05: "i like the 2000m
@@ -189,8 +189,10 @@ const CAMP_ROAD_CLEAR_TOL_M = 0.25
 
 // THE COVERAGE (FEAT-299). The disc layer was tuned to ~20% of the map's AREA (owner-ratified, FEAT-45);
 // a zone is road now, so what it covers is road. The cell chance stayed and the mean target is the
-// measured median road length of the old discs, so a region keeps about the share of its road it had:
-// COVERAGE_TBD (test/camp-area-census.mjs, 400 random regions).
+// measured median road length of the old discs (930 m), so a zone is the size a typical disc was.
+// MEASURED (test/camp-area-census.mjs, 400 random regions, 2026-11-21): the discs held a median 25 % of
+// a region's road (mean 26 %, their road per zone right-skewed: mean 1181 m), the runs 22 % (mean 23 %),
+// 9.2 zones a region against 8.9.
 
 /**
  * How epic the outlook from (x,z) is, 0..1 — the raw view score, before VIBE_W.view scales it.
