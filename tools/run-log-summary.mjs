@@ -10,7 +10,9 @@
 
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
-import { gradeRun, RANK_THRESHOLDS_DEFAULT } from '../src/par.js'   // the game's own rank rule (FEAT-324: never a copy)
+import { gradeRun, amountGrade, RANK_THRESHOLDS_DEFAULT } from '../src/par.js'   // the game's own rank rule (FEAT-324: never a copy)
+import { rankTable, fragileLines } from '../src/economy.js'
+import { THINGS } from '../data/offers.js'
 import { ITEMS } from '../data/items.js'
 
 const TELEPORT_M = 100   // a route step longer than this in one 1 s sample is a reseat or a tow, not driving
@@ -32,6 +34,19 @@ export function alertTrack (id) {
   const i = +m[1]
   return i === 0 ? 'engine' : i <= 4 ? `wheel${CORNERS[i - 1]}` : i <= 8 ? `wheel${CORNERS[i - 5]}` : i <= 12 ? `tire${CORNERS[i - 9]}` : i === 13 ? 'airFilter' : i === 14 ? 'oil' : null
 }
+/** FEAT-138: the axis a job is lettered on when it is NOT time (main.js onSettle) — fragile on its condition against
+ *  its tier's lines, haul on the pieces aboard, freight on the kg. null = a time job (courier, papers, fetch, demolition). */
+export function amountAxis (e) {
+  const r = e.result, region = e.job?.terms?.region ?? 1
+  if (r.health != null) {
+    const tier = THINGS.find(t => t.id === e.spec?.thingId)?.tier
+    return tier ? { name: 'condition', v: r.health, th: fragileLines(region, tier, (e.job?.distance ?? 0) / 1000), f: (x) => `${(x * 100).toFixed(1)} %` } : null
+  }
+  if (r.aboard != null) return { name: 'pieces aboard', v: r.aboard, th: rankTable('haul', region, 'firewood'), f: (x) => `${x}` }
+  if (e.job?.cargoKg && e.spec?.family !== 'fragile') return { name: 'load', v: e.job.cargoKg, th: rankTable('freight', region), f: (x) => `${x} kg` }
+  return null
+}
+const ALERT_TRACKS = new Set(Array.from({ length: 15 }, (_, i) => alertTrack('w' + i)))   // every track a machine word can name
 const FOOD_RE = /food|eat|meal|cook|chili|lunch|burger|peanut|coffee|drink/i
 const MAINT_RE = /repair|fit|oil|filter|align|tire|wheel|brake|spring|damper|engine|swap|service|patch|plug|bead|radiator|part/i
 /** A purchase line's money class: maintenance · food · gear (everything else, incl. spare parts' opposite: gear/other). */
@@ -105,10 +120,11 @@ export function summarize (events) {
         c.jobBase += r.base ?? 0; c.tip += r.tip ?? 0; c.other += Math.max(0, (r.payout ?? 0) - (r.base ?? 0) - (r.tip ?? 0))
         const th = e.job?.terms?.thresholds ?? RANK_THRESHOLDS_DEFAULT
         const g = r.par > 0 ? gradeRun(r.elapsed, r.par, th) : null   // the game's grading, on the logged par and thresholds
-        const order = ['S', 'A', 'B', 'C'], letter = r.letter ?? g?.letter, li = order.indexOf(letter)   // the game's own letter is the rank; the thresholds only give the margins
-        s.jobList.push({ e, type, g, letter, th, par: r.par, elapsed: r.elapsed, award: r.award, abandoned: r.abandoned, lost: job?.lost ?? null, events: job?.events ?? null,
-          toNext: g && li > 0 ? r.elapsed - th[order[li - 1]] * r.par : null,   // s faster needed for the next rank
-          slack: g && li >= 0 && li < 4 ? th[order[li]] * r.par - r.elapsed : null })   // s slower before dropping a rank
+        const ax = amountAxis(e)   // a fragile / haul / freight job is NOT lettered on time: its own axis gives the check and margins
+        const order = ['S', 'A', 'B', 'C'], letter = r.letter ?? (ax ? amountGrade(ax.v, ax.th) : g?.letter), li = order.indexOf(letter)   // the game's own letter is the rank; the thresholds only give the margins
+        s.jobList.push({ e, type, g, ax, axLetter: ax && amountGrade(ax.v, ax.th), letter, th, par: r.par, elapsed: r.elapsed, award: r.award, abandoned: r.abandoned, lost: job?.lost ?? null, events: job?.events ?? null,
+          toNext: ax ? (li > 0 ? ax.th[order[li - 1]] - ax.v : null) : g && li > 0 ? r.elapsed - th[order[li - 1]] * r.par : null,   // more needed (amount) / s faster (time) for the next rank
+          slack: ax ? (li >= 0 && li < 4 ? ax.v - ax.th[order[li]] : null) : g && li >= 0 && li < 4 ? th[order[li]] * r.par - r.elapsed : null })   // to lose (amount) / s slower (time) before dropping a rank
         job = null
       }
       if (e.state === 'idle') job = null
@@ -178,6 +194,7 @@ export function stitch (texts) {
 }
 
 const $ = (v) => `$${(v ?? 0).toFixed(2)}`
+const order4 = ['S', 'A', 'B', 'C']
 const pct = (v) => `${(v * 100).toFixed(2)} %`
 const p1 = (v) => (v == null ? '  — ' : `${(v * 100).toFixed(1)} %`)
 const hrs = (h) => `${h.toFixed(2)} h`
@@ -220,8 +237,10 @@ export function report (s, bad = 0, meta = {}) {
   }
   L.push('  each job (ratio to par · rank · seconds faster for the next rank / slower before dropping one · reward · condition lost to damage events during it):')
   for (const j of s.jobList) {
-    L.push(`    ${clock(j.e)} ${j.type}: ${j.g ? `ratio ${j.g.ratio.toFixed(3)} · ${j.letter}${j.g.letter !== j.letter ? ` (the logged thresholds alone would grade ${j.g.letter}: check the rank rule or the thresholds logged)` : ''}` : j.abandoned ? 'abandoned' : 'no par'}`
-      + `${j.toNext != null ? ` · next rank ${j.toNext.toFixed(0)} s faster` : j.letter === 'S' ? ' · top rank' : ''}${j.slack != null ? ` · ${j.slack.toFixed(0)} s to spare` : ''}`
+    const a = j.ax, lines = a && order4.map(k => `${k} ${a.f(a.th[k])}`).join(' ')
+    L.push(`    ${clock(j.e)} ${j.type}: ${a ? `${a.name} ${a.f(a.v)} · ${j.letter} on its ${a.name} (lines ${lines}${j.axLetter !== j.letter ? `; these lines alone would grade ${j.axLetter}: check the rank rule` : ''})${j.g ? ` · ratio ${j.g.ratio.toFixed(3)} (time is not its rank)` : ''}`
+      : j.g ? `ratio ${j.g.ratio.toFixed(3)} · ${j.letter}${j.g.letter !== j.letter ? ` (the logged thresholds alone would grade ${j.g.letter}: check the rank rule or the thresholds logged)` : ''}` : j.abandoned ? 'abandoned' : 'no par'}`
+      + `${j.toNext != null ? ` · next rank ${a ? `${a.f(+j.toNext.toFixed(3))} more` : `${j.toNext.toFixed(0)} s faster`}` : j.letter === 'S' ? ' · top rank' : ''}${j.slack != null ? ` · ${a ? a.f(+j.slack.toFixed(3)) : `${j.slack.toFixed(0)} s`} to spare` : ''}`
       + `${j.award ? ` · reward ${j.award}` : ''}${j.lost != null ? ` · ${j.events} damage events, ${pct(j.lost)} lost (condition, not dollars: the log holds no repair price)` : ''}`)
   }
   // MONEY
@@ -264,7 +283,7 @@ export function report (s, bad = 0, meta = {}) {
   const alerted = new Set(Object.values(s.alerts).map(a => a.track))
   let noWarn = 0
   for (const [k, v] of Object.entries(s.minCond).sort()) {
-    if (v < 0.5 && !alerted.has(k)) { noWarn++; L.push(`  ${k}: minimum ${p1(v)} and NO alert ever fired for it`) }
+    if (v < 0.5 && !alerted.has(k)) { noWarn++; L.push(`  ${k}: minimum ${p1(v)} and NO alert ever fired for it${ALERT_TRACKS.has(k) ? (/^tire/.test(k) ? ' (a tire alerts only flat, or failed at 0 %)' : '') : ' (none by rule: only the engine, wheels, tires, air filter and oil alert, FEAT-216)'}`) }
   }
   if (!noWarn) L.push('  no track went under 50 % without an alert' + (Object.keys(s.minCond).length ? '' : ' (no conditions recorded)'))
   L.push('  alerts (id · text · times fired · first · time to the fixing purchase):')
