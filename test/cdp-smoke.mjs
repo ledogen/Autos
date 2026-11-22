@@ -1089,7 +1089,7 @@ const STEPS = [
     check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000), 'the truck never came to rest')
     for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
     check(await js('!document.getElementById("pm-save").disabled'), `save & exit not offered: "${await js('document.getElementById("pm-save-why").textContent')}"`)
-    await js(`(() => { if (window.__rlClick) return; const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
+    await js(`(() => { if (window.__rlSaved) return; const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
       A.click = function () { if (this.download?.startsWith('autos-run-')) window.__rlSaved.push({ name: this.download, href: this.href }); else window.__rlClick.call(this) } })()`)
     const dl0 = await js('window.__rlSaved.length')
     await js('document.getElementById("pm-save").click()')
@@ -2215,7 +2215,7 @@ const STEPS = [
   ['endings', async () => {
     const card = () => js('document.getElementById("run-end").style.display === "block" && document.getElementById("re-title").textContent')
     const saved = () => js('localStorage.getItem("autos-run/1") !== null')
-    await js(`(() => { if (window.__rlClick) return; const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
+    await js(`(() => { if (window.__rlSaved) return; const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
       A.click = function () { if (this.download?.startsWith('autos-run-')) window.__rlSaved.push({ name: this.download, href: this.href }); else window.__rlClick.call(this) } })()`)
     const ended = async (want, why) => {
       const t = await until(card, 5000)
