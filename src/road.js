@@ -6836,8 +6836,12 @@ export class RoadSystem {
      * wherever both runs register.
      */
     _v2JoinCrossings(g) {
-        const declined = new Set()
+        // Terminates: a decline retires its crossing for good, and a cut removes one. A departure's blend could in
+        // principle mint a new crossing, so the pass is also capped; the 400-seed census needs at most a handful.
+        const declined = new Set(), CAP = 64
+        let n = 0
         for (let f = this._v2NextCrossing(declined); f; f = this._v2NextCrossing(declined)) {
+            if (++n > CAP) { this._v2MergeSkipped('x-junction', `pass capped at ${CAP} crossings`); return }
             if (!this._v2CrossOne(g, f)) declined.add(f.sig)
         }
     }
