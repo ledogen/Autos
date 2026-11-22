@@ -1,7 +1,7 @@
 ---
 id: BUG-236
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-18
 source: owner capture autos-capture-1795075034907 (seed 1225608752, story, Normal) — "Big bumps here and a small kink, get back to me in a card in the lanes about what caused this."
@@ -185,3 +185,5 @@ CarGame-machine (git-ignored): `walk2.mjs` (deck walk), `census.mjs`, `sheet.mjs
   bed verts draped on the moved road carve, worst 1 cm; props (capture): 444 of 4912 re-seated (median 1.2 cm, max 1.18 m),
   11 added / 9 removed, all within 65 m of the node (moved earthwork). Tutorial 1872706826: 8 bends, > 15 cm 3 → 0, worst
   20.8 → 11.6 cm, nodes move ≤ 0.56 m, POIs identical; tut-gate + tutorial-seed pass. Sheet `wip/bug-236/sheet-built.jpg`.
+
+- 2026-11-21: owner drove it ("Good: land it", card bug236-built-drive). Landed on main. Bends over 15 cm 82 -> 5 on the 400-seed sample; post-merge gates green, smoke 42 steps.
