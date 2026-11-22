@@ -540,6 +540,24 @@ function _trunkGradeAt(T, i) {
     return { gx: m * tx / tl, gz: m * tz / tl }
 }
 
+// FEAT-76: the indices of a promoted node's two THROUGH strands (away-tangents wx, wz), or null under three legs: the
+// most nearly anti-parallel pair. BUG-234: at an X both pairs are nearly straight through P (the side halves are one
+// offset road too), so the tie would fall to a vertex's rounding; an X records its trunk's axis and the two strands
+// most aligned with it are the through road.
+function _throughPair(strands, axis) {
+    if (strands.length < 3) return null
+    if (axis && strands.length === 4) {
+        const al = strands.map((s, i) => [Math.abs(s.wx * axis.x + s.wz * axis.z), i]).sort((p, q) => q[0] - p[0] || p[1] - q[1])
+        return [al[0][1], al[1][1]]
+    }
+    let bi = 0, bj = 1, bDot = Infinity
+    for (let i = 0; i < strands.length; i++) for (let j = i + 1; j < strands.length; j++) {
+        const d = strands[i].wx * strands[j].wx + strands[i].wz * strands[j].wz
+        if (d < bDot) { bDot = d; bi = i; bj = j }
+    }
+    return [bi, bj]
+}
+
 // BUG-76: is run entry `b` geometrically identical to `a` (points incl. Y, arc origin, clArc,
 // tunnel / off-curve spans, condemned mark)? The adopt's dirty-region diff and profile re-stamp.
 function _sameRun(a, b) {
@@ -1200,7 +1218,8 @@ export class RoadSystem {
         this._debugLines         = []         // THREE.Line objects added to scene on demand
         // FEAT-76: the T-promotion tables, rebuilt by every _assembleGraphEdges.
         //   _promoted     nodeKey -> { id, pos, gx, gz }   (a departure node on a trunk; which leg
-        //                 is the through road is derived from the built tangents, see _v2PromotedRole)
+        //                 is the through road is derived from the built tangents, see _v2PromotedRole;
+        //                 an X, BUG-234, adds axis {x, z}: its trunk's tangent at P, which settles that)
         //   _promotedAway 'nodeKey|nbrKey'                           (edges that no longer START there)
         this._promoted           = new Map()
         this._promotedAway       = new Set()
@@ -2549,7 +2568,7 @@ export class RoadSystem {
             // the raw graph, so a node the T turned into a two-leg bend comes back as a phantom
             // three-way junction (measured: degree 3 vs 4 at [-3,1,1], network-worker-parity red).
             promoted: [...this._promoted].map(([k, r]) => [k, {
-                id: r.id, x: r.pos.x, y: r.pos.y, z: r.pos.z, gx: r.gx, gz: r.gz,
+                id: r.id, x: r.pos.x, y: r.pos.y, z: r.pos.z, gx: r.gx, gz: r.gz, ...(r.axis ? { axis: r.axis } : {}),
             }]),
             promotedAway: [...this._promotedAway],
             // FEAT-265: restored Urquhart sides, which _graphDegreeOf adds (absent when none, so such a world exports as before)
@@ -2625,7 +2644,7 @@ export class RoadSystem {
         this._v2DelFrozen = { rev: this._networkRev, del: new Set(data.delFrozen || []), flip: new Set(data.delFlip || []) }
         // FEAT-76: the promoted-T tables ride across with the runs (see exportNetwork).
         this._promoted = new Map((data.promoted || []).map(([k, r]) => [k, {
-            id: r.id, pos: new THREE.Vector3(r.x, r.y, r.z), gx: r.gx, gz: r.gz,
+            id: r.id, pos: new THREE.Vector3(r.x, r.y, r.z), gx: r.gx, gz: r.gz, ...(r.axis ? { axis: r.axis } : {}),
         }]))
         this._promotedAway = new Set(data.promotedAway || [])
         this._v2Restored = new Set(data.restored || [])
@@ -6886,11 +6905,31 @@ export class RoadSystem {
     _v2CrossOne(g, f) {
         const MINREG = 30, Rmin = this._params?.roadMinTurnRadius ?? 12
         const decline = (why) => { this._v2MergeSkipped('x-junction', `${f.kA} x ${f.kB} declined: ${why}`); return false }
+        const eA = this._network.get(f.kA), eB = this._network.get(f.kB)
+        // Two runs that already meet at a PROMOTED node N (a T whose side road wanders back across its trunk 47 m out,
+        // seed 2080966469; a pair this pass has crossed once) end up tying N and P together by two runs. A side leg's
+        // deck reconciles onto its node's through legs, so if each run were the through road at one node and the side
+        // road at the other, the two profiles would each wait on the other (an unbounded recursion). So the run that is
+        // the through road at N is the through road at P too.
+        const shared = [eA.cellA, eA.cellB].find((c) => _isPromotedId(c) && [eB.cellA, eB.cellB].some((d) => g.key(d) === g.key(c)))
+        let force = null
+        if (shared) {
+            const nk = g.key(shared), legs = []
+            for (const [k, e] of this._network) for (const atStart of [true, false]) {
+                if (g.key(atStart ? e.cellA : e.cellB) !== nk) continue
+                const st = this._strandAtEnd(e.points, atStart)
+                if (st) legs.push({ ...st, key: k })
+            }
+            const pair = _throughPair(legs, this._promoted.get(nk)?.axis) || []
+            const thr = pair.map((i) => legs[i].key)
+            if (thr.includes(f.kA) !== thr.includes(f.kB)) force = thr.includes(f.kA) ? f.kA : f.kB
+        }
         let best = null
         // the longer run is tried as the through road first; the other way round wins only on a better rank
-        const LA = this._network.get(f.kA).polyCum.at(-1), LB = this._network.get(f.kB).polyCum.at(-1)
+        const LA = eA.polyCum.at(-1), LB = eB.polyCum.at(-1)
         const ways = [[f.kA, f.sA, f.kB, f.sB], [f.kB, f.sB, f.kA, f.sA]]
         if (LB > LA) ways.reverse()
+        if (force) ways.splice(0, ways.length, ...ways.filter((w) => w[0] === force))
         for (const [tk, tArc, sk, sArc] of ways) {
             const T = this._network.get(tk), S = this._network.get(sk)
             const iP = _nearestVertexAtCum(T.polyCum, tArc), iL = _nearestVertexAtCum(S.polyCum, sArc)
@@ -6941,7 +6980,9 @@ export class RoadSystem {
                 condemned: S.condemned, rerouted: S.rerouted,
             })
         }
-        this._promoted.set(pKey, { id: pid, pos: new THREE.Vector3(P.x, P.y, P.z), gx: best.grade.gx, gz: best.grade.gz })
+        const ax = T.points[Math.min(iP + 1, T.points.length - 1)].x - T.points[Math.max(iP - 1, 0)].x
+        const az = T.points[Math.min(iP + 1, T.points.length - 1)].z - T.points[Math.max(iP - 1, 0)].z, al = Math.hypot(ax, az) || 1
+        this._promoted.set(pKey, { id: pid, pos: new THREE.Vector3(P.x, P.y, P.z), gx: best.grade.gx, gz: best.grade.gz, axis: { x: ax / al, z: az / al } })
         this._v2MergeSkipped('x-junction', `${best.sk} x ${best.tk} crossed at (${P.x.toFixed(0)}, ${P.z.toFixed(0)})`)
         return true
     }
@@ -12526,14 +12567,8 @@ export class RoadSystem {
         if (!roles) {
             roles = new Map()
             const strands = this._graphNodeStrands(id)
-            if (strands.length >= 3) {
-                let bi = 0, bj = 1, bDot = Infinity
-                for (let i = 0; i < strands.length; i++) for (let j = i + 1; j < strands.length; j++) {
-                    const d = strands[i].wx * strands[j].wx + strands[i].wz * strands[j].wz
-                    if (d < bDot) { bDot = d; bi = i; bj = j }
-                }
-                for (let i = 0; i < strands.length; i++) roles.set(strands[i].key, (i === bi || i === bj) ? 'through' : 'side')
-            }
+            const pair = _throughPair(strands, this._promoted.get(nk)?.axis)
+            if (pair) for (let i = 0; i < strands.length; i++) roles.set(strands[i].key, pair.includes(i) ? 'through' : 'side')
             this._promotedRoleMemo.map.set(nk, roles)
         }
         return roles.get(runKey) || null
