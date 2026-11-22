@@ -1137,7 +1137,7 @@ slot, charges or a cooldown). *Function* is what it acts on. Empty cells are whe
 - **Jerry can** (new): a refillable 5 gal can, a top-tier reward. **Emergency gas** is the mid-tier one (B–A):
   parked only, 10 min, single use, $5–10, gas station and stranded motorist (B–A), never found (§1).
 - **Snacks**: peanuts 3 h × 3, spicy chips 3 h × 3, candy bar 3 h × 4, gummy worms 2 h × 5 (§1d).
-- **Spare air filter**: 15 min to fit; each spare carries its own condition — new from the shop ($10),
+- **Spare air filter**: 15 min to fit; each spare carries its own condition — new from the shop ($3.50 since DEC-482; $10 then $7 before),
   never great from the roadside (§1).
 - **Field repairs**: zip ties 10% × 5 (the radiator was removed 2026-11-13, stop-leak only); duct tape 20% × 3; stop-leak one use,
   never past 50% (§7).
