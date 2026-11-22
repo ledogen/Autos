@@ -3783,7 +3783,23 @@ for (const [name, fn] of STEPS) {
   step = name
   const t0 = performance.now()
   // A step on a random world (the pad step's blank seed box) names it, so a miss can be replayed (Lane A, 2026-11-06).
-  try { await fn() } catch (e) { failed = { step: name, msg: `${e.message} · ${await js('window.__worldCode?.()').catch(() => 'world code unreadable')}` } }
+  try { await fn() } catch (e) {
+    failed = { step: name, msg: `${e.message} · ${await js('window.__worldCode?.()').catch(() => 'world code unreadable')}` }
+    // A 60 s CDP timeout: is the page's JS stuck (a game freeze) or is the renderer not answering at all (a stalled tab)?
+    // Debugger.pause interrupts running JS: a stack within 10 s means JS was running (its top frames name the loop);
+    // none means the renderer itself is wedged. The seed is also printed: world code is unreadable on a frozen page.
+    if (/CDP timeout/.test(e.message)) {
+      const url = await client.cmd('Runtime.evaluate', { expression: 'location.href' }, { timeoutMs: 3000 }).then(m => m.result?.result?.value, () => 'url unreadable')
+      let stack = 'no Debugger.paused in 10 s: the renderer is not answering (a stalled tab, not game JS)'
+      try {
+        const paused = new Promise(r => client.on('Debugger.paused', r))
+        await client.cmd('Debugger.enable', {}, { timeoutMs: 5000 }); await client.cmd('Debugger.pause', {}, { timeoutMs: 5000 })
+        const p = await Promise.race([paused, sleep(10000).then(() => null)])
+        if (p) stack = 'JS was running; stack: ' + p.callFrames.slice(0, 8).map(f => `${f.functionName || '(anon)'} ${f.url.split('/').slice(-2).join('/')}:${f.location.lineNumber + 1}`).join(' < ')
+      } catch (err) { stack = `debugger probe failed: ${err.message}` }
+      console.log(`  freeze probe (page ${url}): ${stack}`)
+    }
+  }
   times.push(`${name} ${((performance.now() - t0) / 1000).toFixed(1)}s`)
   if (failed || errors.length) break
 }
