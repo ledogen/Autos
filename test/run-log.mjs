@@ -65,18 +65,28 @@ console.log('\n§2 on: stamps, the 1 s sample, parts by day')
   ok(saved.length === 0 && (await runLog.store.all()).length === 1, 'a new game day stores a part and downloads nothing (Chrome blocks a second automatic download)')
   ok(runLog._buf.length === 1, 'the buffer is let go after each part (memory stays flat): only the new day\'s sample is held')
   runLog.event('runEnd', { kind: 'towel' })
-  await runLog._pending; await runLog.saveNow(false)   // saveNow(false) is what the run end calls; wait for its own call
-  ok(saved.length >= 1 && /^autos-run-abc_123-[\dT-]+Z\.jsonl$/.test(saved.at(-1).name), `the run end downloads ONE file (${saved.at(-1)?.name})`)
-  const back = parseLines(saved.at(-1).text)
-  ok(back.bad === 0 && JSON.stringify(back.events[1]) === held[1] && back.events.filter(e => e.e === 'part').length === 2 && back.events.at(-2).e === 'runEnd',
+  await runLog._pending
+  ok(saved.length === 0 && runLog._buf.length === 0 && (await runLog.store.all()).length === 2, 'the run end stores its part and downloads nothing by itself (the card\'s click does, DEC-481)')
+  const e0 = JSON.parse((await runLog.store.all()).at(-1)[1].split('\n').find(l => l.includes('"runEnd"')))
+  ok(e0.wallet === 100 && e0.cond.engine === 1 && e0.inv.length === 1, 'the run-end line carries the END state (wallet, conditions, inventory)')
+  const held2 = (await runLog.store.all()).map(e => e[1]).join('')
+  ok(await runLog.saveNow() && saved.length === 1 && /^autos-run-abc_123-[\dT-]+Z\.jsonl$/.test(saved[0].name), `a click-started save downloads ONE file (${saved[0]?.name})`)
+  const back = parseLines(saved[0].text)
+  ok(saved[0].text === held2 && back.bad === 0 && back.events.filter(e => e.e === 'part').length === 2 && back.events.some(e => e.e === 'runEnd'),
     'the file is the stored parts joined in order: JSON Lines round-trip, one part line per stored part')
-  ok((await runLog.store.all()).length === 2, 'the automatic run-end save keeps the parts stored')
-  const n = saved.length
-  ok(await runLog.saveNow() && saved.length === n + 1 && saved.at(-1).text === saved[n - 1].text && (await runLog.store.all()).length === 0 && runLog.stored === 'nothing stored',
-    '"Save log now" (a click) downloads the same single file, then clears the store')
-  ok(parseLines(saved.at(-1).text + '{"e":"cut').bad === 1, 'a cut-off last line is skipped, the rest still parse')
-  runLog.start('new'); runLog.setOn(false); await runLog._pending
-  ok(runLog.on === false && saved.length === n + 1 && (await runLog.store.all()).length === 1, 'turning it off stores what is held, downloads nothing')
+  ok((await runLog.store.all()).length === 0 && runLog.stored === 'nothing stored' && await runLog.saveNow() === null && saved.length === 1, 'the save clears the store: a second click downloads nothing (no duplicate file)')
+  ok(parseLines(saved[0].text + '{"e":"cut').bad === 1, 'a cut-off last line is skipped, the rest still parse')
+  runLog.setOn(false); await runLog._pending
+  runLog.on = false
+  // DEC-481: a run going live records by itself; leaving it stores the held lines and the exit line carries the end state
+  runLog.enabled = true
+  runLog.start('new')
+  ok(runLog.on && JSON.parse(runLog._buf[0]).e === 'runStart' && JSON.parse(runLog._buf[0]).how === 'new', 'start() with the choice on records from the first line, no toggle')
+  runLog.stop(); await runLog._pending
+  ok(!runLog.on && (await runLog.store.all()).length === 1 && (await runLog.store.all())[0][1].includes('"e":"exit"'), 'stop() stores the run with an exit line')
+  runLog.enabled = false; runLog.start('new')
+  ok(!runLog.on, 'with the choice off start() records nothing')
+  runLog.enabled = true
   await runLog.saveNow()   // empty the store for the next sections
   runLog.setOn(true)
 }
@@ -139,6 +149,46 @@ console.log('\n§4 the summary script on a fixture run')
   ok(Math.abs(s.wear['tireRL · slip'] - 0.0101) < 1e-9 && s.punctures.length === 1 && s.sleeps.length === 1, 'wear by cause, punctures, sleeps')
   const text = report(s)
   ok(text.includes('delivery: 1') && text.includes('punctures:') && text.includes('8 h at vibe 0.60'), 'the report prints them')
+}
+
+console.log('\n§5 FEAT-324 blocks and stitching')
+{
+  const { stitch } = await import('../tools/run-log-summary.mjs')
+  const at = (e, day, hr, extra) => ({ e, real: 1e12 + (day * 24 + hr) * 3.6e6, play: day * 100 + hr, day, hr, pos: [0, 0, 0], spd: 0, ...extra })
+  const cond = (tire, oil) => ({ tireFL: tire, tireFR: 0.9, tireRL: 0.9, tireRR: 0.9, oil, engine: 0.8 })
+  const A = [at('runStart', 0, 7, { how: 'new', seed: 's', wallet: 20, fuelGal: 5, cond: cond(0.6, 0.4), parts: { tireFL: 'tireStandard' }, inv: [{ id: 'packedLunch', n: 2 }] }),
+    at('item', 0, 7.1, { act: 'grant', id: 'spareTire', n: 1, src: 'start', fits: true }),
+    ...[0, 1, 2, 3].map(i => at('route', 1, 8 + i / 100, { pos: [i * 50, 0, 0], wallet: 20, fedH: -1, energyH: 3, wear: { tireFL: { slip: 0.01 } } })),
+    at('item', 1, 9, { act: 'grant', id: 'tireStandard', n: 1, src: 'job:reward', fits: true }),
+    at('eat', 1, 9.5, { satietyH: 8, fedLeftH0: 5, hungry: false }),
+    at('alert', 1, 10, { id: 'w14', text: 'the oil is very dirty', bad: true }),
+    at('purchase', 1, 12, { lines: [{ m: 'repair', label: 'Repair Front Springs', price: 4, earn: 0, hours: 1, eat: 0 }] }),
+    at('purchase', 1, 13, { lines: [{ m: 'buyToInventory', label: 'Buy Coffee', price: 2, earn: 0, hours: 0, eat: 0 }, { m: 'buyToInventory', label: 'Buy Gas can', price: 9, earn: 0, hours: 0, eat: 0 }] }),
+    at('mission', 1, 14, { state: 'running', offer: { type: 'farm' } }),
+    at('mission', 1, 15, { state: 'done', offer: { type: 'farm' }, job: { terms: { thresholds: { S: 0.5, A: 0.7, B: 0.8, C: 1 } } }, result: { par: 100, elapsed: 75, ratio: 0.75, letter: 'B', payout: 10, base: 6, tip: 4 } }),
+    at('exit', 1, 16, { wallet: 12, fuelGal: 3, cond: cond(0.5, 1), inv: [] })]
+  const B = [at('runStart', 1, 16, { how: 'resume', seed: 's', wallet: 12, cond: cond(0.5, 1) }), at('exit', 2, 7, { wallet: 30, cond: cond(0.4, 1), inv: [] })]
+  const st = stitch([JSON.stringify(B[0]) + '\n' + JSON.stringify(B[1]), A.map(e => JSON.stringify(e)).join('\n')])   // given out of order
+  ok(st.events[0].how === 'new' && st.events.at(-1).day === 2 && st.files === 2, 'several files of one run are stitched in time order, whatever the order given')
+  const dupl = stitch([A.map(e => JSON.stringify(e)).join('\n'), A.map(e => JSON.stringify(e)).join('\n')])
+  ok(dupl.events.length === A.length && dupl.dup === A.length, 'a file given twice adds nothing')
+  const text = report(summarize(st.events), 0, st)
+  ok(/COVERAGE\n  from play 7 s \(day 0 07:00\)/.test(text) && !/WARNING/.test(text), 'coverage names where the log starts and ends; a log from the run start has no warning')
+  ok(/start day 0 07:00 \(new\).*end day 2 07:00/.test(text) && /tireFL\s+60\.0 % → 40\.0 %/.test(text) && /oil\s+40\.0 % → 100\.0 %/.test(text), 'START and END side by side')
+  ok(/income \$10\.00 \(base \$6\.00, tip \$4\.00\) · spend \$15\.00 \(maint \$4\.00, fuel \$0\.00, food \$2\.00, tows \$0\.00, gear\/other \$9\.00\) · net \$-5\.00/.test(text)
+    && /first purchase that is not maintenance, fuel or food: day 1 13:00 · Buy Gas can/.test(text), 'money by category per day, and the first purchase that is not maintenance/fuel/food')
+  ok(/tireStandard · job:reward/.test(text) && /spareTire: granted 1, gone 0/.test(text), 'every grant with its source; granted-and-unused listed')
+  ok(/FL: 60\.0 % → 40\.0 % · 0\.2 km/.test(text) && /projected full life 4 km/.test(text), 'tire: km on it and projected life at the measured rate')
+  ok(/oil: minimum/.test(text) === false && /engine: minimum 80/.test(text) === false, 'a track that never went under 50 % is not listed')
+  ok(/w14 "the oil is very dirty" ×1 .* fixed|w14 .* no purchase fixed it/.test(text), 'alerts with repeat counts')
+  const low = report(summarize([...A.slice(0, 1), at('route', 1, 9, { pos: [0, 0, 0], cond: { ...cond(0.3, 0.4), airFilter: 0.2 } })]))
+  ok(/airFilter: minimum 20\.0 % and NO alert/.test(low) && /tireFL: minimum 30\.0 % and NO alert/.test(low) && /oil: minimum 40\.0 % and NO alert|w14/.test(low), 'a track under 50 % with no alert is named')
+  ok(/ratio 0\.750 · B/.test(text) && /next rank 0 s faster|next rank 5 s faster/.test(text) && /5 s to spare/.test(text), 'job: ratio, rank, seconds to the next rank threshold and to spare')
+  ok(/hungry 0\.\d+ h/.test(text) && /5\.00 h of fed time left when eaten/.test(text), 'hours hungry; the meal with its fed time left')
+  const mid = report(summarize([at('header', 1, 16.85, { how: 'on', cond: cond(0.6, 0.4) }), at('route', 1, 17, { pos: [0, 0, 0] })]))
+  ok(/WARNING: this log does not start at the run's start/.test(mid), 'a log that starts mid-run says so plainly')
+  const old = report(summarize([at('route', 1, 8, { pos: [0, 0, 0], wallet: 5 })]))
+  ok(/start: not recorded/.test(old) && /TIRES per wheel[^\n]*\n  not recorded/.test(old), 'an old log without the new fields still summarises, with "not recorded"')
 }
 
 console.log(fail ? '\nFAIL' : '\nPASS')

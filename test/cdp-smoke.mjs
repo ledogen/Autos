@@ -583,7 +583,7 @@ const STEPS = [
     // must both be in the ONE file "Save log now" downloads (BUG-199: nothing downloads per day), with the header and the 1 s route samples around them.
     await js(`(() => { const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
       A.click = function () { if (this.download?.startsWith('autos-run-')) window.__rlSaved.push({ name: this.download, href: this.href }); else window.__rlClick.call(this) } })()`)
-    await js('window.__runLog.setOn(true)')
+    check(await js('window.__runLog.on && window.__runLog.enabled'), 'runlog: a story run is not logging with no toggle touched (DEC-481)')
     const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
       return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
     check(p, 'runlog: no auto shop in this region')
@@ -602,7 +602,6 @@ const STEPS = [
     await until(async () => !await open(), 2000)
     await js('window.__day().sleep(8, 0.5)')
     check(await js('window.__rlSaved.length') === 0, 'runlog: something downloaded before the save button was pressed')
-    await js('window.__runLog.setOn(false)')
     await js('void window.__runLog.saveNow()')   // async (IndexedDB): wait for its one download
     await until(() => js('window.__rlSaved.length > 0'), 3000)
     const saved = await js('window.__rlSaved.map(s => s.name)')
@@ -611,9 +610,9 @@ const STEPS = [
     check(await until(() => js('window.__rlText !== null'), 3000), 'runlog: the downloaded file could not be read back')
     const got = await js(`(() => { const ev = window.__rlText.trim().split('\\n').map(l => JSON.parse(l))
       const by = (e) => ev.filter(x => x.e === e)
-      return { n: ev.length, header: by('header').length, route: by('route').length, buy: by('purchase').map(x => x.lines.map(l => l.label).join()),
+      return { n: ev.length, runStart: by('runStart').length, header: by('header').length, route: by('route').length, buy: by('purchase').map(x => x.lines.map(l => l.label).join()),
         sleep: by('sleep').map(x => x.hours), stamped: ev.filter(x => x.e !== 'part').every(x => x.day != null && x.pos?.length === 3) } })()`)
-    check(got.header === 1 && got.route >= 2 && got.buy.includes('Oil change') && got.sleep.includes(8) && got.stamped,
+    check(got.runStart >= 1 && got.header === 0 && got.route >= 2 && got.buy.includes('Oil change') && got.sleep.includes(8) && got.stamped,
       `runlog: the log is missing its header, route samples, the purchase or the sleep: ${JSON.stringify(got)}`)
     // The real one-file log through tools/run-log-summary.mjs (BUG-199's header handling x FEAT-69's SHOP TIME block).
     const { events, bad } = parseLines(await js('window.__rlText')), rep = report(summarize(events), bad)
@@ -1090,8 +1089,12 @@ const STEPS = [
     check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000), 'the truck never came to rest')
     for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
     check(await js('!document.getElementById("pm-save").disabled'), `save & exit not offered: "${await js('document.getElementById("pm-save-why").textContent')}"`)
+    await js(`(() => { if (window.__rlSaved) return; const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
+      A.click = function () { if (this.download?.startsWith('autos-run-')) window.__rlSaved.push({ name: this.download, href: this.href }); else window.__rlClick.call(this) } })()`)
+    const dl0 = await js('window.__rlSaved.length')
     await js('document.getElementById("pm-save").click()')
     check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 5000), 'no continue button after save & exit')
+    check(await until(() => js(`window.__rlSaved.length === ${dl0 + 1}`), 4000), 'save & exit did not download exactly one run log (DEC-481)')
     await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html?seed=6` })
     check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 30000, 250), 'no continue button after the reload')
     await js('document.getElementById("mm-continue").click()')
@@ -2212,6 +2215,8 @@ const STEPS = [
   ['endings', async () => {
     const card = () => js('document.getElementById("run-end").style.display === "block" && document.getElementById("re-title").textContent')
     const saved = () => js('localStorage.getItem("autos-run/1") !== null')
+    await js(`(() => { if (window.__rlSaved) return; const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
+      A.click = function () { if (this.download?.startsWith('autos-run-')) window.__rlSaved.push({ name: this.download, href: this.href }); else window.__rlClick.call(this) } })()`)
     const ended = async (want, why) => {
       const t = await until(card, 5000)
       check(t && want.test(t), `the run-end card reads "${t}", want ${want}`)
@@ -2221,7 +2226,9 @@ const STEPS = [
         `${t}: the summary is missing rows: "${body.slice(0, 200)}"`)
       await sleep(1500)   // past an autosave tick
       check(!await saved(), `${t}: the run save outlived the run`)
+      const dl0 = await js('window.__rlSaved.length')
       await js('document.getElementById("re-menu").click()')
+      check(await until(() => js(`window.__rlSaved.length === ${dl0 + 1}`), 4000), `${t}: the run log did not download exactly one file at the card's button (DEC-481): ${await js('window.__rlSaved.length - ' + dl0)}`)
       check(await until(() => js('document.getElementById("main-menu").style.display === "flex"'), 3000), `${t}: no main menu after the card`)
       check(await js('document.getElementById("mm-continue").offsetParent === null'), `${t}: "continue" offers an ended run`)
       check(await js('document.getElementById("mm-save-note").style.display === "none"'), `${t}: the save warning outlived the save`)
