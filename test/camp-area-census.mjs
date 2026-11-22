@@ -2,11 +2,14 @@
 // Not a gate (not in gates.mjs): each region routes ~15 s, so the routing is paid ONCE into a cache.
 //
 //   node test/camp-area-census.mjs --dump --n=400 --part=0/2    route regions, write wip/feat-299/cache/<seed>.json
+//   node test/camp-area-census.mjs --missing                    the seeds not in the cache yet, one a line
 //   node test/camp-area-census.mjs --report                     read the cache: today's discs vs camp.js now
 //   node test/camp-area-census.mjs --sheet                      wip/feat-299/sheet.html: the first 6 seeds, before | after
 //
-// --dump records the zones of the camp.js it runs with: the cache in wip/ was dumped on 7692391b, the disc code
-// before FEAT-299, and its `grid` / `all` ARE "today". (On a FEAT-299 checkout --dump stops at fillReach.)
+//   --only=<seed>   dump that one seed (a driver loop runs each seed under its own hard time cap)
+//   --camp=<path>   the camp.js module the dump records zones with (default ../src/camp.js)
+// --dump records the zones of the camp.js it runs with: the cache in wip/ is the disc code before FEAT-299
+// (7692391b's src/camp.js, passed with --camp), so its `grid` / `all` ARE "today".
 //
 // The cache holds, per seed: the region centre (spawnDecision, as story entry), the planners' graph (main piece,
 // inside the wall: the roads camping grows over), each road's polyline + arc + bores, and the camp zones the code
@@ -36,9 +39,11 @@ async function dump () {
     const { REGION_RADIUS_M, REGION_WARM_RADIUS_M } = await import('../src/story.js')
     const { spawnDecision } = await import('./lib/spawn-decision.mjs')
     const { wirePondNoGo } = await import('./lib/pond-no-go.mjs')
+    const { CampSystem: Camp } = await import(arg('camp') ?? '../src/camp.js')
     const [part, parts] = (arg('part') ?? '0/1').split('/').map(Number)
     fs.mkdirSync(DIR, { recursive: true })
     for (let i = part; i < SEEDS.length; i += parts) {
+        if (arg('only') && String(SEEDS[i]) !== arg('only')) continue
         const seed = SEEDS[i], file = path.join(DIR, `${seed}.json`)
         if (fs.existsSync(file)) continue
         const t0 = Date.now()
@@ -60,7 +65,7 @@ async function dump () {
                 runs[runKey] = { p: e.points.flatMap((q) => [+q.x.toFixed(2), +q.z.toFixed(2)]),
                     c: Array.from(e.polyCum, (s) => +s.toFixed(3)), t: (e.tunnelSpans ?? []).map((t) => [t.s0, t.s1]) }
             }
-            const camp = new CampSystem({ getSeed: () => seed, getParams: () => ({}), getRoad: () => road })
+            const camp = new Camp({ getSeed: () => seed, getParams: () => ({}), getRoad: () => road })
             const grid = [...camp.build(C, REGION_RADIUS_M)]
             const all = [...camp.fillReach(rep.mainNodes, inWall)]
             fs.writeFileSync(file, JSON.stringify({ seed, C, nodes, edges, runs, grid, all }))
@@ -259,6 +264,7 @@ function sheet () {
     console.log(`wrote ${path.join(DIR, '../sheet.html')} (${rows.length} rows)`)
 }
 
-if (process.argv.includes('--dump')) await dump()
+if (process.argv.includes('--missing')) console.log(SEEDS.filter((sd) => !fs.existsSync(path.join(DIR, `${sd}.json`))).join('\n'))
+else if (process.argv.includes('--dump')) await dump()
 else if (process.argv.includes('--sheet')) sheet()
 else report()
