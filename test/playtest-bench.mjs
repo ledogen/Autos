@@ -39,7 +39,8 @@
 // Flags: --a=<checkout> (default this one) --b=<checkout> [--c=<checkout>] --reps=N --seeds=K (first K pinned) | --seed=N
 //        --drive=S --map=S --park=S --headed --out=DIR (default perf-runs/bench-<stamp>) --record
 //        --quality=<Low|Normal|High|Ultra>  the preset (window.__q) applied once story is live, then the terrain left to
-//                  settle before the drive (PERF-55). Default Normal, the tier the app boots with.
+//                  settle before the drive (PERF-55). Without it: the tier the app boots with (Normal), nothing applied.
+//                  High at the owner's full-screen canvas: --quality=High --window=1710,1194 (3420 × 2214 px).
 //        --window=W,H  Chrome's window in CSS px (default 1045,700: the owner's 2090 × 1226 canvas at dpr 2). Normal caps
 //                  the render at 1200 lines, High/Ultra render device-native, so the pixel count is the window's.
 //        --probe   count road resolves per second (PERF-42) and list the CSS animations running (PERF-48) — wraps a hot
@@ -421,10 +422,12 @@ async function session (build, seed, rep) {
       await Promise.race([c.resume(), wait(1000)]); const t = c.currentTime; await wait(1000); const d = c.currentTime - t; c.close(); return d })()`)
     if (!(audioS > 0.5)) throw new Error(`the host's audio clock is stalled (${(audioS ?? 0).toFixed(3)} s per 1 s wall): restart coreaudiod, then rerun`)
     // PERF-55: the preset, then the bigger ring left to stream in (both queues empty twice running, 90 s cap) so the drive
-    // does not open on the ring's fill.
-    await js(`window.__q('${QUALITY}')`)
+    // does not open on the ring's fill. Without --quality nothing is applied: the boot tier (Normal), as before PERF-55.
     let calm = 0
-    await until(async () => (await js('(T => T._pendingWorker.size === 0 && T._pendingQueue.length === 0)(window.__terrain())') ? ++calm : (calm = 0)) >= 2, 90000, 1000)
+    if (arg('quality')) {
+      await js(`window.__q('${QUALITY}')`)
+      await until(async () => (await js('(T => T._pendingWorker.size === 0 && T._pendingQueue.length === 0)(window.__terrain())') ? ++calm : (calm = 0)) >= 2, 90000, 1000)
+    }
     const canvas = await js('(c => [c.width, c.height])(window.__renderer().domElement)')
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
     for (let i = 0; i < 30 && await dlg(); i++) { await tap('Enter'); await sleep(300) }
