@@ -145,4 +145,4 @@ measured options are in the table above (a 1400-line cap holds 60 fps at 4.2 W a
 - 2026-11-23: 36 measured sessions + 7 checks, all at an idle GPU baseline of 0–3 Mcycles/s. Invalid: one cover/fog lever
   session (1.47 km < 1.5) and the first full-screen check (CDP timeout at 3420 × 2040; not reproduced in 13 later High
   full-screen sessions). Bench: `--quality`, `--window`, thermal-pressure read, per-second fps stats (f4afa547); 0 gates cover it.
-  Raw runs: the agent's scratchpad perf55/runs (not kept). Lever overrides: branch scratch/perf-55-levers, never land.
+  Raw runs: perf-runs/perf-55/ in the CarGame-perf55 worktree (git-ignored; agg.py reads them). Lever overrides: branch scratch/perf-55-levers, never land.
