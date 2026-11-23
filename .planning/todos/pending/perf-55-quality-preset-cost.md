@@ -86,6 +86,24 @@ Options (High with a render-height cap, everything else High; owner canvas, same
 | High, cap 1400 lines | 2162 × 1400 | 60.0 / 0.3 % | 1062 (17.7) | 4.2 | 0 |
 | Normal | 1853 × 1200 | 60.0 / 0.3 % | 606 (10.1) | 1.9 | 0 |
 
+### Did the shadow work move High's cost? (A-B-A-B, High at the bench's default 2090 × 1226 canvas)
+Head (land branch on main 27dd34b1; its later commits are docs only) against 8a3636d3, the parent of the first BUG-217
+shadow commit (bfc280b7): BUG-217, BUG-229, FEAT-243 and the 139 first-parent commits since. FEAT-223 (11-16) is in
+both. The default canvas keeps High below saturation, so cycles a second still measure load. 2 seeds × 2 reps, order
+flipped each pair, 8 of 8 valid, idle baselines 0–2 Mcycles/s.
+
+| seed | phase | before Mcyc/frame | head Mcyc/frame | Δ | rep-to-rep spread |
+|---|---|---|---|---|---|
+| 1768572700 | drive | 18.22 | 18.68 | +0.46 (+2.5 %) | 0.01–0.04 |
+| 759313244 | drive | 15.80 | 16.00 | +0.20 (+1.2 %) | 0.18–0.23 |
+| 1768572700 | park | 15.63 | 15.91 | +0.29 (+1.8 %) | 0.05 |
+| 759313244 | park | 16.00 | 16.27 | +0.27 (+1.7 %) | 0.14–0.47 |
+
+So everything since 11-18 adds about 2 % GPU work per frame on High: ~0.3 Mcycles/frame, against the +14.7 that the
+native resolution adds at the owner's canvas. Not the cause. fps is 60 in all eight. The main thread did grow more:
++133 Minstr/s while driving (1666 → 1799, +8 %) on both seeds. That is not shadow work (shadow passes are GPU work),
+and the frame is GPU-bound, so it is noted, not chased here.
+
 ## Tracker
 - [ ] Bench `--quality=<tier>` (applied once story is live, terrain settled), recorded in output and history rows
 - [ ] Low / Normal / High per phase at main's head, same seeds, heat-balanced order
