@@ -12,8 +12,8 @@ lane: perf
 # PERF-55: What each quality preset costs on the M4 Air, and why High is slow
 
 ## Next steps
-Lane agent: measure (Low / Normal / High, the High levers one at a time, High before/after the shadow work, one long
-High session for heat). Then the owner picks from the options; preset numbers are the owner's call.
+Owner: pick what High should be (as shipped, or with a render-height cap: 1400 lines holds 60 fps cool, 1600 holds
+60 fps but reaches heavy thermal pressure). Orchestrator: land the bench options (land/perf-55-preset-cost).
 
 ## Summary
 The owner's High session held no frame times, so this measures it. The bench gains `--quality` and `--window`
@@ -104,15 +104,45 @@ native resolution adds at the owner's canvas. Not the cause. fps is 60 in all ei
 +133 Minstr/s while driving (1666 → 1799, +8 %) on both seeds. That is not shadow work (shadow passes are GPU work),
 and the frame is GPU-bound, so it is noted, not chased here.
 
+### Sustained High (one 32-minute session: 4 back-to-back reps on seed 1768572700, owner canvas, no cooling gaps)
+Same seed, same route every rep, so rep 1 and rep 4 compare like for like.
+
+| rep (start) | drive fps / s < 55 | p99 / worst ms | GPU Mcyc/s @ MHz | Mcyc/frame | GPU W | thermal level 2 |
+|---|---|---|---|---|---|---|
+| 1 (0 min) | 42.3 / 98 % | 104 / 132 | 1367 @ 1369 | 32.3 | 13.1 | 77 % of the drive |
+| 2 | 40.2 / 99 % | 110 / 133 | 1259 @ 1260 | 31.3 | 10.3 | 100 % |
+| 3 | 39.7 / 100 % | 114 / 145 | 1231 @ 1232 | 31.0 | 9.8 | 100 % |
+| 4 (~26 min) | 39.4 / 100 % | 115 / 147 | 1222 @ 1223 | 31.0 | 9.6 | 100 % |
+
+The work per frame stays put (31–32 Mcycles) while macOS walks the GPU clock down, 1470 → 1369 → 1223 MHz, and fps
+follows it: −7 % from the first drive to the last (the first two minutes of each drive: 46.9 / 46.6 fps in rep 1 against
+40.0 / 41.6 in rep 4). The main thread's clock does not move (2.51 → 2.46 GHz). That is the owner's "slows down as if
+throttled": it is throttled, on a load already 20 % past the GPU's top clock before any throttling.
+
+### Conclusion
+High's cost is the native render resolution, not shadows. At the owner's full-screen canvas High shades 3.4× Normal's
+pixels, and that alone is 76 % of the extra GPU work per frame. Ring 11 %, prop rings 9 %, cover and fog 2 %, shadow map
+and atlas 0.4 %. The shadow work since 11-18 adds about 2 % per frame. High needs ~1750 Mcycles/s for 60 fps; the GPU
+gives 1470 at most and ~1220 once heavy thermal pressure sets in after ~2 min. Preset numbers are the owner's call; the
+measured options are in the table above (a 1400-line cap holds 60 fps at 4.2 W and thermal level 0).
+
 ## Tracker
-- [ ] Bench `--quality=<tier>` (applied once story is live, terrain settled), recorded in output and history rows
-- [ ] Low / Normal / High per phase at main's head, same seeds, heat-balanced order
-- [ ] High − Normal split by lever (resolution, ring, shadow map + atlas, prop rings)
-- [ ] High at main vs High before BUG-217 (A-B-A-B)
-- [ ] One long High session: fps and clocks first 5 min vs last 5 min
+- [x] Bench `--quality=<tier>` (applied once story is live, terrain settled), recorded in output and history rows
+- [x] Low / Normal / High per phase at main's head, same seeds, heat-balanced order
+- [x] High − Normal split by lever (resolution, ring, shadow map + atlas, prop rings)
+- [x] High at main vs High before BUG-217 (A-B-A-B)
+- [x] One long High session: fps and clocks first 5 min vs last 5 min
+- [ ] Owner: High's resolution (or keep it)
+
+## Open questions
+- Owner: keep High native, or cap it (1400 / 1600 lines measured)? Ultra is native too and was not measured.
 
 ## Files
 `test/playtest-bench.mjs`
 
 ## Log
 - 2026-11-22: ticket opened; bench options on land/perf-55-preset-cost.
+- 2026-11-23: 36 measured sessions + 7 checks, all at an idle GPU baseline of 0–3 Mcycles/s. Invalid: one cover/fog lever
+  session (1.47 km < 1.5) and the first full-screen check (CDP timeout at 3420 × 2040; not reproduced in 13 later High
+  full-screen sessions). Bench: `--quality`, `--window`, thermal-pressure read, per-second fps stats (f4afa547); 0 gates cover it.
+  Raw runs: the agent's scratchpad perf55/runs (not kept). Lever overrides: branch scratch/perf-55-levers, never land.
