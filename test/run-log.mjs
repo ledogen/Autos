@@ -195,5 +195,35 @@ console.log('\n§5 FEAT-324 blocks and stitching')
   ok(/start: not recorded/.test(old) && /TIRES per wheel[^\n]*\n  not recorded/.test(old), 'an old log without the new fields still summarises, with "not recorded"')
 }
 
+console.log('\n§6 BUG-257: a log describes the session it was recorded in')
+{
+  let seed = 'free1', mode = 'freeroam'
+  runLog._ctx = { ...ctx, seed: () => seed, mode: () => mode }
+  await runLog.store.del((await runLog.store.all()).map(e => e[0]))
+  runLog.setOn(true)
+  const h = JSON.parse(runLog._buf[0])
+  ok(h.mode === 'freeroam' && h.seed === 'free1' && !['play', 'day', 'hr', 'wallet', 'energyH', 'fedH', 'inv'].some(k => k in h)
+    && h.fuelGal === 10 && h.parts.tireFL === 'stockTire', 'a free-roam header omits play, day, hour, wallet, hunger, energy and inventory (the dead run\'s values); the truck stays')
+  runLog.tick(1)
+  const r = JSON.parse(runLog._buf.at(-1))
+  ok(r.e === 'route' && !['play', 'day', 'hr', 'wallet', 'energyH', 'fedH'].some(k => k in r) && r.gear === 2, 'a free-roam route sample carries no story fields')
+  seed = 'free2'
+  runLog.event('reseat', {})
+  await runLog._pending
+  const lines = [...(await runLog.store.all()).map(e => e[1]), runLog._buf.join('\n')].join('\n').split('\n').filter(Boolean).map(l => JSON.parse(l))
+  const hs = lines.filter(l => l.e === 'header')
+  ok(hs.length === 2 && hs[1].seed === 'free2' && hs[1].how === 'world' && lines.find(l => l.why === 'world') && lines.at(-1).e === 'reseat',
+    'a new world seed closes the series and opens a new one: its own header with the new seed, before the line that follows')
+  await runLog.saveNow()
+  ok(saved.at(-1).name.includes('autos-run-free1-') === false && saved.at(-1).name.includes('-free2-'), 'the file is named for the newest world')
+  const back = parseLines(saved.at(-1).text)
+  ok(report(summarize(back.events)).length > 0, 'the reader summarises a free-roam log that has no day or play')
+  mode = 'story'
+  runLog.event('x', {})
+  const st = JSON.parse(runLog._buf.find(l => l.includes('"how":"world"')))
+  ok(st.mode === 'story' && st.wallet === 100 && st.day === clock.d && st.play === 42, 'a mode change opens a series too, and a story header carries the story state again')
+  runLog.setOn(false); await runLog._pending; runLog.on = false
+}
+
 console.log(fail ? '\nFAIL' : '\nPASS')
 process.exit(fail)
