@@ -123,6 +123,9 @@ export const runLog = {
   _day: null,        // the game day of the last sample (a new one stores a part)
   _seed: 'noseed',
   _iso: null,        // the file series' start, filename-safe
+  _hSeed: null,      // the seed and mode the series' header named (BUG-257): a change closes the series
+  _hMode: null,
+  _closing: false,   // stop() is writing its exit line: a mode flip then is not a new world
 
   /** main.js, once: { vs, day, econ, inv, parts, damage, play(), seed(), mode(), onRoad(), settings() }. */
   bind (ctx) {
@@ -164,7 +167,9 @@ export const runLog = {
   stop () {
     this._inRun = false
     if (!this.on) return
+    this._closing = true
     this.event('exit', this._state())   // the END block of the summary
+    this._closing = false
     this.flush('exit')
     this.on = false
   },
@@ -177,6 +182,26 @@ export const runLog = {
     this._prune()
     this._seed = String(this._ctx?.seed?.() ?? 'noseed').replace(/[^\w.-]+/g, '_')
     this._iso = new Date().toISOString().replace(/[:.]/g, '-')
+    this._hSeed = String(this._ctx?.seed?.() ?? 'noseed')
+    this._hMode = this._ctx?.mode?.()
+  },
+
+  /** BUG-257: a log describes the session it was recorded in. A new world seed or game mode (a free-roam reseed, a
+   *  seat in another world) closes the series and opens a new one with its own header, so file name and header
+   *  name the world the lines after them were driven in. */
+  _sync () {
+    const c = this._ctx
+    if (!c || this._closing || (String(c.seed?.() ?? 'noseed') === this._hSeed && c.mode?.() === this._hMode)) return
+    this.flush('world')
+    this._newSeries()
+    this.event('header', this._header('world'))
+  },
+
+  /** Story state (a clock, a wallet, hunger, an inventory, playtime) exists only in a story run or scenario: free roam
+   *  leaves those systems holding the last run's frozen values, which a log must not repeat (BUG-257). */
+  _story () {
+    const m = this._ctx?.mode?.()
+    return m == null || m === 'story' || m === 'scenario'
   },
 
   _header (how) {
@@ -190,11 +215,11 @@ export const runLog = {
   _state () {
     const c = this._ctx
     if (!c) return {}
-    const f = c.vs.fuel
+    const f = c.vs.fuel, st = this._story()
     return {
-      parts: c.parts?.snapshot().fitted, cond: this._cond(), flat: c.damage?.flat.slice(),
-      inv: c.inv?.snapshot().entries, wallet: c.econ?.money(), fuelGal: f ? r3(f.gal) : null,
-      energyH: c.day && r3(c.day.energyH()), fedH: c.day && r3(c.day.fedLeftH()),
+      parts: c.parts?.snapshot().fitted, cond: this._cond(), flat: c.damage?.flat.slice(), fuelGal: f ? r3(f.gal) : null,
+      ...(st && { inv: c.inv?.snapshot().entries, wallet: c.econ?.money(),
+        energyH: c.day && r3(c.day.energyH()), fedH: c.day && r3(c.day.fedLeftH()) }),
     }
   },
 
@@ -209,13 +234,16 @@ export const runLog = {
   /** Record one event. `data`'s keys sit beside the stamp's; keep them off e/real/play/day/hr/pos/spd/hdg. */
   event (type, data) {
     if (!this.on) return
+    if (type !== 'header') this._sync()
     const c = this._ctx
     const line = { e: type, real: Date.now() }
     if (c) {
       const vs = c.vs, p = vs.position, v = vs.velocity, q = vs.quaternion
-      line.play = r1(c.play?.() ?? 0)
-      line.day = c.day?.day()
-      line.hr = c.day && r3(c.day.hour())
+      if (this._story()) {
+        line.play = r1(c.play?.() ?? 0)
+        line.day = c.day?.day()
+        line.hr = c.day && r3(c.day.hour())
+      }
       line.pos = [r1(p.x), r1(p.y), r1(p.z)]
       line.spd = Math.round(Math.hypot(v.x, v.y, v.z) * 100) / 100
       // Heading in degrees, main.js's convention (_currentHeading): the yaw of the truck's forward (−Z) axis.
@@ -237,15 +265,17 @@ export const runLog = {
     this._acc -= SAMPLE_S
     const c = this._ctx
     if (!c) return
-    const day = c.day?.day()
+    this._sync()
+    const st = this._story()
+    const day = st ? c.day?.day() : null
     if (this._day != null && day !== this._day) this.flush('day')
     this._day = day
     if (this._n && this._n % COND_EVERY === COND_EVERY - 1) this.flush('minute')   // a crash loses at most a minute
     const vs = c.vs, f = vs.fuel, dtr = vs.drivetrain
     this.event('route', {
       mode: c.mode?.(), road: this._road(),
-      fuelGal: f ? r3(f.gal) : null, energyH: c.day && r3(c.day.energyH()), fedH: c.day && r3(c.day.fedLeftH()),
-      wallet: c.econ?.money(), gear: dtr?.gear, rpm: dtr ? Math.round(dtr.engineRPM) : null,
+      fuelGal: f ? r3(f.gal) : null, energyH: st ? c.day && r3(c.day.energyH()) : undefined, fedH: st ? c.day && r3(c.day.fedLeftH()) : undefined,
+      wallet: st ? c.econ?.money() : undefined, gear: dtr?.gear, rpm: dtr ? Math.round(dtr.engineRPM) : null,
       tempC: c.damage && r1(c.damage.engineTempC), thr: r3(vs.throttle ?? 0), brk: r3(vs.brake ?? 0),
       wear: c.damage?.drainWearLog() ?? null,
       cond: ++this._n % COND_EVERY === 0 ? this._cond() : undefined,
