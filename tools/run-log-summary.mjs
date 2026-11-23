@@ -157,10 +157,10 @@ export function summarize (events) {
     }
     if (e.e === 'tire' && e.act === 'fitSpare') change(e.corner, e, 'spare', e.offCond)
     if (e.e === 'tire' && e.act === 'tireService') e.jobs?.forEach((j, i) => j.tire && change(j.corner, e, 'new (tow service)', e.old?.[i]))
-    if (e.e === 'fit') s.fitEvents++
+    if (e.e === 'fit') s.fitEvents ||= e.real   // when fit records begin: shop lines before it come from an older log part
     if (e.e === 'fit' && tireOf(e.id) && /^tire/.test(e.socket ?? e.slot ?? '')) change(CORNERS.indexOf(String(e.socket ?? e.slot).slice(4)), e, e.id, e.offCond?.tire ?? e.offCond)
   }
-  if (!s.fitEvents) for (const x of s.fitLines) change(x.c, x.e, x.what, null)   // an old log: the shop lines only, no taken-off condition
+  for (const x of s.fitLines) if (!s.fitEvents || x.e.real < s.fitEvents - 60000) change(x.c, x.e, x.what, null)   // an old log (or the old part of a stitched run): the shop lines only, no taken-off condition
   s.top.sort((a, b) => b.l - a.l)
   s.top = s.top.slice(0, 10).map(x => x.e)
   s.days = [...s.days].sort((a, b) => a - b)
