@@ -32,6 +32,60 @@ Outside samples (test/lib/ioreport.py, 1 Hz):
   GPU-bound, not main-thread-bound. pmset recorded no thermal warning.
 Raw: `wip/run-logs/perf-1123/` (capture 1795416091914) in the main checkout; the io samples were in the orchestrator's scratchpad (owner-io.jsonl).
 
+### Bench at the owner's full-screen canvas (2026-11-22/23, main 27dd34b1 + bench options)
+`--window=1710,1194` gives the 1710 × 1107 CSS viewport of a full-screen window on this panel (the headless window
+loses 87 px to browser chrome). Before every session the GPU idle baseline was read (ioreport 1 s × 5): 0–2 Mcycles/s
+on all 27 sessions; load 0.9–2.3. `--fake-audio`, pinned seeds 1768572700 / 17535907 / 759313244.
+Presets, one rep per seed, order rotated per seed for heat (N H L · H L N · L N H), 300 s drive, all 9 valid:
+
+| preset | canvas | phase | fps (median s) | s < 55 fps | p99 / worst ms | GPU Mcyc/s @ MHz | Mcyc/frame | main Minstr/s | CPU / GPU W | thermal |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Low | 1112 × 720 | drive | 60.0 (60) | 0.2 % | 18.6 / 110 | 181 @ 422 | 3.0 | 1208 | 0.7 / 0.5 | 0 |
+| Normal | 1853 × 1200 | drive | 59.9 (60) | 0.2 % | 18.6 / 61 | 674 @ 724 | 11.3 | 1462 | 0.9 / 1.9 | 0 |
+| High | 3420 × 2214 | drive | 45.2 (45) | 88 % | 94 / 122 | 1410 @ 1417 | 31.2 | 1646 | 0.9 / 14.1 | 2 |
+| Low | | map | 60.0 (60) | 0 % | 18.7 / 146 | 190 | 3.2 | 881 | 0.5 / 0.5 | 0 |
+| Normal | | map | 60.0 (60) | 0 % | 18.9 / 226 | 674 | 11.2 | 949 | 0.5 / 2.1 | 0 |
+| High | | map | 47.7 (49) | 100 % | 82 / 117 | 1325 @ 1327 | 27.8 | 1268 | 0.7 / 12.5 | 2 |
+| Low | | park | 60.0 (60) | 0 % | 18.6 / 19 | 179 | 3.0 | 715 | 0.6 / 0.6 | 0 |
+| Normal | | park | 60.0 (60) | 0 % | 18.7 / 19 | 661 | 11.0 | 786 | 0.5 / 2.1 | 0 |
+| High | | park | 49.0 (49) | 100 % | 65 / 69 | 1323 @ 1323 | 27.0 | 830 | 0.5 / 12.5 | 2 |
+
+Thermal is macOS's thermal-pressure level (`notifyutil -g com.apple.system.thermalpressurelevel`, no root; 0 nominal,
+1 moderate, 2 heavy). Every High session reached level 2 about 2 min into its drive (level 2 for 48–62 % of the drive,
+100 % of map and park), and the GPU clock was then held near 1320 MHz instead of its 1470 top: 10 % fewer cycles a
+second for a load that already needed more than the top clock. Normal and Low never left level 0. `pmset -g therm`
+reports nothing on Apple silicon, which is why the owner's pmset read was empty.
+The bench's default canvas (2090 × 1226, the 1045 × 700 window) is 2.6 Mpx; High full screen is 7.6 Mpx (2.9×), so a
+default-window High run (936 Mcyc/s in a 60 s check) does not show the owner's problem.
+
+### High − Normal by lever (one at a time on Normal, owner canvas, 180 s drive, seeds 1768572700 + 759313244)
+GPU load is read as Mcycles per frame (active cycles ÷ fps): a saturated run cannot show more cycles a second, but it
+shows them per frame. Deltas are per-seed matched, then averaged. Temporary overrides on a scratch branch only
+(`scratch/perf-55-levers`, a `window.__qp` handle + bench `--qset`, never landed).
+
+| lever (on Normal) | drive Mcyc/frame Δ | share of High − Normal | park Δ | main Minstr/s Δ (drive) |
+|---|---|---|---|---|
+| (a) resolution native (3420 × 2214) vs the 1200-line cap | +14.7 | 76 % | +12.9 | −45 (fewer frames) |
+| (b) ring 3 / warm 3 vs 2 / 1 | +2.0 | 11 % | +1.5 | +246 |
+| (d) prop rings 3 / 2 / 6 (measured on top of (b): it needs the bigger ring) | +1.8 | 9 % | +1.7 | +102 |
+| cover density / fade + fog (one seed; the other was 30 m short of the 1.5 km bar) | +0.5 | 2 % | +0.6 | +23 |
+| (c) shadow map 4096 + atlas 384 vs 3072 + 256 | +0.1 | 0.4 % | +0.1 | −4 |
+| sum | 19.0 | | | |
+| High measured | +19.2 (10.1 → 29.2) | 100 % | +15.7 | +196 (at 47 fps) |
+
+At 60 fps High would need 29.2 × 60 = 1750 Mcycles/s; the GPU tops out at 1470 and sustains ~1320 under heavy
+pressure. Normal needs ~610. The frame is GPU-bound (the owner's hitch log: 40–52 ms frames with 3–4 ms of main-thread
+CPU), so the main-thread columns are context.
+
+Options (High with a render-height cap, everything else High; owner canvas, same two seeds):
+
+| option | canvas | drive fps / s < 55 | Mcyc/s (per frame) | GPU W | thermal |
+|---|---|---|---|---|---|
+| High as shipped | 3420 × 2214 | 47.0 / 84 % | 1373 (29.2) | 13.2 | 2 |
+| High, cap 1600 lines | 2471 × 1600 | 60.0 / 0.6 % | 1242 (20.7) | 8.4 | reached 2 on one seed (31 % of drive), 1 on the other |
+| High, cap 1400 lines | 2162 × 1400 | 60.0 / 0.3 % | 1062 (17.7) | 4.2 | 0 |
+| Normal | 1853 × 1200 | 60.0 / 0.3 % | 606 (10.1) | 1.9 | 0 |
+
 ## Tracker
 - [ ] Bench `--quality=<tier>` (applied once story is live, terrain settled), recorded in output and history rows
 - [ ] Low / Normal / High per phase at main's head, same seeds, heat-balanced order
