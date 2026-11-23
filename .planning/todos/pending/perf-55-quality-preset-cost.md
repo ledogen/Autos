@@ -20,7 +20,17 @@ The owner's High session held no frame times, so this measures it. The bench gai
 (the preset and the canvas), a thermal-pressure read, and per-second fps stats. Results below.
 
 ## Description
-(measurements land here)
+### The owner's own session (2026-11-22 22:35–22:42, built game, fresh tab, free roam, full screen)
+Machine: 15-inch M4 Air (Mac16,13), panel 2880 × 1864, macOS "looks like" 1710 × 1107 points, so Chrome reports
+devicePixelRatio 2 and a full-screen canvas on High is 3420 × 2214 device px (7.6 Mpx; macOS then scales the frame down
+to the panel). Normal caps at 1200 lines: 1854 × 1200 (2.2 Mpx). High full screen shades 3.4× Normal's pixels.
+Outside samples (test/lib/ioreport.py, 1 Hz):
+- Normal, 4 min: GPU 81 % busy at ~880 MHz ≈ 715 Mcycles/s active, 1.2 W.
+- High from 22:38:58: GPU 99 % busy at 1468 MHz (top clock 1470) ≈ 1455 Mcycles/s, 11–13 W: saturated at once, ~10× the GPU power.
+- From 22:40:28 the clock sagged to 1430–1436 MHz and GPU power fell 13.2 → 11.5 W; the owner felt the lag from ~22:40.
+- Hitch log (?hitch=24) at 22:41: frames of 40–52 ms carrying only 3–4 ms of main-thread CPU (frame.render ~2 ms):
+  GPU-bound, not main-thread-bound. pmset recorded no thermal warning.
+Raw: `wip/run-logs/perf-1123/` (capture 1795416091914) in the main checkout; the io samples were in the orchestrator's scratchpad (owner-io.jsonl).
 
 ## Tracker
 - [ ] Bench `--quality=<tier>` (applied once story is live, terrain settled), recorded in output and history rows
