@@ -1,7 +1,7 @@
 ---
 id: FEAT-261
 type: feature
-status: open
+status: done
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 — "Coffee should only take an hour of sleepiness the next day."
@@ -29,3 +29,4 @@ Coffee was +5 h now, −2 h off the next wake-up per cup (item setup page, 2026-
 
 ## Log
 - 2026-11-17: built on land/food-1117 (lane C). day-clock green.
+- 2026-11-24 closed by the orchestrator after a tracker audit: on main with the food batch (merge 1b27af99), no open boxes.

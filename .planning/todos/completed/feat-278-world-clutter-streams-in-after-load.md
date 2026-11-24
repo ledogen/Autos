@@ -1,7 +1,7 @@
 ---
 id: FEAT-278
 type: feature
-status: in-progress
+status: done
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 (inbox) — "We should work on adding world clutter to make it feel more interesting. I'd like to see a proposal for making the sign system functional. I think wor…"
@@ -61,3 +61,4 @@ src/ (a new clutter module) · src/main.js load path
 - 2026-11-18 on main 24929f9b merged: affected gates 24/24; smoke 1 failed at the known DEC-357 blink flake, re-run PASS
   40/40; pad-e2e ALL OK. Sheet wip/feat-278/sheet.jpg (seeds 4182, 77031, 1018248781; main | branch identical).
 - 2026-11-19 landing prep after the owner's "Good": merged land/feat-275-280-mailboxes (with main 01f3ea28): 900dc1f3 resolved 2 main.js hunks (yards keep `_clutter.add`; the route-house mailbox loop now also queues through `_clutter` and its key joins the prefetch), b8a11803 clean. Affected gates 63/63 green; fingerprint-world vs main: only `poi` (seed6/seed11 origin story, the mailbox satellites), rest identical; tutorial seed 1872706826: only `poi` satellites (+1 mailbox per residence). Sweep: none of this branch's files reach the headless build, so the mailboxes sweep (400/400) covers it. cdp-smoke PASS 41 steps, pad-e2e ALL OK.
+- 2026-11-24 closed by the orchestrator after a tracker audit: landed (merge 8609f83d) after the owner's "Good"; signs join the same queue under FEAT-279.
