@@ -478,11 +478,11 @@ await js(`(async () => { window.__o = (${appMod('/src/gamepad.js')}).PAD_PARAMS.
 await sleep(200)
 const pp = await js('window.__o')
 check(pp === false && JSON.parse(await js('localStorage.getItem("autos-settings/1")')).steerAssist === false, `steering assist → off, live and saved (${pp})`)
-await press(DOWN); await press(RIGHT, 2)   // assist off revealed center softening: 0 → 20 %
+await press(DOWN); await press(RIGHT, 2)   // assist off revealed center softening at its 100 % default (DEC-489): → 120 %
 await js(`(async () => { window.__o = (${appMod('/src/gamepad.js')}).PAD_PARAMS.steerShape })()`)
 await sleep(200)
 const shape = await js('window.__o')
-check(shape === 0.2 && JSON.parse(await js('localStorage.getItem("autos-settings/1")')).steerShape === 0.2, `center softening → 20 %, live and saved (${shape})`)
+check(shape === 1.2 && JSON.parse(await js('localStorage.getItem("autos-settings/1")')).steerShape === 1.2, `center softening 100 → 120 %, live and saved (${shape})`)
 await press(LEFT, 4)
 check((await js(`document.querySelector('#mm-settings-panel [data-key="steerShape"] .sel-val').textContent`)).includes('0 %'), 'the slider stops at 0 %, never wraps')
 await press(DOWN, 5); await press(RIGHT)   // past clutch assist, ABS, throttle assist and traction control to the stick deadzone: 8 → 12 %
