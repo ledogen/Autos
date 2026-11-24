@@ -53,6 +53,13 @@
     html { --ui-zoom: 1; }
     html[data-ui-scale=big] { --ui-zoom: 1.4; }
     html[data-ui-scale=big] body > :not(canvas:first-child) { zoom: var(--ui-zoom); }
+    /* FEAT-327 (owner, 2026-11-23, big scale: "significantly reduce the cluster size", "the mission overlay, timer, details are in the way ...
+       the rank display in particular ... shrink it a little"; the HUD and text are otherwise good). A rule on the element itself REPLACES
+       its 1.4 above (zoom does not stack on one element), so these are absolute sizes: the cluster at 1.0 (its Small size, 29 % under Big),
+       the run readout + its column at 1.15, and the rank tile and "RANK" line inside that column at 0.87 on top (net 1.0, Small's size). */
+    html[data-ui-scale=big] #cluster { zoom: 1; }
+    html[data-ui-scale=big] #mission-hud, html[data-ui-scale=big] #paper-hud, html[data-ui-scale=big] #job-stack { zoom: 1.15; }
+    html[data-ui-scale=big] #rank-timer .rt-title { zoom: 0.87; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #111; overflow: hidden; }
     canvas { display: block; }
@@ -1594,7 +1601,7 @@
     #map-list .ml-price { flex: 0 0 auto; color: var(--money); }
     #map-list .ml-bar { display: inline-block; width: 40px; height: 6px; margin-right: 6px; vertical-align: 1px; border: 1px solid var(--line-control); }
     #map-list .ml-bar i { display: block; height: 100%; }
-    #map-legend { flex: 0 0 auto; display: block; width: calc(100% - 24px); margin: 12px; }
+    #map-legend { flex: 0 0 auto; display: block; width: calc(100% - 24px); margin: auto 12px 12px; }   /* FEAT-327: auto top margin pins it to the column's bottom */
     /* FEAT-67: the offer card docks in the map's corners — nothing may sit on top of it. */
     body.map-open #quickjob-btn { visibility: hidden; }
   </style>
