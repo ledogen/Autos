@@ -11,7 +11,6 @@ source: owner, 2026-11-23 — "Then we'll have to come up with a better boss fig
 
 ## Next steps
 - DESIGN ONLY. Nothing is built. The owner and the orchestrator are still in question rounds.
-- Open: how to stop the player driving around a slide (see Open questions).
 - Before building rock slides: research the rigid-body ceiling (owner's request, below).
 
 ## Summary
@@ -51,10 +50,12 @@ Design as agreed so far (owner's answers, 2026-11-23):
 - **Preparation card.** Before the mission, a card compares the truck's parts and condition, and the player's food
   and rest, against a recommended list. The player may go regardless. Wording is the owner's.
 - **Explosions that push rigid bodies** are wanted beyond this mission.
+- **The bypass guard.** More than 25 m from the road's edge for 5 s and the attempt is called off, after a warning.
+  No teleport. Owner: "yes", "good". A reset to the road during the mission fails the attempt: "fail". Fixed rocks
+  beside a slide are dressing only. The 25 m and 5 s are starting values to tune from the owner's first drive.
 - Dropped: liquid cargo ("kill liquid"), the relief run, the gauntlet.
 
 ## Tracker
-- [ ] Owner settles the bypass guard.
 - [ ] Rigid-body ceiling researched and measured.
 - [ ] Census: how much the route's bends and grade still vary at constant par, over random seeds.
 - [ ] Seven rock sizes (asset tickets).
@@ -67,9 +68,6 @@ Design as agreed so far (owner's answers, 2026-11-23):
 - No decision record is written yet. These are trial-design answers; records follow if the owner adopts the trial.
 
 ## Open questions
-- **The bypass.** Under "reach the party" a player could drive around a slide. Proposed: a wide field of fixed
-  rocks beside each slide, hillside sites preferred. Owner: "maybe … We can always fall back to a teleportation
-  guard … This might also trigger on crashes which would be weird and jarring … Maybe there's a better option?"
 - **Rigid-body ceiling.** Owner: "I know there are a lot of optimizations that could bring our max rigid body count
   up. For example, in the slide area we can grid it off into sections and rocks only have to check collisions with
   rigid bodies that are in neighboring cells. When the agent that is responsible for building rock slides looks
