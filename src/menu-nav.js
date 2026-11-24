@@ -103,10 +103,12 @@ function sync () {
  *  The ×2 off-axis weight alone let a next-row button just right of the highlight (a short row's one button) beat the
  *  same-row neighbour further along, and a step off the row's end fell onto the next row. A row is the items whose
  *  vertical span holds the highlight's centre line or the other way round. An item with row-mates never leaves its
- *  row sideways; one ALONE in its row (the damage screen's scattered parts) takes the nearest item as before. */
+ *  row sideways; one ALONE in its row takes the nearest item as before. A drawing's shapes (SVG: the
+ *  damage screen's pictogram) are laid out freely, not in rows, so the rule never applies to or from them. */
 function hasRow (items, from, r, fy) {
+  if (from.ownerSVGElement) return false
   for (const el of items) {
-    if (el === from) continue
+    if (el === from || el.ownerSVGElement) continue
     const q = el.getBoundingClientRect()
     if ((q.y <= fy && fy <= q.bottom) || (r.y <= q.y + q.height / 2 && q.y + q.height / 2 <= r.bottom)) return true
   }
@@ -122,7 +124,7 @@ function nearest (items, from, dx, dy) {
     const ox = q.x + q.width / 2 - fx, oy = q.y + q.height / 2 - fy
     const along = ox * dx + oy * dy
     if (along <= 1) continue
-    const inRow = (q.y <= fy && fy <= q.bottom) || (r.y <= q.y + q.height / 2 && q.y + q.height / 2 <= r.bottom)
+    const inRow = !from.ownerSVGElement && !el.ownerSVGElement && ((q.y <= fy && fy <= q.bottom) || (r.y <= q.y + q.height / 2 && q.y + q.height / 2 <= r.bottom))
     const d = along + 2 * Math.abs(ox * dy - oy * dx)
     if (dx && inRow) { if (d < rowD) { rowD = d; row = el } } else if (d < bestD) { bestD = d; best = el }
   }
