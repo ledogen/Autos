@@ -38,7 +38,7 @@
 // Offer ids are `${poiId}#${slot}#${k}` — stable, unique for the run, and readable in a log.
 
 import {
-    THINGS, REWARDS, REWARD_CATS, RARE_PULL, PART_REWARD_CAT, RARITY_GATES, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, GATE_WEIGHTS,
+    THINGS, REWARDS, REWARD_CATS, RARE_PULL, PART_REWARD_CAT, RARITY_GATES, TIRE_REWARD_X, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, BONUS_CHANCE, GATE_WEIGHTS,
     DEST_POI_CHANCE, PEOPLE_PER_POI, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, FREIGHT_PAY_PER_KG, FREIGHT_TIP_MULT, DEADLINE_SLACK, NOT_A_DESTINATION,
     REWARD_VALUE, ITEM_COST_FRAC, REWARD_WINDOW_LO, REWARD_WINDOW_HI, REQUISITION, TRAITS, TRAIT_COUNT_WEIGHTS, MULTI_DROP, GIVER_LINES, GIVER_LINE_P,
 } from '../data/offers.js'
@@ -137,7 +137,9 @@ const pick = (r, list) => list[Math.floor(r() * list.length)]
 /** Weighted pick over an object of { key: weight }, driven by one uniform draw `u`. */
 /** The bonus reward among eligible REWARDS rows `at`, for a uniform draw `u`: weighted by the stock
  *  table the auto-shop shelf uses (owner, 2026-10-22). A reward the table doesn't list weighs 1 [DEFAULT]. */
-export const pickReward = (at, u) => at.find(x => x.id === pickWeighted(u, Object.fromEntries(at.map(x => [x.id, STOCK_WEIGHT[x.id] ?? 1]))))
+export const pickReward = (at, u) => at.find(x => x.id === pickWeighted(u, Object.fromEntries(at.map(x => [x.id, rewardWeight(x.id)]))))
+/** FEAT-325: a tire's reward weight is its shelf weight × TIRE_REWARD_X (data/offers.js). */
+const rewardWeight = (id) => (STOCK_WEIGHT[id] ?? 1) * (PARTS[id]?.slot === 'tire' ? TIRE_REWARD_X : 1)
 
 /** DEC-204: the reward among `at` for draw `u`, priced (itemCost) within REWARD_WINDOW_LO..HI x the card's `top`
  *  figure; none fit -> the cheaper ones; none cheaper -> the cheapest there is. No top (no plan) -> the plain pick. */
@@ -158,7 +160,7 @@ const dayAllows = (w, bornH) => !(w.minDay > Math.floor(bornH / 24))
 /** FEAT-168: every reward — the REWARDS rows, then each carried part with no row, under its slot's
  *  category at its rarity's gates (data/offers.js PART_REWARD_CAT / RARITY_GATES). */
 export const REWARD_LIST = [...REWARDS, ...Object.entries(PARTS)
-    .filter(([id, p]) => p.massKg > 0 && !REWARDS.some(w => w.id === id))
+    .filter(([id, p]) => p.massKg > 0 && STOCK_WEIGHT[id] !== 0 && !REWARDS.some(w => w.id === id))   // FEAT-325: weight 0 = never a reward (the engines)
     .map(([id, p]) => ({ id, name: p.name, kind: 'part', gates: RARITY_GATES[p.rarity], cat: PART_REWARD_CAT[p.slot] }))]
 
 /** FEAT-168: the rewards in categories `cats` that an offer born at `bornH` may carry. */

@@ -12,10 +12,11 @@ import { SLOTS, takes } from '../data/parts.js'
 import { TRACKS } from './damage.js'
 import { mulberry32 } from './seed.js'
 
-/** Starting condition per damage class, [lo, hi], drawn evenly per track. */
+/** Starting condition per damage class, [lo, hi], drawn evenly per track.
+ *  FEAT-325 (arc trial, owner 2026-11-23): tires "around 50%" → 40–60 %; shocks and springs "roll at 30-50%". */
 export const JALOPY_COND = {
-  tire: [0.4, 0.8], wheel: [0.7, 1], alignment: [0.75, 1],
-  spring: [0.5, 0.85], damper: [0.4, 0.8], brake: [0.35, 0.75],
+  tire: [0.4, 0.6], wheel: [0.7, 1], alignment: [0.75, 1],
+  spring: [0.3, 0.5], damper: [0.3, 0.5], brake: [0.35, 0.75],
   engine: [0.55, 0.85], filter: [0.4, 0.8], oil: [0.6, 0.8], radiator: [0.5, 0.9], transmission: [0.5, 0.85],
   headlights: [0.6, 1], armor: [0.5, 0.9],
 }
@@ -23,10 +24,10 @@ export const JALOPY_COND = {
 export const JALOPY_PARTS = {
   arbFront: { arbFrontStock: 90, arbFrontNone: 10 },
 }
-// FEAT-201 (owner, 2026-11-12: "only one old tire and it's in the front … the car still drives quite well
-// but you do have some debt to take care of"): two old rears made the truck squirrely. Exactly one old
-// tire, on a front corner drawn evenly; the other three are the stock tire.
-export const JALOPY_OLD_TIRE = ['tireFL', 'tireFR']
+// FEAT-325 (arc trial, owner 2026-11-23: "start with all 4 tires old"), replacing FEAT-201's one old front tire.
+export const JALOPY_OLD_TIRES = ['tireFL', 'tireFR', 'tireRL', 'tireRR']
+// FEAT-325 (arc trial): the run starts on the detuned four-cylinder (data/parts.js engineI4); the V6 is the shop's swap.
+export const JALOPY_ENGINE = 'engineI4'
 /** The spare in the inventory: always one (FEAT-201), an old tire on the steel wheel, worn. */
 export const JALOPY_SPARE = { tire: 'tireOld', cond: [0.4, 0.8] }
 
@@ -46,7 +47,8 @@ export function rollJalopy ({ parts, damage, inventory }, seed) {
     const w = JALOPY_PARTS[takes(socket)]
     if (w) parts.fit(pick(w), null, socket)
   }
-  parts.fit('tireOld', null, JALOPY_OLD_TIRE[Math.floor(rand() * JALOPY_OLD_TIRE.length)])
+  for (const corner of JALOPY_OLD_TIRES) parts.fit('tireOld', null, corner)
+  parts.fit(JALOPY_ENGINE, null, 'engine')
   for (const [id, t] of Object.entries(TRACKS)) {
     if (t.clutchOnly) continue   // FEAT-166: the jalopy's diff is open; clutch packs fitted later come new
     const range = JALOPY_COND[t.cls]

@@ -244,7 +244,7 @@ check('a mounted tire sells as its tire plus its wheel', near(svc.ownedValue({ i
 check('only parts sell', !svc.sellOwned(inventory.list().find(r => r.id === 'tirePlugKit').index))
 
 // ── 8. Swapping a mounted pair ────────────────────────────────────────────────────────────────
-svc.close(); inventory.start(); hours = 0
+svc.close(); inventory.start(); hours = 0; wallet = 100   // FEAT-325: §7's sale of a $10 tire no longer covers the labour
 const sp = () => inventory.list().find(r => r.id === 'spareTire')
 inventory.grant('spareTire', 1, { cond: 0.7, flat: true, tire: 'tireSport', wheel: 'wheelSteel', wheelCond: 0.5 })
 check('a flat pair won\'t go on', !svc.swapPair(sp().index, 0))

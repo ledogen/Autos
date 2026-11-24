@@ -42,6 +42,7 @@
 import { readFileSync } from 'node:fs'
 import { OfferBoard, BUILT_FAMILIES, gateText, formatGameDuration, formatDue, personLabel, stockPrice, gateLine, giverLine, REWARD_LIST, pickReward, rewardsIn, itemCost, rewardValue, windowPick } from '../src/offer-board.js'
 import { ITEMS } from '../data/items.js'
+import { STOCK_WEIGHT } from '../data/stock-weights.js'
 import { GIVER_LINES, GIVER_LINE_P, THINGS, REWARD_CATS, RARE_PULL, BONUS_CHANCE, TRAITS, TRAIT_COUNT_WEIGHTS, DEADLINE_SLACK, SOURCES, BUDGET_JOBS, EXPIRY_NOISE, HAUL_STOCK, HAUL_STOCK_PRICE, HAUL_BUNDLE_KG, HAUL_PAY_PER_BUNDLE, HAUL_PAR_SLACK, ITEM_COST_FRAC, REWARD_WINDOW_LO, REWARD_WINDOW_HI } from '../data/offers.js'
 import { basePay, payRange, regionTier, formatMoney, rankTable } from '../src/economy.js'
 import { NAME_FORMS, HOUSEHOLDS, BUSINESS_TYPES, POI_ADJECTIVES, PLACE_NOUNS } from '../data/offer-names.js'
@@ -469,7 +470,8 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     const deadCat = Object.values(REWARD_CATS).flatMap(c => [...c.cats, ...(c.rare ?? [])]).filter(c => !used.has(c))
     check('FEAT-168: every category a giver names holds a reward', deadCat.length === 0, deadCat.join())
     const given = new Set(Object.entries(REWARD_CATS).filter(([k]) => k !== 'larrysHouse').flatMap(([, c]) => [...c.cats, ...(c.rare ?? [])]))
-    const want = Object.entries(ITEMS).filter(([id, it]) => (it.kind === 'part' || it.kind === 'camp') && id !== 'bedroll').map(([id]) => id)
+    // FEAT-325 (arc trial): the engines are never rewards (weight 0: the V6 is a shop row, the I4 the jalopy's).
+    const want = Object.entries(ITEMS).filter(([id, it]) => (it.kind === 'part' || it.kind === 'camp') && id !== 'bedroll' && STOCK_WEIGHT[id] !== 0).map(([id]) => id)
     const orphan = want.filter(id => !given.has(REWARD_LIST.find(w => w.id === id)?.cat))
     check(`FEAT-168: every part and camp item (${want.length}, the bedroll aside) is a reward at some giver besides Larry`, orphan.length === 0, orphan.join())
 }
@@ -937,7 +939,8 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
 {
     const at = REWARD_LIST.filter(w => w.gates.includes('A'))
     const c = (x) => itemCost(x.id)
-    for (const top of [8, 15, 40]) {
+    // FEAT-325 (arc trial): $40 is gone — its only A-gate part in the window was the stock engine, now a shop row, never a reward.
+    for (const top of [8, 15]) {
         const lo = top * REWARD_WINDOW_LO, hi = top * REWARD_WINDOW_HI
         const ok = [0.01, 0.3, 0.6, 0.99].every(u => { const w = windowPick(at, u, top); return c(w) >= lo && c(w) <= hi })
         check(`DEC-204: top $${top}: every draw lands inside ${REWARD_WINDOW_LO}-${REWARD_WINDOW_HI}x`, ok)

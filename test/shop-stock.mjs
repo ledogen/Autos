@@ -21,7 +21,7 @@ import { SHELF_SLOTS, P_FILL, LIFE_H, P_NEW, USED_COND, ITEM_PRICE, ALWAYS, STOR
 import { STOCK_WEIGHT, REWARD_ONLY } from '../data/stock-weights.js'
 import { PARTS } from '../data/parts.js'
 import { ITEMS } from '../data/items.js'
-import { REWARD_CATS } from '../data/offers.js'
+import { REWARD_CATS, TIRE_REWARD_X } from '../data/offers.js'
 import { pickReward, rewardsIn, rewardValue } from '../src/offer-board.js'
 import { mulberry32 } from '../src/seed.js'
 
@@ -65,8 +65,9 @@ for (const [src, { cats }] of Object.entries(REWARD_CATS)) {
     if (at.length < 2) continue
     const rand = mulberry32(7), N = 40000, got = {}
     for (let i = 0; i < N; i++) { const id = pickReward(at, rand()).id; got[id] = (got[id] ?? 0) + 1 }
-    const tw = at.reduce((a, r) => a + (STOCK_WEIGHT[r.id] ?? 1), 0)
-    for (const r of at) share(`reward ${src}/${gate} ${r.id}`, got[r.id] ?? 0, N, (STOCK_WEIGHT[r.id] ?? 1) / tw)
+    const w = (id) => (STOCK_WEIGHT[id] ?? 1) * (PARTS[id]?.slot === 'tire' ? TIRE_REWARD_X : 1)   // FEAT-325: tires × TIRE_REWARD_X
+    const tw = at.reduce((a, r) => a + w(r.id), 0)
+    for (const r of at) share(`reward ${src}/${gate} ${r.id}`, got[r.id] ?? 0, N, w(r.id) / tw)
   }
 }
 

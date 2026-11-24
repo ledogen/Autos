@@ -64,7 +64,19 @@ export const STOCK_WEIGHT = {
     axle355:          2,
     axle345:          2,
     axle410:          0.5,
-    engineStock:      0.25,
+    // FEAT-325 (arc trial): the V6 is an ALWAYS row of every auto shop (data/shop-stock.js), never a rolled slot or a
+    // reward (weight 0: pickReward never draws it); the I4 is the jalopy's and is neither.
+    engineStock:      0,
+    engineI4:         0,
+    // FEAT-325 power mods: intake, exhaust, flywheel, cams and chip "should come up infrequently" in the shop = Rarely;
+    // turbo and supercharger "only very rarely … as an S-rank only reward" = Hardly ever, and REWARD_ONLY below.
+    intakeMod:        1,
+    exhaustMod:       1,
+    flywheelLight:    1,
+    camsMod:          1,
+    chipTune:         1,
+    turbo:            0.25,
+    supercharger:     0.25,
 
     // Field repairs (owner, 2026-10-23): zip ties and stop-leak are sold at the auto shop too
     zipTies:          4,
@@ -112,4 +124,4 @@ export const STOCK_WEIGHT = {
  *  are storefront lines: data/shop-stock.js STOREFRONT, which these weights don't touch. */
 export const REWARD_ONLY = new Set(['emergencyGas', 'coffee', 'chiliDog', 'potato', 'groceries', 'ductTape', 'energyDrink', 'dinnerMeal',
     'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar', 'burger', 'packedLunch', 'tireOld',
-    'blanket', 'airMattress', 'sleepingPad', 'quilt', 'sleepingBag', 'deluxeSleepingPad'])
+    'blanket', 'airMattress', 'sleepingPad', 'quilt', 'sleepingBag', 'deluxeSleepingPad', 'turbo', 'supercharger'])

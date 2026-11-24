@@ -338,13 +338,18 @@ export const DAMAGE_PARAMS = {
   // FEAT-296: the most one bump-stop event takes off a spring or a wheel (before wearScale). 1 = uncapped, today;
   // the difficulty's damage row lowers it (data/difficulty.js damage.cap).
   springEventCap:      1,
+  // FEAT-325 (arc trial, owner 2026-11-23: "double the durability" of shocks and springs — "they're too fragile. they dont
+  // last long enough under sporty driving"). The spring has no durSpring: its curve is the calibration, and its
+  // springBumpRefDmg also prices the wheel's bend (BUG-160), so halving that would halve wheel wear too. This divides
+  // the SPRING's event cost alone — the same knob a part's family durability turns inside wear(). 1 = main's springs.
+  springDurability:    2,
 
   // Dampers: suspension displacement RATE above a no-harm floor.
   // Two changes on 2026-08-20 (owner: "basically no damper wear, make it more sensitive to wheel
   // velocity"). The FLOOR was the real culprit — at 0.35 m/s almost all ordinary ride motion was
   // free, so only crashes wore a damper at all, which is backwards: a damper's whole life is
   // ordinary ride motion. Lowered to 0.10 so normal travel counts, and the rate raised 10x on top.
-  durDamper:      1.2e3,     // (m/s)·s per axle
+  durDamper:      2.4e3,     // (m/s)·s per axle — FEAT-325 (arc trial): ×2, "double the durability" (main: 1.2e3)
   damperVelFloor: 0.10,      // m/s — only near-static motion is free now
 
   // ── Impacts ─────────────────────────────────────────────────────────────────────────────────────
@@ -1373,7 +1378,7 @@ export class DamageModel {
     // durability 1 = the insult IS the damage fraction, the same idiom applyImpact uses. There is
     // no durSpring any more: for an event-priced track the CURVE is the calibration. The parts
     // durability multiplier (SM-INV-10) and the wear-speed slider still apply inside wear().
-    this.wear(id, dmg, 1)
+    this.wear(id, dmg, P.springDurability)
 
     // WHEEL (BUG-160, DEC-169): through an inflated tire the same event bends the wheel past wheelBumpOnsetN, on the
     // spring's curve from that onset. Read BEFORE the puncture below: the hit that pops the tire struck it inflated.

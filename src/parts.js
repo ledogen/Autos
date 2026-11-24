@@ -15,6 +15,8 @@
 
 import { PARTS, SLOTS, FAMILY_DURABILITY, stockPart, takes, socketsFor } from '../data/parts.js'
 import { TIRE_IDS, WHEEL_IDS } from './damage.js'
+import { ENGINES } from '../data/engines.js'
+import { engineTorqueAt } from './drivetrain.js'
 
 // Load rating → every socket a part carrying it can sit in: { tires: [4 corners], springs: [front, rear], … }
 const RATED = {}
@@ -34,6 +36,31 @@ export const runParts = {
  *  alternative when that socket holds a part with a model too (DEC-340: the light bar on the rack). Pure. */
 export const modModels = (fitted) => Object.values(fitted).map(id => PARTS[id]).filter(p => p?.model)
     .map(p => Object.entries(p.modelWith ?? {}).find(([s]) => PARTS[fitted[s]]?.model)?.[1] ?? p.model)
+
+/** The rpm grid a modded curve is sampled on, on top of the engine's own points (so the stock curve is exact). */
+const CURVE_STEP_RPM = 250
+
+/**
+ * FEAT-325: the engine params a fitted set makes — the engine part's data/engines.js entry, its curve scaled by its
+ * `torqueX` (the I4's detune) and by (1 + gain) of every fitted power mod's `torque` curve at each rpm, its inertia
+ * by every mod's `inertiaX`. Pure; null when the engine socket holds no engine entry.
+ */
+export function engineFor (fitted) {
+    const e = PARTS[fitted.engine]
+    const base = e && ENGINES[e.engine]
+    if (!base) return null
+    const mods = Object.values(fitted).map(id => PARTS[id]).filter(p => p?.torque || p?.inertiaX)
+    const c = base.engineTorqueCurve, lo = c[0][0], hi = c.at(-1)[0]
+    const rpms = [...new Set([...c.map(([r]) => r), ...Array.from({ length: Math.floor((hi - lo) / CURVE_STEP_RPM) }, (_, i) => lo + (i + 1) * CURVE_STEP_RPM)])]
+        .filter(r => r <= hi).sort((a, b) => a - b)
+    const gain = (r) => mods.reduce((x, m) => x * (1 + (m.torque ? engineTorqueAt(r, m.torque) : 0)), e.torqueX ?? 1)
+    return {
+        ...base,
+        engine: e.engine,
+        engineTorqueCurve: rpms.map(r => [r, engineTorqueAt(r, c) * gain(r)]),
+        engineInertia: mods.reduce((J, m) => J * (m.inertiaX ?? 1), base.engineInertia),
+    }
+}
 
 export class PartsSystem {
     /**
@@ -111,6 +138,7 @@ export class PartsSystem {
         Object.assign(this._params, s.params)
         if (s.grip) this._params._tireGrip.splice(0, 4, ...s.grip)
         runParts.fitted = { ...runParts.fitted, ...s.fitted }   // a socket the save predates (FEAT-204) keeps the start()'s stock
+        this._engine()   // FEAT-325: the engine and its mods are derived from the fitted map, never saved as params
         for (const id in d.condition) d.condition[id] = s.condition[id] ?? 1   // a track the save predates is new (FEAT-202: the oil)
         for (const k of Object.keys(d._durabilityScale)) if (!(k in s.durability)) delete d._durabilityScale[k]
         Object.assign(d._durabilityScale, s.durability)
@@ -125,6 +153,7 @@ export class PartsSystem {
         for (const [k, v] of Object.entries(part.patch)) if (!other || !k.endsWith(other)) this._params[k] = v
         runParts.fitted[socket] = id
         this._rideHeight()
+        if (socket === 'engine' || SLOTS[socket].mod) this._engine()
         // FEAT-204: the bull bar hardens the track it guards (the front panel) by its `armor`; its stock "none" puts 1 back.
         if (SLOTS[socket].guards) this._damage.setDurability(SLOTS[socket].guards, part.armor ?? 1)
         for (const t of SLOTS[socket].tracks) {
@@ -149,6 +178,13 @@ export class PartsSystem {
             this._params['suspensionRestLength' + ax] = lift['suspensionRestLength' + ax] - drop
             this._params['suspensionTravel' + ax] = lift['suspensionTravel' + ax] - drop
         }
+    }
+
+    /** FEAT-325: the fitted engine and power mods onto params (engineFor). Only on an engine or mod fit, so the debug
+     *  panel's engine sliders survive every other fit. */
+    _engine () {
+        const e = engineFor(runParts.fitted)
+        if (e) Object.assign(this._params, e)
     }
 
     /**
@@ -183,6 +219,20 @@ export class PartsSystem {
             f.add(ctl, 'part', Object.fromEntries(ids.map(id => [PARTS[id].name, id])))
                 .name(SLOTS[socket].name).listen()
         }
+        // FEAT-325: every power-mod number and the I4's detune, by feel. A change re-derives the fitted engine.
+        const t = f.addFolder('Engine & power mods (FEAT-325)')
+        const re = () => this._engine()
+        t.add(PARTS.engineI4, 'torqueX', 0.5, 1.2, 0.01).name('I4 torque × (detune)').onChange(re)
+        t.add(PARTS.engineStock, 'torqueX', 0.5, 1.2, 0.01).name('V6 torque ×').onChange(re)
+        t.add(PARTS.intakeMod.torque[1], 1, 0, 0.3, 0.005).name('Intake gain at 4500+ rpm').onChange(re)
+        t.add(PARTS.exhaustMod.torque[0], 1, 0, 0.3, 0.005).name('Exhaust gain').onChange(re)
+        t.add(PARTS.flywheelLight, 'inertiaX', 0.2, 1, 0.05).name('Light flywheel inertia ×').onChange(re)
+        t.add(PARTS.camsMod.torque[1], 1, 0, 0.3, 0.005).name('Cams gain at 4000+ rpm').onChange(re)
+        t.add(PARTS.camsMod.torque[0], 1, -0.2, 0, 0.005).name('Cams gain under 2500 rpm').onChange(re)
+        t.add(PARTS.chipTune.torque[0], 1, 0, 0.3, 0.005).name('Chip tune gain').onChange(re)
+        t.add(PARTS.turbo.torque[1], 1, 0, 0.6, 0.01).name('Turbo gain at 3000+ rpm').onChange(re)
+        t.add(PARTS.supercharger.torque[0], 1, 0, 0.6, 0.01).name('Supercharger gain').onChange(re)
+        t.close()
         f.close()
         return f
     }

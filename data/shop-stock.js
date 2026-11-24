@@ -34,7 +34,8 @@ export const USED_COND = [0.4, 0.85]  //   condition, uniform
  *  of "patch kit"]. The standard tire went back to the rotating slots.
  *  FEAT-162 (2026-11-06): and the steel wheel — a collapsed wheel is replaced, never straightened, so a
  *  tow to any shop is a way out of one [DEFAULT]. */
-export const ALWAYS = ['tireOld', 'airFilterStock', 'tirePlugKit', 'wheelSteel']
+// FEAT-325 (arc trial, owner 2026-11-23: "The shop should always carry the v6 engine"): engineStock is the V6.
+export const ALWAYS = ['tireOld', 'airFilterStock', 'tirePlugKit', 'wheelSteel', 'engineStock']
 
 /** Shelf items that aren't parts: no condition, priced here. */
 export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireIron: 30,   // tireIron: FEAT-203 [DEFAULT] = the quick-jack's price
