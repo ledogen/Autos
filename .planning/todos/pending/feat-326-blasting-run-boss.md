@@ -41,6 +41,15 @@ Design as agreed so far (owner's answers, 2026-11-23):
   through: "as long as you can drive through you get the point."
 - **Rocks.** "model larger rocks and have ~7 different sizes. The explosive could also split large rocks into smaller
   rocks. Then if it hits a small rock directly it just deletes it."
+- **Rock shape and scale** (owner, 2026-11-23). Today's slide rocks are "mere pebbles in the road. By design if a
+  player slows down to 15 miles an hour there is little to no consequence to driving over them." "The current size
+  of rockslide rocks should be the smallest or second smallest of all the eventual rockslide rocks." Being round,
+  "they won't naturally settle well into a pile … it could be difficult to construct an actual road block". The
+  blasting rocks are to be "more oblong rocks that are somewhat stackable in varying sizes. This keeps the rockslide
+  more condensed." The round rocks STAY for the live slide: "I do want to keep these round ones for the live rock
+  slide effect of it trying to nail the player. I don't want to drop that feature."
+- **Prototype first.** "Let the agent build whatever the most accessible prototype is so that I can try it out and
+  then plan to modify the rocks."
 - **The loop.** "you throw the charges ahead of you and it breaks the rocks apart in a way that leaves a narrow gap
   … aim, throw, identify the opening, and maneuver the truck through it really quickly."
 - **No fragile, no shock limit on the load.** "drop shock limit in favor of driving over rubble." The rubble tests
