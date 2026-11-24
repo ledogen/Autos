@@ -1,21 +1,20 @@
-// test/camp-zones.mjs — FEAT-45 dispersed-camping zones gate (SM-1).
+// test/camp-zones.mjs — FEAT-45 dispersed-camping zones gate (SM-1), FEAT-299 runs of road.
 //
-// Zones are worldgen-layer (a permission painted on the map), so SM-INV-12 applies in full:
+// A zone's SEED is worldgen-layer, so SM-INV-12 applies to it in full:
 //
-//   1. Determinism — same seed → bit-identical zone list; a different seed differs.
-//   2. WINDOW-INVARIANCE — a zone's existence/centre/radius is a pure fn of (seed, macro cell,
-//      CAMP_PARAMS). Two regions built from different centres must agree exactly on every zone
-//      whose centre lies in both.
-//   3. THE REGION CLIP IS A POST-FILTER — build() may only decide whether a zone is KEPT, never
-//      where it is: every kept zone must equal the raw cell-grid answer at its centre.
-//   4. Coverage — the ratified "~20% of the map". Asserted on GLOBAL density over a large box:
-//      per-region coverage is high-variance (a 2.5 km region only holds ~6 zones — seed 7's region
-//      measures ~9% while its global density is ~18%), so a region-local assertion would flake on
-//      arbitrary seeds. Global density is the tuned quantity; [15%, 25%] is the contract.
+//   1. Determinism — same seed → bit-identical seed list; a different seed differs.
+//   2. WINDOW-INVARIANCE — a seed's existence/position/size roll is a pure fn of (seed, macro cell,
+//      CAMP_PARAMS). Two regions built from different centres must agree exactly on every seed
+//      that lies in both.
+//   3. THE REGION CLIP IS A POST-FILTER — build() may only decide whether a seed is KEPT, never
+//      where it is: every kept seed equals its own cell's roll.
+//   4. growArea (FEAT-299, DEC-437) on a hand-made network: one piece that carries on through the
+//      junction it meets, the target's road and no more, a road piece smaller than that taken whole,
+//      no tunnel in its lines; zoneAt is the tether corridor beside them.
 //
-// Pure node: CampSystem's zone layer reads only (seed, params) — no road, terrain or water deps
-// are touched by build()/zoneAt()/zoneAtRaw(), which is itself part of what this gate pins.
-import { CampSystem, CAMP_PARAMS } from '../src/camp.js'
+// Pure node: build() reads only (seed, params) — no road, terrain or water deps are touched,
+// which is itself part of what this gate pins. (The zones on real regions: camp-reach.mjs.)
+import { CampSystem, CAMP_PARAMS, growArea } from '../src/camp.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -32,15 +31,15 @@ const mkCamp = (seed) => new CampSystem({
   treesNear: () => { throw new Error('zone layer touched the scatter') },
 })
 
-const key = (q) => `${q.x},${q.z},${q.r}`
+const key = (q) => `${q.x},${q.z},${q.u}`
 const REGION_R = 2500
 
 // ── 1. Determinism ──────────────────────────────────────────────────────────────────────────────
 {
   const a = mkCamp(6).build({ x: 0, z: 0 }, REGION_R)
   const b = mkCamp(6).build({ x: 0, z: 0 }, REGION_R)
-  check('same seed + centre → bit-identical zone list', JSON.stringify(a) === JSON.stringify(b))
-  check('the region holds a sensible zone count (2–12)', a.length >= 2 && a.length <= 12, `n=${a.length}`)
+  check('same seed + centre → bit-identical seed list', JSON.stringify(a) === JSON.stringify(b))
+  check('the region holds a sensible seed count (2–12)', a.length >= 2 && a.length <= 12, `n=${a.length}`)
   const c = mkCamp(7).build({ x: 0, z: 0 }, REGION_R)
   check('a different seed lays out differently', JSON.stringify(a) !== JSON.stringify(c))
   const sys = mkCamp(6)
@@ -62,58 +61,52 @@ const REGION_R = 2500
     if (!mapB.has(key(q))) missing++
     else if (JSON.stringify(mapB.get(key(q))) !== JSON.stringify(q)) mismatched++
   }
-  check('two centres agree on every shared zone', shared > 0 && missing === 0 && mismatched === 0,
+  check('two centres agree on every shared seed', shared > 0 && missing === 0 && mismatched === 0,
     `shared=${shared} missing=${missing} mismatched=${mismatched}`)
 }
 
 // ── 3. The region clip is a post-filter ─────────────────────────────────────────────────────────
 {
-  const sys = mkCamp(6)
+  const sys = mkCamp(6), S = CAMP_PARAMS.campCellM
   const built = sys.build({ x: 0, z: 0 }, REGION_R)
-  let agree = true
-  for (const q of built) {
-    const raw = sys.zoneAtRaw(q.x, q.z)          // straight off the cell grid, region ignored
-    if (!raw || key(raw) !== key(q)) { agree = false; break }
-  }
-  check('every kept zone equals the raw cell-grid answer at its centre', agree)
-  // And zoneAt (the play query) agrees with the built list it scans.
-  const q0 = built[0]
-  check('zoneAt hits inside a zone, misses outside every zone', sys.zoneAt(q0.x, q0.z) === q0
-    && (() => {                                   // hunt a point in no zone (raw), assert miss
-      for (let x = -4000; x <= 4000; x += 97) {
-        for (let z = -4000; z <= 4000; z += 89) {
-          if (Math.hypot(x, z) > REGION_R) continue
-          if (!sys.zoneAtRaw(x, z)) return sys.zoneAt(x, z) === null
-        }
-      }
-      return true                                 // no gap found (absurd at 20% coverage) — vacuous pass
-    })())
+  const raw = (q) => sys._cellZone(Math.floor(q.x / S), Math.floor(q.z / S), 6, sys._P())   // a seed lies in its own cell
+  check('every kept seed equals its own cell\'s roll', built.every((q) => raw(q) && key(raw(q)) === key(q)))
 }
 
-// ── 4. Global coverage ≈ 20% (the ratified density), per seed ───────────────────────────────────
+// ── 4. growArea on a hand-made network ──────────────────────────────────────────────────────────
+// A — 1000 m east — B, and at B a junction: B — 600 m north — C, B — 600 m south — D. A second road E — 300 m — F
+// stands alone 2 km off. The A–B road has a 40 m bore at 100..140 m.
 {
-  // Deterministic lattice, no RNG: 200×200 samples over a 40×40 km box, offset off the cell grid
-  // so lattice points never sit exactly on cell borders.
-  for (const seed of [1, 6, 7, 42]) {
-    const sys = mkCamp(seed)
-    let hit = 0, n = 0
-    for (let i = 0; i < 200; i++) {
-      for (let j = 0; j < 200; j++) {
-        const x = -20000 + 137.3 + i * 200
-        const z = -20000 + 61.7 + j * 200
-        n++
-        if (sys.zoneAtRaw(x, z)) hit++
-      }
-    }
-    const cov = hit / n
-    check(`seed ${seed}: global zone density in [15%, 25%]`, cov >= 0.15 && cov <= 0.25,
-      `${(cov * 100).toFixed(1)}%`)
+  const line = (x0, z0, x1, z1, n) => {
+    const pts = [], cum = []
+    for (let i = 0; i <= n; i++) { pts.push({ x: x0 + (x1 - x0) * i / n, z: z0 + (z1 - z0) * i / n }); cum.push(Math.hypot(x1 - x0, z1 - z0) * i / n) }
+    return { pts, cum, L: cum[n] }
   }
+  const segs = [
+    { ka: 'A', kb: 'B', ...line(0, 0, 1000, 0, 100), tun: [{ s0: 100, s1: 140 }] },
+    { ka: 'B', kb: 'C', ...line(1000, 0, 1000, 600, 60) },
+    { ka: 'B', kb: 'D', ...line(1000, 0, 1000, -600, 60) },
+    { ka: 'E', kb: 'F', ...line(0, 2000, 300, 2000, 30) },
+  ]
+  const a = growArea(segs, { x: 800, z: 30 }, 1000)   // seeded 200 m short of the junction
+  const on = (k) => a.spans.filter((s) => s.ka + s.kb === k).reduce((t, s) => t + s.s1 - s.s0, 0)
+  check('the area holds its target road (± 1 m)', Math.abs(a.len - 1000) <= 1, `${a.len.toFixed(1)} m`)
+  check('it is seeded on the road nearest the point', Math.abs(a.x - 800) < 1e-6 && Math.abs(a.z) < 1e-6, `(${a.x}, ${a.z})`)
+  // A ball of driving distance ρ: 800−ρ..1000 on A–B plus ρ−200 down each leg: 3ρ − 200 = 1000 → ρ = 400.
+  check('it carries on through the junction, down both legs alike', Math.abs(on('BC') - 200) <= 1 && Math.abs(on('BD') - 200) <= 1
+    && Math.abs(on('AB') - 600) <= 1, `AB ${on('AB').toFixed(0)} BC ${on('BC').toFixed(0)} BD ${on('BD').toFixed(0)}`)
+  check('it is one stretch per road (one piece)', a.spans.length === 3, JSON.stringify(a.spans))
+  const small = growArea(segs, { x: 150, z: 2010 }, 1000)
+  check('a road piece shorter than the target is taken whole', Math.abs(small.len - 300) <= 1e-6 && small.spans.length === 1)
+  const big = growArea(segs, { x: 120, z: 0 }, 400)
+  check('a bore is in the area but not in its lines (no camping in a tunnel)', Math.abs(big.len - 400) <= 1
+    && !big.lines.some((l) => l.some((p) => p.x > 100.5 && p.x < 139.5)) && big.lines.length === 2)
+  const sys = mkCamp(6)
+  sys._list = [a]
+  const t = sys.tetherM()
+  check('zoneAt: on its road, and within the tether beside it', sys.zoneAt(900, 0) === a && sys.zoneAt(1000, 140) === a && sys.zoneAt(900, t - 0.5) === a)
+  check('zoneAt: past the tether, and on road beyond the area', sys.zoneAt(900, t + 0.5) === null && sys.zoneAt(1000, 200 + t + 1) === null && sys.zoneAt(300, 0) === null)
 }
-
-// ── 5. The 3×3-neighbourhood soundness guard ────────────────────────────────────────────────────
-check('zone radius bounded by the cell (3×3 raw scan sound)', CAMP_PARAMS.campMaxRadiusM < CAMP_PARAMS.campCellM,
-  `${CAMP_PARAMS.campMaxRadiusM} vs ${CAMP_PARAMS.campCellM}`)
 
 console.log(fails === 0 ? '\nPASS camp-zones' : `\nFAIL camp-zones (${fails})`)
 process.exit(fails === 0 ? 0 : 1)
