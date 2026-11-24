@@ -1,7 +1,8 @@
 ---
 id: FEAT-318
 type: feature
-status: open
+status: closed
+closed: 2026-11-24
 severity: major
 opened: 2026-11-20
 source: owner, 2026-11-20 — "We should seek to remove all large diameter circular POI interaction regions. Everything should either be a driveway, a parking spot, or just a rectangular strip on the shoulder. The circle bleeds into the road and is ugly. If we're just marking a spot on the shoulder, make sure it's at least two and a half car lengths and two car widths, so it's easy to just fly in and park."
@@ -12,8 +13,9 @@ lane: unplaced
 # FEAT-318: No round POI regions: every POI parks in a driveway, a parking spot or a shoulder strip
 
 ## Next steps
-Owner: look at the sheet (owed card feat318-poi-regions-look) and answer the open questions below. Lane c2 lands
-land/wave2-1120 on a "Good".
+None: closed. Resolution: the owner answered the card feat318-poi-regions-look "Good: land it" (owner, 2026-11-24,
+no note). Landed with land/wave2-1120. The two open questions got no note, so the built defaults stand: the start ring
+stays round (25 m) and a job's end stays drive-in (28 m).
 
 ## Summary
 Every POI that answers the parking brake used to wear a 10 m orange ring round its pad centre. The pad centre is
@@ -83,8 +85,8 @@ the fetch and multi-drop hand-over, the camp prompt and the tow hint (`_inPoiRin
 - [x] Circle code deleted (`poiInteractR`, the round curtain, `campMomsRadiusM`)
 - [x] Gate: story-start-clear part 4
 - [x] Sheet wip/feat-318/sheet.jpg (16 types on seeds 518337 and 2741906, two chase-camera views, BUG-251, FEAT-322)
-- [ ] The owner's look (owed card feat318-poi-regions-look)
-- [ ] Owner: the start ring and the job's end (open questions)
+- [x] The owner's look (owed card feat318-poi-regions-look): "Good: land it" (2026-11-24)
+- [x] Owner: the start ring and the job's end (open questions): no note, the built defaults stand
 
 ## Open questions
 - The green start ring: keep it round (25 m), or a rectangle? (recommend: keep it round until a rectangle has a size
@@ -105,3 +107,4 @@ Sheet: `wip/feat-318/sheet.jpg` (git-invisible). Owed card: `feat318-poi-regions
   smoke's line-source seat is the PARK box's centre again (towSeat puts a gas station's truck at its pump), and the
   firing's orbit is read off the camera's aim point (the truck now starts in the joint's strip, ~8 m from the ring).
   The stranded motorist is hidden until its job, so the sheet has no row for it; its strip is built the same way.
+- 2026-11-24: c2: owner "Good: land it". Main merged in (clean, bd502916); closed.
