@@ -44,6 +44,11 @@ seven power mods give the upgrade days something to buy. The ending is still the
    params are derived from the fitted map (`src/parts.js engineFor`), so swapping the engine keeps every mod.
 7. The 6-good-deed gate (DEC-120) is unchanged.
 8. Heavy-duty springs and shocks are unchanged.
+9. (Added 2026-11-23 through the orchestrator.) Duct tape and zip ties are instant, everywhere. The owner said "We might
+   want to make them instant use". Asked "boss only, or everywhere?", the owner answered "everywhere". In
+   `src/recovery.js FIELD_REPAIR`, `hours` goes 0.25 → **0** for both. The repair effect is unchanged (+10 % / +20 %,
+   never past REPAIR_CAP), and so are the uses per pack. The picker's button reads "Patch it" with no time on it.
+   Stop-leak keeps its 15 min.
 
 ### The power-mod model (the simplest honest one)
 Each mod carries a GAIN curve over rpm, `[[rpm, gain], …]`. It is read the same way the engine's own torque curve is
@@ -107,6 +112,8 @@ will show it.
 - **FEAT-165 / the items setup prices** (ticket): Old $8, Standard $18, Sport $20, All-terrain $25.
 - **FEAT-168** (ticket): "every part is a reward at some giver". The two engines are not.
 - **The jalopy ranges of 2026-10-21** (src/jalopy.js, no record): tire 40–80 %, springs 50–85 %, shocks 40–80 %.
+- **items.md §7 (owner, 2026-10-20: duct tape "15 min per use")** and items.md's rule that "Zip ties, duct tape and
+  stop-leak each cost 15 min". No decision record pins the time. DEC-128 (zip ties do not mend the radiator) still holds.
 - **The engine-bay note of 2026-10-22** (data/parts.js): the stock engine was "Stock only for now". The I4 is now a part,
   and the V6 moved from a rolled shelf slot at weight 0.25 to an ALWAYS row.
 
@@ -129,6 +136,7 @@ data/parts.js for those parts. The V6 keeps main's description ("The factory six
 - [x] Tire prices 6 / 10 / 15 / 15; tire reward weight × 0.75
 - [x] Seven power mods with debug sliders, carried over an engine swap
 - [x] Gates updated to pin the trial (jalopy, parts, shop-stock, offer-board, service, damage-bumpstop)
+- [x] Duct tape and zip ties are instant (no time cost), the repair effect unchanged
 - [ ] The owner plays and logs a run on the branch
 
 ## Decisions
@@ -141,8 +149,8 @@ data/parts.js for those parts. The V6 keeps main's description ("The factory six
 
 ## Files
 `data/parts.js` · `data/offers.js` · `data/shop-stock.js` · `data/stock-weights.js` · `src/parts.js` · `src/jalopy.js` ·
-`src/damage.js` · `src/offer-board.js` · `src/service-screen.js` · `test/parts.mjs` · `test/jalopy.mjs` · `test/shop-stock.mjs` ·
-`test/offer-board.mjs` · `test/service.mjs` · `test/damage-bumpstop.mjs`
+`src/damage.js` · `src/offer-board.js` · `src/service-screen.js` · `src/recovery.js` · `src/main.js` (the patch button) · `data/items.js` · `test/parts.mjs` · `test/jalopy.mjs` · `test/shop-stock.mjs` ·
+`test/offer-board.mjs` · `test/service.mjs` · `test/damage-bumpstop.mjs` · `test/recovery.mjs`
 
 ## Log
 - 2026-11-23: built on `proto/arc-trial` (6a53e12d, 1a9b74fa, …). The parts gate pins a mod carried over the I4 → V6 swap

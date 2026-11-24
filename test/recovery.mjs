@@ -209,13 +209,13 @@ const fr = new InventorySystem({ slotCap: () => 8 }); fr.start()
 fr.grant('zipTies', 2); fr.grant('ductTape')
 const zips = () => fr.list().find(r => r.id === 'zipTies')
 damage.set('headlightL', 0.3); damage.set('armorLeft', 0.75); damage.set('radiator', 0.5)
-check('zip ties on a lamp: +10%, 15 min', fieldRepair(damage, fr, 'zipTies', 'headlightL') === 0.25
+check('zip ties on a lamp: +10%, instant (FEAT-325)', fieldRepair(damage, fr, 'zipTies', 'headlightL') === 0
   && Math.abs(damage.get('headlightL') - 0.4) < 1e-9)
 check('…one use of the open pack is spent', zips().n === 2 && zips().left === 4, JSON.stringify(zips()))
 check('zip ties on the radiator are refused (owner, 2026-11-13: stop-leak only)', fieldRepair(damage, fr, 'zipTies', 'radiator') === -1 && damage.get('radiator') === 0.5)
 check('duct tape on a lamp is refused, nothing spent', fieldRepair(damage, fr, 'ductTape', 'headlightL') === -1
   && fr.list().find(r => r.id === 'ductTape').left === 3)
-check('duct tape on a panel stops at the cap', fieldRepair(damage, fr, 'ductTape', 'armorLeft') === 0.25 && damage.get('armorLeft') === REPAIR_CAP)
+check('duct tape on a panel stops at the cap, instant (FEAT-325)', fieldRepair(damage, fr, 'ductTape', 'armorLeft') === 0 && damage.get('armorLeft') === REPAIR_CAP)
 check('…and a part at the cap is refused', fieldRepair(damage, fr, 'zipTies', 'armorLeft') === -1)
 for (let i = 0; i < 4; i++) { damage.set('headlightR', 0.1); fieldRepair(damage, fr, 'zipTies', 'headlightR') }
 check('the fifth use finishes the pack and the next opens full', zips().n === 1 && zips().left === 5, JSON.stringify(zips()))

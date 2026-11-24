@@ -6389,7 +6389,7 @@ function _pickPlug (target = null) {
   })
 }
 
-/** Zip ties or duct tape (FIELD_REPAIR): any of its parts below the cap, one use and 15 min a pick. */
+/** Zip ties or duct tape (FIELD_REPAIR): any of its parts below the cap, one use a pick, instant (FEAT-325). */
 function _pickFieldRepair (id) {
   inventoryScreen.close()
   const pct = (c) => Math.round(c * 100) + '%'
@@ -6398,7 +6398,7 @@ function _pickFieldRepair (id) {
     tracks: FIELD_REPAIR[id].tracks.map(t => ({ id: t, ok: fieldRepairable(damageModel, t),
       line: fieldRepairable(damageModel, t) ? `${pct(damageModel.get(t))} → ${pct(fieldRepairTo(damageModel, id, t))}`
         : `${pct(damageModel.get(t))} · as far as it goes` })),
-    actions: ({ track }) => [{ label: `Patch it — ${formatGameDuration(FIELD_REPAIR[id].hours)}`, icon: id, run: () => {
+    actions: ({ track }) => [{ label: FIELD_REPAIR[id].hours > 0 ? `Patch it — ${formatGameDuration(FIELD_REPAIR[id].hours)}` : 'Patch it', icon: id, run: () => {   // FEAT-325: instant
       const h = fieldRepair(damageModel, inventorySystem, id, track)
       if (h >= 0) _afterRoadsideWork(h)
     } }],

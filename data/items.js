@@ -124,7 +124,7 @@ export const ITEMS = {
     // effect is src/recovery.js FIELD_REPAIR).
     zipTies:      { name: 'Zip ties',      kind: 'consumable', massKg: 0.2, use: 'fieldRepair', uses: 5,
                     desc: "A mechanic's best friend." },
-    // A ~0.35 kg roll, 3 uses (items.md §7): 20% on a body panel, 15 min, holds for the run (the
+    // A ~0.35 kg roll, 3 uses (items.md §7): 20% on a body panel, instant (FEAT-325 arc trial; was 15 min), holds for the run (the
     // effect is src/recovery.js FIELD_REPAIR).
     ductTape:     { name: 'Duct tape',     kind: 'consumable', massKg: 0.35, use: 'fieldRepair', uses: 3,
                     desc: 'Holds a panel on for the rest of the run. Not pretty, but it holds.' },
