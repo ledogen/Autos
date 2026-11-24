@@ -1,7 +1,7 @@
 ---
 id: BUG-64
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-09-07
 source: owner, 2026-09-07 — photo, seed 1517161527 near (-79,-501): the road drops to a parallel road over a near-vertical wall
@@ -232,3 +232,4 @@ Card `~/CodeShit/ledorepo/projects/cargame/owed/bug64-walls-pick.json` · sheet
 ## Log
 - 2026-11-22: re-measured on main ece7a251 over 400 random seeds (table above); no seed over its 150 s cap. Two
   fixes measured as experiments, nothing built, `src/` untouched. Owner's original site no longer has a second road.
+- 2026-11-24: CLOSED. Owner, card bug64-walls-pick: "1. Close BUG-64; overlap walls stay in FEAT-77; new ticket for the switchback step". The jagged edges and the switchback step are BUG-258.
