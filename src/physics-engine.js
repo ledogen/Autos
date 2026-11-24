@@ -182,6 +182,7 @@ export class PhysicsEngine {
 
     this._bodies = new Map()               // handle → { id (b3BodyId), shapes: b3ShapeId[], userData }
     this._dynamic = new Map()              // the isDynamic subset of _bodies, same records and order
+    this._movers = new Map()               // _bodyKey(id) → record, every non-static body: step()'s move events land here
     this._shapeToHandle = new Map()        // shapeId.index1<<21|generation-ish key → body handle
     this._nextHandle = 1
     this._welds = new Map()                // weld joint → [handleA, handleB, B's position and rotation in A's frame] (destroyJoint clears weldedTo)
@@ -197,13 +198,30 @@ export class PhysicsEngine {
     // to keep the per-frame allocation at zero on the hot read paths.
     this._v = [0, 0, 0]; this._w = [0, 0, 0]
     this._rev = 0                          // bumped on body create/destroy — debug viz change detection
-    this._xfStamp = 1                      // bumped per step — invalidates the per-body transform cache
+    this._events = _b3.createEventsBuffer()   // refilled every step (getEvents): its body move events bump poseRev
+    this._moveEv = _b3.createBodyMoveEvent()
+    // FEAT-326: contactSphere's broad phase. One filter and one callback, reused: the query lists shape ids into _cand.
+    this._qFilter = _b3.b3DefaultQueryFilter()
+    this._qFilter.categoryBits = GROUP_ALL     // the engine also tests shape.maskBits & query.categoryBits: pass every shape
+    this._qBox = [0, 0, 0, 0, 0, 0]
+    this._cand = []
+    this._candCb = (shapeId) => {
+      const h = this._shapeToHandle.get(this._shapeKey(shapeId))
+      if (h !== undefined) this._cand.push(h)
+      return true
+    }
   }
 
   /** Advance the world by dt with the given solver substep count. Synchronous. */
   step (dt, substeps = 4) {
     _b3.b3World_Step(this._world, dt, substeps)
-    this._xfStamp++          // every cached body transform is now stale (see _bodyXf)
+    // FEAT-326: the engine lists every body that moved this step (each awake body, plus the step one falls asleep in).
+    // Only those poses are stale (see _bodyXf), so a resting pile costs no per-body work here or in debris.js.
+    _b3.getEvents(this._events, this._world)
+    for (let i = 0, n = _b3.getNumBodyMoveEvents(this._events); i < n; i++) {
+      const rec = this._movers.get(this._bodyKey(_b3.getBodyMoveEventAt(this._moveEv, this._events, i).bodyId))
+      if (rec) rec.poseRev++
+    }
     if (this._welds.size) this._projectWelds()
   }
 
@@ -231,7 +249,7 @@ export class PhysicsEngine {
       const [ax, ay, az, aw] = a.xfQ, [bx, by, bz, bw] = w[3]   // A's rotation · B's in A's frame
       _b3.b3Body_SetTransform(b.id, [x, y, z], [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
         aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz])
-      b.xfStamp = null
+      b.poseRev++
     }
   }
 
@@ -265,10 +283,11 @@ export class PhysicsEngine {
     const rec = { id, shapes: [], specs: [], userData,
       isStatic: type === 'static', isDynamic: type !== 'static' && type !== 'kinematic',
       groups: [], reach: [], hulls: [], sizeR: [],
-      xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfStamp: null,
+      xfP: [0, 0, 0], xfQ: [0, 0, 0, 1], xfRev: -1, poseRev: 0,   // poseRev: bumped whenever the pose may have changed
       weldedTo: null }   // Set of the handles welded to this one (createWeldJoint) — contactSphere's skipWeldedTo
     this._bodies.set(handle, rec)
     if (rec.isDynamic) this._dynamic.set(handle, rec)
+    if (!rec.isStatic) this._movers.set(this._bodyKey(id), rec)
     this._rev++
     return handle
   }
@@ -296,6 +315,7 @@ export class PhysicsEngine {
     if (mds) { for (const m of mds) _b3.b3DestroyMesh(m); this._meshDatas.delete(handle) }
     this._bodies.delete(handle)
     this._dynamic.delete(handle)
+    this._movers.delete(this._bodyKey(rec.id))
   }
 
   getUserData (handle) { return this._bodies.get(handle)?.userData ?? null }
@@ -329,6 +349,7 @@ export class PhysicsEngine {
    *  the old 0x10000 multiplier in ~20 minutes of driving and slot n aliased slot n+1 (BUG-61).
    *  2**32 keeps the product exact for index1 up to ~2M slots, well inside Number.MAX_SAFE_INTEGER. */
   _shapeKey (shapeId) { return shapeId.index1 * 4294967296 + shapeId.generation }
+  _bodyKey (bodyId) { return bodyId.index1 * 4294967296 + bodyId.generation }
 
   /** spec: a plain descriptor of the shape as CREATED (body-local geometry) — the debug
    *  wireframe source of truth (physics-debug.js). Never read by the engine. */
@@ -360,16 +381,19 @@ export class PhysicsEngine {
     _b3.b3DestroyHull(hull)
   }
 
-  /** Cached body transform. The bindings' GetTransform is a WASM call; contactSphere reads every
-   *  body's pose and runs ~20x per step, so fetching per call cost more than the query itself.
-   *  getTransform reads through the same cache (debris.js snapshots every body each step).
-   *  Poses only change when the world steps (_xfStamp) or setTransform runs — statics not even
-   *  then, so they are fetched once and held. */
+  /** Cached body transform. The bindings' GetTransform is a WASM call; contactSphere reads the
+   *  pose of every candidate and runs ~20x per step, so fetching per call cost more than the query
+   *  itself. getTransform reads through the same cache. A pose changes only when the step moves the
+   *  body (its move event) or setTransform runs; both bump poseRev, so a body at rest is fetched once. */
   _bodyXf (rec) {
-    if (rec.isStatic ? rec.xfStamp === -1 : rec.xfStamp === this._xfStamp) return
+    if (rec.xfRev === rec.poseRev) return
     _b3.b3Body_GetTransform(rec.xfP, rec.xfQ, rec.id)
-    rec.xfStamp = rec.isStatic ? -1 : this._xfStamp
+    rec.xfRev = rec.poseRev
   }
+
+  /** FEAT-326: a number that changes whenever the body's pose may have changed (a step moved it, or
+   *  setTransform). Equal across two reads = the pose is the same, so a caller can skip re-reading it. */
+  poseRev (handle) { return this._bodies.get(handle).poseRev }
 
   /** Box collider. halfExtents {x,y,z}; centered on the body origin. */
   addBox (handle, halfExtents, material = {}) {
@@ -517,7 +541,7 @@ export class PhysicsEngine {
     const rec = this._bodies.get(handle)
     _b3.b3Body_SetTransform(rec.id, [position.x, position.y, position.z],
       [quaternion.x, quaternion.y, quaternion.z, quaternion.w])
-    rec.xfStamp = null       // a static body just moved: drop its cached transform
+    rec.poseRev++            // the cached transform is stale
   }
 
   getVelocity (handle, outLin, outAng) {
@@ -676,12 +700,42 @@ export class PhysicsEngine {
    * shape that touches the sphere only beyond the slab yet crosses the face plane outside the
    * tire's disk still reads the face overlap.
    */
+  /**
+   * FEAT-326: the dynamic bodies a sphere query could touch, as [handle, record] in creation order
+   * (the order the walk over _dynamic had, so the hits come back in the same order).
+   *
+   * dynamicOnly (every wheel query, 20×/step) used to walk every dynamic body; a 1600-rock slide made
+   * that 1.8–2.8 ms a step at rest. Now the engine's broad phase (its dynamic AABB tree, the same one
+   * it pairs bodies with) lists only the shapes whose box overlaps the query sphere's box. The box is
+   * a superset of anything the exact tests below can hit, so the hits are unchanged. A DISABLED body
+   * has no box in the tree and is no longer a candidate: it was never a surface either (main.js and
+   * rockslide.js disable only bodies far from the truck).
+   *
+   * BUG-60's broad-phase fault (the world query losing a static shape) was a STATIC shape under
+   * ~1000 shape rebuilds a second; nothing rebuilds shapes per step now, and statics never come
+   * through here (the stage rock's GROUP_STATIC query still walks _bodies).
+   */
+  _nearDynamic (center, radius, collidesWith) {
+    const box = this._qBox, cand = this._cand
+    box[0] = center.x - radius; box[1] = center.y - radius; box[2] = center.z - radius
+    box[3] = center.x + radius; box[4] = center.y + radius; box[5] = center.z + radius
+    this._qFilter.maskBits = collidesWith
+    cand.length = 0
+    _b3.b3World_OverlapAABB(this._world, box, this._qFilter, this._candCb)
+    cand.sort((a, b) => a - b)      // handles grow with creation, so ascending = _dynamic's order
+    const out = []
+    for (let i = 0; i < cand.length; i++) {
+      if (cand[i] === cand[i - 1]) continue   // one entry per body, however many of its shapes hit
+      const rec = this._dynamic.get(cand[i])
+      if (rec) out.push([cand[i], rec])
+    }
+    return out
+  }
+
   contactSphere (center, radius, { collidesWith = GROUP_ALL, dynamicOnly = false, skipWeldedTo = null, slab = null } = {}) {
     const hits = []
     const mask = _group32(collidesWith)
-    // dynamicOnly (every wheel query, 20×/step) walks only the dynamic bodies — not the terrain,
-    // road, prop and POI statics, which outnumber them ~100:1. Same insertion order, same hits.
-    for (const [handle, rec] of dynamicOnly ? this._dynamic : this._bodies) {
+    for (const [handle, rec] of dynamicOnly ? this._nearDynamic(center, radius, collidesWith) : this._bodies) {
       // Heightfields and meshes have no sphere pair test wired (the analytic terrain query owns
       // those surfaces), so skip them before paying for a transform.
       if (this._heightfields.has(handle) || this._meshDatas.has(handle)) continue
@@ -1054,7 +1108,9 @@ export class PhysicsEngine {
     for (const rec of this._bodies.values()) for (const h of rec.hulls) this._freeHull(h)
     this._bodies.clear()
     this._dynamic.clear()
+    this._movers.clear()
     this._shapeToHandle.clear()
+    _b3.destroyEventsBuffer(this._events)
   }
 }
 
