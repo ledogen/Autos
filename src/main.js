@@ -1629,7 +1629,7 @@ const SELECTORS = {
   abs:          { name: 'anti-lock brakes', opts: [[true, 'on'], [false, 'off']] },
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
-  stickDeadzone: { name: 'stick deadzone', opts: Array.from({ length: 11 }, (_, i) => [i * 2 / 100, `${i * 2} %`]) }   // DEC-490: 0–20 % in 2 % steps,
+  stickDeadzone: { name: 'stick deadzone', opts: Array.from({ length: 11 }, (_, i) => [i * 2 / 100, `${i * 2} %`]) },   // DEC-490: 0–20 % in 2 % steps
   vibration:    { name: 'controller vibration', opts: [[0, 'off'], [0.5, 'low'], [1, 'normal'], [1.5, 'high']] },   // FEAT-247 (src/pad-rumble.js)
   padLayout:    { name: 'pad layout', opts: [['Professor', 'Professor'], ['Ventura Highway', 'Ventura Highway']] },   // DEC-431 (gamepad.js PAD_LAYOUTS)
   uiScale:      { name: 'UI size', opts: [['small', 'small'], ['big', 'big']] },   // FEAT-248: index.html `html[data-ui-scale=big]`
