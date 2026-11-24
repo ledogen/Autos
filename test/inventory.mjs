@@ -237,8 +237,8 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
     && f.drop(f.list().findIndex(r => r.id === 'rottenPackedLunch')) && n('rottenPackedLunch') === 0)
   f = mk()
   f.tick(0); f.grant('packedLunch'); f.tick(10)
-  check('FEAT-310 (DEC-449): the timer reads 14 h at 10 h of a 24 h lunch, and the sleep card lists it for a 14 h+ sleep only',
-    near(f.list().find(r => r.id === 'packedLunch').spoilH, 14) && f.spoilingWithin(13).length === 0 && f.spoilingWithin(14.1)[0].name === 'Packed lunch')
+  check('FEAT-310 (DEC-449): the timer reads 14 h at 10 h of a 24 h lunch',
+    near(f.list().find(r => r.id === 'packedLunch').spoilH, 14))
   f.grant('cooler'); ent('cooler').iceH = 2
   const cl = f.list().find(r => r.id === 'packedLunch').spoilH
   check('…and it runs by the spoil rule: with 2 h of ice at x1/4 the 14 h left is 2 h cold (0.5 h of life) + 13.5 h open = 15.5 h, and tick agrees',

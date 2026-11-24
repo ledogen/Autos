@@ -8,12 +8,14 @@
 // bake), one level at the fogged horizon (the fog cube), the gauge cluster's canvas, the open map's canvas and the
 // far-prop impostor atlas. Blank = the share of near-black / transparent pixels jumps, or luminance falls > 35 %.
 // Any page error fails it too. --canvases lists every 2D canvas with its blank share before → after.
-import { launchChrome, connect, sleep } from './lib/cdp.mjs'
+import { launchChrome, connect, sleep, freezeProbe } from './lib/cdp.mjs'
 const PORT = +(process.argv.find(a => /^\d+$/.test(a)) ?? 3885)
 const MODE = (process.argv.find(a => a.startsWith('--mode=')) ?? '--mode=webgl').slice(7)
 const CDP = 9341
 const { cleanup } = launchChrome('about:blank', { port: CDP })
 const client = await connect({ port: CDP })
+// GPU_THROTTLE=4: this page runs 4x slower (CDP Emulation), a loaded machine's timing without loading the machine.
+if (+process.env.GPU_THROTTLE > 1) await client.cmd('Emulation.setCPUThrottlingRate', { rate: +process.env.GPU_THROTTLE })
 const js = async (e) => {
   const m = await client.cmd('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true })
   const R = m.result || {}
@@ -46,6 +48,19 @@ const shotStats = async () => {
   return js(`new Promise((res) => { const im = new Image(); im.onload = () => { const c = document.createElement('canvas'); c.width = im.width; c.height = im.height
     c.getContext('2d').drawImage(im, 0, 0); res((${STATS})(c)) }; im.src = 'data:image/png;base64,${s.result.data}' })`)
 }
+// BUG-220: the atlas readback (readRenderTargetPixels) is itself flaky. With NO reset and no re-bake (--mode=none, bake runs once
+// at build) the same atlas read 8, 0, 8, 8, 0 ... empty tiles (always the aspen and pine variants) on consecutive reads, so one
+// read cannot say a tile is blank. A tile counts as empty only if it is empty on EVERY one of 5 reads 200 ms apart (a real
+// failed re-bake stays blank on all of them); the count is the minimum over the reads.
+const impEmptyNow = async () => {
+  let min = Infinity
+  for (let i = 0; i < 5 && min > 0; i++) {
+    const n = await js(`(() => { const s = window.__impAtlasStats?.(); return s ? Object.values(s.tiles).filter(t => t === 'EMPTY').length : null })()`)
+    if (n === null) return null
+    min = Math.min(min, n); if (min > 0) await sleep(200)
+  }
+  return min
+}
 const measure = async () => {
   // Straight down from 60 m over ground 420 m from the truck: all of it drawn from the terrain bake, too near to fog.
   await js('window.__map2d().hide(), window.__view(300, window.__terrain().analyticHeight(300, 300) + 60, 300, 0.8, -1.4), true')
@@ -57,7 +72,7 @@ const measure = async () => {
   const fog = await shotStats()
   const cluster = await js(`(${STATS})(document.getElementById('cluster'))`)
   // The far-prop billboard atlas, read back by its own dev handle: tiles holding no prop.
-  const impEmpty = await js(`(() => { const s = window.__impAtlasStats?.(); return s ? Object.values(s.tiles).filter(t => t === 'EMPTY').length : null })()`)
+  const impEmpty = await impEmptyNow()
   await js('window.__map2d().show(), true')
   await sleep(4000)
   const map = await js(`(${STATS})(window.__map2d()._canvas ?? document.querySelector('#map2d canvas, canvas#map2d'))`)
@@ -83,6 +98,10 @@ try {
     await js('window.__renderer().forceContextRestore(), true')
   }
   await sleep(8000)
+  // BUG-220: the atlas re-bake runs in the context-restored listener, which fires when the browser gets to it (late
+  // under load). Wait, bounded, until the atlas is back to its pre-reset empty count: the real completion signal.
+  const rebaked = await until(async () => (await impEmptyNow()) <= before.impEmpty, 60000)
+  console.log(`re-bake ${rebaked ? 'finished' : 'did NOT finish in 60 s'}`)
   const after = await measure()
   console.log('after  ', JSON.stringify(after))
   console.log('events ', JSON.stringify(await js('window.__ctxEv')))
@@ -98,6 +117,6 @@ try {
   console.log(`${impBad ? 'FAIL' : 'ok  '} impostor atlas: empty tiles ${before.impEmpty} → ${after.impEmpty}`)
   if (errors.length) fail++
   if (errors.length) console.log('page errors:', errors.slice(0, 8))
-} finally { cleanup(); client.close() }
+} catch (e) { if (/CDP timeout/.test(e.message)) console.log(await freezeProbe(client)); throw e } finally { cleanup(); client.close() }
 console.log(fail ? `FAIL (${MODE}): ${fail} picture(s) stayed blank after the reset` : `PASS (${MODE})`)
 process.exit(fail ? 1 : 0)

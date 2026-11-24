@@ -158,3 +158,19 @@ export async function keyEvent (client, key, down) {
     windowsVirtualKeyCode: key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0,
   })
 }
+
+// After a CDP timeout: is the page's JS stuck (a game freeze) or is the renderer not answering at all (a stalled tab)?
+// Debugger.pause interrupts running JS: a stack within 10 s means JS was running (its top frames name the loop); none
+// means the renderer itself is wedged. Returns one line to print (it also names the page URL, since the world code is
+// unreadable on a frozen page).
+export async function freezeProbe (client) {
+  const url = await client.cmd('Runtime.evaluate', { expression: 'location.href' }, { timeoutMs: 3000 }).then(m => m.result?.result?.value, () => 'url unreadable')
+  let stack = 'no Debugger.paused in 10 s: the renderer is not answering (a stalled tab, not game JS)'
+  try {
+    const paused = new Promise(r => client.on('Debugger.paused', r))
+    await client.cmd('Debugger.enable', {}, { timeoutMs: 5000 }); await client.cmd('Debugger.pause', {}, { timeoutMs: 5000 })
+    const p = await Promise.race([paused, sleep(10000).then(() => null)])
+    if (p) stack = 'JS was running; stack: ' + p.callFrames.slice(0, 8).map(f => `${f.functionName || '(anon)'} ${f.url.split('/').slice(-2).join('/')}:${f.location.lineNumber + 1}`).join(' < ')
+  } catch (err) { stack = `debugger probe failed: ${err.message}` }
+  return `  freeze probe (page ${url}): ${stack}`
+}

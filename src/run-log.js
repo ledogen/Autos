@@ -1,8 +1,9 @@
 /**
- * src/run-log.js — FEAT-242 (DEC-358): the opt-in run logger.
+ * src/run-log.js — FEAT-242 (DEC-358, DEC-481): the run logger.
  *
- * A shipped debug feature, OFF by default (DEC-358 is the recorded exception to CLAUDE.md's "no diagnostic
- * plumbing in src/"). When on, the game's existing events call `runLog.event(type, data)` and the fixed step
+ * A shipped debug feature, ON by default from a story run's first moment (DEC-481; the debug panel's toggle is the
+ * off switch; DEC-358 is the recorded exception to CLAUDE.md's "no diagnostic plumbing in src/"). `enabled` is the
+ * choice, `on` is "recording right now": start() raises it at a run's go-live, stop() drops it when the run is left. When on, the game's existing events call `runLog.event(type, data)` and the fixed step
  * calls `runLog.tick(dt)`, which takes ONE route sample per second of sim time. Every line is stamped with the
  * game day and hour, real time, run playtime and the truck's position, speed and heading.
  *
@@ -13,10 +14,11 @@
  * Chrome blocks the second automatic download from a page, so the log is NOT downloaded per game day. The buffer
  * is written into IndexedDB (the browser's built-in database: it survives a reload or a crash) as a numbered part
  * at each new game day, once a minute of sim time, on `pagehide`, when logging goes off and at the run's end, then
- * emptied so memory stays flat. ONE file, `autos-run-<seed>-<startISO>.jsonl`, is downloaded at the run's end and
- * from the debug button "Save log now" (a click-started download is never blocked), which joins every stored part
- * in order, so `tools/run-log-summary.mjs` reads it exactly as it read several parts. A click-started save then
- * clears what it saved; parts of an unfinished run stay stored across a reload and that same button offers them.
+ * emptied so memory stays flat. ONE file, `autos-run-<seed>-<startISO>.jsonl`, is downloaded from main.js's click
+ * handlers (save & exit, the run-end card's button) and from the debug button "Save log now" (a click-started
+ * download is never blocked). It joins every stored part in order, then clears them, so a run saved twice and won
+ * leaves three files, each self-contained (its own runStart header); `tools/run-log-summary.mjs` stitches several.
+ * Parts of a run left without a save stay stored across a reload and ride in the next download.
  * Nothing else is kept in localStorage/IndexedDB besides the on/off choice, and nothing is uploaded anywhere.
  *
  * The run's state is read through handles main.js binds once (`runLog.bind`). Its one import is the build marker.
@@ -46,7 +48,7 @@ export function scalars (o) {
 
 function _loadPref () {
   if (typeof window === 'undefined') return false   // headless (node gates): no browser storage to read
-  try { return window.localStorage.getItem(PREF_KEY) === '1' } catch { return false }
+  try { return window.localStorage.getItem(PREF_KEY) !== '0' } catch { return true }   // DEC-481: on unless switched off
 }
 function _savePref (on) {
   if (typeof window === 'undefined') return
@@ -105,7 +107,9 @@ function _makeStore () {
 }
 
 export const runLog = {
-  on: _loadPref(),
+  enabled: _loadPref(),   // the player's choice (DEC-481: default on)
+  on: false,              // recording right now: a live run (start) with the choice on, or switched on by hand
+  _inRun: false,          // a story run is live (start .. stop)
   count: 0,          // events recorded since logging went on (the debug line)
   part: 0,           // parts stored in this series
   store: _makeStore(),
@@ -119,13 +123,15 @@ export const runLog = {
   _day: null,        // the game day of the last sample (a new one stores a part)
   _seed: 'noseed',
   _iso: null,        // the file series' start, filename-safe
+  _hSeed: null,      // the seed and mode the series' header named (BUG-257): a change closes the series
+  _hMode: null,
+  _closing: false,   // stop() is writing its exit line: a mode flip then is not a new world
 
   /** main.js, once: { vs, day, econ, inv, parts, damage, play(), seed(), mode(), onRoad(), settings() }. */
   bind (ctx) {
     this._ctx = ctx
     resolveBuild().then(v => { this._build = v })
     this._refresh()   // parts of an unfinished run, stored before this boot
-    if (this.on) this._newSeries()   // on from the saved choice: a series from boot (a run's start begins its own)
     if (typeof window !== 'undefined') {
       window.addEventListener('pagehide', () => this.flush('pagehide'))
       window.__runLog = this   // dev handle — test/cdp-smoke.mjs reads and drives the logger
@@ -135,21 +141,37 @@ export const runLog = {
   /** The debug checkbox. On: a header line with the state right now (a mid-run start). Off: store what is held. */
   setOn (on) {
     on = !!on
+    this.enabled = on
+    _savePref(on)
     if (on === this.on) return
-    if (!on) { this.flush('off'); this.on = false; _savePref(false); return }
+    if (!on) { this.flush('off'); this.on = false; return }
     this.on = true
-    _savePref(true)
     this.count = 0
     this._newSeries()
     this.event('header', this._header('on'))
   },
 
-  /** A run went live (onRegionLive): close the last series, start a new one, write the run's opening state. */
+  /** A run went live (onRegionLive): close the last series, start a new one, write the run's opening state (DEC-481:
+   *  the jalopy as rolled, wallet, fuel, inventory), then record until stop(). */
   start (how) {
-    if (!this.on) return
+    this._inRun = true
+    if (!this.enabled) return
     this.flush('newRun')
     this._newSeries()
+    this.on = true
+    this.count = 0
     this.event('runStart', this._header(how))
+  },
+
+  /** The run was left (region exit: save & exit, the menu, the run-end card): store what is held and stop recording. */
+  stop () {
+    this._inRun = false
+    if (!this.on) return
+    this._closing = true
+    this.event('exit', this._state())   // the END block of the summary
+    this._closing = false
+    this.flush('exit')
+    this.on = false
   },
 
   _newSeries () {
@@ -160,17 +182,44 @@ export const runLog = {
     this._prune()
     this._seed = String(this._ctx?.seed?.() ?? 'noseed').replace(/[^\w.-]+/g, '_')
     this._iso = new Date().toISOString().replace(/[:.]/g, '-')
+    this._hSeed = String(this._ctx?.seed?.() ?? 'noseed')
+    this._hMode = this._ctx?.mode?.()
+  },
+
+  /** BUG-257: a log describes the session it was recorded in. A new world seed or game mode (a free-roam reseed, a
+   *  seat in another world) closes the series and opens a new one with its own header, so file name and header
+   *  name the world the lines after them were driven in. */
+  _sync () {
+    const c = this._ctx
+    if (!c || this._closing || (String(c.seed?.() ?? 'noseed') === this._hSeed && c.mode?.() === this._hMode)) return
+    this.flush('world')
+    this._newSeries()
+    this.event('header', this._header('world'))
+  },
+
+  /** Story state (a clock, a wallet, hunger, an inventory, playtime) exists only in a story run or scenario: free roam
+   *  leaves those systems holding the last run's frozen values, which a log must not repeat (BUG-257). */
+  _story () {
+    const m = this._ctx?.mode?.()
+    return m == null || m === 'story' || m === 'scenario'
   },
 
   _header (how) {
     const c = this._ctx
     if (!c) return { how }
-    const f = c.vs.fuel
+    return { how, mode: c.mode?.(), seed: c.seed?.(), build: this._build ?? null, ua: globalThis.navigator?.userAgent,
+      settings: c.settings?.(), ...this._state() }
+  },
+
+  /** The truck and the player as they are now: what the START and END blocks of the summary compare (FEAT-324). */
+  _state () {
+    const c = this._ctx
+    if (!c) return {}
+    const f = c.vs.fuel, st = this._story()
     return {
-      how, mode: c.mode?.(), seed: c.seed?.(), build: this._build ?? null, ua: globalThis.navigator?.userAgent,
-      settings: c.settings?.(), parts: c.parts?.snapshot().fitted, cond: this._cond(), flat: c.damage?.flat.slice(),
-      inv: c.inv?.snapshot().entries, wallet: c.econ?.money(), fuelGal: f ? r3(f.gal) : null,
-      energyH: c.day && r3(c.day.energyH()), fedH: c.day && r3(c.day.fedLeftH()),
+      parts: c.parts?.snapshot().fitted, cond: this._cond(), flat: c.damage?.flat.slice(), fuelGal: f ? r3(f.gal) : null,
+      ...(st && { inv: c.inv?.snapshot().entries, wallet: c.econ?.money(),
+        energyH: c.day && r3(c.day.energyH()), fedH: c.day && r3(c.day.fedLeftH()) }),
     }
   },
 
@@ -185,13 +234,16 @@ export const runLog = {
   /** Record one event. `data`'s keys sit beside the stamp's; keep them off e/real/play/day/hr/pos/spd/hdg. */
   event (type, data) {
     if (!this.on) return
+    if (type !== 'header') this._sync()
     const c = this._ctx
     const line = { e: type, real: Date.now() }
     if (c) {
       const vs = c.vs, p = vs.position, v = vs.velocity, q = vs.quaternion
-      line.play = r1(c.play?.() ?? 0)
-      line.day = c.day?.day()
-      line.hr = c.day && r3(c.day.hour())
+      if (this._story()) {
+        line.play = r1(c.play?.() ?? 0)
+        line.day = c.day?.day()
+        line.hr = c.day && r3(c.day.hour())
+      }
       line.pos = [r1(p.x), r1(p.y), r1(p.z)]
       line.spd = Math.round(Math.hypot(v.x, v.y, v.z) * 100) / 100
       // Heading in degrees, main.js's convention (_currentHeading): the yaw of the truck's forward (−Z) axis.
@@ -199,9 +251,10 @@ export const runLog = {
       line.hdg = r1(Math.atan2(-fx, -fz) * 180 / Math.PI)
     }
     if (data) Object.assign(line, data)
+    if (type === 'runEnd' || type === 'campWon') Object.assign(line, this._state())   // the END block if the card is never clicked
     this._buf.push(JSON.stringify(line))
     this.count++
-    if (type === 'runEnd') { this.flush('runEnd'); this.saveNow(false) }
+    if (type === 'runEnd' || type === 'campWon') this.flush(type)   // stored; the card's button click downloads it
   },
 
   /** From the fixed step: one route sample per SAMPLE_S of sim time, and a part at each new game day. */
@@ -212,15 +265,17 @@ export const runLog = {
     this._acc -= SAMPLE_S
     const c = this._ctx
     if (!c) return
-    const day = c.day?.day()
+    this._sync()
+    const st = this._story()
+    const day = st ? c.day?.day() : null
     if (this._day != null && day !== this._day) this.flush('day')
     this._day = day
     if (this._n && this._n % COND_EVERY === COND_EVERY - 1) this.flush('minute')   // a crash loses at most a minute
     const vs = c.vs, f = vs.fuel, dtr = vs.drivetrain
     this.event('route', {
       mode: c.mode?.(), road: this._road(),
-      fuelGal: f ? r3(f.gal) : null, energyH: c.day && r3(c.day.energyH()), fedH: c.day && r3(c.day.fedLeftH()),
-      wallet: c.econ?.money(), gear: dtr?.gear, rpm: dtr ? Math.round(dtr.engineRPM) : null,
+      fuelGal: f ? r3(f.gal) : null, energyH: st ? c.day && r3(c.day.energyH()) : undefined, fedH: st ? c.day && r3(c.day.fedLeftH()) : undefined,
+      wallet: st ? c.econ?.money() : undefined, gear: dtr?.gear, rpm: dtr ? Math.round(dtr.engineRPM) : null,
       tempC: c.damage && r1(c.damage.engineTempC), thr: r3(vs.throttle ?? 0), brk: r3(vs.brake ?? 0),
       wear: c.damage?.drainWearLog() ?? null,
       cond: ++this._n % COND_EVERY === 0 ? this._cond() : undefined,
@@ -240,9 +295,9 @@ export const runLog = {
     return key
   },
 
-  /** Download every stored part (after storing what is held) as ONE file named for the newest series. `clear`: a
-   *  click-started save, which cannot be blocked, then empties the store; the automatic run-end save leaves it. */
-  async saveNow (clear = true) {
+  /** Download every stored part (after storing what is held) as ONE file named for the newest series, then empty the
+   *  store. Call it from a click handler (a click-started download is never blocked: BUG-199). */
+  async saveNow () {
     this.flush('save')
     await this._pending
     const all = await this.store.all()
@@ -250,7 +305,8 @@ export const runLog = {
     const [iso, seed] = all.at(-1)[0].split('|')
     const name = `autos-run-${seed}-${iso}.jsonl`
     try { this.save(name, all.map(e => e[1]).join('')) } catch (e) { console.warn('[run-log] download failed', e); return null }
-    if (clear) { await this.store.del(all.map(e => e[0])); await this._refresh() }
+    await this.store.del(all.map(e => e[0]))
+    await this._refresh()
     return name
   },
 
