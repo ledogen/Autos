@@ -115,7 +115,7 @@ import { TUTORIAL, PACK_TOSS, flatRadius, FIRING_CAM } from '../data/tutorial.js
 import { launchVelocity, PaperThrows, THROW_PARAMS } from './throw.js'   // FEAT-61/277: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, TourGuide, accuracyTier } from './paper-route.js'
+         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, TourGuide, StrayGuide, routeEndDoor, accuracyTier } from './paper-route.js'
 import { AlertCycle, pollWords, wordAction, stepOf, wearLevel, engineLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
@@ -4961,42 +4961,36 @@ function _planEvePump () {
 // trigger), the line is re-planned from the truck's own road point to the same door. It is guidance only:
 // the job's route, par and arrival never read it. A re-plan waits until the truck has moved offM from the
 // last one, so a truck parked off the tarmac does not plan every 2 s.
-let _tutDetour = null   // { base, route, x, z }: the line for `base`, planned with the truck at (x, z); or null
-let _tutOffAt = 0       // performance.now() when the truck left the line; 0 while on it
+const _stray = new StrayGuide()   // BUG-260: one for every guided line (the tutorial's, the waypoint's, a job's)
 
-/** The tutorial leg in play: the route its GPS would show and the door that route ends at, or null. */
+/** The leg in play: the route its GPS would show and the door that route ends at (null door = the route's own end), or null. */
 function _tutLeg () {
   if (_tutDrive()) { const base = _homeGuide(), door = _eveTarget(); return base && door ? { base, door } : null }
+  // BUG-260: a running job's line follows the truck too (it was fixed at accept). A multi-drop and a demolition site
+  // have their own re-planning guide (TourGuide) and a paper round its own (FEAT-63).
+  const ms = missionSystem
+  if (ms?.state === 'running' && !ms.mission?.approach && !ms._anyOrder() && !paperRouteSystem?.isCarrying() && _site?.mission !== ms.mission) {
+    const base = ms.guideRoute()
+    return base?.segments?.length ? { base, door: null } : null
+  }
   return _waypointOn() ? { base: _waypoint.route, door: _waypoint.door } : null   // FEAT-211: the waypoint's line follows the truck too
 }
 
 /** The line the GPS shows for `base`: its re-plan from the truck when there is one. */
-const _tutLine = base => _tutDetour && _tutDetour.base === base ? _tutDetour.route : base   // DEC-475: no leg (undefined) with no detour (null) is no line, not a throw
+const _tutLine = base => _stray.line(base)   // DEC-475: no leg (undefined) with no detour (null) is no line, not a throw
 
-/** On the run-HUD poll: re-plan the tutorial's GPS from the truck once it is off the line. */
+/** On the run-HUD poll: re-plan the GPS line from the truck once it is off it. */
 function _tutDetourTick () {
-  const leg = _tutLeg(), v = vehicleState.position
-  if (!leg) { _tutDetour = null; _tutOffAt = 0; return }
-  const poly = _tutLine(leg.base)?.poly
-  if (!poly?.length) return
-  let off = Infinity
-  for (const p of poly) off = Math.min(off, Math.hypot(p.x - v.x, p.z - v.z))
-  if (off <= RR_PARAMS.offM) { _tutOffAt = 0; return }
-  const now = performance.now()
-  _tutOffAt ||= now
-  if (now - _tutOffAt < RR_PARAMS.offS * 1000) return
-  if (_tutDetour?.base === leg.base && Math.hypot(v.x - _tutDetour.x, v.z - _tutDetour.z) < RR_PARAMS.offM) return
-  _tutOffAt = 0
-  const route = _planFromTruck(leg.door)
-  // No plan (the truck off every road; on the door's own road it is a straight stretch since BUG-125): keep the line,
-  // and the spot it failed at.
-  _tutDetour = { base: leg.base, route: route?.segments?.length ? route : _tutLine(leg.base), x: v.x, z: v.z }
+  _stray.tick(_tutLeg(), vehicleState.position, performance.now(), leg => {
+    const r = _planFromTruck(leg.door ?? routeEndDoor(roadSystem, leg.base))
+    return r && leg.base.objective ? { ...r, objective: leg.base.objective } : r   // FEAT-218: the destination's own spot, for the turn arrow
+  })
 }
 
 /** The shortest line by road from the truck's own road point to `door` (a POI, or anything with its { id, aId, bId, s }), or null. */
 function _planFromTruck (door) {
   const from = roadOrigin(roadSystem, vehicleState.position)
-  return from && missionSystem.planOffer(from, { rng: Math.random,
+  return from && door && missionSystem.planOffer(from, { rng: Math.random,
     dest: { kind: 'poi', pois: [door], strict: true, anyLeg: true, nearest: true } })
 }
 
