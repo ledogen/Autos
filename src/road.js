@@ -9377,7 +9377,8 @@ export class RoadSystem {
                 let v = ends.get(sp)
                 if (!v) ends.set(sp, v = [[sp.s0, -1], [sp.s1, 1]].map(([s, dir]) => {
                     const p = this.runPointAt(k, s), g = this.runProfile(s, k, { gradeY: 0, tx: 1, tz: 0 })
-                    return p && { x: p.x, z: p.z, tx: g.tx * dir, tz: g.tz * dir, lip: this.isMouth(k, s) ? 1.5 : 0 }
+                    // BUG-259: an end that meets its partner on a miter plane carries its run-on (R, as the tube is built)
+                    return p && { x: p.x, z: p.z, tx: g.tx * dir, tz: g.tz * dir, lip: this.isMouth(k, s) ? 1.5 : this.tubeMiterPlane(k, s) ? R : 0 }
                 }))
                 return v
             }
@@ -9392,12 +9393,15 @@ export class RoadSystem {
                     i1 = i
                     for (const p of [pts[i - 1], pts[i]]) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z) }
                 }
-                return { k, sp, pts, cum, i0, i1, x0: x0 - 2 * R, x1: x1 + 2 * R, z0: z0 - 2 * R, z1: z1 + 2 * R }
+                const mps = basic ? [] : [this.tubeMiterPlane(k, sp.s0), this.tubeMiterPlane(k, sp.s1)].filter(Boolean)
+                return { k, sp, pts, cum, i0, i1, mps, x0: x0 - 2 * R, x1: x1 + 2 * R, z0: z0 - 2 * R, z1: z1 + 2 * R }
             }))
             test = (x, y, z, inset = 0) => {
                 const R2 = (R - inset) * (R - inset)
-                for (const { k, sp, pts, cum, i0, i1, x0, x1, z0, z1 } of spans) {
+                for (const { k, sp, pts, cum, i0, i1, mps, x0, x1, z0, z1 } of spans) {
                     if (x < x0 || x > x1 || z < z0 || z > z1) continue
+                    // BUG-259: near a miter plane the bore is only its own side of it (shrunk by the inset like the rest)
+                    if (mps.some((m) => (x - m.x) ** 2 + (z - m.z) ** 2 < 4 * R * R && (x - m.x) * m.nx + (z - m.z) * m.nz < inset)) continue
                     // nearest point of the span's centreline (the run polyline over [s0, s1])
                     let best = Infinity, bs = 0
                     for (let i = i0; i <= i1; i++) {
@@ -9425,6 +9429,37 @@ export class RoadSystem {
         }
         this._sibTests.set(memo, test)
         return test
+    }
+
+    /**
+     * BUG-259 (item 4, "the roof sections also dont miter perfectly"): at an UNDERGROUND junction (_undergroundNodes) a leg's
+     * bore meets its PARTNER — the leg leaving the node most nearly opposite it (over 135°: the same road through the node)
+     * — on the plane bisecting the two, the pipe miter. Each tube runs on R past the node (buildTunnelTube) to close the
+     * wedge outside the bend, but siblingTubeTest ended every bore flat at the node: the wedge was nobody's, so the
+     * crossing road's lining and the partners' own run-ons stood in it (seed 1960791808: thin lines of lining over the
+     * chamber). With the plane, each bore is its span plus its run-on, on its own side of the plane. Returns the plane
+     * {x, z, nx, nz} (n toward this leg's side) for the span end at run-arc `s`, or null.
+     */
+    tubeMiterPlane(runKey, s) {
+        const L = this._network?.get(runKey)?.polyCum?.at(-1)
+        if (!(L > 0) || (s > 1 && s < L - 1)) return null
+        const key = runKey + (s <= 1 ? '|A' : '|B'), node = this._undergroundNodes().get(key)
+        if (!node) return null
+        if (!node.miter) {
+            node.miter = new Map()
+            const u = node.legs.map((l) => {
+                const atA = l.arc < 1e-6, f = this.runFrameAt(l.arc, l.runKey), sg = atA ? 1 : -1, n = Math.hypot(f.tx, f.tz) || 1
+                return { key: l.runKey + (atA ? '|A' : '|B'), x: f.tx * sg / n, z: f.tz * sg / n }
+            })
+            const opp = (a) => u.reduce((b, c) => (c !== a && (!b || a.x * c.x + a.z * c.z < a.x * b.x + a.z * b.z) ? c : b), null)
+            for (const a of u) {
+                const b = opp(a)
+                if (!b || opp(b) !== a || a.x * b.x + a.z * b.z > -Math.SQRT1_2) continue
+                const nx = a.x - b.x, nz = a.z - b.z, n = Math.hypot(nx, nz)
+                node.miter.set(a.key, { x: node.pos.x, z: node.pos.z, nx: nx / n, nz: nz / n })
+            }
+        }
+        return node.miter.get(key) ?? null
     }
 
     /**

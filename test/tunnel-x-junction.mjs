@@ -24,6 +24,12 @@
 //      1960791808, the convex-hull pad 4.3 m past the WALL at 2280440363 (two roads crossing at 3°);
 //   8. MESH == PHYSICS over the whole pad: on a 1 m grid inside the ring the collider (analyticHeight in the chamber) and
 //      the drawn pad (_nodeSurfaceTop, what its vertices ride) agree within 1 cm.
+// And ("the roof sections also dont miter perfectly"):
+//   9. the linings meet on the miter: a leg with a partner (the leg leaving most nearly opposite, over 135°, computed
+//      here) meets it on the plane bisecting the two, so from inside the chamber no ray's first lining belongs to a leg
+//      whose plane it is past (by more than the 4 cm the miter overlaps). Main: every tube ran on R past the node, and
+//      where that run-on crossed another tube's wall a strip of it stood proud, a thin line over the chamber (1960791808:
+//      the lines of the owner's report). Rays: 400 over the upper hemisphere from 1.5 m over the node and 6 m out each leg.
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
@@ -32,6 +38,7 @@ import { REGION_WARM_RADIUS_M } from '../src/story.js'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
+import { RoadMeshSystem } from '../src/road-mesh.js'
 
 // seed, underground X junctions it must have; SEEDS=a,b,… runs the same checks on other seeds (a census, nothing required)
 const SEEDS = process.env.SEEDS ? process.env.SEEDS.split(',').map((s) => [s, 0]) : [['1960791808', 1], ['2280440363', 2]]
@@ -112,6 +119,53 @@ for (const [s, wantX] of SEEDS) {
             pd = Math.max(pd, Math.abs(T.analyticHeight(qx, qz, undefined, drawn + 1) - drawn)); pn++
         }
         ok(pn > 50 && pd < 0.01, `${tag}: collider vs drawn pad over ${pn} points inside the ring, worst ${(100 * pd).toFixed(2)} cm`)
+        // 9: the miter, seen from inside
+        const rm = new RoadMeshSystem({ add() {}, remove() {} }, road, null, P, s), tris = []
+        const u = legs.map((l) => { const f = road.runFrameAt(l.atA ? 0 : l.L, l.k), sg = l.atA ? 1 : -1, n = Math.hypot(f.tx, f.tz); return { x: f.tx * sg / n, z: f.tz * sg / n } })
+        const opp = (i) => u.reduce((b, c, j) => (j !== i && (b < 0 || u[i].x * c.x + u[i].z * c.z < u[i].x * u[b].x + u[i].z * u[b].z) ? j : b), -1)
+        const plane = u.map((a, i) => { const j = opp(i); if (j < 0 || opp(j) !== i || a.x * u[j].x + a.z * u[j].z > -Math.SQRT1_2) return null
+            const nx = a.x - u[j].x, nz = a.z - u[j].z, n = Math.hypot(nx, nz); return { nx: nx / n, nz: nz / n } })
+        legs.forEach((l, li) => {
+            const e = road._network.get(l.k), sp0 = e.tunnelSpans.find((q) => l.atA ? q.s0 <= 1 : q.s1 >= l.L - 1)
+            const sp = { ...sp0, s0: Math.max(0, sp0.s0), s1: Math.min(l.L, sp0.s1) }
+            const t = rm.buildTunnelTube(l.k, l.atA ? sp.s0 : Math.max(sp.s0, sp.s1 - 30), l.atA ? Math.min(sp.s1, sp.s0 + 30) : sp.s1, sp, P)
+            for (const [g, lining] of [[t?.tube, true], [t?.floor, false]]) {
+                if (!g) continue
+                const p = g.getAttribute('position').array, ix = g.index.array
+                for (let i = 0; i < ix.length; i += 3) {
+                    const v = [ix[i], ix[i + 1], ix[i + 2]].map((j) => [p[3 * j], p[3 * j + 1], p[3 * j + 2]])
+                    if (v.every((q) => Math.hypot(q[0] - x, q[2] - z) > 18)) continue
+                    tris.push({ li, lining, v })
+                }
+            }
+        })
+        const first = (o, d) => {
+            let tb = Infinity, tr = null
+            for (const T of tris) {
+                const [a, b, c] = T.v, e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]]
+                const pv = [d[1] * e2[2] - d[2] * e2[1], d[2] * e2[0] - d[0] * e2[2], d[0] * e2[1] - d[1] * e2[0]], det = e1[0] * pv[0] + e1[1] * pv[1] + e1[2] * pv[2]
+                if (Math.abs(det) < 1e-12) continue
+                const tv = [o[0] - a[0], o[1] - a[1], o[2] - a[2]], uu = (tv[0] * pv[0] + tv[1] * pv[1] + tv[2] * pv[2]) / det
+                if (uu < 0 || uu > 1) continue
+                const qv = [tv[1] * e1[2] - tv[2] * e1[1], tv[2] * e1[0] - tv[0] * e1[2], tv[0] * e1[1] - tv[1] * e1[0]], vv = (d[0] * qv[0] + d[1] * qv[1] + d[2] * qv[2]) / det
+                if (vv < 0 || uu + vv > 1) continue
+                const tt = (e2[0] * qv[0] + e2[1] * qv[1] + e2[2] * qv[2]) / det
+                if (tt > 0.01 && tt < tb) { tb = tt; tr = T }
+            }
+            return tr && { T: tr, p: [o[0] + d[0] * tb, o[1] + d[1] * tb, o[2] + d[2] * tb] }
+        }
+        const eyes = [[x, y + 1.5, z], ...legs.map((l) => { const a = l.atA ? 6 : l.L - 6, q = road.runPointAt(l.k, a); return [q.x, road.runProfile(a, l.k).gradeY + 1.5, q.z] })]
+        let rays = 0, orphan = 0, worstPast = 0
+        const NR = 400, GA = Math.PI * (3 - Math.sqrt(5))
+        for (const o of eyes) for (let k = 0; k < NR; k++) {
+            const dy = 1 - (k + 0.5) / NR, rr = Math.sqrt(1 - dy * dy), h = first(o, [Math.cos(GA * k) * rr, dy, Math.sin(GA * k) * rr])
+            rays++
+            const pl = h?.T.lining && plane[h.T.li]
+            if (!pl) continue
+            const sd = (h.p[0] - x) * pl.nx + (h.p[2] - z) * pl.nz
+            if (sd < -0.05) { orphan++; worstPast = Math.max(worstPast, -sd) }
+        }
+        ok(orphan === 0, `${tag}: miter: ${orphan} of ${rays} rays from inside see a leg's lining past its miter plane (worst ${worstPast.toFixed(2)} m past; ${plane.filter(Boolean).length} legs paired)`)
     }
 }
 console.log(fail ? `FAIL: ${fail}` : 'PASS')
