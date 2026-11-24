@@ -100,6 +100,7 @@ FEAT-325 (the arc trial build) · FEAT-103 (the 5-mission expedition camp, kept 
   1600 rocks, ms/step, median of 3 (spread): at rest wheel walk 0.816 (0.709–0.927) → 0.019 (0.018–0.022), debris sync 0.906 (0.663–0.940) → 0.147 (0.130–0.178);
   driving through 0.952 → 0.126 and 1.012 → 0.199. 400: rest 0.182 → 0.012, 0.166 → 0.020. 150: rest 0.063 → 0.012, 0.050 → 0.005. Step totals are load noise (no-rock base 11–20 ms).
   Identity: fingerprint-physics identical; slide settle + blast + drive-through at 150 and 400 rocks bit-identical (truck, every rock pose, every wheel hit); the drawn rotation of a resting rock differs by ≤ 1.1e-16.
+  Affected gates 47/47 green (serial; cdp-smoke and pad-e2e left to the orchestrator). Unverified: browser timing.
 
 ## Research: rigid-body ceiling
 2026-11-23/24, branch `scratch/feat-326-rigid-body-ceiling`, nothing in `src/` changed. Harness: `test/rigid-body-ceiling.mjs`
