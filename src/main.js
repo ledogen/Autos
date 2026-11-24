@@ -1629,7 +1629,7 @@ const SELECTORS = {
   abs:          { name: 'anti-lock brakes', opts: [[true, 'on'], [false, 'off']] },
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
-  stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
+  stickDeadzone: { name: 'stick deadzone', opts: Array.from({ length: 11 }, (_, i) => [i * 2 / 100, `${i * 2} %`]) }   // DEC-490: 0–20 % in 2 % steps,
   vibration:    { name: 'controller vibration', opts: [[0, 'off'], [0.5, 'low'], [1, 'normal'], [1.5, 'high']] },   // FEAT-247 (src/pad-rumble.js)
   padLayout:    { name: 'pad layout', opts: [['Professor', 'Professor'], ['Ventura Highway', 'Ventura Highway']] },   // DEC-431 (gamepad.js PAD_LAYOUTS)
   uiScale:      { name: 'UI size', opts: [['small', 'small'], ['big', 'big']] },   // FEAT-248: index.html `html[data-ui-scale=big]`
@@ -2469,7 +2469,7 @@ const _hudHtml = (el, s) => { if (!el || (el._html === s && el.innerHTML === el.
 // boot (see the bootstrap, before the route-cache import), so the preset table is authoritative.
 // PERF-11: resHeight caps Normal at 1200 lines (~1.5× ratio on the Air's Retina panel — native 2×
 // shades ~4× the fragments of 1× for no perceptible gain at game viewing distance; user-approved
-// thermal lever 2026-07-13). High/Ultra stay native as the "I have GPU to burn" tiers.
+// thermal lever 2026-07-13). High caps at 1400 lines (DEC-485); Ultra stays native as the "I have GPU to burn" tier.
 // PERF-12: shadowMap/shadowExtent scale with the tier. What matters is only their RATIO — the world
 // size of one shadow texel (extent·2 / mapSize), which is what makes the truck's shadow crisp or
 // mushy.
@@ -2529,7 +2529,7 @@ const _hudHtml = (el, s) => { if (!el || (el._html === s && el.innerHTML === el.
 const QUALITY_PRESETS = {
   Low:    { ring: 1, warm: 1, fogDensity: 0.008, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, bbRing: 2, resHeight: 720,  shadowMap: 1024, shadowExtent: 20, shadowTilePx: 0,   cover: false, coverFade: [0, 0],     coverDensity: 0,   terrainBake: false },
   Normal: { ring: 2, warm: 1, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 3072, shadowExtent: 40, shadowTilePx: 256, cover: true,  coverFade: [50, 110],  coverDensity: 1.0, terrainBake: true  },
-  High:   { ring: 3, warm: 3, fogDensity: 0.0027, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6, terrainBake: true  },
+  High:   { ring: 3, warm: 3, fogDensity: 0.0027, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: 1400, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6, terrainBake: true  },
   Ultra:  { ring: 4, warm: 4, fogDensity: 0.002, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 512, cover: true,  coverFade: [100, 190], coverDensity: 2.2, terrainBake: true  },
 }
 

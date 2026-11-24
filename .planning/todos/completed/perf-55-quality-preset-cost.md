@@ -1,7 +1,7 @@
 ---
 id: PERF-55
 type: perf
-status: open
+status: done
 severity: minor
 opened: 2026-11-22
 source: owner, 2026-11-22 — free roam on High felt like it slowed down as if thermally throttled; suspects the recent shadow changes compound on High
@@ -132,10 +132,10 @@ measured options are in the table above (a 1400-line cap holds 60 fps at 4.2 W a
 - [x] High − Normal split by lever (resolution, ring, shadow map + atlas, prop rings)
 - [x] High at main vs High before BUG-217 (A-B-A-B)
 - [x] One long High session: fps and clocks first 5 min vs last 5 min
-- [ ] Owner: High's resolution (or keep it)
+- [x] Owner: High's resolution: capped at 1400 lines (DEC-485)
 
 ## Open questions
-- Owner: keep High native, or cap it (1400 / 1600 lines measured)? Ultra is native too and was not measured.
+- (answered 2026-11-24: cap High at 1400 lines, DEC-485.)
 
 ## Files
 `test/playtest-bench.mjs`
@@ -146,3 +146,4 @@ measured options are in the table above (a 1400-line cap holds 60 fps at 4.2 W a
   session (1.47 km < 1.5) and the first full-screen check (CDP timeout at 3420 × 2040; not reproduced in 13 later High
   full-screen sessions). Bench: `--quality`, `--window`, thermal-pressure read, per-second fps stats (f4afa547); 0 gates cover it.
   Raw runs: perf-runs/perf-55/ in the CarGame-perf55 worktree (git-ignored; agg.py reads them). Lever overrides: branch scratch/perf-55-levers, never land.
+- 2026-11-24: owner picked "Cap High at 1400 lines"; High resHeight 1400 in QUALITY_PRESETS (DEC-485). Last open item; closed.

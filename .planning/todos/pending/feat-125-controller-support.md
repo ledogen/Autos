@@ -156,3 +156,4 @@ slider, pause, settings, give up, its confirm, the summary, back to the main men
 `keycap()` call has its pad glyph. Two fixes: the inventory's quick-slot numbers (1–4) are keyboard-only and now hide
 while the pad drives (`keycap(label, false)`); the result card's "Tab to make room" was plain text.
 
+- 2026-11-24: DEC-489 center softening defaults to 100 %; DEC-490 stick dead zone 0-20 % in 2 % steps, default 10 %.
