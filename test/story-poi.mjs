@@ -30,7 +30,7 @@ import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { WaterSystem } from '../src/water.js'
-import { PoiSystem, POI_PARAMS, POI_ROSTER, POI_COUNT } from '../src/poi.js'
+import { PoiSystem, POI_PARAMS, POI_ROSTER, POI_COUNT, dropZoneWorld, overDropZone } from '../src/poi.js'
 import { PROP_MODELS, modelsTagged } from '../data/prop-models.js'
 import { PAD_RIM_HOLD } from '../src/road-carve.js'
 import { MissionSystem, REGION_MARGIN } from '../src/mission.js'
@@ -614,7 +614,8 @@ function boardRig (ms, nowH = 6) {
     check('the stranded motorist is the one marker that shows only while it has work',
         !!mot && mot.type === 'strandedMotorist' && W.poi.list().filter(q => q.showWhileJob).length === 1)
     const solid = () => W.poi.queryContact(mot.x, mot.y + 0.8, mot.z, 0.5) !== null
-    const answers = () => W.poi.nearest(mot.x, mot.z, POI_PARAMS.poiInteractR, true) === mot
+    const spot = dropZoneWorld(mot, mot.park)   // FEAT-318: the trigger is its parking spot (main.js _poiInReach)
+    const answers = () => W.poi.list().find(q => q.jobs && !q.hidden && overDropZone(q, spot.x, spot.z, 0.3, q.park)) === mot
     check('…shown: it is solid and answers the park trigger', solid() && answers())
     mot.hidden = true
     check('…hidden: no contact and no park trigger', !solid() && !answers())
@@ -910,9 +911,9 @@ function boardRig (ms, nowH = 6) {
     check('exactly the markers with a mechanic source jobs',
         list.every(q => q.jobs === GIVERS.has(q.type)),
         list.filter(q => q.jobs !== GIVERS.has(q.type)).map(q => q.type).join(', '))
+    const mom = list.find(q => q.type === 'momsHouse'), momSpot = mom?.park && dropZoneWorld(mom, mom.park)
     check('mom\'s house does not hand out freight (her doorstep must win the park trigger)',
-        W.poi.nearest(list.find(q => q.type === 'momsHouse').x,
-                      list.find(q => q.type === 'momsHouse').z, POI_PARAMS.poiInteractR, true) === null)
+        !!momSpot && !list.some(q => q.jobs && overDropZone(q, momSpot.x, momSpot.z, 0.3, q.park)))
 
     // A modelled POI carries its authored contact box and a yaw, both stamped at build time — the
     // physics must never wait on a GLB fetch to decide whether a building is solid.
