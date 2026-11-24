@@ -1,7 +1,7 @@
 ---
 id: BUG-234
 type: bug
-status: open
+status: closed
 severity: major
 opened: 2026-11-18
 source: BUG-232 census, 2026-11-18
@@ -74,3 +74,4 @@ BUG-232 (the same lift, one run crossing itself).
 - 2026-11-20 22:10: census complete. Classic world, 300 seeds: 30 sites on 21; classes A 3, B 14, D 4, E 4, F 5 (restored sides). Owner's world settings, 30 seeds: 0 sites. Sheet in main's wip/bug-234/sheet.jpg. Card bug234-crossing-fix-pick written.
 - 2026-11-21 (land/bug-234-x-junction): built. Census, 400 random seeds: crossings 45 → 2 (28 seeds → 1), 65 X junctions, runs +130, components and every seed's run count unchanged, 0 throws with every profile built. Fallback = the other road as the through road (builds the 55 m site). 100/100 affected gates green (demolition-site re-judged), physics and world fingerprints identical to main. Two Xs ship a departure over the 38 % cap (39.9 %, 43.7 %).
 - 2026-11-21 21:05: cdp-smoke PASS (42 steps), pad-e2e ALL OK. Sheet `wip/bug-234/sheet.jpg` in CarGame-machine (6 sites, main left, branch right). The 4 surface Xs (908965980, 3032355380, 2080966469, 61021596) weld with no step, gap or z-fight. The sawtooth embankment edge next to 2080966469's X is on main too. The 2 tunnel Xs (1960791808, 2280440363) are seen from below the ground; their legs meet the node within 1 cm (gate `x-junction`), and the drive is the visual check.
+- 2026-11-24: LANDED and CLOSED. Owner, card bug234-built-drive: "This is worth landing since it's a strict improvement on the undrivable roads we had before." The defects the owner found on the drive (pad bleeding outside tunnels, the downhill leg's dip, terrain through the ribbon, roof miter, earthwork above the X) are BUG-259. Gates 145/145 after merging main.
