@@ -12,7 +12,7 @@ lane: engine & world
 # BUG-259: X junctions inside tunnels are unfinished
 
 ## Next steps
-A world-gen lane (Opus), after BUG-234 lands. Reproduce on seed 1960791808 and the BUG-234 drive site (seed 2280440363 at 19, −42).
+Items 2, 3 and 5 are fixed on `land/bug-259-tunnel-x` (gate `tunnel-x-junction`). Left: item 1 (the pad over the tunnel floor) and item 4 (the roof miter), both mesh work in `src/road-mesh.js` / the pad ring; see Log 2026-11-24 for what was measured. Then the owner's drive.
 
 ## Summary
 BUG-234 made crossing roads meet at an X junction. The owner drove two of them and approved landing as "a strict improvement", with five defects left, mostly where the X sits underground.
@@ -27,17 +27,20 @@ From the owner's drive (words in `source:`):
 
 ## Tracker
 - [ ] Pad stays inside the tunnel; shoulder gravel kept
-- [ ] The downhill leg's end dip measured and fixed (or ticketed apart if it is a profile bug)
-- [ ] No terrain through the ribbon at the X
+- [x] The downhill leg's end dip measured and fixed (or ticketed apart if it is a profile bug)
+- [x] No terrain through the ribbon at the X
 - [ ] Roof sections miter
-- [ ] No earthwork above an underground X; earthwork only near portals
+- [x] No earthwork above an underground X; earthwork only near portals
 - [ ] Owner's drive
 
 ## Decisions
-- 2026-11-24, owner: "There should be no earthwork at the intersection. There should only be earthwork near the portals."
+- 2026-11-24, owner: "There should be no earthwork at the intersection. There should only be earthwork near the portals." Recorded as DEC-494.
 
 ## Files
 `src/road.js`
 
 ## Log
 - 2026-11-24: opened from the owner's answer on card bug234-built-drive.
+- 2026-11-24 (land/bug-259-tunnel-x): items 2, 3, 5. Cause of 3 and 5: the mouth funnel (`_boreNotchCS`) climbed out of each leg's span end AT the node as if it were a portal, and the pad carve and the legs past their ends then cut the skin to the pad (1960791808: 61 m pit; 2280440363: 89-113 m deep Xs, skin 1.0 m over the deck, a leg's camber on it). Fix: `_undergroundNodes` (every leg leaves in a bore, no mouth at the node); there the funnel measures from real portals only, the pad carve owns only probes under the apex, and `boreSpanAt` carries the bore past the leg ends (ownership, rivals, shade, listener). Item 2 was the junction's: the deck hold's recovery was pinned to the bore floor, so the ceiling pass shipped 48 % on a leg solved at 20 %; at a node inside a bore it now runs DEC-409's design maximum (24 %). Bonus: the chamber was lit like a portal (shade 1.0), now 0.25.
+- Not done: item 1 (pad): at 2280440363 the pad is the convex-hull fallback (two roads crossing twice 100 m apart leave each X at shallow angles), 4.3 m and 1.4 m outside the bores; at 1960791808 the welded pad stays inside the tubes, but every pad paves over the tube floor's gravel. Item 4 (miter): thin lining slivers over the chamber where the four tubes meet. Sheet `wip/bug-259/sheet.jpg`.
+
