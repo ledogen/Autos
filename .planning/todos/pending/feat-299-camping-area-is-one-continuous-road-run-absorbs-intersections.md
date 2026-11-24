@@ -12,7 +12,7 @@ lane: engine & world (world-gen; Opus)
 # FEAT-299: A camping area is one continuous piece of road; average size, with variation
 
 ## Next steps
-Owner look at the sheet (`wip/feat-299/sheet.jpg` in the worktree `CarGame-feat299`, branch `proto/feat-299-camp-run`): keep the size (mean 930 m of road, ±50 %), change it, or decide the tunnel gap (below). Then land; nothing is landed yet.
+Orchestrator: land `proto/feat-299-camp-run` (owner picked "Good: build it out and land", DEC-493). Then the owner's look in the game.
 
 ## Summary
 A camping area is a circle laid over the road network; where roads cross the circle edge the camping area has several breaks (separate pieces). The owner wants each camping area to be ONE continuous piece of road, and likes that it can absorb intersections.
@@ -32,12 +32,16 @@ Owner's words:
 - [x] Measure: how often a camping area is not connected today (400 random seeds; seed 6 is a test seed only)
 - [x] Camping area = one connected road run; no breaks
 - [x] Absorbs junctions
-- [ ] Target mean size with a variation; both are slider-tunable (CAMP_PARAMS knobs, deliberately NOT debug sliders: zones are laid out at region entry, so a live slider would lie until re-entry; the owner's call)
+- [x] Target mean size with a variation; both are slider-tunable (CAMP_PARAMS knobs, deliberately NOT debug sliders: zones are laid out at region entry, so a live slider would lie until re-entry; the owner's call)
 - [x] Screenshot sheet over random seeds, before and after, for the owner
-- [ ] World identity: `test/fingerprint-world.mjs` shows the change is only the camp areas (camp areas are story-only and outside the fingerprint; no road, POI or terrain code touched); a 400-seed no-throw sweep (done: the census ran camp.js on all 400, none threw)
+- [x] World identity: `test/fingerprint-world.mjs` shows the change is only the camp areas (camp areas are story-only and outside the fingerprint; no road, POI or terrain code touched); a 400-seed no-throw sweep (done: the census ran camp.js on all 400, none threw)
 - [ ] Owner has looked
 
+## Decisions
+- DEC-437 (the ruling), DEC-493 (as built: grown by driving distance from the old disc centre, 930 m mean, ±50 % uniform; tunnel gap and merged areas kept as shown).
+
 ## Open questions
+- Answered 2026-11-24 (card `feat299-camp-run-pick`, "Good: build it out and land", no note): the size stays 930 m ±50 %, the tunnel gap stays, merged areas stay. The questions below are kept as asked.
 - (owner) The size: mean 930 m of road (the median of today's discs), ±50 % uniform (465–1395 m). Today's discs had a mean of 1181 m (right-skewed), so the runs cover 22 % of a region's road against 25 % (median). A mean of ~1180 m would keep the coverage instead.
 - (owner) Tunnels: 30 % of areas have a bore inside. The map's casing skips bores (no camping in a tunnel, the FEAT-45 rule), so on the map those areas show a gap at the tunnel. Draw the casing through the tunnel instead?
 - (owner) Two areas may grow into each other (34 % of regions have one such pair); the map then shows them as one longer area. Kept, as the simplest; say if they should stop at each other.
