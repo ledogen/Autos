@@ -150,12 +150,14 @@ export class InventorySystem {
      * THE grant path. Returns 'taken', 'pending' (no room — the swap prompt), or null for an id the
      * catalog doesn't know. `extra` rides on each non-stacking entry — a used part's `cond`
      * ({ trackId: condition }, src/parts.js) comes off the truck this way and goes back on with it.
+     * `src` names where it came from, for the run log only (FEAT-324): 'start' · 'tutorial' · 'job:reward' ·
+     * 'job:supply' · 'shop' · 'service:swap' · 'service:tire' · 'roadside' · 'convert'; every caller passes one.
      */
-    grant (id, n = 1, extra = null) {
+    grant (id, n = 1, extra = null, src = 'unspecified') {
         if (!ITEMS[id]) return null
-        runLog.on && runLog.event('item', { act: 'grant', id, n, fits: this.fits(id, n) })
+        runLog.on && runLog.event('item', { act: 'grant', id, n, src, fits: this.fits(id, n) })
         if (!this.fits(id, n)) {
-            runInventory.pending = { id, n, extra }
+            runInventory.pending = { id, n, extra, src }
             this._changed()
             return 'pending'
         }
@@ -178,7 +180,7 @@ export class InventorySystem {
         const p = runInventory.pending
         if (!p || !this.fits(p.id, p.n)) return false
         runInventory.pending = null
-        return this.grant(p.id, p.n, p.extra) === 'taken'
+        return this.grant(p.id, p.n, p.extra, p.src) === 'taken'
     }
 
     leavePending () {
@@ -240,8 +242,8 @@ export class InventorySystem {
      *  none is owned or the result has no room (a lone raw frees its slot, so cooking the last one always fits). */
     convert (from, to) {
         if (!this.consume(from)) return false
-        if (this.fits(to)) return this.grant(to) === 'taken'
-        this.grant(from)
+        if (this.fits(to)) return this.grant(to, 1, null, 'convert') === 'taken'
+        this.grant(from, 1, null, 'convert')
         return false
     }
 
@@ -282,6 +284,7 @@ export class InventorySystem {
         if (s && it.freshH) s.ages = [..._ages(s), ..._ages(e)].sort((x, y) => x - y)
         if (s) { s.n += e.n; if (e.left != null) s.left = Math.min(s.left ?? it.uses, e.left) }
         else runInventory.entries.push(e)
+        runLog.on && runLog.event('item', { act: 'grant', id: e.id, n: e.n, src: 'pickup', fits: true })   // FEAT-324
         this._changed()
         return true
     }
@@ -395,12 +398,6 @@ export class InventorySystem {
         if (!k) return left
         const rate = ITEMS[k.c.id].coolRate, cold = k.c.iceH * rate
         return left <= cold ? left / rate : k.c.iceH + left - cold
-    }
-
-    /** FEAT-310: the foods that spoil within `h` game hours, soonest first, as { name, h } (the sleep card's warning). */
-    spoilingWithin (h) {
-        return runInventory.entries.map(e => ({ name: ITEMS[e.id].name, h: this.spoilH(e) }))
-            .filter(x => x.h != null && x.h <= h).sort((a, b) => a.h - b.h)
     }
 
     /**

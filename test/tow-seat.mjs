@@ -90,9 +90,7 @@ check('the auto shop is a model with a park box and no pump zones (towSeat seats
 // ── 2. Seat geometry: the shop's lift, and a keyless pad's road-side strip ──────────────────────
 for (const [name, q] of [['the shop', pad(0.7, SHOP)], ['a keyless pad', pad(0.7)]]) {
     const s = towSeat(q)
-    const d = Math.hypot(s.x - q.x, s.z - q.z)
-    check(`${name}: the seat is in reach of the service screen (${d.toFixed(2)} m ≤ poiInteractR ${POI_PARAMS.poiInteractR} m)`, d <= POI_PARAMS.poiInteractR)
-    if (q.park) check(`${name}: the seat is in the park box (on the lift)`, overDropZone(q, s.x, s.z, 0, q.park))
+    if (q.park) check(`${name}: the seat is in the park box (on the lift), where the service screen answers`, overDropZone(q, s.x, s.z, 0, q.park))
     // The truck's footprint (physics.js CHASSIS_PROFILE: nose −2.05, tail 2.65, 0.85 half-width) on the pad.
     const fx = -Math.sin(s.heading), fz = -Math.cos(s.heading), rx = -fz, rz = fx
     const corners = [[-2.05, -0.85], [-2.05, 0.85], [2.65, -0.85], [2.65, 0.85]]

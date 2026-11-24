@@ -25,8 +25,8 @@
 // MOM'S HOUSE IS NOT A CAMP (FEAT-60, owner 2026-08-05). It is a POI — a sited building on a
 // lay-by, one per region, placed by the roster in poi.js and wearing a trailer model. All this
 // module does for it is lend it the sleep path, because a bed is a bed and there was no reason to
-// write sleeping twice. So: `_moms` holds where the roster put her (handed in to build(),
-// never derived here), `atMoms()` gates her doorstep, and nothing about camping's zone permission,
+// write sleeping twice. So: `_moms` holds her parking spot (FEAT-318: the box poi.js gives her, handed in to
+// build(), never derived here), `atMoms()` gates her doorstep, and nothing about camping's zone permission,
 // road tether, pad digging or vibe grading applies to the place. FEAT-45 originally pinned her to
 // the region centre as a stand-in, which is how the world briefly had two mom's houses several
 // hundred metres apart — one on the map, one with the trailer on it.
@@ -36,6 +36,8 @@
 
 import { hash32, mulberry32, clamp01 } from './seed.js'
 import { runLog } from './run-log.js'   // FEAT-242: the opt-in run log (every hook is behind runLog.on)
+
+const MOMS_SLACK = 0.3   // m — her spot grows by this for the knock: main.js PARK_SLACK, a wheel over the line still counts
 
 /**
  * Tunables. Zone siting + the road tether only — none of this may ever enter RANGER_PARAMS
@@ -78,7 +80,6 @@ export const CAMP_PARAMS = {
                             // probes, so its outer ring is ~39 m between spokes — a narrow stream
                             // grazing the far edge can slip through; add rings if that shows up.
     campWaterBestM:  5,     // m — at or inside this, full water credit (camping ON the bank is best)
-    campMomsRadiusM: 25,    // m — park-trigger radius at mom's house
 
     // ── The view (the field-of-vision scan — see skylineView) ─────────────────────────────────
     campViewR:        2000, // m — outer reach of the scan. "Extremely far away" has to mean km, not
@@ -504,7 +505,8 @@ export class CampSystem {
      * Cost: one roll per macro cell overlapping the region (a 2.5 km region is ~7×7 cells). No
      * terrain, no water, no network reads.
      *
-     * @param momsAt {x,z} of mom's house, from the POI roster (FEAT-60). MOM'S HOUSE IS NOT A CAMP
+     * @param momsAt mom's parking spot in world space, { x, z, yaw, halfX, halfZ } (poi.js dropZoneWorld of her park
+     *   box, FEAT-318), from the POI roster (FEAT-60). MOM'S HOUSE IS NOT A CAMP
      *   — it is a POI with a building on it, and sleeping there merely reuses this module's sleep
      *   path because a bed is a bed. Passing it in (rather than assuming the region centre, as
      *   FEAT-45 did) is what stops the world from having two mom's houses in two places.
@@ -543,7 +545,7 @@ export class CampSystem {
         // region, and puts a trailer on it. Null only if a pool too small to fill even the first
         // roster slot left the region without one — better no marker than a phantom bed.
         this._camps = []
-        this._moms = momsAt ? { x: momsAt.x, z: momsAt.z } : null
+        this._moms = momsAt ? { x: momsAt.x, z: momsAt.z, yaw: momsAt.yaw, halfX: momsAt.halfX, halfZ: momsAt.halfZ } : null
         this._rev++
         return out
     }
@@ -1015,12 +1017,13 @@ export class CampSystem {
         return this._camps
     }
 
-    /** Is (x,z) close enough to mom's house to knock? */
+    /** Is (x,z) in mom's parking spot (FEAT-318: her strip, grown by MOMS_SLACK), close enough to knock? The box test
+     *  is poi.js overDropZone's, on the world box. */
     atMoms (x, z) {
         const m = this._moms
         if (!m) return false
-        const r = this._k('campMomsRadiusM', CAMP_PARAMS.campMomsRadiusM)
-        return Math.hypot(m.x - x, m.z - z) <= r
+        const cs = Math.cos(m.yaw), sn = Math.sin(m.yaw), dx = x - m.x, dz = z - m.z
+        return Math.abs(cs * dx - sn * dz) <= m.halfX + MOMS_SLACK && Math.abs(sn * dx + cs * dz) <= m.halfZ + MOMS_SLACK
     }
 
     // ── generation ──────────────────────────────────────────────────────────────────────────
@@ -1081,10 +1084,9 @@ export class CampSystem {
         f.add(CAMP_PARAMS, 'campShadeR', 3, 30, 1).name('shade reach (m)')
         f.add(CAMP_PARAMS, 'campPadHalfM', 1, 8, 0.5).name('pad half (m)')
         f.add(CAMP_PARAMS, 'campPadGapM', 0, 3, 0.1).name('pad gap (m)')
-        f.add(CAMP_PARAMS, 'campMomsRadiusM', 5, 100, 5).name("mom's radius (m)")
         // The zone GENERATOR knobs (campCellM / campZoneChance / campAreaMeanM / campAreaVar) are
         // deliberately not sliders: zones are laid out once at region entry, so a live tweak would
-        // silently lie until the next re-entry.
+        // silently lie until the next re-entry — and the camp-zones gate pins the density they produce.
         if (acts.openCamp) f.add({ go: acts.openCamp }, 'go').name('skip to camp dialogue')
         return f
     }

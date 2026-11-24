@@ -63,8 +63,8 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     ice: 5,                     // owner, 2026-10-22
     cooler: 20, iceKing: 65,    // FEAT-230 [DEFAULT]: the middles of the owner's $10–30 and $30–100; the owner sets them
     // FEAT-121 camp gear on the general-store shelf [DEFAULT]: the reward worths (data/offers.js REWARD_VALUE) as the
-    // price, the owner sets the numbers; the Rucksack is "mid-priced" (items.md), $25 [DEFAULT]
-    blanket: 4, airMattress: 5, sleepingPad: 8, sleepingBag: 10, deluxeSleepingPad: 15, rucksack: 25,
+    // price, the owner sets the numbers; the Rucksack is "mid-priced" (items.md), $20 (owner, DEC-487)
+    blanket: 4, airMattress: 5, sleepingPad: 8, sleepingBag: 10, deluxeSleepingPad: 15, rucksack: 20,
     jerryCan: 30 }              // owner, 2026-10-22: "sold at the gas station, rarely, $30" — sold full
 
 /**

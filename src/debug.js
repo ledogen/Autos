@@ -179,7 +179,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // gamepad.js (deadzones, curve) and vehicle.js (assist, slew) every frame.
   const padFolder = vehicleFolder.addFolder('Controller (FEAT-125)')
   padFolder.add(PAD_PARAMS, 'steerAssist').name('Steering assist (speed-scaled lock)')
-  padFolder.add(PAD_PARAMS, 'stickDeadzone', 0, 0.3, 0.01).name('Stick deadzone')
+  padFolder.add(PAD_PARAMS, 'stickDeadzone', 0, 0.2, 0.02).name('Stick deadzone')
   padFolder.add(PAD_PARAMS, 'triggerDeadzone', 0, 0.2, 0.01).name('Trigger deadzone')
   padFolder.add(PAD_PARAMS, 'steerShape', 0, 1.5, 0.05).name('Steer curve (|x|^(1+k): 0 linear, 1 parabola)')
   padFolder.add(PAD_PARAMS, 'steerSlewRate', 1, 20, 0.5).name('Steer slew (rad/s)')
@@ -1121,7 +1121,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   const _loggerHint = { hint: '\\ to record' }
   gui.add(_loggerHint, 'hint').name('Logger').disable()
 
-  // FEAT-242 (DEC-358): the opt-in run logger (src/run-log.js). Off by default; the choice is remembered in this
+  // FEAT-242 (DEC-358): the opt-in run logger (src/run-log.js). On by default (DEC-481); the choice is remembered in this
   // browser. On, the run's events and a 1 s route sample download by themselves as JSON Lines parts at each new
   // game day and at the run's end — no prompt. Chrome asks ONCE to "allow multiple downloads" from the site.
   // FEAT-293 (DEC-428): the driving AI takes the truck until any driving input (src/auto-drive.js).
@@ -1134,7 +1134,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   aiFolder.close()
 
   const runLogFolder = gui.addFolder('Run logging (FEAT-242)')
-  const _rl = { get on () { return runLog.on }, set on (v) { runLog.setOn(v) }, now: () => runLog.saveNow(),
+  const _rl = { get on () { return runLog.enabled }, set on (v) { runLog.setOn(v) }, now: () => runLog.saveNow(),
     get events () { return String(runLog.count) }, get stored () { return runLog.stored } }
   runLogFolder.add(_rl, 'on').name('Run logging')
   runLogFolder.add(_rl, 'now').name('Save log now')

@@ -141,8 +141,8 @@ check('FEAT-285: spring and damper repair rate $4; labour and part both ride the
     && near(svc.repairQuote('springFront', 1, 0.5).price, (SU.price + 4 * 0.5) * t))) && (tier = 1))
 check('an exchange off the tires pays the minimum charge too, × tier', svc.fitLabour('springsHD', 'springsFront').price === SU.price
   && (tier = 2, svc.fitLabour('springsHD', 'springsFront').price === 2 * SU.price) && (tier = 1))
-check('the air filter fits for a third of the minimum charge, in 15 min (owner, 2026-11-06)',
-  svc.fitLabour('airFilterStock', 'airFilter').price === Math.round(SU.price / 3 * 100) / 100 && svc.fitLabour('airFilterStock', 'airFilter').hours === 0.25)
+check('the air filter fits for a sixth of the minimum charge, in 15 min (owner, 2026-11-06; halved by DEC-482)',
+  svc.fitLabour('airFilterStock', 'airFilter').price === Math.round(SU.price / 6 * 100) / 100 && svc.fitLabour('airFilterStock', 'airFilter').hours === 0.25)
 // BUG-213 / DEC-475: labour rides the difficulty's cost row exactly as the part does, "off" included (day 12 = day 1).
 {
   const labour = () => [svc.fitLabour('springsHD', 'springsFront').price, svc.fitLabour('airFilterStock', 'airFilter').price,

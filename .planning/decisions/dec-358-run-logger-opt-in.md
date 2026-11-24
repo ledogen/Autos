@@ -1,6 +1,6 @@
 ---
 id: DEC-358
-status: standing
+status: superseded
 decided: 2026-11-16
 area: process
 governs: FEAT-242, src/, debug menu, run log, diagnostics, CLAUDE.md conventions

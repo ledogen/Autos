@@ -19,11 +19,11 @@ import { createServer } from 'node:net'
 import { cpus, loadavg } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CHROME, launchChrome, connect, sleep } from './lib/cdp.mjs'
+import { CHROME, launchChrome, connect, sleep, freezeProbe } from './lib/cdp.mjs'
 import { ECONOMY_PARAMS } from '../src/economy.js'
 import { DAY_PARAMS } from '../src/day.js'
 import { summarize, parseLines, report } from '../tools/run-log-summary.mjs'   // the runlog step reads its real log back
-import { TUTORIAL } from '../data/tutorial.js'   // FEAT-184: the tutorial seed's world (DEC-402)
+import { TUTORIAL, FIRING_CAM } from '../data/tutorial.js'   // FEAT-184: the tutorial seed's world (DEC-402)
 import { FIRING, PHONE } from '../data/dialogue.js'   // FEAT-288 P8: the firing's cards, framed, to count what was shown
 import { DialogueSystem } from '../src/dialogue.js'
 import { SHOP_TYPES } from '../src/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
@@ -128,7 +128,8 @@ const simFor = s => untilSim(() => false, s)
 // reach. Measured 2026-11-01: seated ON the farm's marker at (-936.5, 668.6) the truck starts inside the
 // barn and is thrown out at 21 m/s, on main as on any branch; the save step stalled whenever the clock
 // happened to post that farm's freight (it rolled 70–88 m off the pad, never taking the offer).
-// A POI with a PARK box (FEAT-178: the shop's lift; ASSET-74: the store's lot) answers the brake only inside it: seat
+// A POI with a PARK box (FEAT-178: the shop's lift; ASSET-74: the store's lot; FEAT-318: every other giver's shoulder
+// strip, `park.strip`) answers the brake only inside it: seat
 // where a tow would (poi.js towSeat — its centre, along its long side), heading included. Callers spread this LAST.
 const PAD_SEAT = `((q) => { const P = window.__poi(), y = (q.y ?? 0) + 0.8
   if (q.park) { const s = window.__towSeat(q); return { x: s.x, z: s.z, h: s.heading } }
@@ -583,7 +584,7 @@ const STEPS = [
     // must both be in the ONE file "Save log now" downloads (BUG-199: nothing downloads per day), with the header and the 1 s route samples around them.
     await js(`(() => { const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
       A.click = function () { if (this.download?.startsWith('autos-run-')) window.__rlSaved.push({ name: this.download, href: this.href }); else window.__rlClick.call(this) } })()`)
-    await js('window.__runLog.setOn(true)')
+    check(await js('window.__runLog.on && window.__runLog.enabled'), 'runlog: a story run is not logging with no toggle touched (DEC-481)')
     const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
       return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
     check(p, 'runlog: no auto shop in this region')
@@ -602,7 +603,6 @@ const STEPS = [
     await until(async () => !await open(), 2000)
     await js('window.__day().sleep(8, 0.5)')
     check(await js('window.__rlSaved.length') === 0, 'runlog: something downloaded before the save button was pressed')
-    await js('window.__runLog.setOn(false)')
     await js('void window.__runLog.saveNow()')   // async (IndexedDB): wait for its one download
     await until(() => js('window.__rlSaved.length > 0'), 3000)
     const saved = await js('window.__rlSaved.map(s => s.name)')
@@ -611,9 +611,9 @@ const STEPS = [
     check(await until(() => js('window.__rlText !== null'), 3000), 'runlog: the downloaded file could not be read back')
     const got = await js(`(() => { const ev = window.__rlText.trim().split('\\n').map(l => JSON.parse(l))
       const by = (e) => ev.filter(x => x.e === e)
-      return { n: ev.length, header: by('header').length, route: by('route').length, buy: by('purchase').map(x => x.lines.map(l => l.label).join()),
+      return { n: ev.length, runStart: by('runStart').length, header: by('header').length, route: by('route').length, buy: by('purchase').map(x => x.lines.map(l => l.label).join()),
         sleep: by('sleep').map(x => x.hours), stamped: ev.filter(x => x.e !== 'part').every(x => x.day != null && x.pos?.length === 3) } })()`)
-    check(got.header === 1 && got.route >= 2 && got.buy.includes('Oil change') && got.sleep.includes(8) && got.stamped,
+    check(got.runStart >= 1 && got.header === 0 && got.route >= 2 && got.buy.includes('Oil change') && got.sleep.includes(8) && got.stamped,
       `runlog: the log is missing its header, route samples, the purchase or the sleep: ${JSON.stringify(got)}`)
     // The real one-file log through tools/run-log-summary.mjs (BUG-199's header handling x FEAT-69's SHOP TIME block).
     const { events, bad } = parseLines(await js('window.__rlText')), rep = report(summarize(events), bad)
@@ -621,14 +621,11 @@ const STEPS = [
     await js('HTMLAnchorElement.prototype.click = window.__rlClick; delete window.__rlSaved; delete window.__rlText')
   }],
   ['camp', async () => {
-    // Mom's doorstep is the one camp face reachable without a zone hunt: pull the brake there.
+    // Mom's doorstep is the one camp face reachable without a zone hunt: pull the brake there (FEAT-318: in her strip).
     const p = await js(`(() => { const m = window.__map2d()._getPois().find(q => q.type === 'momsHouse'); if (!m) return null
-      let best = null, bd = 25
-      for (const e of window.__roadSys()._network.values()) for (const q of e.points) {
-        const d = Math.hypot(q.x - m.x, q.z - m.z); if (d < bd && d > 8) { bd = d; best = { x: q.x, z: q.z } } }
-      return best })()`)
-    check(p, "no road point within 25 m of mom's house")
-    await seat(p.x, p.z, 0)
+      return { h: Math.atan2(-m.tx, -m.tz), ...${PAD_SEAT}(m) } })()`)
+    check(p, "no mom's house in the region")
+    await seat(p.x, p.z, p.h)
     const panel = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }   // a teleport seats latched
     await tap(' ')
@@ -681,7 +678,7 @@ const STEPS = [
     await seat(q.ox, q.oz, 0)
     const text2 = await until(card, 2000)
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }
-    await js('window.__inv.grant("breakfastBurrito")'); await sleep(200)   // for FEAT-310's sleep-card check below: an inventory change with the card up made Z flaky
+    await js('window.__inv.grant("breakfastBurrito")'); await sleep(200)   // food in the bag for the sleep-card check below (FEAT-310 / DEC-479); an inventory change with the card up made Z flaky
     await tap(' ')
     check(await until(panel, 2000), `parking off the ribbon with the card up ("${text2}") opened no camp panel`)
     const title = () => js('document.getElementById("cp-title").textContent')
@@ -690,19 +687,19 @@ const STEPS = [
     await js('document.getElementById("cp-sleep").click()')
     check(await js('document.getElementById("cp-body").textContent.includes("campsites provide more rest")'),
       'the truck sleep face is missing its disclaimer')
-    // FEAT-310 (DEC-449): a sleep that outlasts a food says so on the timer — a fresh breakfast burrito keeps 8 h.
+    // FEAT-310 (DEC-479): the sleep card does not warn about spoiling food (a fresh breakfast burrito keeps 8 h; sleep 10).
     await js('document.getElementById("cp-hours").value = "10"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
-    check(await until(() => js('/breakfast burrito spoils in 8h 00m/.test(document.getElementById("cp-energy-text").textContent)'), 1500),
-      `FEAT-310: a 10 h sleep did not warn about the 8 h burrito: "${await js('document.getElementById("cp-energy-text").textContent')}"`)
-    if (process.env.NOTES1119_SHOTS) { mkdirSync('wip/notes-1119b', { recursive: true }); await sleep(300)
-      writeFileSync('wip/notes-1119b/sleep.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
+    await sleep(300)
+    check(!await js('/spoils in/.test(document.getElementById("cp-energy-text").textContent)'), 'FEAT-310: the sleep card warned about spoiling food')
     await js('document.getElementById("cp-hours").value = "6"; document.getElementById("cp-hours").dispatchEvent(new Event("input"))')
-    check(!await js('/spoils in/.test(document.getElementById("cp-energy-text").textContent)'), 'FEAT-310: a 6 h sleep warned about an 8 h burrito')
+    if (process.env.NOTES1121_SHOTS) { mkdirSync('wip/notes-1121', { recursive: true })
+      writeFileSync('wip/notes-1121/sleep.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
     await js('document.getElementById("cp-sleep-back").click()')
     // Owner, 2026-10-27: an unmade card keeps the tent up and lit, and Z there closes the card and
     // calls the hunt off — so later parks open nothing.
     const lit = () => js('document.getElementById("camp-row").style.display === "flex" && document.getElementById("camp-icon").classList.contains("on")')
     check(await until(lit, 1000), 'the tent is not up and lit beside the truck face')
+    await sleep(500)
     await tap('z')
     check(await until(async () => !await panel(), 2000), 'Z did not close the truck face')
     check(!await lit(), 'Z closed the truck face but left the hunt on')
@@ -937,34 +934,31 @@ const STEPS = [
     if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
   }],
   ['freshBar', async () => {
-    // FEAT-230 slice 2 (DEC-338): a chili dog's freshness bar sits at 6 o'clock over its thumbnail and shortens as the clock
-    // runs (2 h of its 16: 100 % → 87.5 %). Runs after inventory: SMOKE_STEPS=boot,story,inventory,freshBar. Picture:
-    // wip/fresh/bar.png. Leaves no row, no screen open, and the energy as it found it.
+    // FEAT-230 slice 2 / FEAT-310 (DEC-479): a chili dog's thumbnail reads the time until it spoils, as text, no bar, and the
+    // time shortens as the clock runs (2 h of its 16: 16h 00m → 14h 00m). Runs after inventory: SMOKE_STEPS=boot,story,inventory,freshBar.
+    // Leaves no row, no screen open, and the energy as it found it.
     const open = () => js('document.getElementById("inv-screen").classList.contains("open")')
     const wasParked = await js('window.__vs.parked')
     if (!wasParked) { await tap(' '); check(await until(() => js('window.__vs.parked'), 1000), 'Space did not park') }
     await js(`window.__inv.grant('chiliDog')`)
     await sleep(100)   // a fixed step: the fresh clock seats the new unit
-    const bar = () => js(`(() => { const i = window.__inv.list().findIndex(r => r.id === 'chiliDog')
-      const s = document.querySelector('#inv-screen .inv-slot[data-slot="' + i + '"]'), b = s?.querySelector('.sl-fresh'), f = b?.firstChild
-      if (!f) return null
-      const S = s.getBoundingClientRect(), B = b.getBoundingClientRect()
-      return { w: f.getBoundingClientRect().width / b.clientWidth, dx: (B.left + B.right) / 2 - (S.left + S.right) / 2, dy: S.bottom - B.bottom } })()`)
+    const tm = () => js(`(() => { const i = window.__inv.list().findIndex(r => r.id === 'chiliDog')
+      const s = document.querySelector('#inv-screen .inv-slot[data-slot="' + i + '"]')
+      return { t: s?.querySelector('.sl-spoil')?.textContent ?? null, bar: !!s?.querySelector('.sl-fresh') } })()`)
     await tap('Tab'); check(await until(open, 1000), 'Tab opened no inventory screen while parked')
-    const b0 = await bar()
-    check(b0 && b0.w > 0.99, `no full freshness bar on a new chili dog: ${JSON.stringify(b0)}`)
-    check(b0 && Math.abs(b0.dx) < 1.5 && b0.dy >= 0 && b0.dy < 8, `the bar is not at 6 o'clock over the thumbnail: ${JSON.stringify(b0)}`)
-    check(await js(`document.querySelector('#inv-screen .inv-slot[data-slot="0"] .sl-fresh') === null`), 'the Pack (no fresh time) shows a bar')
+    const b0 = await tm()
+    check(b0.t && /^15h 5\dm$|^16h 00m$/.test(b0.t) && !b0.bar, `a new chili dog's thumbnail reads ${JSON.stringify(b0)}, not its ~16 h and no bar`)
+    check(await js(`document.querySelector('#inv-screen .inv-slot[data-slot="0"] .sl-spoil') === null`), 'the Pack shows a spoil time')
     await tap('Escape'); await until(async () => !await open(), 1000)
     const e0 = await js('window.__day().energyH()')
     await js('window.__day().advanceMinutes(120)')
     await sleep(100)
     await tap('Tab'); await until(open, 1000)
-    const b1 = await bar()
-    check(b1 && Math.abs(b1.w - 0.875) < 0.02, `after 2 h the bar is ${b1 && (b1.w * 100).toFixed(1)} %, not 87.5 %`)
+    const b1 = await tm()
+    check(b1.t && /^13h 5\dm$|^14h 0\dm$/.test(b1.t), `after 2 h the thumbnail reads "${b1.t}", not ~14 h`)
     await sleep(200)
-    const shot = await client.cmd('Page.captureScreenshot', { format: 'png' })
-    mkdirSync('wip/fresh', { recursive: true }); writeFileSync('wip/fresh/bar.png', Buffer.from(shot.result.data, 'base64'))
+    if (process.env.NOTES1121_SHOTS) { mkdirSync('wip/notes-1121', { recursive: true }); await js(`document.getElementById('inv-tip').style.display = 'none'`)
+      writeFileSync('wip/notes-1121/inv.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')) }
     // FEAT-310 (DEC-449): the selected food's line reads its time to spoil — 14 h of the chili dog's 16 are left.
     const ci = await js(`window.__inv.list().findIndex(r => r.id === 'chiliDog')`)
     await js(`document.querySelector('#inv-screen .inv-slot[data-slot="${ci}"]').click()`)
@@ -990,7 +984,7 @@ const STEPS = [
     if (!wasParked) await tap(' ')
     const camp = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await camp()) { await tap('r'); check(await until(async () => !await camp(), 2000), 'R left the camp panel up') }
-    console.log(`  freshBar: ${(b0.w * 100).toFixed(1)} % → ${(b1.w * 100).toFixed(1)} % after 2 h; centred ${b0.dx.toFixed(1)} px, ${b0.dy.toFixed(1)} px off the bottom`)
+    console.log(`  freshBar: thumbnail time ${b0.t} → ${b1.t} after 2 h, no bar`)
   }],
   ['campGear', async () => {
     // FEAT-66: what is packed is what stands at camp. A pad at the truck, a packed tent → the tent
@@ -1093,8 +1087,12 @@ const STEPS = [
     check(await until(() => js('window.__vs.velocity.length() < 0.2'), 8000), 'the truck never came to rest')
     for (let i = 0; i < 4 && !await js('document.getElementById("pause-menu").style.display === "flex"'); i++) { await tap('Escape'); await sleep(300) }
     check(await js('!document.getElementById("pm-save").disabled'), `save & exit not offered: "${await js('document.getElementById("pm-save-why").textContent')}"`)
+    await js(`(() => { if (window.__rlSaved) return; const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
+      A.click = function () { if (this.download?.startsWith('autos-run-')) window.__rlSaved.push({ name: this.download, href: this.href }); else window.__rlClick.call(this) } })()`)
+    const dl0 = await js('window.__rlSaved.length')
     await js('document.getElementById("pm-save").click()')
     check(await until(() => js('document.getElementById("mm-continue").offsetParent !== null'), 5000), 'no continue button after save & exit')
+    check(await until(() => js(`window.__rlSaved.length === ${dl0 + 1}`), 4000), 'save & exit did not download exactly one run log (DEC-481)')
     await client.cmd('Page.navigate', { url: `http://localhost:${HTTP}/index.html?seed=6` })
     check(await until(() => js('window.__rsReady === true && document.getElementById("mm-continue")?.offsetParent != null'), 30000, 250), 'no continue button after the reload')
     await js('document.getElementById("mm-continue").click()')
@@ -1334,7 +1332,7 @@ const STEPS = [
     await each('hud')
     // the offer card: a farm that has a job up, its jobs button
     const live = await js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
-      const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden && !q.drop && !q.park && b.view(q.id, 0)?.count > 0)
+      const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden && !q.drop && !(q.park && !q.park.strip) && b.view(q.id, 0)?.count > 0)
       return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
     if (live) {
       await seat(live.x, live.z, live.h); await park(true)
@@ -1495,7 +1493,7 @@ const STEPS = [
     // Pictures: wip/groceries/farm-shop.png (no offer), farm-shop-jobs.png (the jobs button).
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
     const find = (want) => js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
-      const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden && !q.drop && !q.park && ((b.view(q.id, 0)?.count > 0) === ${want}))
+      const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden && !q.drop && !(q.park && !q.park.strip) && ((b.view(q.id, 0)?.count > 0) === ${want}))
       return q ? { h: Math.atan2(-q.tx, -q.tz), id: q.id, ...${PAD_SEAT}(q) } : null })()`)
     const shot = async (f) => { await sleep(600); const r = await client.cmd('Page.captureScreenshot', { format: 'png' }); mkdirSync('wip/groceries', { recursive: true }); writeFileSync(`wip/groceries/${f}`, Buffer.from(r.result.data, 'base64')) }
     const leave = async () => { await tap('Escape'); await until(async () => !await vis('svc-screen'), 1500); await tap(' '); await sleep(300) }
@@ -1595,7 +1593,7 @@ const STEPS = [
     // line taken is the fuel drum, strapped in at the source and not before.
     const pois = 'window.__map2d()._getPois()'
     const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
-      return q ? { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
     check(camp, 'no expedition camp in the region')
     const prompt = () => js('document.getElementById("poi-prompt").checkVisibility() && document.getElementById("poi-prompt").textContent')
     await seat(camp.x, camp.z, camp.h)
@@ -1614,8 +1612,8 @@ const STEPS = [
     check(a.s === 'staging' && a.a, `a line taken at the camp is not an untimed approach: ${JSON.stringify(a)}`)
     await sleep(500)
     check(!await js('window.__cargo().freight'), `the fuel line strapped its drum at the camp: ${JSON.stringify(await js('window.__cargo().freight'))}`)
-    // A source with a park box (the gas station's storefront bays) is parked IN it — poi.js dropZoneWorld's
-    // mapping, the truck's long axis along the bay.
+    // A source with a park box (the gas station's storefront bays; FEAT-318: any giver's shoulder strip) is parked IN
+    // it — poi.js dropZoneWorld's mapping. Not towSeat: a gas station's tow lands at its pump, not in its bay.
     const src = await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)}), b = q.park
       if (!b) return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) }
       const yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
@@ -1645,7 +1643,7 @@ const STEPS = [
   ['demolition', async () => {
     const pois = 'window.__map2d()._getPois()'
     const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
-      return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } })()`)
+      return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
     await seat(camp.x, camp.z, camp.h)
     await park(true)
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
@@ -1750,7 +1748,7 @@ const STEPS = [
     // with targets standing it ends on what the hits paid, no tip.
     const dj = await js(`(() => { const b = window.__cargo().board, now = window.__day().clockH()
       for (const q of window.__map2d()._getPois()) {
-        if (!q.jobs || q.hidden || q.drop || q.park || q.type === 'expeditionCamp') continue
+        if (!q.jobs || q.hidden || q.drop || (q.park && !q.park.strip) || q.type === 'expeditionCamp') continue
         const o = b.offers(q.id, now).find(o => b.spec(o)?.family === 'demolition' && !b.spec(o).line)
         if (o) return { h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type, ...${PAD_SEAT}(q) }
       }
@@ -1854,7 +1852,7 @@ const STEPS = [
     // FEAT-141: Larry's round — any N of the customers against a deadline, the size chosen among the
     // unlocked rungs. Unlock the 7, park at Larry's, read his briefing, and walk the size row.
     const larry = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse')
-      return q ? { x: q.x - q.nx * 5, z: q.z - q.nz * 5, h: Math.atan2(-q.tx, -q.tz) } : null })()`)   // his yard: the marker stands at the house
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)   // FEAT-318: his strip
     if (!larry) { console.log('  papers: no Larry in this region — step skipped'); return }
     await js('window.__paper.runPaper.tier = 1')
     await seat(larry.x, larry.z, larry.h)
@@ -1952,7 +1950,7 @@ const STEPS = [
     // A plain delivery giver (no bed-over-drop or park-box rule) with a live offer: seat the truck on
     // its pad (q.x/z — the solid model stands off it at modelX/Z), pull the brake, accept, drive.
     const p = await js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
-      const q = window.__map2d()._getPois().find(q => q.jobs && !q.hidden && !q.drop && !q.park && q.type !== 'expeditionCamp'
+      const q = window.__map2d()._getPois().find(q => q.jobs && !q.hidden && !q.drop && !(q.park && !q.park.strip) && q.type !== 'expeditionCamp'
         && b.status(q.id)?.family === 'delivery' && b.view(q.id, 0)?.count > 0)
       return q ? { rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type, ...${PAD_SEAT}(q) } : null })()`)
     if (!p) { console.log('  offer: no plain delivery giver with a live offer — step skipped'); return }
@@ -2084,7 +2082,7 @@ const STEPS = [
     await js('window.__mission().exit()')
     const fr = await js(`(() => { const b = window.__cargo().board, now = window.__day().clockH()
       for (const q of window.__map2d()._getPois()) {
-        if (!q.jobs || q.hidden || q.drop || q.park || q.type === 'expeditionCamp') continue
+        if (!q.jobs || q.hidden || q.drop || (q.park && !q.park.strip) || q.type === 'expeditionCamp') continue
         const o = b.offers(q.id, now).find(o => b.spec(o)?.family === 'freight')
         if (o) return { rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type, ...${PAD_SEAT}(q) }
       }
@@ -2215,6 +2213,8 @@ const STEPS = [
   ['endings', async () => {
     const card = () => js('document.getElementById("run-end").style.display === "block" && document.getElementById("re-title").textContent')
     const saved = () => js('localStorage.getItem("autos-run/1") !== null')
+    await js(`(() => { if (window.__rlSaved) return; const A = HTMLAnchorElement.prototype; window.__rlClick = A.click; window.__rlSaved = []
+      A.click = function () { if (this.download?.startsWith('autos-run-')) window.__rlSaved.push({ name: this.download, href: this.href }); else window.__rlClick.call(this) } })()`)
     const ended = async (want, why) => {
       const t = await until(card, 5000)
       check(t && want.test(t), `the run-end card reads "${t}", want ${want}`)
@@ -2224,7 +2224,9 @@ const STEPS = [
         `${t}: the summary is missing rows: "${body.slice(0, 200)}"`)
       await sleep(1500)   // past an autosave tick
       check(!await saved(), `${t}: the run save outlived the run`)
+      const dl0 = await js('window.__rlSaved.length')
       await js('document.getElementById("re-menu").click()')
+      check(await until(() => js(`window.__rlSaved.length === ${dl0 + 1}`), 4000), `${t}: the run log did not download exactly one file at the card's button (DEC-481): ${await js('window.__rlSaved.length - ' + dl0)}`)
       check(await until(() => js('document.getElementById("main-menu").style.display === "flex"'), 3000), `${t}: no main menu after the card`)
       check(await js('document.getElementById("mm-continue").offsetParent === null'), `${t}: "continue" offers an ended run`)
       check(await js('document.getElementById("mm-save-note").style.display === "none"'), `${t}: the save warning outlived the save`)
@@ -2354,6 +2356,23 @@ const STEPS = [
         writeFileSync('wip/notes-1119b/tow-pad.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')); await padOff() }
       await js('document.querySelector("#recovery-card [data-act=towBack]").click()')
       check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towFuel]")'), 2000), 'FEAT-307: back did not return to the tow list') }
+    // DEC-479: the tire service is asked for twice too. A flat tire makes the card offer it; the button opens the confirm
+    // (service, price, time, call / back); nothing is spent until "call", and back returns to the list.
+    { const m0 = await js('window.__econ.money')
+      await js('window.__damage.flat[0] = true')
+      check(await until(() => js('!!document.querySelector("#recovery-card [data-act=tireService]:not([disabled])")'), 3000),
+        `DEC-479: no tire service on the Recovery card: "${await js('document.getElementById("recovery-card").textContent')}"`)
+      await js('document.querySelector("#recovery-card [data-act=tireService]").click()')
+      check(await until(() => js('/call the tire service/.test(document.querySelector("#recovery-card [data-act=towGo]")?.textContent ?? "")'), 2000),
+        `DEC-479: the tire service button showed no confirm: "${await js('document.getElementById("recovery-card").textContent')}"`)
+      check(await js('window.__econ.money') === m0, 'DEC-479: asking for the tire service already spent the money')
+      if (process.env.NOTES1121_SHOTS) { mkdirSync('wip/notes-1121', { recursive: true }); await sleep(400)
+        writeFileSync('wip/notes-1121/tire-key.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'))
+        await padOn(); await btn(13); await sleep(400)
+        writeFileSync('wip/notes-1121/tire-pad.png', Buffer.from((await client.cmd('Page.captureScreenshot', { format: 'png' })).result.data, 'base64')); await padOff() }
+      await js('document.querySelector("#recovery-card [data-act=towBack]").click()')
+      check(await until(() => js('!!document.querySelector("#recovery-card [data-act=tireService]")'), 2000), 'DEC-479: back did not return to the list')
+      await js('window.__damage.flat[0] = false') }
     // BUG-113: pad B is the general back on the Recovery card too — it closes the card, it does not pause.
     await padOn(); await btn(1); await padOff()
     check(await until(() => js('document.getElementById("recovery-card").style.display === "none"'), 2000), 'pad B left the Recovery card open (BUG-113)')
@@ -2472,10 +2491,12 @@ const STEPS = [
         else if (out) R.push({ end: true, out })
       }).observe(p.parentNode, { childList: true, subtree: true }) })()`)
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
-      return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), h: window.__day().clockH() } })()`)
+      // FEAT-318: the truck starts in the joint's shoulder strip, ~8 m from the camera's ring, so the orbit is read off its
+      // aim point (the model, FIRING_CAM.lift up), not off the truck.
+      return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), orbit: Math.hypot(c.x - q.modelX, c.y - q.baseY - ${FIRING_CAM.lift}, c.z - q.modelZ), h: window.__day().clockH() } })()`)
     const a = await at(); await sleep(1000); const b = await at()
     check(a.truck < 8, `the truck is ${a.truck.toFixed(1)} m from the burger joint's pad, want < 8`)
-    check(b.cam > 9, `the camera is ${b.cam.toFixed(1)} m from the truck — not on the joint's orbit`)
+    check(Math.abs(b.orbit - FIRING_CAM.radius) < 2, `the camera is ${b.orbit.toFixed(1)} m from the joint's aim point, want ${FIRING_CAM.radius} — not on its orbit`)
     check(b.h === a.h, `the day clock ran under the firing (${a.h} → ${b.h})`)
     await watchWrongWay()   // BUG-203: counted from here to the pedals card
     // FEAT-288 P6 (FIRING_CAM, data/tutorial.js): the orbit turns on its own (0.05 rad/s); the right stick and a RIGHT drag
@@ -2599,13 +2620,23 @@ const STEPS = [
     check(await js('window.__worstDay().held'), 'the tutorial does not hold the truck: a crash would cost damage (FEAT-184, DEC-151)')
     check(await js('window.__day().clockH()') === h0, `the clock ran on the evening's drive (${h0} → ${await js('window.__day().clockH()')})`)
     const lat = (x, z) => `(() => { const q = window.__roadSys().queryNearest(${x}, ${z}, 200); return q?.point ? Math.hypot(q.point.x - ${x}, q.point.z - ${z}) : 999 })()`
-    const off = await js(`(() => { const v = window.__vs.position, nr = window.__roadSys().queryNearest(v.x, v.z, 500)
-      const t = nr.tangent, l = Math.hypot(t.x, t.z), nx = t.z / l, nz = -t.x / l
-      for (const along of [0, 100, -100, 160, -160]) for (const d of [25, -25, 35, -35, 45, -45]) { const x = nr.point.x + nx * d + t.x / l * along, z = nr.point.z + nz * d + t.z / l * along
-        // FEAT-217: past the 20 m no-reset radius of every place (TUT_PARAMS.safeNearPoiM, DEC-281), and 15+ m from the road (10 m past its side)
-        if (window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
-        const q = window.__roadSys().queryNearest(x, z, 100); if (!q?.point || Math.hypot(q.point.x - x, q.point.z - z) > 15) return { x, z } }
-      return null })()`)
+    // BUG-256: both spots (off the road here, the shoulder below) are the flattest point within 300 m of the joint at a given
+    // distance from the road — graded under 1.5 % (under the rolling resistance, so a truck with the brake off stays put),
+    // clear of hard props within 6 m, 90 m from every place — on a 2 m grid centred on the joint (~1 s). The old off-road
+    // pick was the first point 25–45 m beside the road wherever the 5 s of W had left the truck (wall time, so it varied run
+    // to run); some picks sat on a slope that rolled the truck, brake off, 38 m down into the 10 m band DEC-219 keeps safe
+    // (6.2 m from the centreline), so no reset came. The game was right; the fixture was not.
+    const flatSpot = (lo, hi) => js(`(() => { const v = window.__poi().list().find(p => p.type === 'foodVendor'), H = window.terrain; let best = null
+      for (let dx = -300; dx <= 300; dx += 2) for (let dz = -300; dz <= 300; dz += 2) { const x = v.x + dx, z = v.z + dz
+        const g = Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
+        if (g >= 0.015 || g < 1e-9 || (best && g >= best.g)) continue   // g === 0: height not streamed in yet (3590618618 read a flat 0 at a 35 % slope), not a flat spot
+        const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
+        if (lt < ${lo} || lt > ${hi} || window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
+        if (!window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length) best = { x, z, g } }
+      return best })()`)
+    // FEAT-217: past the 20 m no-reset radius of every place (TUT_PARAMS.safeNearPoiM, DEC-281), and 20–45 m from the road
+    // (5+ m past the 15 m where the countdown starts)
+    const off = await flatSpot(20, 45)
     check(off, 'no off-road spot beside the joint')
     await seat(off.x, off.z, 0)
     // DEC-321: no reset is taught — off the road the HUD names no key; R still works, untaught.
@@ -2621,7 +2652,8 @@ const STEPS = [
     check(await until(() => js('document.getElementById("reset-countdown").style.opacity === "1" && /back on it in \\d/.test(document.getElementById("reset-countdown").textContent)'), 3000), 'FEAT-217: off the road, no reset countdown showed')
     // The reset counts 4 s of PLAY time (_playedS: real frame seconds while live, each frame clamped to 0.25 s), not wall
     // time, so a loaded box under 4 fps accrues it slower than the clock: poll long (a pass costs nothing extra).
-    check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), 'off the road with the brake off, the evening did not put the truck back on it')
+    check(await until(async () => { const v = await car(); return await js(lat(v.x, v.z)) < 5 }, 45000), `off the road with the brake off, the evening did not put the truck back on it: ${await js(`(() => { const v = window.__vs.position
+      return JSON.stringify({ lat: window.__campSys().nearRoadInfo(v.x, v.z).lateral.toFixed(1), fromSeat: Math.hypot(v.x - ${off.x}, v.z - ${off.z}).toFixed(1), kmh: (window.__vs.velocity.length() * 3.6).toFixed(1), parked: window.__vs.parked, tut: window.__tutorial().phase }) })()`)}`)
     await strayCheck('in the evening')
     // FEAT-217 (of3s, DEC-219): the shoulder (≤ 10 m past the road's side) is safe to sit on with the brake off — no countdown, no reset.
     // BUG-173 (DEC-230): the spot is the flattest point within 300 m that is on the shoulder (11–14 m from the centreline:
@@ -2632,14 +2664,7 @@ const STEPS = [
     // The check below is unchanged. FEAT-229 (DEC-402): on 1872706826 the only such spot within 400 m is one ~10 m patch
     // 264 m north of the joint, so the search centres on the joint (not wherever R left the truck) on a 2 m grid (the 4 m
     // one stepped over the 3 m band; ~1 s).
-    const sh = await js(`(() => { const v = window.__poi().list().find(p => p.type === 'foodVendor'), H = window.terrain; let best = null
-      for (let dx = -300; dx <= 300; dx += 2) for (let dz = -300; dz <= 300; dz += 2) { const x = v.x + dx, z = v.z + dz
-        const g = Math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
-        if (g >= 0.015 || g < 1e-9 || (best && g >= best.g)) continue   // g === 0: height not streamed in yet (3590618618 read a flat 0 at a 35 % slope), not a flat spot
-        const q = window.__roadSys().queryNearest(x, z, 100), lt = q?.point ? Math.hypot(q.point.x - x, q.point.z - z) : 0
-        if (lt < 11 || lt > 14 || window.__poi().list().some(p => Math.hypot(p.x - x, p.z - z) < 90)) continue
-        if (!window.__props()?.queryProps(x, H(x, z) + 1, z, 6).length) best = { x, z, g } }
-      return best })()`)
+    const sh = await flatSpot(11, 14)
     check(sh, 'FEAT-217: no shoulder spot found')
     await seat(sh.x, sh.z, 0); await readCards(300)
     if (await js('window.__vs.parked')) await tap(' ')
@@ -3769,7 +3794,10 @@ for (const [name, fn] of STEPS) {
   step = name
   const t0 = performance.now()
   // A step on a random world (the pad step's blank seed box) names it, so a miss can be replayed (Lane A, 2026-11-06).
-  try { await fn() } catch (e) { failed = { step: name, msg: `${e.message} · ${await js('window.__worldCode?.()').catch(() => 'world code unreadable')}` } }
+  try { await fn() } catch (e) {
+    failed = { step: name, msg: `${e.message} · ${await js('window.__worldCode?.()').catch(() => 'world code unreadable')}` }
+    if (/CDP timeout/.test(e.message)) console.log(await freezeProbe(client))
+  }
   times.push(`${name} ${((performance.now() - t0) / 1000).toFixed(1)}s`)
   if (failed || errors.length) break
 }

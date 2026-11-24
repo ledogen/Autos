@@ -1,7 +1,7 @@
 ---
 id: PERF-54
 type: perf
-status: open
+status: closed
 severity: minor
 opened: 2026-11-21
 source: orchestrator, 2026-11-21 — the recorded bench on main 9b04c5f5 (wip/bench-1121/run.log): map-phase GPU 32.5 → 716 Mcyc/s since the 11-13 record (6f82f733)
@@ -53,3 +53,4 @@ proportion, to about 120–150 Mcyc/s. One counter in the frame loop's render br
 
 ## Log
 - 2026-11-21: found and measured (lane a, branch land/perf-54-map-gpu). No src/ change.
+- 2026-11-24: CLOSED. Owner, card perf54-map-backdrop-rate: "Keep full rate". The world behind the map stays at 60 Hz (DEC-319 stands); the 10 Hz lever is declined, do not re-offer it.

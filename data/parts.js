@@ -72,8 +72,8 @@ export const SLOTS = {
     engine:       { name: 'Engine',            hours: 8,    tracks: ['engine'] },
     radiator:     { name: 'Radiator',          hours: 1.5,  tracks: ['radiator'] },
     // `fitX`: the shop's fitting charge as a fraction of REPAIR_SETUP's minimum (src/service.js fitLabour; default 1).
-    // The filter's is a third (owner, 2026-11-06 playtest: "the installation cost should be cut by a factor of three").
-    airFilter:    { name: 'Air filter',        hours: 0.25, tracks: ['airFilter'], fitX: 1 / 3 },
+    // The filter's is a third (owner, 2026-11-06 playtest: "the installation cost should be cut by a factor of three"), then a sixth (DEC-482: halved).
+    airFilter:    { name: 'Air filter',        hours: 0.25, tracks: ['airFilter'], fitX: 1 / 6 },
     headlightL:   { name: 'Left headlight',    takes: 'headlight', hours: 0.5, tracks: ['headlightL'] },
     headlightR:   { name: 'Right headlight',   takes: 'headlight', hours: 0.5, tracks: ['headlightR'] },
     // FEAT-204 bolt-ons (DEC-028: parts on the truck configuration, lost on death). `bolton`: the service screen's
@@ -267,8 +267,8 @@ export const PARTS = {
     radiatorStock: { name: 'Stock radiator',       slot: 'radiator', family: 'oem', rarity: 'common', price: 22, massKg: 7, stock: true,
                      patch: {}, desc: 'The factory radiator. Keeps the engine cool when it isn’t leaking.' },
     // items.md's ratified "Spare air filter" is this part: 15 min to fit at the roadside (`roadside`: src/recovery.js
-    // fitRoadside) or at the shop, carries its own condition. $10 → $7 (owner, 2026-11-06 playtest: "reduced by 30%").
-    airFilterStock:{ name: 'Air filter',           slot: 'airFilter', family: 'oem', rarity: 'common', price: 7, massKg: 0.5, stock: true,
+    // fitRoadside) or at the shop, carries its own condition. $10 → $7 (owner, 2026-11-06 playtest: "reduced by 30%"); $7 → $3.50 (DEC-482: "air filter cost should be halved").
+    airFilterStock:{ name: 'Air filter',           slot: 'airFilter', family: 'oem', rarity: 'common', price: 3.5, massKg: 0.5, stock: true,
                      roadside: true, patch: {}, desc: 'A paper filter. A clean one lets the engine breathe. Swaps in by hand, no shop needed.' },
     headlightStock:{ name: 'Headlight',            slot: 'headlight', family: 'oem', rarity: 'common', price: 6, massKg: 1.5, stock: true,
                      patch: {}, desc: 'A sealed beam lamp, either side.' },

@@ -12,7 +12,7 @@ lane: engine & world (world-gen; Opus)
 # FEAT-302: Rework POI pads: set back 2-3 m, a little bigger, a real driveway; parking lots get a logical driveway
 
 ## Next steps
-A lane first writes a short design note and a before-and-after screenshot sheet over 6 random seeds (a house, a gas station, an auto shop, a parking-lot POI), then builds. The owner picks the sizes (needs numbers) before the build.
+REWORK (owner, 2026-11-24): the prototype's look was rejected. A world-gen lane (Opus) rebuilds the driveway as a junction-like connection and marks the whole drivable area, then shows the owner a new sheet. Option B's numbers (set back 3 m, pad 16 x 9) are "okay in theory". FEAT-318 lands first.
 
 ## Summary
 Owner's words:
@@ -38,6 +38,10 @@ BUG-243 (the service station's pad) is the first case of the same thing.
 - [ ] BUG-243 closes with it, or separately
 - [ ] MESH == PHYSICS; fingerprint-world shows only the pads
 - [ ] Owner has looked
+
+## Decisions
+- 2026-11-24, owner (card feat302-pad-sizes-pick): "I'm not a huge fan of how this turned out. I'm okay with option B in theory. All I see from these photos is an ugly texture square printed on the road next to POIs and some of them are set back. By definition, setting back a POI means it's easier to drive to it and the transition is more natural. If we're going to build driveways, they need to connect to the road With what is effectively a junction, meaning they need to carry the roads at normal, and then blend it to the pads normal. The entire Portion from the edge of the road ribbon to the POI pad needs to be marked so it's clear where the \"driveable\" area is."
+  Orchestrator's reading, not the owner's words: at the road end the driveway surface takes the road's own surface normal (its camber and grade) and blends to the pad's normal along its length, like a junction mouth; and the surface from the ribbon edge to the pad is visibly marked as drivable.
 
 ## Open questions
 - CONFLICT to check, BUG-214 (pads and camp pads make spiky walls on the perimeter) and FEAT-71 (POI satellite placement: lawn furniture and yard clutter placed around a POI). Moving the pad changes the zone those solvers fill; the owner or builder confirms they are reworked with it.

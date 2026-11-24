@@ -38,6 +38,11 @@
 //
 // Flags: --a=<checkout> (default this one) --b=<checkout> [--c=<checkout>] --reps=N --seeds=K (first K pinned) | --seed=N
 //        --drive=S --map=S --park=S --headed --out=DIR (default perf-runs/bench-<stamp>) --record
+//        --quality=<Low|Normal|High|Ultra>  the preset (window.__q) applied once story is live, then the terrain left to
+//                  settle before the drive (PERF-55). Without it: the tier the app boots with (Normal), nothing applied.
+//                  High at the owner's full-screen canvas: --quality=High --window=1710,1194 (3420 × 2214 px).
+//        --window=W,H  Chrome's window in CSS px (default 1045,700: the owner's 2090 × 1226 canvas at dpr 2). Normal caps
+//                  the render at 1200 lines, High/Ultra render device-native, so the pixel count is the window's.
 //        --probe   count road resolves per second (PERF-42) and list the CSS animations running (PERF-48) — wraps a hot
 //                  path, so its ms are not for comparing
 //        --fake-audio  Chrome's --disable-audio-output (a fake sink whose clock runs at 1.0 s/s): for a host whose
@@ -68,6 +73,8 @@ const REPS = +arg('reps', 1), DRIVE_S = +arg('drive', 300), MAP_S = +arg('map', 
 // 2.5 km (8.3 m/s average) and 38 chunks at the default 300 s. The bar was 3 km until 2026-11-12: seed 17535907's roads are
 // slow (2.6–3.5 km over six sessions), and the owner kept the seed and lowered the bar.
 const MIN_KM = DRIVE_S / 120, MIN_CHUNKS = Math.round(DRIVE_S / 8)
+const QUALITY = arg('quality', 'Normal'), WINDOW = arg('window', '1045,700')
+if (!['Low', 'Normal', 'High', 'Ultra'].includes(QUALITY)) { console.error(`--quality=${QUALITY}: Low, Normal, High or Ultra`); process.exit(1) }
 const BUILDS = [{ name: 'A', dir: resolve(arg('a', ROOT)) }, ...['b', 'c'].filter(k => arg(k)).map(k => ({ name: k.toUpperCase(), dir: resolve(arg(k)) }))]
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
 const OUT = resolve(arg('out', join(ROOT, 'perf-runs', `bench-${stamp}`)))
@@ -107,7 +114,10 @@ function psSample () {
       else if (p.type === 'gpu-process') by.gpu += pct
       else by.other += pct
     }
-    procs.push({ t, ...by })
+    // macOS thermal pressure, no root (0 nominal, 1 moderate, 2 heavy, 3 trapping, 4 sleeping): what a fanless Air's
+    // throttling shows as, beside the clocks (gpuMHz, mainGHz) that it lowers (PERF-55).
+    let therm = null; try { therm = +/(\d+)\s*$/.exec(execFileSync('notifyutil', ['-g', 'com.apple.system.thermalpressurelevel']).toString())[1] } catch {}
+    procs.push({ t, ...by, therm })
   }
   psPrev = { t, now }
 }
@@ -382,7 +392,7 @@ async function traceStop (client, path) {
 // ── one session: boot, story, the three phases ────────────────────────────────────────────────────────────────────
 async function session (build, seed, rep) {
   const cdp = await freePort()
-  const { chrome, cleanup } = launchChrome('about:blank', { port: cdp, headed: has('headed'), windowSize: '1045,700', extraArgs: ['--force-device-scale-factor=2', ...(has('fake-audio') ? ['--disable-audio-output'] : [])] })
+  const { chrome, cleanup } = launchChrome('about:blank', { port: cdp, headed: has('headed'), windowSize: WINDOW, extraArgs: ['--force-device-scale-factor=2', ...(has('fake-audio') ? ['--disable-audio-output'] : [])] })
   psRoot = chrome.pid; psPrev = null
   const client = await connect({ port: cdp, cmdTimeoutMs: 120000 })
   await client.cmd('Runtime.enable')
@@ -411,6 +421,14 @@ async function session (build, seed, rep) {
     const audioS = await js(`(async () => { const wait = ms => new Promise(r => setTimeout(r, ms)), c = new AudioContext()
       await Promise.race([c.resume(), wait(1000)]); const t = c.currentTime; await wait(1000); const d = c.currentTime - t; c.close(); return d })()`)
     if (!(audioS > 0.5)) throw new Error(`the host's audio clock is stalled (${(audioS ?? 0).toFixed(3)} s per 1 s wall): restart coreaudiod, then rerun`)
+    // PERF-55: the preset, then the bigger ring left to stream in (both queues empty twice running, 90 s cap) so the drive
+    // does not open on the ring's fill. Without --quality nothing is applied: the boot tier (Normal), as before PERF-55.
+    let calm = 0
+    if (arg('quality')) {
+      await js(`window.__q('${QUALITY}')`)
+      await until(async () => (await js('(T => T._pendingWorker.size === 0 && T._pendingQueue.length === 0)(window.__terrain())') ? ++calm : (calm = 0)) >= 2, 90000, 1000)
+    }
+    const canvas = await js('(c => [c.width, c.height])(window.__renderer().domElement)')
     const dlg = () => js('getComputedStyle(document.getElementById("dialogue-panel")).display !== "none"')
     for (let i = 0; i < 30 && await dlg(); i++) { await tap('Enter'); await sleep(300) }
     // FEAT-184/289: the firing ends on the tutorial card, which holds the sim; a player who skips clicks skip (twice on a
@@ -463,8 +481,8 @@ async function session (build, seed, rep) {
     r.drive = { km: +(B.dist / 1000).toFixed(2), newChunks: B.chunks, recoveries: B.recov, dialogues: B.dialogues, edges: info.edges, region: info.region }
     r.valid = r.drive.km >= MIN_KM && r.drive.newChunks >= MIN_CHUNKS
     r.errors = errors.slice(0, 5)
-    Object.assign(r, { build: build.name, dir: build.dir, commit: build.commit, branch: build.branch, dirty: build.dirty, seed, rep, load })
-    console.log(`${tag}: ${r.valid ? 'ok' : 'INVALID'} — ${r.drive.km} km, ${r.drive.newChunks} new chunks, ${r.drive.recoveries.length} recoveries, ${r.drive.dialogues} dialogues closed · load ${load}/core`)
+    Object.assign(r, { quality: QUALITY, canvas, build: build.name, dir: build.dir, commit: build.commit, branch: build.branch, dirty: build.dirty, seed, rep, load })
+    console.log(`${tag}: ${r.valid ? 'ok' : 'INVALID'} — ${r.drive.km} km, ${r.drive.newChunks} new chunks, ${r.drive.recoveries.length} recoveries, ${r.drive.dialogues} dialogues closed · ${QUALITY} ${canvas.join(' × ')} px · load ${load}/core`)
     for (const ph of ['drive', 'map', 'park']) console.log('   ' + line(ph, r.phases[ph]))
     return r
   } catch (e) {
@@ -524,6 +542,8 @@ function summarise (B, win, recalc = {}) {
       recalcS: +mean(rcN).toFixed(1), recalcP50: +pct(rcN, 0.5).toFixed(0), recalcP99: +pct(rcN, 0.99).toFixed(0), recalcWorst: +Math.max(...rcN, 0).toFixed(0),
       recalcMs: +mean(rcMs).toFixed(1),
       fps: +mean(S.map(s => s.frames)).toFixed(1), p95: +pct(fr, 0.95).toFixed(1), worst: +Math.max(...fr, 0).toFixed(1),
+      // PERF-55: per SECOND, not per phase — the median second's fps, the share of seconds under 55 fps; the p99 frame
+      fpsP50: pct(S.map(s => s.frames), 0.5), under55: +(S.filter(s => s.frames < 55).length / Math.max(1, S.length) * 100).toFixed(1), p99: +pct(fr, 0.99).toFixed(1),
       mainMs: +main.toFixed(0),
       // the main thread's WORK (threadcounts.py): Minstr/s, CPU ms/s, the share of that CPU time on P cores, its clock
       mainMi: +(sum('mi') / Math.max(1, Sw.length)).toFixed(0), mainCpuMs: +(sum('cpuMs') / Math.max(1, Sw.length)).toFixed(0),
@@ -532,22 +552,23 @@ function summarise (B, win, recalc = {}) {
       cpuW: +mean(W.map(p => p.cpuW)).toFixed(2), gpuW: +mean(W.map(p => p.gpuW)).toFixed(2), dramW: +mean(W.map(p => p.dramW)).toFixed(2),
       gpuMcyc: +mean(W.map(p => (p.gpuBusy ?? 0) / 100 * (p.gpuMHz ?? 0))).toFixed(0), gpuMHz: +mean(W.map(p => p.gpuMHz ?? 0)).toFixed(0),
       rendererPct: +mean(Pr.map(p => p.renderer)).toFixed(0), gpuProcPct: +mean(Pr.map(p => p.gpu)).toFixed(0), otherPct: +mean(Pr.map(p => p.other)).toFixed(0),
+      thermMax: Math.max(...Pr.map(p => p.therm ?? 0), 0), thermPct: +(Pr.filter(p => p.therm > 0).length / Math.max(1, Pr.length) * 100).toFixed(0),
       workersPct: +(mean(Pr.map(p => p.renderer)) - main / 10).toFixed(0),   // renderer − main thread (ms/s ÷ 10 = % of a core)
       ktris: +(mean(S.map(s => s.tris)) / 1000).toFixed(0), calls: +mean(S.map(s => s.calls)).toFixed(0),
     }
   }
   return { phases }
 }
-const line = (ph, x) => `${ph.padEnd(5)} ${String(x.fps).padStart(4)} fps p95 ${String(x.p95).padStart(5)} worst ${String(x.worst).padStart(5)} | main ${String(x.mainMs).padStart(4)} ms/s = ${x.mainMi} Minstr/s (${x.mainCpuMs} CPU ms, ${x.mainPpct} % on P, ${x.mainGHz} GHz) | `
+const line = (ph, x) => `${ph.padEnd(5)} ${String(x.fps).padStart(4)} fps (p50 s ${x.fpsP50}, ${x.under55} % s < 55) p95 ${String(x.p95).padStart(5)} p99 ${x.p99} worst ${String(x.worst).padStart(5)} | main ${String(x.mainMs).padStart(4)} ms/s = ${x.mainMi} Minstr/s (${x.mainCpuMs} CPU ms, ${x.mainPpct} % on P, ${x.mainGHz} GHz) | `
   + (x.physN !== undefined ? `physics/s over ${x.physN} moving s: p50 ${x.physP50} p99 ${x.physP99} worst ${x.physWorst}, ${x.physOver100} % > 100 ms · work p50 ${x.physMiP50} p99 ${x.physMiP99} worst ${x.physMiWorst} Minstr, ${x.physMiOver} % > ${PHYS_SPIKE_MI} | ` : '')
   + (x.postWorst !== undefined ? `postStream/s p95 ${x.postP95} worst ${x.postWorst} | ` : '')
   + (x.recalcS ? `recalc/s ${x.recalcS} (p50 ${x.recalcP50} p99 ${x.recalcP99} worst ${x.recalcWorst}) ${x.recalcMs} ms/s | ` : '')
-  + `rend ${x.rendererPct}% (workers ~${x.workersPct}%) gpuP ${x.gpuProcPct}% | CPU ${x.cpuW} W GPU ${x.gpuW} W DRAM ${x.dramW} W | GPU ${x.gpuMcyc} Mcyc/s @ ${x.gpuMHz} MHz | ${x.ktris}k tris`
+  + `rend ${x.rendererPct}% (workers ~${x.workersPct}%) gpuP ${x.gpuProcPct}% | CPU ${x.cpuW} W GPU ${x.gpuW} W DRAM ${x.dramW} W | GPU ${x.gpuMcyc} Mcyc/s @ ${x.gpuMHz} MHz | therm ${x.thermMax} (${x.thermPct} % > 0) | ${x.ktris}k tris`
 
 // ── run: A-B-A-B per rep and seed ─────────────────────────────────────────────────────────────────────────────────────
 console.log(`PERF-40 bench → ${OUT}`)
 for (const b of BUILDS) console.log(`  ${b.name}: ${b.dir} ${b.branch}@${b.commit}${b.dirty ? ' (uncommitted src/data changes)' : ''}`)
-console.log(`  seeds ${SEEDS.join(', ')} · reps ${REPS} · drive ${DRIVE_S} s (valid ≥ ${MIN_KM} km, ≥ ${MIN_CHUNKS} new chunks) · map ${MAP_S} s · park ${PARK_S} s\n`)
+console.log(`  quality ${QUALITY} · window ${WINDOW} CSS px at dpr 2\n  seeds ${SEEDS.join(', ')} · reps ${REPS} · drive ${DRIVE_S} s (valid ≥ ${MIN_KM} km, ≥ ${MIN_CHUNKS} new chunks) · map ${MAP_S} s · park ${PARK_S} s\n`)
 const results = []
 for (let rep = 0; rep < REPS; rep++) for (const seed of SEEDS) {
   const order = rep % 2 ? [...BUILDS].reverse() : BUILDS
@@ -555,7 +576,7 @@ for (let rep = 0; rep < REPS; rep++) for (const seed of SEEDS) {
 }
 
 // ── report: per build and phase, the mean over valid sessions; the noise band is the spread between reps ─────────────
-const KEYS = ['fps', 'p95', 'mainMs', 'mainMi', 'mainPpct', 'recalcS', 'recalcMs', 'workersPct', 'cpuW', 'gpuW', 'gpuMcyc', 'dramW', 'physP99', 'physOver100', 'physMiP99', 'physMiOver', 'postWorst']   // the last five: one phase each
+const KEYS = ['fps', 'fpsP50', 'under55', 'p95', 'p99', 'thermMax', 'mainMs', 'mainMi', 'mainPpct', 'recalcS', 'recalcMs', 'workersPct', 'cpuW', 'gpuW', 'gpuMcyc', 'dramW', 'physP99', 'physOver100', 'physMiP99', 'physMiOver', 'postWorst']   // the last five: one phase each
 const agg = {}
 for (const b of BUILDS) for (const ph of ['drive', 'map', 'park']) {
   const rs = results.filter(r => r.build === b.name && r.valid)
@@ -579,7 +600,7 @@ for (const ph of ['drive', 'map', 'park']) {
   }
 }
 if (BUILDS.length > 1) console.log('(~ = within the noise band)')
-writeFileSync(join(OUT, 'summary.json'), JSON.stringify({ builds: BUILDS.map(({ name, dir, commit, branch, dirty }) => ({ name, dir, commit, branch, dirty })), seeds: SEEDS, reps: REPS, agg }, null, 1))
+writeFileSync(join(OUT, 'summary.json'), JSON.stringify({ quality: QUALITY, window: WINDOW, builds: BUILDS.map(({ name, dir, commit, branch, dirty }) => ({ name, dir, commit, branch, dirty })), seeds: SEEDS, reps: REPS, agg }, null, 1))
 
 // ── health check: one line per build into the committed history, compared with the last line for that branch ──────────
 if (has('record')) {
@@ -587,10 +608,11 @@ if (has('record')) {
   mkdirSync(dirname(H), { recursive: true })
   const prev = existsSync(H) ? readFileSync(H, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : []
   for (const b of BUILDS) {
-    const rec = { t: new Date().toISOString(), commit: b.commit, branch: b.branch, dirty: b.dirty, seeds: SEEDS, reps: REPS, drive: DRIVE_S,
+    const rec = { t: new Date().toISOString(), quality: QUALITY, window: WINDOW, commit: b.commit, branch: b.branch, dirty: b.dirty, seeds: SEEDS, reps: REPS, drive: DRIVE_S,
       valid: results.filter(r => r.build === b.name && r.valid).length, of: results.filter(r => r.build === b.name).length,
       phases: Object.fromEntries(['drive', 'map', 'park'].map(ph => [ph, Object.fromEntries(KEYS.map(k => [k, +(agg[`${b.name}.${ph}`][k] ?? NaN).toFixed(2)]))])) }
-    const last = prev.filter(p => p.drive === DRIVE_S && p.valid > 0).at(-1)
+    // a row before PERF-55 has no quality or window: it ran at the boot tier (Normal) in the default window
+    const last = prev.filter(p => p.drive === DRIVE_S && p.valid > 0 && (p.quality ?? 'Normal') === QUALITY && (p.window ?? '1045,700') === WINDOW).at(-1)
     if (last) {
       const worse = []
       for (const ph of ['drive', 'map', 'park']) for (const k of ['mainMi', 'cpuW', 'gpuW', 'gpuMcyc']) {   // work, not mainMs: ms follows the core (a record without mainMi skips it)
