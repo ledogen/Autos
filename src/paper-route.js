@@ -350,6 +350,42 @@ export class TourGuide {
 }
 
 /**
+ * BUG-118 / BUG-260: guidance that follows the truck. Once it is RR_PARAMS.offM off a line for RR_PARAMS.offS, the line is
+ * re-planned (plan(leg), by the caller) from the truck to the same destination. Guidance only: a job's route, par and
+ * arrival never read it. A re-plan waits until the truck has moved offM from the last one, so a truck parked off the
+ * tarmac does not plan every 2 s. `leg` is { base, ... } (base = the line in play); the tutorial's, the waypoint's and a
+ * job's (BUG-260: it was fixed at accept) GPS lines all go through one instance.
+ */
+export class StrayGuide {
+    constructor () { this.detour = null; this.offAt = 0 }   // detour: { base, route, x, z }
+    /** The line to show for `base`: its re-plan from the truck when there is one. */
+    line (base) { return this.detour && this.detour.base === base ? this.detour.route : base }
+    tick (leg, v, nowMs, plan) {
+        if (!leg) { this.detour = null; this.offAt = 0; return }
+        const poly = this.line(leg.base)?.poly
+        if (!poly?.length) return
+        let off = Infinity
+        for (const p of poly) off = Math.min(off, Math.hypot(p.x - v.x, p.z - v.z))
+        if (off <= RR_PARAMS.offM) { this.offAt = 0; return }
+        this.offAt ||= nowMs
+        if (nowMs - this.offAt < RR_PARAMS.offS * 1000) return
+        const d = this.detour
+        if (d?.base === leg.base && Math.hypot(v.x - d.x, v.z - d.z) < RR_PARAMS.offM) return
+        this.offAt = 0
+        const route = plan(leg)
+        // No plan (the truck off every road): keep the line, and the spot it failed at.
+        this.detour = { base: leg.base, route: route?.segments?.length ? route : this.line(leg.base), x: v.x, z: v.z }
+    }
+}
+
+/** BUG-260: the planner stop at a route's far end (its last segment's end, on the road), or null: the door a re-plan aims at. */
+export function routeEndDoor (road, route) {
+    const g = route?.segments?.at(-1)
+    const p = g?.centerline?.pointAt(g.s1)
+    return p && roadOrigin(road, p) && { ...roadOrigin(road, p), id: 'route-end' }
+}
+
+/**
  * FEAT-266/267: THE GUIDE — the shortest tour from the truck through `stops`, as a resumable planTourJob, or null when the
  * truck is off the network or nothing is left. Every stop is wanted: the job's own N, never a subset. The paper round's
  * re-plan (PaperRouteSystem._startReplan) and a demolition site's (main.js _updateSite, DEC-399) both plan through here.
