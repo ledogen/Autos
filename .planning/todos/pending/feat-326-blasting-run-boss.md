@@ -10,7 +10,7 @@ source: owner, 2026-11-23 — "Then we'll have to come up with a better boss fig
 # FEAT-326: The blasting run — one boss mission for the arc trial
 
 ## Next steps
-- DESIGN ONLY. Nothing is built. The owner and the orchestrator are still in question rounds.
+- DESIGN ONLY for the boss itself. Step 1 is built on `land/feat-326-rock-rest-cost`: our own JavaScript cost per resting rock (lever 3), a pure win for today's slides, awaiting landing.
 - Rigid-body ceiling measured (§ Research below): ≈ 300 rocks per slide (≤ 400 awake), ≈ 1500 total, one slide awake at a time.
   Owner calls it raises: a collider simpler than the drawn rock (12-vertex hull, 2.2× cheaper) and ~1500 rocks against DEC-400's 5–15.
 
@@ -67,6 +67,7 @@ Design as agreed so far (owner's answers, 2026-11-23):
 
 ## Tracker
 - [x] Rigid-body ceiling researched and measured (§ Research: rigid-body ceiling).
+- [x] Lever 3 built: the wheel query asks the engine's broad phase, the pose cache and debris sync follow the engine's move events.
 - [ ] Census: how much the route's bends and grade still vary at constant par, over random seeds.
 - [ ] Seven rock sizes (asset tickets).
 - [ ] Charges: throw, blast impulse, split and delete rules.
@@ -95,6 +96,10 @@ FEAT-325 (the arc trial build) · FEAT-103 (the 5-mission expedition camp, kept 
 - 2026-11-23: design rounds with the owner; this ticket holds the state so far.
 - 2026-11-24: rigid-body ceiling measured, `test/rigid-body-ceiling.mjs` (rainy-day). Node only, busy machine (load 3–5), 3 reps each.
   Not measured: GPU, browser timing, the unbuilt grid/move-event fixes.
+- 2026-11-24, lever 3 built (branch land/feat-326-rock-rest-cost). `contactSphere(dynamicOnly)` takes candidates from the engine's broad phase (`b3World_OverlapAABB`, its dynamic AABB tree) in creation order; the pose cache and `DebrisSystem.beforeStep/update` skip bodies with no move event (`poseRev`).
+  1600 rocks, ms/step, median of 3 (spread): at rest wheel walk 0.816 (0.709–0.927) → 0.019 (0.018–0.022), debris sync 0.906 (0.663–0.940) → 0.147 (0.130–0.178);
+  driving through 0.952 → 0.126 and 1.012 → 0.199. 400: rest 0.182 → 0.012, 0.166 → 0.020. 150: rest 0.063 → 0.012, 0.050 → 0.005. Step totals are load noise (no-rock base 11–20 ms).
+  Identity: fingerprint-physics identical; slide settle + blast + drive-through at 150 and 400 rocks bit-identical (truck, every rock pose, every wheel hit); the drawn rotation of a resting rock differs by ≤ 1.1e-16.
 
 ## Research: rigid-body ceiling
 2026-11-23/24, branch `scratch/feat-326-rigid-body-ceiling`, nothing in `src/` changed. Harness: `test/rigid-body-ceiling.mjs`
@@ -262,7 +267,7 @@ the pile asleep, with every rock `setEnabled(false)`, and with the rocks destroy
 |---|---|---|---|
 | 1 | Keep slides apart, and asleep or uncreated until approached | Asleep = disabled = empty: 0.006–0.007 ms at 1600. A local 3 m charge vs the whole pile: 742 → 443 ms per blast at N 400, 3193 → 1300 at 1600, and asleep at 5 s instead of 15. | The biggest lever. Slides need gaps so each is its own island, and one charge wakes its whole slide, so cap a slide at the awake budget (≤ 400). |
 | 2 | Simpler collider | Engine ms per blast at N 400: hull42 742 · oblong hull42 520 · **hull12 339 (2.2×)** · **box 237 (3.1×)** · sphere 394. hull12 and box settle in 4–9 s vs 23–30. | A 12-vertex hull (the subdiv-0 blob) is the cheap win. **Spheres are the worst:** they roll on the road and never sleep (rest 3.2 ms at 1600 vs 0.007). A hull simpler than the drawn mesh breaks MESH == PHYSICS exactly, so that is an owner call. |
-| 3 | Our own JavaScript: the wheel walk and the debris sync | 1.8–2.8 ms of the 1600-rock rest cost; scales linearly. | **This is where the owner's grid idea applies.** `contactSphere` walks every dynamic body 20× per step, and a grid of cells would cut that to the rocks near the wheels. Sync only the bodies in the engine's `b3BodyMoveEvent` list (it lists only bodies that moved). Est. gain ~1.8–2.8 ms → ~0 at 1600; not built. |
+| 3 | Our own JavaScript: the wheel walk and the debris sync | 1.8–2.8 ms of the 1600-rock rest cost; scales linearly. | **This is where the owner's grid idea applies.** `contactSphere` walks every dynamic body 20× per step, and a grid of cells would cut that to the rocks near the wheels. Sync only the bodies in the engine's `b3BodyMoveEvent` list (it lists only bodies that moved). Est. gain ~1.8–2.8 ms → ~0 at 1600. **Built 2026-11-24** (Log): the engine's own AABB tree, not a grid. |
 | 4 | Substeps 8 → 4 | Per blast: 742 → 615 ms (−17 %) at N 400, 3193 → 2434 (−24 %) at 1600 | World-wide: it changes the truck too (`physics.js` Step 3e explains the 8). Not recommended. |
 | 5 | Sleep threshold 0.05 → 0.15 / 0.3 m/s | 742 → 727 / 743 ms at N 400; 3193 → 3015 / 2928 at 1600, within the spread | No gain. The island's time-to-sleep decides, not the threshold. |
 | 6 | Split only on blast, delete small rocks | Spawn costs ≈ 0.05 ms a rock (1600 in 80–280 ms); cost ∝ N awake | Spawning fragments only when a charge hits is free until then. A split of 50 rocks costs ~2.5 ms in one frame: spread it over 2–3 frames. Deleting a small rock removes its share outright. |
