@@ -1357,6 +1357,16 @@ function _paintAlerts (dt) {
   if (a && el.textContent !== a.text) { el.textContent = a.text; el.classList.toggle('bad', !!a.bad) }
   el.style.opacity = a ? '1' : '0'
 }
+// BUG-204: the alert strip's rows sit under the job stack whatever it holds (index.html --job-stack-b). Written on a
+// size change only; an empty stack (no job) unsets it, so the rows keep their own % heights.
+{
+  const stack = document.getElementById('job-stack')
+  if (stack) new ResizeObserver(() => {
+    const h = stack.offsetHeight
+    if (h > 0) document.body.style.setProperty('--job-stack-b', `${stack.offsetTop + h + 8}px`)
+    else document.body.style.removeProperty('--job-stack-b')
+  }).observe(stack)
+}
 
 // ── FEAT-33 "hold I to start the truck" hint ──────────────────────────────────────────────
 // Raised by vehicle.js whenever the driver asks for throttle with the key off. Re-raised every
@@ -1700,10 +1710,11 @@ function _setSetupMode (mode) {
 /** The new-game page, opened on story — the mode is never remembered (owner, 2026-10-31). */
 function _openSetup () {
   _setSetupMode('story')
-  // Always blank (owner, 2026-09-06): pre-filling the standing seed would quietly make "just press
-  // start" mean "replay the same world forever".
+  // Blank (owner, 2026-09-06): pre-filling the standing seed would quietly make "just press
+  // start" mean "replay the same world forever". A link's ?seed= is the one exception (DEC-483):
+  // whoever opened it asked for that world.
   const inp = document.getElementById('su-seed')
-  if (inp) inp.value = ''
+  if (inp) inp.value = _urlSeed ?? ''
   _renderSelectors()
   document.getElementById('main-menu')?.classList.add('setup')
 }
@@ -4651,7 +4662,7 @@ missionSystem = new MissionSystem({
       const lines = offerBoard?.lines() ?? []
       // expedition-rewards option 2 (owner, 2026-11-07): a line at A or better hands supplies back for the lines still to go.
       const sup = delivered && 'AS'.includes(result.letter) && lines.some(l => l.state !== 'done') ? LINE_SUPPLY[mission.line] : null
-      if (sup?.item) inventorySystem.grant(sup.item)
+      if (sup?.item) inventorySystem.grant(sup.item, 1, null, 'job:supply')
       if (sup?.freeRepair) runEconomy.freeRepairs = (runEconomy.freeRepairs ?? 0) + sup.freeRepair
       if (sup?.rest) daySystem.setEnergy(daySystem.fullEnergyH())
       result.line = { delivered, done: lines.filter(l => l.state === 'done').length, of: lines.length, supply: sup?.text ?? null,
@@ -4914,7 +4925,7 @@ function _tossPack () {
 let _eveSpare = null   // { granted } once the spare was made flat
 function _flatSpare () {
   let i = inventorySystem.list().findIndex(r => r.id === 'spareTire'), granted = false
-  if (i < 0 && inventorySystem.grant('spareTire') === 'taken') { i = inventorySystem.list().findIndex(r => r.id === 'spareTire'); granted = true }
+  if (i < 0 && inventorySystem.grant('spareTire', 1, null, 'tutorial') === 'taken') { i = inventorySystem.list().findIndex(r => r.id === 'spareTire'); granted = true }
   if (i >= 0) { inventorySystem.amend(i, { flat: true }); _eveSpare = { granted } }
 }
 
@@ -5416,7 +5427,7 @@ const _lunches = () => inventorySystem.list().filter(r => r.id === 'packedLunch'
  *  starts on mom's three packed lunches (FEAT-173, items.md §1d). DEC-422/426: a played tutorial gets them at breakfast
  *  (four, one eaten there), so a run that opens on the firing has none until then; a skip, the tutorial's end and the
  *  paper scenario top them up to three. */
-function _topUpLunches () { const n = 3 - _lunches(); if (n > 0) inventorySystem.grant('packedLunch', n) }
+function _topUpLunches () { const n = 3 - _lunches(); if (n > 0) inventorySystem.grant('packedLunch', n, null, 'tutorial') }
 
 function _checkOpeningEnd () {
   if (_paperScenario || !offerBoard || storySystem.isEntering()) return   // FEAT-62: the scenario has no opening to end
@@ -6419,11 +6430,8 @@ const _RC_LABEL = {
 // FEAT-307 (DEC-450): a tow is asked for twice. The card's tow buttons only name the tow (`_rcAsk`); the card then shows its
 // price and time with "tow" and "back", and only "tow" calls it. Closing the card forgets the ask.
 let _rcAsk = null
-const _RC_GO = { towFuel: _towToFuel, towShop: _towToShop }
-const _RC_ACT = {
-  towFuel: () => { _rcAsk = 'towFuel'; _updateRecovery() }, towShop: () => { _rcAsk = 'towShop'; _updateRecovery() },
-  towGo: () => { const go = _RC_GO[_rcAsk]; _rcAsk = null; go?.() },
-  towBack: () => { _rcAsk = null; _updateRecovery() },
+const _RC_GO = {
+  towFuel: _towToFuel, towShop: _towToShop,
   tireService: () => {   // FEAT-162 amendment 5: fixed where it stands; the wait and the fitting on the clock
     const q = _recoveryState().tireService
     if (!q || !economySystem.spend(q.price)) return
@@ -6431,6 +6439,12 @@ const _RC_ACT = {
     _recoveryOpen = false
     _afterRoadsideWork(q.hours)
   },
+}
+const _RC_ACT = {
+  towFuel: () => { _rcAsk = 'towFuel'; _updateRecovery() }, towShop: () => { _rcAsk = 'towShop'; _updateRecovery() },
+  tireService: () => { _rcAsk = 'tireService'; _updateRecovery() },   // DEC-479: the tire service is asked for twice too
+  towGo: () => { const go = _RC_GO[_rcAsk]; _rcAsk = null; go?.() },
+  towBack: () => { _rcAsk = null; _updateRecovery() },
 }
 
 /** What the Recovery card reads (src/recovery.js recoveryCard) — the truck, the wallet, the tows. */
@@ -6511,8 +6525,8 @@ function _updateRecovery () {
   if (!ask) _rcAsk = null
   const html = ask   // FEAT-307 [DEFAULT] wording
     ? `<div class="rc-head">${c.head}</div><div class="rc-dim">${_RC_LABEL[ask.act](ask)}</div>`
-      + `<div class="rc-dim">${formatGameDuration(ask.tow.hours)} on the hook</div>`
-      + `<button class="rc-opt" data-act="towGo">call the tow &mdash; $${formatMoney(ask.tow.price)}</button>`
+      + `<div class="rc-dim">${formatGameDuration(ask.tow.hours)} ${ask.act === 'tireService' ? 'to come out and fit it' : 'on the hook'}</div>`   // DEC-479 [DEFAULT] wording
+      + `<button class="rc-opt" data-act="towGo">call the ${ask.act === 'tireService' ? 'tire service' : 'tow'} &mdash; $${formatMoney(ask.tow.price)}</button>`
       + `<button class="rc-opt" data-act="towBack">back</button><div class="rc-dim">you have $${formatMoney(money)}</div>`
     : `<div class="rc-head">${c.head}</div>`
     + c.opts.filter(o => _RC_LABEL[o.act]).map(o => `<button class="rc-opt" data-act="${o.act}"${o.enabled ? '' : ' disabled'}>${_RC_LABEL[o.act](o)}</button>`
@@ -7324,7 +7338,7 @@ function _sleepAtCamp () {
     daySystem.sleep(hours, vibe, _campRest(_campUi))
     _endEvening()   // FEAT-170: any night ends the opening's evening
     // Stage 4, the morning: breakfast if you slept at hers (the evening's end above has fed you), then her card.
-    if (evening && atMoms && _lunches() < TUT_PARAMS.breakfastLunches) inventorySystem.grant('packedLunch', TUT_PARAMS.breakfastLunches - _lunches())   // DEC-426 (Q4)
+    if (evening && atMoms && _lunches() < TUT_PARAMS.breakfastLunches) inventorySystem.grant('packedLunch', TUT_PARAMS.breakfastLunches - _lunches(), null, 'tutorial')   // DEC-426 (Q4)
     if (evening && atMoms) _tut('tut-breakfast')
     // FEAT-33: you turned the key off to make camp, so you wake to a dead truck and start the
     // morning by starting it. This is the diegetic bookend the ignition exists for (SM-INV-6) —
@@ -7418,8 +7432,6 @@ function _syncSleepRow () {
     e.innerHTML = `energy ${now.toFixed(1)} → ${wake.toFixed(1)} / ${full.toFixed(0)} h`
       + `  ·  wake <span style="color:${STAGE_COLOR[daySystem.stageFor(wake)]}">${daySystem.stageFor(wake)}</span>`
       + (daySystem.coffeeDebt() > 0 ? `  ·  coffee debt ${daySystem.coffeeDebt().toFixed(0)} h at wake` : '')
-      // FEAT-310 (DEC-449) [DEFAULT]: the food this sleep would outlast. Item names are catalog strings.
-      + inventorySystem.spoilingWithin(h).map(x => `<br>the ${x.name.toLowerCase()} spoils in ${formatGameDuration(x.h)}`).join('')
   }
 }
 
@@ -8856,7 +8868,7 @@ function _syncItemChoice () {
 function _takeItem (sys, done) {
   const aw = sys.state === 'done' ? sys.result?.award : null
   if (!aw || aw.stowed || !inventorySystem.fits(aw.rewardId) || !economySystem.spend(aw.cost)) return
-  aw.stowed = inventorySystem.grant(aw.rewardId)
+  aw.stowed = inventorySystem.grant(aw.rewardId, 1, null, 'job:reward')
   done()
 }
 document.getElementById('mp-item')?.addEventListener('click', () => _takeItem(missionSystem, () => missionSystem.exit()))
@@ -10006,10 +10018,11 @@ const storySystem = new StorySystem({
     if (_pendingResume) { _restoreRun(_pendingResume); _pendingResume = null }
     else if (_paperScenario) { runPaper.tier = PAPER_PARAMS.tiers.length - 1; _seatAt(_larry()) }   // FEAT-62: every rung open (owner 11-06)
     else _seatAt(_joint())
-    runLog.on && runLog.start(_openingRun ? 'new' : _paperScenario ? 'scenario' : 'resume')   // FEAT-242
+    runLog.start(_openingRun ? 'new' : _paperScenario ? 'scenario' : 'resume')   // FEAT-242
   },
   /** FEAT-46: leaving story mode — drop the pads before releaseRegion() re-bakes without them. */
   onRegionExit: () => {
+    runLog.stop()   // FEAT-242 (DEC-481): the run is left; what is held is stored (a save & exit / run-end click downloads it)
     if (_paperScenario) {   // FEAT-62: leaving the scenario's region ends the scenario (nothing carries out)
       _paperScenario = null
       document.getElementById('scenario-panel').style.display = 'none'
@@ -10713,8 +10726,11 @@ function _upgradeRows (row) {
   if (!ups.length) return row('truck', 'stock', true)
   return ups.map((id, i) => row(i ? '' : 'truck', PARTS[id].name + (n[id] > 1 ? ` ×${n[id]}` : ''), !i)).join('')
 }
-document.getElementById('re-menu')?.addEventListener('click', _backToMenu)
+/** FEAT-242 (DEC-481): the run log's ONE download, from inside the click that ends or leaves the run (a click-started download is never blocked). */
+function _downloadRunLog () { if (runLog.enabled) void runLog.saveNow() }
+document.getElementById('re-menu')?.addEventListener('click', () => { _backToMenu(); _downloadRunLog() })
 document.getElementById('re-keep')?.addEventListener('click', () => {   // FEAT-296: the endless camp card hands the run back
+  _downloadRunLog()
   document.getElementById('run-end').style.display = 'none'
   _runEndOpen = false
 })
@@ -10837,7 +10853,9 @@ document.getElementById('pm-save')?.addEventListener('click', () => {
     document.getElementById('pm-save-why').textContent = _saveExitBlock() ?? 'could not save — browser storage is blocked'
     return
   }
+  runLog.on && runLog.event('saveExit', {})
   _backToMenu()
+  _downloadRunLog()
 })
 // Story mode is opt-in from this menu ONLY — a first-time visitor lands in free roam and is
 // never thrust into an unfinished mode. Switching the game mode also disables free-roam-only

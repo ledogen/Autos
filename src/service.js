@@ -466,7 +466,7 @@ export class ServiceCenter {
         if (!e || !this.spend(this.buyQuote(i).price)) return false
         this._usedMom(e.id, 'part', part)
         this.unstock(i)
-        this.inventory.grant(e.id, 1, e.cond === null ? null : { cond: e.cond })
+        this.inventory.grant(e.id, 1, e.cond === null ? null : { cond: e.cond }, 'shop')
         this.onChange()
         return true
     }
@@ -546,8 +546,8 @@ export class ServiceCenter {
         const q = this.beadQuote()
         if (!this.spend(q.price)) return false
         this.inventory.take(index)
-        this.inventory.grant(r.tire ?? m.tire, 1, { cond: r.cond, flat: r.flat })
-        this.inventory.grant(r.wheel ?? m.wheel, 1, { cond: r.wheelCond ?? null })
+        this.inventory.grant(r.tire ?? m.tire, 1, { cond: r.cond, flat: r.flat }, 'service:tire')
+        this.inventory.grant(r.wheel ?? m.wheel, 1, { cond: r.wheelCond ?? null }, 'service:tire')
         this.advanceHours(q.hours)
         this.onChange()
         return true
@@ -570,7 +570,7 @@ export class ServiceCenter {
         const q = this.beadQuote()
         if (!this.spend(q.price)) return false
         for (const i of [a, b].sort((x, y) => y - x)) this.inventory.take(i)   // the later one first: indices hold
-        this.inventory.grant('spareTire', 1, { tire: tire.id, cond: tire.cond, flat: tire.flat, wheel: wheel.id, wheelCond: wheel.cond })
+        this.inventory.grant('spareTire', 1, { tire: tire.id, cond: tire.cond, flat: tire.flat, wheel: wheel.id, wheelCond: wheel.cond }, 'service:tire')
         this.advanceHours(q.hours)
         this.onChange()
         return true
@@ -611,8 +611,9 @@ export class ServiceCenter {
      *  puncture (a full inventory → its swap prompt). Nothing is ever thrown away silently. */
     _swap (id, cond, socket, q) {
         const off = this.parts.fit(id, cond, socket)
+        runLog.on && runLog.event('fit', { act: 'service', id, socket, cond, off: off.id, offCond: off.cond })   // FEAT-324: the part taken off, as it was
         this.advanceHours(q.hours)
-        if (PARTS[off.id].massKg > 0) this.inventory.grant(off.id, 1, { cond: off.cond, flat: off.flat })
+        if (PARTS[off.id].massKg > 0) this.inventory.grant(off.id, 1, { cond: off.cond, flat: off.flat }, 'service:swap')
         this.onChange()
     }
 

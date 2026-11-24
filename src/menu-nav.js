@@ -70,15 +70,15 @@ let cur = null   // the highlighted item
 // keeps the highlight's place instead of starting over: the old node is DETACHED, not hidden.
 let curIdx = -1, curBox = null
 
-/** Move the highlight. `focus` (keys) also hands typing to an input; the mouse only moves the class. */
-function highlight (el, focus = true) {
+/** Move the highlight. `focus` (keys) also hands typing to an input; the mouse only moves the class. `scroll`: bring it into view. */
+function highlight (el, focus = true, scroll = focus) {
   cur?.classList.remove('nav-focus')
   if (focus && cur?.tagName === 'INPUT' && cur !== el) cur.blur()
   cur = el
   if (!el) return
   el.classList.add('nav-focus')
   if (focus && el.tagName === 'INPUT') el.focus()
-  if (focus) el.scrollIntoView?.({ block: 'nearest' })
+  if (scroll) el.scrollIntoView?.({ block: 'nearest' })
   // BUG-109: a screen that answers HOVER (the damage screen's part info card) gets the hover the
   // mouse would give it, at the item's centre — one code path, so the pad needs no screen of its own.
   if (focus) {
@@ -197,7 +197,9 @@ function wakeMenu () {
   const first = (f) => items.findIndex(f)
   const i = cur && !cur.isConnected && curBox === c ? Math.min(curIdx, items.length - 1)
     : [first(el => el.hasAttribute('data-primary')), first(el => !(el.tagName === 'INPUT' && el.type !== 'range')), 0].find(k => k >= 0)
-  highlight(items[i]); curBox = c; curIdx = i
+  // BUG-255: never scroll here. A card that re-renders on a click (the shop's rows) keeps its own scroll (DEC-455), and this
+  // re-highlight is of a stale index — scrolling to it threw the list back to the top on every open.
+  highlight(items[i], true, false); curBox = c; curIdx = i
 }
 
 /** Install once. gamepad.js asks pad.menuActive() each poll to pick its menu key map. */

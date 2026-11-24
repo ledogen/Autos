@@ -1356,7 +1356,6 @@
        a line below the machine's words. */
     #spawn-toast, #ignition-hint, #reset-countdown, #machine-word, #stranded-hint {
       position: fixed;
-      top: 8%;
       left: 50%;
       transform: translateX(-50%);
       color: var(--text-bright);
@@ -1371,15 +1370,15 @@
       transition: opacity 1s ease;
     }
     #ignition-hint .k { color: var(--key); }
-    #machine-word { top: 14%; color: var(--warn); }
+    #machine-word { color: var(--warn); }
     #machine-word.bad { color: var(--bad); }
-    #stranded-hint { top: 20%; }
-    /* BUG-204: while the rank tile is up (#rank-timer shown by main.js), the strip's words sit UNDER the job stack (rank
-       bar, tile, deed line: ~196 px tall at 1x, scaled by FEAT-248's zoom) instead of on top of the tile, "Wrong way"
-       and the GPS chevrons; the 8 % / 14 % / 20 % rows keep their spacing. */
-    body:has(#rank-timer[style*="block"]) :is(#spawn-toast, #ignition-hint, #reset-countdown) { top: 196px; }
-    body:has(#rank-timer[style*="block"]) #machine-word { top: 226px; }
-    body:has(#rank-timer[style*="block"]) #stranded-hint { top: 256px; }
+    /* BUG-204: the strip's rows never sit on the job stack (rank bar and tile, promise lines, a fragile load's bars,
+       "Wrong way" under the tile): each row is the lower of its own % and the stack's bottom (--job-stack-b, main.js
+       writes it from a ResizeObserver; unset with no job, so the 8 % / 14 % / 20 % rows stand). px rides FEAT-248's
+       zoom with the stack. */
+    :is(#spawn-toast, #ignition-hint, #reset-countdown) { top: max(8%, var(--job-stack-b, 0px)); }
+    #machine-word { top: max(14%, var(--job-stack-b, 0px) + 30px); }
+    #stranded-hint { top: max(20%, var(--job-stack-b, 0px) + 60px); }
     /* FEAT-47: the doze/blink overlay. Two eyelids that meet in the middle — a crossfade to black
        reads as a fade-out, closing lids read as a blink, which is the whole point. Above the HUD
        and panels, below the story loading screen (z 200). JS only ever writes the two transforms
