@@ -58,7 +58,8 @@ export function engineFor (fitted) {
     return {
         ...base,
         engine: e.engine,
-        engineTorqueCurve: [...rpms].sort((a, b) => a - b).map(r => [r, engineTorqueAt(r, c) * gain(r)]),
+        // An unmodded, untuned engine keeps its own curve object (free roam's stock V6 is bit-identical to main).
+        engineTorqueCurve: !mods.length && (e.torqueX ?? 1) === 1 ? c : [...rpms].sort((a, b) => a - b).map(r => [r, engineTorqueAt(r, c) * gain(r)]),
         engineInertia: mods.reduce((J, m) => J * (m.inertiaX ?? 1), base.engineInertia),
     }
 }
