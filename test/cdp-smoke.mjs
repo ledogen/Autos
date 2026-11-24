@@ -2314,15 +2314,15 @@ const STEPS = [
       const ux = q.roadX - b.x, uz = q.roadZ - b.z, l = Math.hypot(ux, uz)
       return { x: q.roadX + ux / l * 60, z: q.roadZ + uz / l * 60, h: Math.atan2(-ux, -uz) } })()`)
     await seat(away.x, away.z, away.h)
-    // DEC-475: Classic's one free tow — a run's first tow costs nothing. Spent here, so the dry truck below pays for its own.
+    // DEC-486: Classic has no free tow — a run's first tow is charged like any other.
     await js('window.__econ.money = 1000')
     await park(true); await tap('x')
     check(await until(() => js('!!document.querySelector("#recovery-card [data-act=towShop]:not([disabled])")'), 3000), 'DEC-475: no shop tow on the Recovery card')
     await js('document.querySelector("#recovery-card [data-act=towShop]").click()')
-    check(await until(() => js('/\\$0\\.00/.test(document.querySelector("#recovery-card [data-act=towGo]")?.textContent)'), 2000),
-      `DEC-475: the run's first tow is not free: "${await js('document.getElementById("recovery-card").textContent')}"`)
+    check(await until(() => js('/\\$[1-9]/.test(document.querySelector("#recovery-card [data-act=towGo]")?.textContent)'), 2000),
+      `DEC-486: Classic's first tow shows no price: "${await js('document.getElementById("recovery-card").textContent')}"`)
     await js('document.querySelector("#recovery-card [data-act=towGo]").click()')
-    check(await until(() => js('window.__econ.money === 1000 && document.getElementById("svc-screen").checkVisibility()'), 8000), 'DEC-475: the free tow cost money or never reached the shop')
+    check(await until(() => js('window.__econ.money < 1000 && document.getElementById("svc-screen").checkVisibility()'), 8000), 'DEC-486: the tow was free or never reached the shop')
     await tap('Escape'); await sleep(300)
     await seat(away.x, away.z, away.h)
     await js(`(() => { const inv = window.__inv; for (const r of [...inv.list()].reverse()) if (r.id === 'emergencyGas' || r.gal > 0.05) inv.drop(r.index)
