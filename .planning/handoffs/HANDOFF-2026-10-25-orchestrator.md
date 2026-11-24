@@ -141,7 +141,17 @@ torque 10.5 N·m/kg × ≤ 3 s, 5 s cooldown. Alpha = the 2500 m circle, a polis
   `bash ~/.claude/skills/window-title/scripts/title.sh <path>`.
 - Owner rules: n = 1 is not a calibration signal; a visual regression → revert first; fix the root, not the symptom.
 
-## Current state (2026-11-24 00:30; rewrite, don't append)
+## Current state (2026-11-24 01:30; rewrite, don't append)
+
+**INTAKE OF 11-24 (in flight; delete this block once all three land).** The owner answered 27 cards on 11-23 night; 7 inbox notes of 11-22 got their replies today.
+- Filed/closed on main: 15 plain "good" cards; FEAT-317, BUG-249, FEAT-238, BUG-257 (DEC-484), PERF-54 (full rate kept), BUG-64 closed. New tickets BUG-258 (jagged earthwork edges), BUG-259 (tunnel X junctions), BUG-260 (GPS reroute), FEAT-327 (big UI + map legend + BUG-208 casing). FEAT-302 sent back for rework (owner's note in its Decisions). Worktree cleanup done (card answered: 9 removed, 220 merged branches deleted).
+- **Landing 1, BUG-234** (owner: land it): main merged into land/bug-234-x-junction (CarGame-machine, ee22de3b); affected gates re-running serial, log `CarGame-machine/wip/bug-234/gates-merge-1124.log`. Green → merge, close BUG-234; BUG-259 holds the follow-ups.
+- **Landing 2, FEAT-318** (owner: land it): c2 agent is refreshing land/wave2-1120 (CarGame-run-shape) onto main and closing FEAT-318.
+- **Landing 3, numbers batch**: s agent on land/numbers-1124 (CarGame-numbers-1124): High cap 1400, Classic 0 free tows, rucksack $20, frame pack line, center softening default 100 %, dead zone 0-20 % step 2 default 10; DEC-485..490 reserved for it.
+- After all three merge: ONE smoke on main, rebuild play build :8002, then move the pairs still in owed/ with answers (bug234, feat318, perf55, feat296, groceries, ui-batch, bug208, feat239, feat299, feat302) to answered/ as each is acted on.
+- **Queued next (two agents at a time):** FEAT-327 UI batch (Sonnet) · FEAT-299 build out and land (Opus; owner: "Good: build it out and land") · FEAT-302 rework (Opus, after FEAT-318 is on main) · BUG-260 · BUG-259 · BUG-258.
+- **FEAT-326 research is DONE and on main** (ticket § Research; harness test/rigid-body-ceiling.mjs). Cards feat326-rock-count-pick and feat326-collider-pick ask the owner; the boss prototype lane waits on them. Next free DEC after the batch: 491.
+
 
 **Main** (head: `git log -1`; this section was written at 1be0b280 + this docs commit). origin/main is still 63217458 (11-18): NOTHING pushed since. Play build :8002 = main.
 
