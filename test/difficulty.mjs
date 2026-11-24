@@ -67,7 +67,8 @@ const cM = bump(CLASSIC_RULES, slam), cL = bump(LOW, slam)
 check(cL.spring < cM.spring && cM.spring > 0, `a 60 kN front slam costs the spring less (${(cM.spring * 100).toFixed(2)} % → ${(cL.spring * 100).toFixed(2)} %)`)
 check(bump(CLASSIC_RULES, nearFloor).spring > 0 && bump(LOW, nearFloor).spring === 0, 'a hit just past today\'s bump-stop floor costs nothing on low (onset raised)')
 const huge = 2e6, hM = bump(CLASSIC_RULES, huge), hL = bump(LOW, huge)
-check(Math.abs(hL.spring - resolveRules(LOW).damage.cap * resolveRules(LOW).damage.wear / DAMAGE_PARAMS.springDurability) < 1e-12   // FEAT-325: ÷ springDurability && hM.spring > hL.spring,
+// FEAT-325 (arc trial): the cap is taken before the spring's durability divisor.
+check(Math.abs(hL.spring - resolveRules(LOW).damage.cap * resolveRules(LOW).damage.wear / DAMAGE_PARAMS.springDurability) < 1e-12 && hM.spring > hL.spring,
   `the biggest slam is capped on low (${(hM.spring * 100).toFixed(1)} % → ${(hL.spring * 100).toFixed(1)} %)`)
 const popN = 80000   // pops a 30 % tire today (puncture 72–84 kN between the knee and the half)
 check(bump(CLASSIC_RULES, popN, 0.3).flat && !bump(LOW, popN, 0.3).flat, 'an 80 kN hit pops a 30 % tire today, not on low')
