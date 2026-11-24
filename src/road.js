@@ -13112,8 +13112,10 @@ export class RoadSystem {
         // its long window reached 26 m into a tube on seed 11 (981, −171) and left a 0.041 /m sag on the floor (the bore
         // line is 0.04). Bore samples stay pinned; where that leaves no fit, the old ceiling pass runs as before.
         // The window stops at the first bore sample from the node: it never frees road on a tube's far side either.
+        // BUG-259: not when the node itself is in the bore (an underground junction): every sample is then a bore sample,
+        // nothing could move, and the ceiling pass shipped the recovery at 48 % (seed 2280440363's X, solved at 20 %).
         let dBore = Infinity
-        if (bore) for (let i = 0; i < N; i++) if (bore(arcPos[i])) dBore = Math.min(dBore, dOf(i))
+        if (bore && !bore(arcPos[iN])) for (let i = 0; i < N; i++) if (bore(arcPos[i])) dBore = Math.min(dBore, dOf(i))
         const open = (k) => dOf(k) < dBore
         let ext = { ...base, edge: EDGE, hold: Math.max(hold, part), interior: (i) => i > 0 && i < N - 1 && open(i) }
         if (ghost) {
