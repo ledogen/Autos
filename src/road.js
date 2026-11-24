@@ -9141,7 +9141,7 @@ export class RoadSystem {
             const adx = wx - nr.point.x, adz = wz - nr.point.z
             const ao = _curvedOffset(adx * nr.tangent.x + adz * nr.tangent.z, adx * nr.tangent.z - adz * nr.tangent.x, nr === nrHint ? (nr.kappa ?? 0) : 0)
             const aArc = (nr.arcS ?? 0) + ao.a, aLat = ao.l
-            if (!this.tunnelSpanAt(nr.runKey ?? '', aArc)) break
+            if (!this.boreSpanAt(nr.runKey ?? '', aArc)) break
             const topY = this.runProfile(aArc, nr.runKey, _CD_RP).gradeY + (p.tunnelBoreRadius ?? 8)
             if (queryY < topY) break                     // in the bore: this run owns the probe
             // FEAT-40: skin probe over a bore — mouth-funnel notch (no decal/pothole overlay:
@@ -9212,7 +9212,7 @@ export class RoadSystem {
         // the pad plane near the node). This is what covers the open-side rim the corridors miss.
         // PERF-24/25: the pad surface is the resolve-free _nodeSurfaceTop (one ruled-blend evaluation,
         // feet shared with the leg cross-section above via the per-leg memo) — no extra resolves at all.
-        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp),
+        const cs2 = this._mergeCarve(cs, this._junctionPadCarve(wx, wz, rawAmp, queryY),
             nr ? this._ribbonEdgeDist(runKey, arcSEff, latDist) : Infinity)
         if (!cs2) return null   // beyond the fill/cut toe of all three — unaffected terrain
 
@@ -9285,13 +9285,35 @@ export class RoadSystem {
         return null
     }
 
+    // BUG-259: tunnelSpanAt, with a span that ends at an UNDERGROUND junction (_undergroundNodes) carried on past the
+    // run's end: the chamber where the legs meet is inside the hill, so a probe there that resolves onto a leg past its
+    // end is in that leg's bore. The surface ownership rule, the rivals and the shade read this; the wall contact does
+    // not (no lining stands past the end).
+    boreSpanAt(runKey, arcS) {
+        const sp = this.tunnelSpanAt(runKey, arcS)
+        if (sp || !(arcS < 0 || arcS > 0)) return sp
+        const e = this._network?.get(runKey), L = e?.polyCum?.at(-1)
+        if (!e?.tunnelSpans || !(arcS < 0 || arcS > L)) return null
+        const ug = this._undergroundNodes()
+        return arcS < 0 ? (ug.has(runKey + '|A') ? e.tunnelSpans.find((s) => s.s0 <= 1) : null) ?? null
+            : (ug.has(runKey + '|B') ? e.tunnelSpans.find((s) => s.s1 >= L - 1) : null) ?? null
+    }
+
+    // BUG-259: how far run-arc `arcS` lies inside bore span `sp` from its nearer PORTAL — a span end at an underground
+    // junction is none (Infinity when both are). The mouth funnel and the bore shade both measure from here.
+    _boreDepthIn(runKey, sp, arcS) {
+        const ug = this._undergroundNodes(), L = this._network.get(runKey)?.polyCum?.at(-1) ?? Infinity
+        return Math.min(sp.s0 <= 1 && ug.has(runKey + '|A') ? Infinity : arcS - sp.s0,
+            sp.s1 >= L - 1 && ug.has(runKey + '|B') ? Infinity : sp.s1 - arcS)
+    }
+
     // BUG-112: how dark the bore is at run-arc `arcS` — 1 at a portal (and anywhere outside a bore), easing to
     // BORE_SHADE_DEEP over BORE_SHADE_RAMP m inside. ONE formula for everything in the tube (lining, apron, ribbon,
     // pads, the truck): each darkens its own colour by it, so they go dark together and no seam shows between them.
     boreShade(runKey, arcS) {
-        const sp = this.tunnelSpanAt(runKey, arcS)
+        const sp = this.boreSpanAt(runKey, arcS)
         if (!sp) return 1
-        const t = Math.max(0, Math.min(1, Math.min(arcS - sp.s0, sp.s1 - arcS) / BORE_SHADE_RAMP))
+        const t = Math.max(0, Math.min(1, this._boreDepthIn(runKey, sp, arcS) / BORE_SHADE_RAMP))
         return 1 - (1 - BORE_SHADE_DEEP) * t * t * (3 - 2 * t)
     }
 
@@ -9302,7 +9324,7 @@ export class RoadSystem {
         const nr = this.carveHint(x, z)
         if (!nr?.point || !nr.tangent) return 1
         const arc = (nr.arcS ?? 0) + (x - nr.point.x) * nr.tangent.x + (z - nr.point.z) * nr.tangent.z
-        if (!this.tunnelSpanAt(nr.runKey ?? '', arc)) return 1
+        if (!this.boreSpanAt(nr.runKey ?? '', arc)) return 1
         if (y >= this.runProfile(arc, nr.runKey, this._boreShadeProf ??= { gradeY: 0, tx: 1, tz: 0 }).gradeY + (this._params?.tunnelBoreRadius ?? 8)) return 1
         return this.boreShade(nr.runKey, arc)
     }
@@ -9410,7 +9432,8 @@ export class RoadSystem {
      * sibling's tube — the split at a T promoted underground, where the tube carries on as the sibling's.
      * Such an end gets no portal ring (road-mesh.js) and no skin cut (terrain.js _tunnelPortals). The
      * mouth-funnel notch (_boreNotchCS) still measures from it: dropping that let the junction's other
-     * claimants carve the skin to the deck over the T (capture 1793661489778, measured 2026-11-04).
+     * claimants carve the skin to the deck over the T (capture 1793661489778, measured 2026-11-04). Except at an
+     * underground junction (_undergroundNodes, BUG-259, DEC-494), where no claimant carves the chamber either.
      * Memoised per run, arc and network revision.
      */
     isMouth(runKey, s) {
@@ -9424,6 +9447,33 @@ export class RoadSystem {
             this._mouths.set(key, m)
         }
         return m
+    }
+
+    /**
+     * BUG-259, DEC-494 (owner, 2026-11-24: "There should be no earthwork at the intersection. There should only be earthwork near
+     * the portals."): the junction nodes that sit INSIDE the hill — three or more legs, every one leaving the node in a
+     * bore, none of those span ends a mouth. Returns a Map 'runKey|A' / 'runKey|B' (the run end at the node) → node, and
+     * flags each such node record `underground`. Over one, the mouth-funnel notch does not measure from the node and the
+     * pad carve leaves the skin raw: before, both cut the hill down toward the deck (seed 1960791808's X: 61 m deep,
+     * the leg's camber laid on the skin and up through the other road's ribbon). Memoised per network revision.
+     */
+    _undergroundNodes() {
+        const nodes = this._detectNodeJunctions()
+        if (this._ugNodes?.nodes === nodes && this._ugNodes.rev === this._networkRev) return this._ugNodes.map
+        const map = new Map()
+        for (const node of nodes?.values() ?? []) {
+            if (node.deg2 || !node.legs || node.legs.length < 3) continue
+            const ends = node.legs.map((l) => {
+                const e = this._network.get(l.runKey), L = e?.polyCum?.at(-1) ?? 0, atA = l.arc < 1e-6
+                const sp = (e?.tunnelSpans || []).find((s) => atA ? s.s0 <= 1 : s.s1 >= L - 1)
+                return sp && !this.isMouth(l.runKey, atA ? sp.s0 : sp.s1) ? l.runKey + (atA ? '|A' : '|B') : null
+            })
+            if (!ends.every(Boolean)) continue
+            node.underground = true
+            for (const k of ends) map.set(k, node)
+        }
+        this._ugNodes = { nodes, rev: this._networkRev, map }
+        return map
     }
 
     // BUG-37: bore WALL contact — the carve heightfield above (_sampleCarveWorld) only resolves the
@@ -10306,8 +10356,10 @@ export class RoadSystem {
      * blendW = 1; OUTSIDE it ramps designY → raw over shoulder + fill/cut toe (the SAME run params
      * _carveCrossSection uses), driven by distance outside the ring. DIRT convention (clearance
      * subtracted), composed with the leg carve by _mergeCarve. Returns {blendW,gradeY}|null (raw terrain).
+     * BUG-259: an UNDERGROUND node (_undergroundNodes) owns only probes below its bore apex, the bore-ownership rule
+     * (_sampleCarve): `queryY` undefined (the terrain skin, a Y-less caller) or above it reads raw hill.
      */
-    _junctionPadCarve(wx, wz, rawAmp) {
+    _junctionPadCarve(wx, wz, rawAmp, queryY) {
         if (this._nodeJunctionsRev !== this._networkRev) this._detectNodeJunctions()
         const nodes = this._nodeJunctions
         if (!nodes || nodes.size === 0) return null
@@ -10353,6 +10405,8 @@ export class RoadSystem {
             if (sd < bestSd) { bestSd = sd; best = node }
         }
         if (!best) return null
+        this._undergroundNodes()
+        if (best.underground && !(queryY < best.pos.y + (p.tunnelBoreRadius ?? 8))) return null
 
         // Design surface = the resolve-FREE node surface (_nodeSurfaceTop): the SAME ruled inter-leg
         // blend the leg cross-sections ride (_carveDirtY), but based on the node's OWN nearest leg
@@ -11750,7 +11804,7 @@ export class RoadSystem {
         // (_nodeSurfaceTop + apron lift, _sampleCarveWorld's on-pad branch). The free resolve below picks one leg and,
         // at a pad's tear line, a different one: it read up to 0.86 m under the pad, so a truck seated there
         // (_groundSampleY's four corners) or a paper landing there sat inside the asphalt. padTopY needs no raw height.
-        const pad = this._junctionPadCarve(wx, wz, 0)
+        const pad = this._junctionPadCarve(wx, wz, 0, -Infinity)   // the asphalt top, in a bore too (BUG-259)
         if (pad?.padTopY != null) return pad.padTopY
         const nr = this._resolveRoadSurface(wx, wz)
         const clearanceMargin = this._params.roadClearanceMargin ?? 0.25
@@ -11974,7 +12028,8 @@ export class RoadSystem {
     _boreNotchCS(runKey, camberSign, aArc, signedLat, rawAmp) {
         const sp = this.tunnelSpanAt(runKey, aArc)
         if (!sp) return null
-        const dIn = Math.min(aArc - sp.s0, sp.s1 - aArc)
+        const dIn = this._boreDepthIn(runKey, sp, aArc)   // BUG-259: no funnel climbs out of an underground junction
+        if (dIn === Infinity) return null
         const cs = this._carveCrossSection(signedLat, aArc, runKey, camberSign, rawAmp)
         if (!cs) return null
         let liftedY = cs.gradeY + dIn * BORE_NOTCH_SLOPE
@@ -12063,7 +12118,7 @@ export class RoadSystem {
                 if (r > Math.abs(lat)) lat = (lat < 0 ? -1 : 1) * r
             }
             // Bore-ownership rule: a pass inside a bore span is raw unless the probe is below its apex.
-            if (this.tunnelSpanAt(rv.runKey, arcS) &&
+            if (this.boreSpanAt(rv.runKey, arcS) &&
                 !(queryY !== undefined && queryY < this.runProfile(arcS, rv.runKey, _CD_RP).gradeY + boreR)) continue
             const csR = this._carveCrossSection(lat, arcS, rv.runKey, 1, rawAmp, wx, wz)
             if (!csR) continue
@@ -13112,8 +13167,10 @@ export class RoadSystem {
         // its long window reached 26 m into a tube on seed 11 (981, −171) and left a 0.041 /m sag on the floor (the bore
         // line is 0.04). Bore samples stay pinned; where that leaves no fit, the old ceiling pass runs as before.
         // The window stops at the first bore sample from the node: it never frees road on a tube's far side either.
+        // BUG-259: not when the node itself is in the bore (an underground junction): every sample is then a bore sample,
+        // nothing could move, and the ceiling pass shipped the recovery at 48 % (seed 2280440363's X, solved at 20 %).
         let dBore = Infinity
-        if (bore) for (let i = 0; i < N; i++) if (bore(arcPos[i])) dBore = Math.min(dBore, dOf(i))
+        if (bore && !bore(arcPos[iN])) for (let i = 0; i < N; i++) if (bore(arcPos[i])) dBore = Math.min(dBore, dOf(i))
         const open = (k) => dOf(k) < dBore
         let ext = { ...base, edge: EDGE, hold: Math.max(hold, part), interior: (i) => i > 0 && i < N - 1 && open(i) }
         if (ghost) {
