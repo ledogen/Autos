@@ -10646,7 +10646,7 @@ function _listenerInBore () {
   const c = camera.position, nr = roadSystem.carveHint(c.x, c.z)
   if (!nr?.point || !nr.tangent) return false
   const arc = (nr.arcS ?? 0) + (c.x - nr.point.x) * nr.tangent.x + (c.z - nr.point.z) * nr.tangent.z
-  if (!roadSystem.tunnelSpanAt(nr.runKey ?? '', arc)) return false
+  if (!roadSystem.boreSpanAt(nr.runKey ?? '', arc)) return false   // BUG-259: an underground junction's chamber too
   return c.y < roadSystem.runProfile(arc, nr.runKey, _boreProf).gradeY + (RANGER_PARAMS.tunnelBoreRadius ?? 8)
 }
 const _boreProf = { gradeY: 0, tx: 1, tz: 0 }
