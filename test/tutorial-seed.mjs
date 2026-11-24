@@ -6,7 +6,7 @@
 // (the census pick of 2026-11-14): that route sat at the median height of 144 m, the joint at 169 m among 46 trees with the
 // 07:00 sun behind a hill, and the day ran 12.5 km. Its beats were picked off the census line, so a world-generation
 // change that moves its places breaks the tutorial without failing anything else. This gate builds the region as story
-// entry builds it (poi.build, then campSystem.build + fillReach, main.js onRegionLive) and walks DEC-304's order with
+// entry builds it (poi.build, then campSystem.build + growAreas, main.js onRegionLive) and walks DEC-304's order with
 // each stop picked as main.js picks it (_joint, _mom, _larry, _snackShop, _campDoor, the flat in _eveningLessons, the
 // tow in _nearestPoi) and each leg planned as _homeGuide plans it (the same planner, the same OfferBoard route stream):
 //   joint → mom's (the hand-over; the pack lands by her steps) → Larry's → the gas station nearest Larry's (a storefront
