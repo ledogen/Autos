@@ -1,7 +1,7 @@
 ---
 id: BUG-249
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-20
 source: owner, 2026-11-20 (gearbox landing card) — "pretty sure i already asked for this but throttle application shouldnt release the parking brake if the engine is off. same with lt on automatic. basically gate the automatic brake release on an action that actually moves the truck"
@@ -42,3 +42,4 @@ A manual shift landing in a gear still releases it with the engine running (DEC-
 ## Log
 - 2026-11-20: built on land/gearbox-1120; park-brake gate all green incl. §8.
 - 2026-11-20: 1698b8bf — the smoke's Ventura roll-off starts the engine first (a story teleport seats a dead truck, FEAT-33; a driven arrival has it running). SMOKE_STEPS=boot,pad green: mom's card, offer, shop, pump all let go on the gas.
+- 2026-11-24: CLOSED. Owner drove it, card gearbox-shift-time-drive: "Good" (shift time 0.35 s and the parking brake rules stand as built).
