@@ -102,20 +102,31 @@ function sync () {
  *  FEAT-327 (owner 2026-11-23: camp's two button rows, ← / → "jumps down sometimes"): a sideways step stays IN THE ROW.
  *  The ×2 off-axis weight alone let a next-row button just right of the highlight (a short row's one button) beat the
  *  same-row neighbour further along, and a step off the row's end fell onto the next row. A row is the items whose
- *  vertical span holds the highlight's centre line or the other way round; none there → no move. */
+ *  vertical span holds the highlight's centre line or the other way round. An item with row-mates never leaves its
+ *  row sideways; one ALONE in its row (the damage screen's scattered parts) takes the nearest item as before. */
+function hasRow (items, from, r, fy) {
+  for (const el of items) {
+    if (el === from) continue
+    const q = el.getBoundingClientRect()
+    if ((q.y <= fy && fy <= q.bottom) || (r.y <= q.y + q.height / 2 && q.y + q.height / 2 <= r.bottom)) return true
+  }
+  return false
+}
+
 function nearest (items, from, dx, dy) {
   const r = from.getBoundingClientRect(), fx = r.x + r.width / 2, fy = r.y + r.height / 2
-  let best = null, bestD = Infinity
+  let best = null, bestD = Infinity, row = null, rowD = Infinity
   for (const el of items) {
     if (el === from) continue
     const q = el.getBoundingClientRect()
     const ox = q.x + q.width / 2 - fx, oy = q.y + q.height / 2 - fy
     const along = ox * dx + oy * dy
     if (along <= 1) continue
-    if (dx && !(q.y <= fy && fy <= q.bottom) && !(r.y <= q.y + q.height / 2 && q.y + q.height / 2 <= r.bottom)) continue
+    const inRow = (q.y <= fy && fy <= q.bottom) || (r.y <= q.y + q.height / 2 && q.y + q.height / 2 <= r.bottom)
     const d = along + 2 * Math.abs(ox * dy - oy * dx)
-    if (d < bestD) { bestD = d; best = el }
+    if (dx && inRow) { if (d < rowD) { rowD = d; row = el } } else if (d < bestD) { bestD = d; best = el }
   }
+  if (dx) return row || (hasRow(items, from, r, fy) ? null : best)
   return best
 }
 
