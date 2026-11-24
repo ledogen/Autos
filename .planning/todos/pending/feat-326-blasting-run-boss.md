@@ -64,7 +64,8 @@ Design as agreed so far (owner's answers, 2026-11-23):
 - [ ] Preparation card.
 
 ## Decisions
-- Conflict to settle before building: DEC-425 limits story rock slides to three expedition missions.
+- DEC-425 limits story rock slides to three expedition missions. Owner, 2026-11-23: "we can change or remove
+  dec-425". The change that builds the boss writes the record that supersedes it.
 - No decision record is written yet. These are trial-design answers; records follow if the owner adopts the trial.
 
 ## Open questions
