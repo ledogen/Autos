@@ -98,7 +98,11 @@ function sync () {
   if (cur && cur.isConnected && cur.offsetParent === null) highlight(null)
 }
 
-/** The nearest item from `from` in direction (dx, dy), off-axis distance weighted ×2; null if none. */
+/** The nearest item from `from` in direction (dx, dy), off-axis distance weighted ×2; null if none.
+ *  FEAT-327 (owner 2026-11-23: camp's two button rows, ← / → "jumps down sometimes"): a sideways step stays IN THE ROW.
+ *  The ×2 off-axis weight alone let a next-row button just right of the highlight (a short row's one button) beat the
+ *  same-row neighbour further along, and a step off the row's end fell onto the next row. A row is the items whose
+ *  vertical span holds the highlight's centre line or the other way round; none there → no move. */
 function nearest (items, from, dx, dy) {
   const r = from.getBoundingClientRect(), fx = r.x + r.width / 2, fy = r.y + r.height / 2
   let best = null, bestD = Infinity
@@ -108,6 +112,7 @@ function nearest (items, from, dx, dy) {
     const ox = q.x + q.width / 2 - fx, oy = q.y + q.height / 2 - fy
     const along = ox * dx + oy * dy
     if (along <= 1) continue
+    if (dx && !(q.y <= fy && fy <= q.bottom) && !(r.y <= q.y + q.height / 2 && q.y + q.height / 2 <= r.bottom)) continue
     const d = along + 2 * Math.abs(ox * dy - oy * dx)
     if (d < bestD) { bestD = d; best = el }
   }

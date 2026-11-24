@@ -44,7 +44,7 @@
 
 import { TRACKS, DAMAGE_PARAMS, fatalMph } from './damage.js'
 import { CLASS_INFO, infoHtml } from '../data/component-info.js'
-import { keycap, hintPark, BACK_BUTTON } from './park-badge.js'
+import { keycap, hintPark, BACK_BUTTON, placeTip } from './park-badge.js'
 
 const REFRESH_S = 0.1      // 10 Hz — condition moves on the scale of minutes
 const DROP_ALERT = 0.03    // a part losing more than 3 points in one sample is a damage event
@@ -481,13 +481,7 @@ export class DamageScreen {
       // closest(): a list row and an SVG part both carry data-track, so hovering either lights both.
       const id = e.target?.closest?.('[data-track]')?.dataset.track || null
       if (id !== this._hover) this._setHover(id)
-      if (id) {
-        const w = this.tip.offsetWidth, h = this.tip.offsetHeight
-        const x = Math.min(e.clientX + 16, window.innerWidth - w - 8)
-        const y = Math.min(e.clientY + 14, window.innerHeight - h - 8)
-        this.tip.style.left = x + 'px'
-        this.tip.style.top = y + 'px'
-      }
+      if (id) placeTip(this.tip, e)   // FEAT-327: Big-zoom safe
     })
     this.screen.addEventListener('mouseleave', () => this._setHover(null))
 

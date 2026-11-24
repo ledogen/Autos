@@ -1,7 +1,7 @@
 ---
 id: BUG-208
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 (inbox) — "You can't really see the campable terrain yellow highlight through the GPS."
@@ -23,7 +23,7 @@ Owner's words, verbatim (inbox 20261118061907-sgl1):
 > You can't really see the campable terrain yellow highlight through the GPS.
 
 ## Tracker
-- [ ] The campable highlight reads clearly on the GPS and the map, day and night
+- [x] The campable highlight reads clearly on the GPS and the map, day and night
 
 ## Decisions
 
@@ -41,3 +41,4 @@ the camp zone highlight (src/camp*.js, src/map*.js)
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118061907-sgl1).
 - 2026-11-17 ui-1117b: the route halo alpha 0.95 -> 0.5 so the 6 px camp casing shows through the 7 px halo. Only the full map has this line (not the minimap). Not screenshotted. Look pending.
 - 2026-11-21 lane s2: NOT closed. No minimap exists; the waypoint line (map2d.js _drawWaypoint) still draws a 95 % paper halo over the casing. The ui-1117b look card went unanswered, so whether 50 % reads clearly is the owner's call. Questions above.
+- 2026-11-24 closed (FEAT-327 item 6): owner picked 'Wider yellow casing (about 10 px), both lines' (card bug208-camp-highlight-pick). CAMP_CASING_W 6 -> 10 px in src/map2d.js; it clears the 7 px job halo and the 5 px waypoint halo either side.

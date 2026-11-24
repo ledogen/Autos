@@ -65,3 +65,16 @@ export function parkPrompt (text) {
   const rest = text.replace(/^park /, '')
   return `park ${keycap('Space')} ${rest === text ? '&middot; ' : ''}${rest}`
 }
+
+/**
+ * FEAT-327: put a hover card (position: fixed, a body child) beside the pointer, kept on screen. Under Big's zoom
+ * (FEAT-248) the card's left/top are zoomed too and offsetWidth is not in screen pixels, so the old
+ * `clientY + 14, innerHeight - offsetHeight - 8` clamp landed off the bottom (owner 2026-11-23: rear spring / damper tip).
+ * Measure the card on screen (getBoundingClientRect), clamp in screen pixels, then divide by the zoom to write left/top.
+ */
+export function placeTip (tip, e) {
+  const z = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom')) || 1
+  const r = tip.getBoundingClientRect()
+  tip.style.left = Math.max(0, Math.min(e.clientX + 16, window.innerWidth - r.width - 8)) / z + 'px'
+  tip.style.top = Math.max(0, Math.min(e.clientY + 14, window.innerHeight - r.height - 8)) / z + 'px'
+}

@@ -133,12 +133,13 @@ const PORTAL_LEN    = 8           // px — portal bar length, square across the
 // used to be (owner, 2026-08-11). Kept translucent on purpose: a highlighter marks a sheet
 // without hiding it, so the contours it crosses must still read straight through the stripe.
 const CAMP_CASING   = 'rgba(248,226,54,0.55)'
-const CAMP_CASING_W = 6           // px — ~2.5x the road stroke
+const CAMP_CASING_W = 10          // px — BUG-208 (owner pick, 2026-11-24: 'wider yellow casing, about 10 px, both lines'): wider than the 7 px job halo, so yellow shows either side
 const MAP_INK       = '#1a1a1a'   // rules — neatline, collar ticks, scale bar
 // FEAT-210: the legend's title band, in the Forest Service's own green and gold (the agency's
 // branding — the legend copies that real object, UI-STYLE §2).
 const LEGEND_GREEN  = '#2c5234'
 const LEGEND_GOLD   = '#ffc72c'
+const LEGEND_CTL_ROW = 22   // FEAT-327: one controls row in the legend
 // Lettering is deliberately LIGHTER than the rules it sits between. On a sheet this dense the
 // type is reference, not content: full-strength black pulled the eye to the margin and away from
 // the terrain. Two strengths only — marginalia (which you read once) and place labels (which you
@@ -445,6 +446,9 @@ export class Map2D {
         this._win       = document.getElementById('map-window')
         this._list      = document.getElementById('map-list')
         this._legendEl  = document.getElementById('map-legend')
+        this._legendOpen = true    // FEAT-327: open by default; a click on its green band folds it away to the bottom of the column
+        this._legendEl?.addEventListener('click', (e) => { if (e.offsetY < this._legendBox().HEAD) { this._legendOpen = !this._legendOpen; this._paintLegend() } })
+        this._legendEl?.addEventListener('mousemove', (e) => { this._legendEl.style.cursor = e.offsetY < this._legendBox().HEAD ? 'pointer' : '' })
         this._clockEl   = document.getElementById('map-clock')
         this._getSeed   = getSeed
         this._getParams = getParams
@@ -1592,6 +1596,7 @@ export class Map2D {
     // transform/network changed, then blits it and draws the (moving) car marker + legend on top.
     render() {
         if (!this._open) return
+        if (pad.active !== this._legendPad) this._paintLegend()   // FEAT-327: the controls rows follow the device that last drove
         // Live road-param tracking: show() only checks the signature on OPEN, so a road-slider change
         // made WHILE the map is open would otherwise leave the map's own read-only RoadSystem stale
         // (the play network rebuilds via main.js debouncedRoadRebuild; the map is decoupled). Re-check
@@ -2965,7 +2970,7 @@ export class Map2D {
                 // Quadrangle lettering: black humanist sans, haloed in the PAPER colour so it lifts
                 // off the contour hatching without being a black-on-black smudge. (The halo used to
                 // be near-black under the glyph's own colour — that was for the dark canvas.)
-                ctx.font = `600 11px ${MAP_LABEL_FONT}`
+                ctx.font = `600 ${document.documentElement.dataset.uiScale === 'big' ? 13 : 11}px ${MAP_LABEL_FONT}`   // FEAT-327: a little larger at Big (owner 2026-11-23)
                 ctx.textAlign = 'center'
                 ctx.textBaseline = 'top'
                 const ly = sy + half + 3
@@ -3407,7 +3412,9 @@ export class Map2D {
         const rows = ['Mission', null, 'Road',   // no Shop row: a shop is lettered on the sheet (owner, 2026-11-14, feat210-look)
                       'Stream', 'Pond', 'Tunnel', 'Camping area']
         const subH = Math.ceil(fams / 2) * SUB
-        return { SYM, ROW, SUB, PAD, HEAD, rows, subH, H: HEAD + PAD + 6 * ROW + subH + PAD }
+        const ctlH = this._controlRows().length * LEGEND_CTL_ROW + 22   // FEAT-327: the CONTROLS rows under their own rule + title
+        // collapsed (click the green band): the band alone
+        return { SYM, ROW, SUB, PAD, HEAD, rows, subH, ctlH, H: this._legendOpen ? HEAD + PAD + 6 * ROW + subH + ctlH + PAD : HEAD }
     }
 
     /**
@@ -3417,6 +3424,7 @@ export class Map2D {
     _paintLegend() {
         const el = this._legendEl
         if (!el) return
+        this._legendPad = pad.active
         const W = el.clientWidth, H = this._legendBox().H, dpr = this._dpr || 1
         if (!W) return
         el.width = Math.round(W * dpr); el.height = Math.round(H * dpr); el.style.height = H + 'px'
@@ -3437,7 +3445,7 @@ export class Map2D {
         const groups = new Map()   // colour → its family labels
         for (const [f, c] of Object.entries(FAMILY_COLOR)) groups.set(c, [...(groups.get(c) ?? []), FAMILY_LABEL[f]])
         const fams = [...groups].map(([c, l]) => [c, l.join(' / ')]).concat([[EMPTY_DIAMOND_COLOR, 'NO WORK NOW']])
-        const { SYM, ROW, SUB, PAD, HEAD, rows, subH, H } = this._legendBox()
+        const { SYM, ROW, SUB, PAD, HEAD, rows, subH, ctlH, H } = this._legendBox()
         ctx.fillStyle = 'rgba(242,239,228,0.95)'; ctx.fillRect(x, y, W, H)
         ctx.fillStyle = LEGEND_GREEN; ctx.fillRect(x, y, W, HEAD)
         ctx.strokeStyle = MAP_INK; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, W - 1, H - 1)
@@ -3445,6 +3453,9 @@ export class Map2D {
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
         ctx.fillStyle = LEGEND_GOLD; ctx.fillText('LEGEND', x + PAD, y + HEAD / 2 + 0.5)
         ctx.letterSpacing = '0px'
+        ctx.fillStyle = LEGEND_GOLD; ctx.textAlign = 'right'; ctx.fillText(this._legendOpen ? '\u25BE' : '\u25B4', x + W - PAD, y + HEAD / 2 + 0.5)   // FEAT-327: the fold's chevron
+        ctx.textAlign = 'left'
+        if (!this._legendOpen) { ctx.textBaseline = 'alphabetic'; return }
         let cy = y + HEAD + PAD
         for (const label of rows) {
             if (label === null) {   // the family key, two columns
@@ -3481,6 +3492,11 @@ export class Map2D {
             ctx.fillText(label, x + PAD + SYM + 6, my + 0.5)
             cy += ROW
         }
+        // FEAT-327: the controls, under their own small title (the owner's "controls hint in the legend")
+        ctx.strokeStyle = 'rgba(26,26,26,0.35)'; ctx.beginPath(); ctx.moveTo(x + PAD, cy + 3.5); ctx.lineTo(x + W - PAD, cy + 3.5); ctx.stroke()
+        ctx.font = `700 12px ${MAP_LABEL_FONT}`; ctx.letterSpacing = '2px'; ctx.fillStyle = LEGEND_GREEN; ctx.textBaseline = 'middle'
+        ctx.fillText('CONTROLS', x + PAD, cy + 14); ctx.letterSpacing = '0px'
+        this._drawControlRows(ctx, x + PAD, cy + 22, W)
         ctx.textBaseline = 'alphabetic'
     }
 
@@ -3507,40 +3523,38 @@ export class Map2D {
 
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
         ctx.fillText(`Contour interval ${CONTOUR_IV} m`, s.x0, by)
-        const ivR = s.x0 + ctx.measureText(`Contour interval ${CONTOUR_IV} m`).width
-        this._drawControls(ctx, s, by, ivR + 24, this._hoverX === undefined ? bx - 70 : s.cx - 65)   // short of the scale label, or of the cursor's readout at the centre
-        // FEAT-239: the pad's card flip and tab switch, right of the seed / cursor readout at the centre (the left run has no room for them)
-        if (pad.active) this._drawControls(ctx, s, by, s.cx + 90, bx - 70, [['cards', ['LB', 'RB']], ['tab', ['X']]])
     }
 
-    // FEAT-234 (owner, 2026-11-16): the map's controls — pan, zoom, set waypoint — printed in the bottom margin after the
-    // contour note, clear of the cursor's coordinate readout at the centre. Keycaps as the HUD's (park-badge.js keycap): the key's cap on the keyboard, the pad's
-    // button when the pad last drove (pad.active); the pad's face buttons and sticks are round. Skipped when they do not fit.
-    _drawControls(ctx, s, by, xMin, xMax, padGroups) {
-        const usePad = pad.active
-        const groups = usePad
-            ? padGroups ?? [['pan', ['L']], ['zoom', ['R']], ['waypoint', ['Y']]]
+    // FEAT-234 / FEAT-239 (owner, 2026-11-24: "put the controls hint in the legend instead"): the map's controls — pan, zoom,
+    // set waypoint, and the pad's card flip and tab — are the legend's CONTROLS rows (_controlRows). Keycaps as the HUD's
+    // (park-badge.js keycap): the key's cap on the keyboard, the pad's button when the pad last drove (pad.active); the pad's
+    // face buttons and sticks are round.
+    _controlRows() {
+        return pad.active
+            ? [['pan', ['L']], ['zoom', ['R']], ['waypoint', ['Y']], ['cards', ['LB', 'RB']], ['tab', ['X']]]
             : [['pan', ['WASD']], ['zoom', ['wheel']], ['waypoint', ['N', 'click']]]
-        const CAP = 15, GAP = 4, SEP = 16
-        ctx.font = `11px ${MAP_LABEL_FONT}`
+    }
+
+    _drawControlRows(ctx, x, y, W) {
+        const usePad = pad.active, CAP = 16, GAP = 4
+        ctx.font = `12px ${MAP_LABEL_FONT}`
         const capW = c => (usePad && c.length === 1) ? CAP : Math.max(CAP, ctx.measureText(c).width + 8)
-        const w = groups.map(([label, caps]) => caps.reduce((a, c) => a + capW(c) + GAP, 0) + 2 + ctx.measureText(label).width)
-        const total = w.reduce((a, b) => a + b, 0) + SEP * (groups.length - 1)
-        let x = xMin
-        if (x + total > xMax) return
+        const rows = this._controlRows()
+        const capsW = Math.max(...rows.map(([, caps]) => caps.reduce((a, c) => a + capW(c) + GAP, 0)))
         ctx.textBaseline = 'middle'; ctx.lineWidth = 1
-        for (const [label, caps] of groups) {
+        rows.forEach(([label, caps], i) => {
+            const by = y + i * LEGEND_CTL_ROW + LEGEND_CTL_ROW / 2
+            let cx = x
             for (const c of caps) {
                 const cw = capW(c)
                 ctx.strokeStyle = '#6a6458'; ctx.fillStyle = '#4a453c'; ctx.textAlign = 'center'
-                if (usePad && c.length === 1) { ctx.beginPath(); ctx.arc(x + cw / 2, by, CAP / 2, 0, Math.PI * 2); ctx.stroke() }
-                else ctx.strokeRect(x + 0.5, by - CAP / 2 + 0.5, cw - 1, CAP - 1)
-                ctx.fillText(c, x + cw / 2, by + 0.5)
-                x += cw + GAP
+                if (usePad && c.length === 1) { ctx.beginPath(); ctx.arc(cx + cw / 2, by, CAP / 2, 0, Math.PI * 2); ctx.stroke() }
+                else ctx.strokeRect(cx + 0.5, by - CAP / 2 + 0.5, cw - 1, CAP - 1)
+                ctx.fillText(c, cx + cw / 2, by + 0.5)
+                cx += cw + GAP
             }
-            ctx.fillStyle = MAP_TEXT; ctx.textAlign = 'left'
-            ctx.fillText(label, x + 2, by)
-            x += 2 + ctx.measureText(label).width + SEP
-        }
+            ctx.fillStyle = MAP_TEXT_POI; ctx.textAlign = 'left'
+            ctx.fillText(label, x + capsW + 6, by + 0.5)
+        })
     }
 }
