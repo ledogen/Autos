@@ -9432,7 +9432,8 @@ export class RoadSystem {
      * sibling's tube — the split at a T promoted underground, where the tube carries on as the sibling's.
      * Such an end gets no portal ring (road-mesh.js) and no skin cut (terrain.js _tunnelPortals). The
      * mouth-funnel notch (_boreNotchCS) still measures from it: dropping that let the junction's other
-     * claimants carve the skin to the deck over the T (capture 1793661489778, measured 2026-11-04).
+     * claimants carve the skin to the deck over the T (capture 1793661489778, measured 2026-11-04). Except at an
+     * underground junction (_undergroundNodes, BUG-259, DEC-494), where no claimant carves the chamber either.
      * Memoised per run, arc and network revision.
      */
     isMouth(runKey, s) {
@@ -9449,7 +9450,7 @@ export class RoadSystem {
     }
 
     /**
-     * BUG-259 (owner, 2026-11-24: "There should be no earthwork at the intersection. There should only be earthwork near
+     * BUG-259, DEC-494 (owner, 2026-11-24: "There should be no earthwork at the intersection. There should only be earthwork near
      * the portals."): the junction nodes that sit INSIDE the hill — three or more legs, every one leaving the node in a
      * bore, none of those span ends a mouth. Returns a Map 'runKey|A' / 'runKey|B' (the run end at the node) → node, and
      * flags each such node record `underground`. Over one, the mouth-funnel notch does not measure from the node and the
