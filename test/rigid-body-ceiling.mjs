@@ -215,13 +215,15 @@ function settle (hs, maxS = 30) {
   return +((k + 1) / 60).toFixed(1)
 }
 
-function blast (hs) {
+// R (lever mode): a charge's reach — only rocks within R m of the centre, Δv falling linearly to 0 at R. Default: the whole pile.
+function blast (hs, R = Infinity) {
   // Centre: the pile's middle, 0.5 m under the deck. Δv 6 m/s radial (XZ) + 3 m/s up, as an impulse m·Δv.
   const mid = at(run.s + Math.ceil(hs.length / (COLS * LAYERS)) * PITCH / 2), cy = deckY(mid.x, mid.z) - 0.5
   const p = new THREE.Vector3(), qq = new THREE.Quaternion()
   for (const h of hs) {
     E.getTransform(h, p, qq)
-    const dx = p.x - mid.x, dz = p.z - mid.z, l = Math.hypot(dx, dz) || 1, m = E.getMass(h)
+    const dx = p.x - mid.x, dz = p.z - mid.z, l = Math.hypot(dx, dz) || 1, m = E.getMass(h) * (R === Infinity ? 1 : Math.max(0, 1 - Math.hypot(dx, p.y - cy, dz) / R))
+    if (!m) continue
     E.applyImpulse(h, { x: m * 6 * dx / l, y: m * 3, z: m * 6 * dz / l }, { x: p.x, y: p.y, z: p.z })
   }
   return cy
@@ -262,7 +264,7 @@ function mainRun (rep) {
 }
 
 // ── Lever mode: engine.step alone (the truck disabled), same pile ─────────────────────────────────────────────────
-function leverRun ({ shape = 'hull42', sub = SUB, sleepT = null, rep = 0 }) {
+function leverRun ({ shape = 'hull42', sub = SUB, sleepT = null, blastR = Infinity, rep = 0 }) {
   const rng = mulberry32(2000 + rep)
   const hs = slots(N, rng).map(s => {
     const h = E.createBody({ type: 'dynamic', position: s })
@@ -282,7 +284,7 @@ function leverRun ({ shape = 'hull42', sub = SUB, sleepT = null, rep = 0 }) {
   const c = E.counters(), touch = touching(hs)
   const rest = []; for (let i = 0; i < 300; i++) rest.push(st()[0])
   const restAwake = +awakeShare(hs).toFixed(2)
-  blast(hs)
+  blast(hs, blastR)
   const bl = [], aw = []
   for (let i = 0; i < 900; i++) { bl.push(st()[0]); if (i % 30 === 29) aw.push(+awakeShare(hs).toFixed(2)) }
   const blSum = bl.reduce((a, b) => a + b, 0)
@@ -293,7 +295,7 @@ function leverRun ({ shape = 'hull42', sub = SUB, sleepT = null, rep = 0 }) {
   const off = []; for (let i = 0; i < 300; i++) off.push(st()[0])
   for (const h of hs) E.destroyBody(h)
   const none = []; for (let i = 0; i < 300; i++) none.push(st()[0])
-  return { shape, sub, sleepT, rep, settleS, contacts: c.contacts, touch, restAwake, rest: stat(rest), blast: stat(bl), blast15sSumMs: +blSum.toFixed(0),
+  return { N, shape, sub, sleepT, blastR: blastR === Infinity ? null : blastR, rep, settleS, contacts: c.contacts, touch, restAwake, rest: stat(rest), blast: stat(bl), blast15sSumMs: +blSum.toFixed(0),
     asleep: stat(asleep), disabled: stat(off), empty: stat(none),
     awakeAt: { '1s': aw[1], '3s': aw[5], '5s': aw[9], '10s': aw[19], '15s': aw[29] } }
 }
@@ -310,7 +312,7 @@ if (!LEVER) {
   }
 } else {
   E.setEnabled(w.chassis, false)
-  const cases = [{ shape: 'hull42' }, { shape: 'oblong' }, { shape: 'hull12' }, { shape: 'sphere' }, { shape: 'box' }, { shape: 'hull42', sub: 4 }, { shape: 'hull42', sleepT: 0.15 }, { shape: 'hull42', sleepT: 0.3 }]
+  const cases = [{ shape: 'hull42' }, { shape: 'oblong' }, { shape: 'hull12' }, { shape: 'sphere' }, { shape: 'box' }, { shape: 'hull42', sub: 4 }, { shape: 'hull42', sleepT: 0.15 }, { shape: 'hull42', sleepT: 0.3 }, { shape: 'hull42', blastR: 3 }]
   for (const c of cases) for (let rep = 0; rep < REPS; rep++) {
     const r = leverRun({ ...c, rep })
     console.log(JSON_OUT ? JSON.stringify(r) : `${r.shape} sub ${r.sub} sleepT ${r.sleepT ?? 'dflt'} rep ${rep} | settle ${r.settleS} s contacts ${r.contacts} touch/rock ${r.touch} awake after rest ${r.restAwake} | rest ${r.rest.p50}/${r.rest.p99} | blast ${r.blast.p50}/${r.blast.p99} sum15s ${r.blast15sSumMs} ms awake ${JSON.stringify(r.awakeAt)} | asleep ${r.asleep.p50} disabled ${r.disabled.p50} empty ${r.empty.p50}`)
