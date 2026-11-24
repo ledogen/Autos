@@ -16,6 +16,14 @@
 //   5. the bore shade at the node is a tunnel's (< 0.5), not a portal's daylight (main 1.0);
 //   6. MESH == PHYSICS on the pad: a probe in the chamber still rides the pad (analyticHeight with the probe's Y equals
 //      sampleRoadTopY within 1 cm), and a probe above the apex reads the skin.
+// Slice 2 (the owner: "the junction pads do bleed outside of the tunnels sometimes which Looks weird because the gravel
+// texture on the shoulder disappears"):
+//   7. the pad is the legs' own pavement: no point of its ring stands more than 0.1 m outside every leg's lane
+//      (halfWidth from the centreline, the leg run on straight R past the node as its tube is), so the bore floor's
+//      gravel shoulder (R − halfWidth = 3 m) runs on round the chamber. Main: fillets 1.5 m into the shoulder at
+//      1960791808, the convex-hull pad 4.3 m past the WALL at 2280440363 (two roads crossing at 3°);
+//   8. MESH == PHYSICS over the whole pad: on a 1 m grid inside the ring the collider (analyticHeight in the chamber) and
+//      the drawn pad (_nodeSurfaceTop, what its vertices ride) agree within 1 cm.
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
@@ -69,6 +77,41 @@ for (const [s, wantX] of SEEDS) {
         const top = road.sampleRoadTopY(x + 2, z + 1), inBore = T.analyticHeight(x + 2, z + 1, undefined, y + 1)
         const sky = T.analyticHeight(x + 2, z + 1, undefined, y + R + 2)
         ok(Math.abs(inBore - top) < 0.01 && sky > y + R, `${tag}: pad probe rides the pad (${inBore.toFixed(3)} vs drawn ${top.toFixed(3)}), above the apex reads the skin (${(sky - y).toFixed(1)} m over the deck)`)
+        // 7: ring vs the legs' lanes
+        const HW = P.roadHalfWidth ?? 5, segD = (px, pz, a, b) => {
+            const dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz, t = L2 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (pz - a.z) * dz) / L2)) : 0
+            return Math.hypot(px - a.x - dx * t, pz - a.z - dz * t)
+        }
+        const lanes = legs.map((l) => {
+            const pts = []
+            for (let d = 0; d <= 45; d += 1) pts.push(road.runPointAt(l.k, l.atA ? d : l.L - d))
+            const ux = pts[0].x - pts[1].x, uz = pts[0].z - pts[1].z, ul = Math.hypot(ux, uz)
+            pts.unshift({ x: pts[0].x + ux / ul * R, z: pts[0].z + uz / ul * R })
+            return pts
+        })
+        let past = -Infinity
+        const ring = node.ring ?? []
+        for (let i = 0; i < ring.length; i++) {
+            const a = ring[i], b = ring[(i + 1) % ring.length], n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.25)
+            for (let k = 0; k < n; k++) {
+                const qx = a.x + (b.x - a.x) * k / n, qz = a.z + (b.z - a.z) * k / n
+                let d = Infinity
+                for (const pts of lanes) for (let j = 0; j < pts.length - 1; j++) d = Math.min(d, segD(qx, qz, pts[j], pts[j + 1]))
+                past = Math.max(past, d - HW)
+            }
+        }
+        ok(ring.length >= 3 && past <= 0.1, `${tag}: pad on the legs' pavement, worst ${past.toFixed(2)} m past a lane edge (${(past - R + HW).toFixed(2)} m past the wall; gravel shoulder ${(R - HW).toFixed(0)} m)`)
+        // 8: collider vs drawn pad over the ring
+        let pd = 0, pn = 0
+        const r = node.ringMaxR ?? 0
+        for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+            const qx = x + dx, qz = z + dz
+            if (!(road._signedRingDist(ring, qx, qz) < -0.3)) continue
+            const drawn = road._nodeSurfaceTop(node, qx, qz)
+            if (drawn == null) continue
+            pd = Math.max(pd, Math.abs(T.analyticHeight(qx, qz, undefined, drawn + 1) - drawn)); pn++
+        }
+        ok(pn > 50 && pd < 0.01, `${tag}: collider vs drawn pad over ${pn} points inside the ring, worst ${(100 * pd).toFixed(2)} cm`)
     }
 }
 console.log(fail ? `FAIL: ${fail}` : 'PASS')
