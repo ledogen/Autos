@@ -23,7 +23,7 @@ import { CHROME, launchChrome, connect, sleep, freezeProbe } from './lib/cdp.mjs
 import { ECONOMY_PARAMS } from '../src/economy.js'
 import { DAY_PARAMS } from '../src/day.js'
 import { summarize, parseLines, report } from '../tools/run-log-summary.mjs'   // the runlog step reads its real log back
-import { TUTORIAL } from '../data/tutorial.js'   // FEAT-184: the tutorial seed's world (DEC-402)
+import { TUTORIAL, FIRING_CAM } from '../data/tutorial.js'   // FEAT-184: the tutorial seed's world (DEC-402)
 import { FIRING, PHONE } from '../data/dialogue.js'   // FEAT-288 P8: the firing's cards, framed, to count what was shown
 import { DialogueSystem } from '../src/dialogue.js'
 import { SHOP_TYPES } from '../src/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
@@ -128,7 +128,8 @@ const simFor = s => untilSim(() => false, s)
 // reach. Measured 2026-11-01: seated ON the farm's marker at (-936.5, 668.6) the truck starts inside the
 // barn and is thrown out at 21 m/s, on main as on any branch; the save step stalled whenever the clock
 // happened to post that farm's freight (it rolled 70–88 m off the pad, never taking the offer).
-// A POI with a PARK box (FEAT-178: the shop's lift; ASSET-74: the store's lot) answers the brake only inside it: seat
+// A POI with a PARK box (FEAT-178: the shop's lift; ASSET-74: the store's lot; FEAT-318: every other giver's shoulder
+// strip, `park.strip`) answers the brake only inside it: seat
 // where a tow would (poi.js towSeat — its centre, along its long side), heading included. Callers spread this LAST.
 const PAD_SEAT = `((q) => { const P = window.__poi(), y = (q.y ?? 0) + 0.8
   if (q.park) { const s = window.__towSeat(q); return { x: s.x, z: s.z, h: s.heading } }
@@ -620,14 +621,11 @@ const STEPS = [
     await js('HTMLAnchorElement.prototype.click = window.__rlClick; delete window.__rlSaved; delete window.__rlText')
   }],
   ['camp', async () => {
-    // Mom's doorstep is the one camp face reachable without a zone hunt: pull the brake there.
+    // Mom's doorstep is the one camp face reachable without a zone hunt: pull the brake there (FEAT-318: in her strip).
     const p = await js(`(() => { const m = window.__map2d()._getPois().find(q => q.type === 'momsHouse'); if (!m) return null
-      let best = null, bd = 25
-      for (const e of window.__roadSys()._network.values()) for (const q of e.points) {
-        const d = Math.hypot(q.x - m.x, q.z - m.z); if (d < bd && d > 8) { bd = d; best = { x: q.x, z: q.z } } }
-      return best })()`)
-    check(p, "no road point within 25 m of mom's house")
-    await seat(p.x, p.z, 0)
+      return { h: Math.atan2(-m.tx, -m.tz), ...${PAD_SEAT}(m) } })()`)
+    check(p, "no mom's house in the region")
+    await seat(p.x, p.z, p.h)
     const panel = () => js('getComputedStyle(document.getElementById("camp-panel")).display !== "none"')
     if (await js('window.__vs.parked')) { await tap(' '); await sleep(400) }   // a teleport seats latched
     await tap(' ')
@@ -1334,7 +1332,7 @@ const STEPS = [
     await each('hud')
     // the offer card: a farm that has a job up, its jobs button
     const live = await js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
-      const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden && !q.drop && !q.park && b.view(q.id, 0)?.count > 0)
+      const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden && !q.drop && !(q.park && !q.park.strip) && b.view(q.id, 0)?.count > 0)
       return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
     if (live) {
       await seat(live.x, live.z, live.h); await park(true)
@@ -1495,7 +1493,7 @@ const STEPS = [
     // Pictures: wip/groceries/farm-shop.png (no offer), farm-shop-jobs.png (the jobs button).
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
     const find = (want) => js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
-      const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden && !q.drop && !q.park && ((b.view(q.id, 0)?.count > 0) === ${want}))
+      const q = window.__map2d()._getPois().find(q => q.type === 'farm' && !q.hidden && !q.drop && !(q.park && !q.park.strip) && ((b.view(q.id, 0)?.count > 0) === ${want}))
       return q ? { h: Math.atan2(-q.tx, -q.tz), id: q.id, ...${PAD_SEAT}(q) } : null })()`)
     const shot = async (f) => { await sleep(600); const r = await client.cmd('Page.captureScreenshot', { format: 'png' }); mkdirSync('wip/groceries', { recursive: true }); writeFileSync(`wip/groceries/${f}`, Buffer.from(r.result.data, 'base64')) }
     const leave = async () => { await tap('Escape'); await until(async () => !await vis('svc-screen'), 1500); await tap(' '); await sleep(300) }
@@ -1595,7 +1593,7 @@ const STEPS = [
     // line taken is the fuel drum, strapped in at the source and not before.
     const pois = 'window.__map2d()._getPois()'
     const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
-      return q ? { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } : null })()`)
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
     check(camp, 'no expedition camp in the region')
     const prompt = () => js('document.getElementById("poi-prompt").checkVisibility() && document.getElementById("poi-prompt").textContent')
     await seat(camp.x, camp.z, camp.h)
@@ -1614,8 +1612,8 @@ const STEPS = [
     check(a.s === 'staging' && a.a, `a line taken at the camp is not an untimed approach: ${JSON.stringify(a)}`)
     await sleep(500)
     check(!await js('window.__cargo().freight'), `the fuel line strapped its drum at the camp: ${JSON.stringify(await js('window.__cargo().freight'))}`)
-    // A source with a park box (the gas station's storefront bays) is parked IN it — poi.js dropZoneWorld's
-    // mapping, the truck's long axis along the bay.
+    // A source with a park box (the gas station's storefront bays; FEAT-318: any giver's shoulder strip) is parked IN
+    // it — poi.js dropZoneWorld's mapping. Not towSeat: a gas station's tow lands at its pump, not in its bay.
     const src = await js(`(() => { const q = ${pois}.find(q => q.id === ${JSON.stringify(a.from)}), b = q.park
       if (!b) return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) }
       const yaw = q.modelYaw ?? q.yaw ?? 0, cs = Math.cos(yaw), sn = Math.sin(yaw), ox = q.modelX ?? q.x, oz = q.modelZ ?? q.z
@@ -1645,7 +1643,7 @@ const STEPS = [
   ['demolition', async () => {
     const pois = 'window.__map2d()._getPois()'
     const camp = await js(`(() => { const q = ${pois}.find(q => q.type === 'expeditionCamp')
-      return { x: q.x - q.nx * 3, z: q.z - q.nz * 3, h: Math.atan2(-q.tx, -q.tz) } })()`)
+      return { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } })()`)
     await seat(camp.x, camp.z, camp.h)
     await park(true)
     const vis = id => js(`document.getElementById("${id}").checkVisibility()`)
@@ -1750,7 +1748,7 @@ const STEPS = [
     // with targets standing it ends on what the hits paid, no tip.
     const dj = await js(`(() => { const b = window.__cargo().board, now = window.__day().clockH()
       for (const q of window.__map2d()._getPois()) {
-        if (!q.jobs || q.hidden || q.drop || q.park || q.type === 'expeditionCamp') continue
+        if (!q.jobs || q.hidden || q.drop || (q.park && !q.park.strip) || q.type === 'expeditionCamp') continue
         const o = b.offers(q.id, now).find(o => b.spec(o)?.family === 'demolition' && !b.spec(o).line)
         if (o) return { h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type, ...${PAD_SEAT}(q) }
       }
@@ -1854,7 +1852,7 @@ const STEPS = [
     // FEAT-141: Larry's round — any N of the customers against a deadline, the size chosen among the
     // unlocked rungs. Unlock the 7, park at Larry's, read his briefing, and walk the size row.
     const larry = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'larrysHouse')
-      return q ? { x: q.x - q.nx * 5, z: q.z - q.nz * 5, h: Math.atan2(-q.tx, -q.tz) } : null })()`)   // his yard: the marker stands at the house
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)   // FEAT-318: his strip
     if (!larry) { console.log('  papers: no Larry in this region — step skipped'); return }
     await js('window.__paper.runPaper.tier = 1')
     await seat(larry.x, larry.z, larry.h)
@@ -1952,7 +1950,7 @@ const STEPS = [
     // A plain delivery giver (no bed-over-drop or park-box rule) with a live offer: seat the truck on
     // its pad (q.x/z — the solid model stands off it at modelX/Z), pull the brake, accept, drive.
     const p = await js(`(() => { const b = window.__map2d()._getBoard(); if (!b) return null
-      const q = window.__map2d()._getPois().find(q => q.jobs && !q.hidden && !q.drop && !q.park && q.type !== 'expeditionCamp'
+      const q = window.__map2d()._getPois().find(q => q.jobs && !q.hidden && !q.drop && !(q.park && !q.park.strip) && q.type !== 'expeditionCamp'
         && b.status(q.id)?.family === 'delivery' && b.view(q.id, 0)?.count > 0)
       return q ? { rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: q.id, type: q.type, ...${PAD_SEAT}(q) } : null })()`)
     if (!p) { console.log('  offer: no plain delivery giver with a live offer — step skipped'); return }
@@ -2084,7 +2082,7 @@ const STEPS = [
     await js('window.__mission().exit()')
     const fr = await js(`(() => { const b = window.__cargo().board, now = window.__day().clockH()
       for (const q of window.__map2d()._getPois()) {
-        if (!q.jobs || q.hidden || q.drop || q.park || q.type === 'expeditionCamp') continue
+        if (!q.jobs || q.hidden || q.drop || (q.park && !q.park.strip) || q.type === 'expeditionCamp') continue
         const o = b.offers(q.id, now).find(o => b.spec(o)?.family === 'freight')
         if (o) return { rx: q.roadX, rz: q.roadZ, h: Math.atan2(-q.tx, -q.tz), id: o.id, type: q.type, ...${PAD_SEAT}(q) }
       }
@@ -2493,10 +2491,12 @@ const STEPS = [
         else if (out) R.push({ end: true, out })
       }).observe(p.parentNode, { childList: true, subtree: true }) })()`)
     const at = () => js(`(() => { const q = window.__poi().list().find(q => q.type === 'foodVendor'), v = window.__vs.position, c = window.__cam().position
-      return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), h: window.__day().clockH() } })()`)
+      // FEAT-318: the truck starts in the joint's shoulder strip, ~8 m from the camera's ring, so the orbit is read off its
+      // aim point (the model, FIRING_CAM.lift up), not off the truck.
+      return { truck: Math.hypot(v.x - q.x, v.z - q.z), cam: Math.hypot(c.x - v.x, c.z - v.z), orbit: Math.hypot(c.x - q.modelX, c.y - q.baseY - ${FIRING_CAM.lift}, c.z - q.modelZ), h: window.__day().clockH() } })()`)
     const a = await at(); await sleep(1000); const b = await at()
     check(a.truck < 8, `the truck is ${a.truck.toFixed(1)} m from the burger joint's pad, want < 8`)
-    check(b.cam > 9, `the camera is ${b.cam.toFixed(1)} m from the truck — not on the joint's orbit`)
+    check(Math.abs(b.orbit - FIRING_CAM.radius) < 2, `the camera is ${b.orbit.toFixed(1)} m from the joint's aim point, want ${FIRING_CAM.radius} — not on its orbit`)
     check(b.h === a.h, `the day clock ran under the firing (${a.h} → ${b.h})`)
     await watchWrongWay()   // BUG-203: counted from here to the pedals card
     // FEAT-288 P6 (FIRING_CAM, data/tutorial.js): the orbit turns on its own (0.05 rad/s); the right stick and a RIGHT drag

@@ -17,6 +17,11 @@
 //      stands on her fire pit, and this test says so. On every other seed the old seat's hits are reported. Over 12
 //      random seeds (2026-11-07) the old seat was blocked on 4: twice her fire pit, twice her propane tank.
 //
+//   4. FEAT-318 (DEC-474): every POI that answers the brake (a job giver, mom's) has a parking spot, never a circle; each
+//      SHOULDER STRIP is at least 2.5 Ranger lengths by 2 widths, no point of it (a 0.5 m grid) is inside the travel
+//      lanes of ANY road (< roadHalfWidth from its centreline), and it overlaps no POI solid and no solid prop — the
+//      first three start seats now stand in their strips.
+//
 // Seeds: the report's shape, 1701194613 (the old seat on her propane tank), 1 and 1780111592, plus two RANDOM seeds
 // per run, printed so a miss replays. No default seed: seed 6 is not in the sample.
 // Heavy: builds a full story region per seed (~25 s each).
@@ -28,7 +33,7 @@ import { PROP_MODELS } from '../data/prop-models.js'
 import { parseWorldSeed } from '../src/seed.js'
 import { WaterSystem } from '../src/water.js'
 import { TerrainSystem } from '../src/terrain.js'
-import { PoiSystem, POI_PARAMS, satSolid, startSeat } from '../src/poi.js'
+import { PoiSystem, POI_PARAMS, satSolid, startSeat, dropZoneWorld } from '../src/poi.js'
 import { scatterChunk } from '../src/props/prop-scatter.js'
 import { buildPalette, blobRadii } from '../src/props/prop-palette.js'
 import { validateArea, discArea } from '../src/world-validate.js'
@@ -119,14 +124,14 @@ function region (s) {
       }
     return out
   }
-  return { poi, propsNear }
+  return { poi, propsNear, road }
 }
 
-/** What blocks a seat: POI solids by exact overlap; a solid prop whose centre is within its own radius of the footprint. */
-function blockers (solids, propsNear, seat) {
-  const t = truck(seat)
+/** What blocks a seat (or any plan rectangle `t`): POI solids by exact overlap; a solid prop whose centre is within its
+ *  own radius of the footprint. */
+function blockers (solids, propsNear, seat, t = truck(seat)) {
   const hits = solids.filter(r => overlap(t, r)).map(r => r.what)
-  for (const p of propsNear(seat.x, seat.z, HALF_L + 8)) {
+  for (const p of propsNear(seat.x, seat.z, Math.max(t.hx, t.hz) + 8)) {
     const r = (p.cat === 'aspen' || p.cat === 'pine' ? 0.5 : 1.0) * (p.scale ?? 1) * (p.cat === 'boulder' ? 3 : 1)
     if (overlap(t, { x: p.x, z: p.z, hx: r, hz: r, yaw: 0 })) hits.push(`a ${p.cat}`)
   }
@@ -138,8 +143,30 @@ const REPORT = '362666972'   // a random seed whose old seat stands on mom's fir
 const SEEDS = process.argv.length > 2 ? process.argv.slice(2) : [REPORT, '1701194613', '1', '1780111592', rand(), rand()]
 const START = { foodVendor: 'the burger joint (a played opening)', momsHouse: "mom's (a skipped opening)", larrysHouse: "Larry's (the paper scenario)" }
 let oldHits = 0
+const MIN_LEN = 2.5 * P.bodyLength, MIN_W = 2 * P.bodyWidth, LANE = P.roadHalfWidth ?? 5
 for (const s of SEEDS) {
-  const t0 = Date.now(), { poi, propsNear } = region(s), solids = poiSolids(poi)
+  const t0 = Date.now(), { poi, propsNear, road } = region(s), solids = poiSolids(poi)
+  // 4. FEAT-318: the parking spots.
+  const noSpot = poi.list().filter(q => (q.jobs || q.type === 'momsHouse') && !q.drop && !q.park).map(q => q.type)
+  check('every POI that answers the brake has a parking spot', noSpot.length === 0, noSpot.join(', '))
+  let strips = 0, minLane = Infinity
+  for (const q of poi.list().filter(q => q.park?.strip)) {
+    strips++
+    const b = dropZoneWorld(q, q.park), L = 2 * Math.max(b.halfX, b.halfZ), W = 2 * Math.min(b.halfX, b.halfZ)
+    const rect = { x: b.x, z: b.z, hx: b.halfX, hz: b.halfZ, yaw: b.yaw }
+    const [[ax, az], [bx, bz]] = axes(rect)
+    let lane = Infinity
+    for (let u = -b.halfX; u <= b.halfX + 1e-6; u += 0.5) for (let v = -b.halfZ; v <= b.halfZ + 1e-6; v += 0.5) {
+      const x = b.x + ax * u + bx * v, z = b.z + az * u + bz * v, nr = road.queryNearest(x, z, LANE + 2)
+      if (nr?.point) lane = Math.min(lane, Math.hypot(nr.point.x - x, nr.point.z - z))
+    }
+    minLane = Math.min(minLane, lane)
+    const hits = blockers(solids, propsNear, { x: b.x, z: b.z }, rect)
+    check(`${q.type} (${q.modelKey ?? 'cube'}): its ${L.toFixed(1)} x ${W.toFixed(1)} m strip is clear and off the lanes`,
+      L >= MIN_LEN && W >= MIN_W && lane >= LANE - 1e-3 && hits.length === 0,
+      `size ${L.toFixed(2)} x ${W.toFixed(2)} (min ${MIN_LEN.toFixed(2)} x ${MIN_W.toFixed(2)}), nearest centreline ${lane.toFixed(2)} m (lane edge ${LANE}), ${hits.join(', ')}`)
+  }
+  console.log(`       ${strips} shoulder strips; the closest point to any centreline is ${minLane.toFixed(2)} m (lane edge ${LANE} m)`)
   console.log(`seed ${s}`)
   for (const [type, label] of Object.entries(START)) {
     const q = poi.list().find(p => p.type === type)
