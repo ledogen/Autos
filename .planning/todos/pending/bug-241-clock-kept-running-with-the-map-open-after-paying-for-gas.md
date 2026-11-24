@@ -22,7 +22,17 @@ Owner's words:
 `src/day.js` `clockHeld(camp, service, tutorial, parked)`: the world clock stops only for a camp menu, the service screen, the tutorial drive, or the latched parking brake (DEC-024, DEC-289). The map is NOT in that list, so reading a mission on the map has always run the clock. The owner expected it to be held, which is a different rule from today's code. It may also be the parking brake: "Release the handbrake to pay" (the pump asks the brake off); after paying the brake is free, so the clock runs while the map is open.
 
 ## Description
-(See Summary.)
+Reproduced 2026-11-24 over CDP (a throwaway step, not committed), seed 6 skipped tutorial, 10 s of sim time each:
+| state | parked latch | handbrake | clock advance |
+|---|---|---|---|
+| (a) latched, map open | true | true | +0.00 game-min (held) |
+| (b0) paid at the pump, brake released, map closed | false | false | +10.03 |
+| (b) same, map open | false | true (map's park lock) | +10.05 |
+| (c) same, a mission row selected on the map | false | true | +10.02 |
+| (d) driving, map open | false | by the code path: runs | not separately timed (the truck would not roll in the probe) |
+
+Inputs of `clockHeld(camp, service, tutorial, parked)` in (b)/(c): all four false. The map's handbrake comes from `_parkLocked()` (a hold, not the latch: main.js comment "latching would fire the park trigger"), so `vehicleState.parked` stays false and the clock runs. After the pump pays, `_settlePump` runs on the brake release, which clears the latch.
+Verdict: code matches DEC-024/DEC-289 (the clock holds only under the latched brake). Not a bug against a standing record; a rule question. Mismatch worth the owner's eye: the lamp is on (handbrake held) while time passes. Card: wip/bug-241/card.json.
 
 ## Tracker
 - [ ] Reproduced: pump, release, map, clock
@@ -43,3 +53,4 @@ DEC-024 (superseded), DEC-289.
 
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
+- 2026-11-24: lane reproduced it headlessly (table in Description). No src touched; owner card drafted at wip/bug-241/card.json.
