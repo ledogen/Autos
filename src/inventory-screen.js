@@ -24,7 +24,7 @@
  * InventorySystem, vehicleState.parked and the DOM.
  */
 
-import { keycap, hintPark, BACK_BUTTON } from './park-badge.js'
+import { keycap, hintPark, BACK_BUTTON, placeTip } from './park-badge.js'
 import { ITEMS } from '../data/items.js'
 import { formatGameDuration } from './offer-board.js'
 import { PARTS, RARITY_COLOR } from '../data/parts.js'
@@ -325,9 +325,7 @@ export class InventoryScreen {
         + (row.contents ? `<div class="tp-pack">${packSlotsHtml(row)}</div>` : '')
     }
     this.tip.style.display = 'block'
-    const w = this.tip.offsetWidth, h = this.tip.offsetHeight
-    this.tip.style.left = Math.min(e.clientX + 16, window.innerWidth - w - 8) + 'px'
-    this.tip.style.top = Math.min(e.clientY + 14, window.innerHeight - h - 8) + 'px'
+    placeTip(this.tip, e)   // FEAT-327: Big-zoom safe
   }
 
   /** Redraw the card. Cheap; called on open and on every inventory change. */
