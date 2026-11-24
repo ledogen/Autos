@@ -1710,10 +1710,11 @@ function _setSetupMode (mode) {
 /** The new-game page, opened on story — the mode is never remembered (owner, 2026-10-31). */
 function _openSetup () {
   _setSetupMode('story')
-  // Always blank (owner, 2026-09-06): pre-filling the standing seed would quietly make "just press
-  // start" mean "replay the same world forever".
+  // Blank (owner, 2026-09-06): pre-filling the standing seed would quietly make "just press
+  // start" mean "replay the same world forever". A link's ?seed= is the one exception (DEC-483):
+  // whoever opened it asked for that world.
   const inp = document.getElementById('su-seed')
-  if (inp) inp.value = ''
+  if (inp) inp.value = _urlSeed ?? ''
   _renderSelectors()
   document.getElementById('main-menu')?.classList.add('setup')
 }
