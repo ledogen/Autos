@@ -37,7 +37,8 @@ export const runParts = {
 export const modModels = (fitted) => Object.values(fitted).map(id => PARTS[id]).filter(p => p?.model)
     .map(p => Object.entries(p.modelWith ?? {}).find(([s]) => PARTS[fitted[s]]?.model)?.[1] ?? p.model)
 
-/** The rpm grid a modded curve is sampled on, on top of the engine's own points (so the stock curve is exact). */
+/** The rpm grid (multiples of this) a modded curve is sampled on, on top of the engine's own points (so the stock curve is exact
+ *  and every mod's corner rpm — 1500, 2000, 2500, 3000, 4000, 4500 — is a point). */
 const CURVE_STEP_RPM = 250
 
 /**
@@ -51,13 +52,13 @@ export function engineFor (fitted) {
     if (!base) return null
     const mods = Object.values(fitted).map(id => PARTS[id]).filter(p => p?.torque || p?.inertiaX)
     const c = base.engineTorqueCurve, lo = c[0][0], hi = c.at(-1)[0]
-    const rpms = [...new Set([...c.map(([r]) => r), ...Array.from({ length: Math.floor((hi - lo) / CURVE_STEP_RPM) }, (_, i) => lo + (i + 1) * CURVE_STEP_RPM)])]
-        .filter(r => r <= hi).sort((a, b) => a - b)
+    const rpms = new Set(c.map(([r]) => r))
+    for (let r = Math.ceil(lo / CURVE_STEP_RPM) * CURVE_STEP_RPM; r < hi; r += CURVE_STEP_RPM) rpms.add(r)
     const gain = (r) => mods.reduce((x, m) => x * (1 + (m.torque ? engineTorqueAt(r, m.torque) : 0)), e.torqueX ?? 1)
     return {
         ...base,
         engine: e.engine,
-        engineTorqueCurve: rpms.map(r => [r, engineTorqueAt(r, c) * gain(r)]),
+        engineTorqueCurve: [...rpms].sort((a, b) => a - b).map(r => [r, engineTorqueAt(r, c) * gain(r)]),
         engineInertia: mods.reduce((J, m) => J * (m.inertiaX ?? 1), base.engineInertia),
     }
 }
