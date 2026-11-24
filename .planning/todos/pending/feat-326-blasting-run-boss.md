@@ -78,6 +78,8 @@ Design as agreed so far (owner's answers, 2026-11-23):
   dec-425". The change that builds the boss writes the record that supersedes it.
 - No decision record is written yet. These are trial-design answers; records follow if the owner adopts the trial.
 
+- 2026-11-24, owner (cards feat326-rock-count-pick, feat326-collider-pick; DEC-491): "Let's see if we can get away with 150 rocks. I'd like to keep the less powerful machines in mind." 12-point physics shape for boss rocks: yes. And: "Is it possible to reduce our custom physics cost? I'm thinking we don't have to check with tire collisions with rocks if the rocks are Beyond a certain radius. What tricks does Box3D use and can we reuse those to make our physics costs even lower?"
+
 ## Open questions
 - **Rigid-body ceiling.** Owner: "I know there are a lot of optimizations that could bring our max rigid body count
   up. For example, in the slide area we can grid it off into sections and rocks only have to check collisions with
