@@ -1,6 +1,6 @@
 ---
 id: DEC-475
-status: standing
+status: superseded
 decided: 2026-11-20
 area: story
 governs: FEAT-296, DEC-046, DEC-001, data/difficulty.js, src/difficulty.js, src/main.js, difficulty, death, free tows, fuel burn, hunger off, cost scaling, pause menu

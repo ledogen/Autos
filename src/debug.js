@@ -179,7 +179,7 @@ export function initDebug (params, callbacks = {}, options = {}) {
   // gamepad.js (deadzones, curve) and vehicle.js (assist, slew) every frame.
   const padFolder = vehicleFolder.addFolder('Controller (FEAT-125)')
   padFolder.add(PAD_PARAMS, 'steerAssist').name('Steering assist (speed-scaled lock)')
-  padFolder.add(PAD_PARAMS, 'stickDeadzone', 0, 0.3, 0.01).name('Stick deadzone')
+  padFolder.add(PAD_PARAMS, 'stickDeadzone', 0, 0.2, 0.02).name('Stick deadzone')
   padFolder.add(PAD_PARAMS, 'triggerDeadzone', 0, 0.2, 0.01).name('Trigger deadzone')
   padFolder.add(PAD_PARAMS, 'steerShape', 0, 1.5, 0.05).name('Steer curve (|x|^(1+k): 0 linear, 1 parabola)')
   padFolder.add(PAD_PARAMS, 'steerSlewRate', 1, 20, 0.5).name('Steer slew (rad/s)')
