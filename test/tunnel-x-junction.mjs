@@ -13,7 +13,8 @@
 //      climbed out of the node itself, 61-162 m of cut);
 //   4. every leg's steepest 5 m within 60 m of the node is under the 38 % ceiling: the deck hold's recovery was pinned to
 //      the bore floor and shipped by the ceiling pass at 48 % on a leg solved at 20 % (DEC-409's design maximum now);
-//   5. the bore shade at the node is a tunnel's (< 0.5), not a portal's daylight (main 1.0);
+//   5. the bore shade at the node is a tunnel's (< 0.5, or the ramp's value at its portal distance under 13 m), not a
+//      portal's daylight (main 1.0);
 //   6. MESH == PHYSICS on the pad: a probe in the chamber still rides the pad (analyticHeight with the probe's Y equals
 //      sampleRoadTopY within 1 cm), and a probe above the apex reads the skin.
 // Slice 2 (the owner: "the junction pads do bleed outside of the tunnels sometimes which Looks weird because the gravel
@@ -30,6 +31,14 @@
 //      whose plane it is past (by more than the 4 cm the miter overlaps). Main: every tube ran on R past the node, and
 //      where that run-on crossed another tube's wall a strip of it stood proud, a thin line over the chamber (1960791808:
 //      the lines of the owner's report). Rays: 400 over the upper hemisphere from 1.5 m over the node and 6 m out each leg.
+// BUG-262 (DEC-495, the owner: a shallow crossing underground must "match above ground behavior - merge into one road";
+// an underground junction is at least "10m" from a portal). Seed 2280440363's pair is two legs of node 0,-1,1 crossing
+// twice at 3-9° in a bore, 55 m apart in height: main and BUG-259 shipped both crossings as X junctions; the overlap
+// join now merges them into one road (the longer road rides the shorter's deck between two Ts). Every underground
+// junction on the gate's seeds:
+//  10. no two legs leave it under roadCrossAngleMin (12°), judged on the legs 6 m out (BUG-259: 7.1° and 10.4°);
+//  11. its nearest portal is at least 10 m out along a leg (2143977503 at (2994, 508): 8.3 m; 94567479: 9.9 m);
+//  12. its pad is the exact weld, never the convex-hull fallback (DEC-068).
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
@@ -40,18 +49,21 @@ import { wirePondNoGo } from './lib/pond-no-go.mjs'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
 import { RoadMeshSystem } from '../src/road-mesh.js'
 
-// seed, underground X junctions it must have; SEEDS=a,b,… runs the same checks on other seeds (a census, nothing required)
-const SEEDS = process.env.SEEDS ? process.env.SEEDS.split(',').map((s) => [s, 0]) : [['1960791808', 1], ['2280440363', 2]]
+// seed, underground junctions it must have, of them X junctions; SEEDS=a,b,… runs the same checks on other seeds (a census)
+const SEEDS = process.env.SEEDS ? process.env.SEEDS.split(',').map((s) => [s, 0, 0])
+    : [['1960791808', 1, 1], ['2280440363', 2, 0], ['2143977503', 1, 0], ['94567479', 1, 0]]
+const ANG_MIN = P.roadCrossAngleMin ?? 12, PORTAL_M = 10
 const R = P.tunnelBoreRadius ?? 8, FUNNEL = 1.2, CEIL = 0.38
 let fail = 0
 const ok = (c, msg) => { console.log(`[${c ? 'PASS' : 'FAIL'}] ${c ? '✓' : '✗'} ${msg}`); if (!c) fail++ }
-for (const [s, wantX] of SEEDS) {
+for (const [s, wantUg, wantX] of SEEDS) {
     const seed = parseWorldSeed(s), road = new RoadSystem(seed, P), C = spawnDecision(seed, P)
     wirePondNoGo(road, seed, P); road.setRadius(REGION_WARM_RADIUS_M); road.update(new THREE.Vector3(C.x, 0, C.z))
     const T = makeTerrainHeadless(seed, P, road)
     road._undergroundNodes()
     const nodes = [...road._detectNodeJunctions().values()].filter((n) => n.underground)
-    ok(nodes.filter((n) => n.legs.length === 4).length >= wantX, `seed ${s}: ${nodes.length} underground junctions (${nodes.filter((n) => n.legs.length === 4).length} X, want ≥ ${wantX})`)
+    const nX = nodes.filter((n) => n.legs.length === 4).length
+    ok(nodes.length >= wantUg && nX >= wantX, `seed ${s}: ${nodes.length} underground junctions (want ≥ ${wantUg}), ${nX} X (want ≥ ${wantX})`)
     for (const node of nodes) {
         const { x, z, y } = node.pos, tag = `seed ${s} (${x.toFixed(0)}, ${z.toFixed(0)}) deg ${node.legs.length}`
         const legs = node.legs.map((l) => {
@@ -61,6 +73,15 @@ for (const [s, wantX] of SEEDS) {
             return { k: l.runKey, L, atA, bore: atA ? sp.s1 : L - sp.s0, mouth }
         })
         const dMouth = Math.min(...legs.filter((l) => l.mouth).map((l) => l.bore))
+        // 10-12: BUG-262
+        const u6 = legs.map((l) => { const f = road.runFrameAt(l.atA ? Math.min(6, l.L) : Math.max(0, l.L - 6), l.k), sg = l.atA ? 1 : -1, n = Math.hypot(f.tx, f.tz) || 1; return [f.tx * sg / n, f.tz * sg / n] })
+        let ang = 180
+        for (let i = 0; i < u6.length; i++) for (let j = i + 1; j < u6.length; j++) ang = Math.min(ang, Math.acos(Math.max(-1, Math.min(1, u6[i][0] * u6[j][0] + u6[i][1] * u6[j][1]))) * 180 / Math.PI)
+        ok(ang >= ANG_MIN, `${tag}: smallest angle between two legs ${ang.toFixed(1)}° (a crossing under ${ANG_MIN}° merges into one road)`)
+        ok(dMouth >= PORTAL_M, `${tag}: nearest portal ${dMouth.toFixed(1)} m out along a leg (≥ ${PORTAL_M} m)`)
+        let weld = road._junctionRingWeld(node)
+        if (weld && road._ringSelfIntersects(weld)) weld = null
+        ok(weld && weld.length >= 3, `${tag}: pad on the exact weld (${weld ? 'weld' : 'convex-hull fallback'})`)
         let lo = Infinity, under = 0, worst = -Infinity
         const rCh = Math.max(0, Math.min(20, dMouth - 10))
         for (let dx = -20; dx <= 20; dx++) for (let dz = -20; dz <= 20; dz++) {
@@ -80,7 +101,10 @@ for (const [s, wantX] of SEEDS) {
         }
         ok(steep < CEIL, `${tag}: steepest 5 m within 60 m ${(100 * steep).toFixed(1)} % (${at}; ceiling ${100 * CEIL} %)`)
         const sh = road.boreShadeAt(x, y + 1, z)
-        ok(sh < 0.5, `${tag}: bore shade at the node ${sh.toFixed(2)} (a tunnel's, < 0.5)`)
+        // a tunnel's: no brighter than the bore dMouth inside its portal (BUG-112's ramp, 0.25 deep over 25 m; < 0.5 past
+        // 13 m). BUG-262 lets a junction sit 10 m in, where the ramp reads 0.74.
+        const tq = Math.min(1, dMouth / 25), shMax = Math.max(0.5, 1 - 0.75 * tq * tq * (3 - 2 * tq) + 0.02)
+        ok(sh < shMax, `${tag}: bore shade at the node ${sh.toFixed(2)} (a tunnel's ${dMouth.toFixed(0)} m from its portal, < ${shMax.toFixed(2)})`)
         const top = road.sampleRoadTopY(x + 2, z + 1), inBore = T.analyticHeight(x + 2, z + 1, undefined, y + 1)
         const sky = T.analyticHeight(x + 2, z + 1, undefined, y + R + 2)
         ok(Math.abs(inBore - top) < 0.01 && sky > y + R, `${tag}: pad probe rides the pad (${inBore.toFixed(3)} vs drawn ${top.toFixed(3)}), above the apex reads the skin (${(sky - y).toFixed(1)} m over the deck)`)
