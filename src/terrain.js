@@ -37,6 +37,7 @@ let _detailNoiseTex = null   // PERF-41: one bake per page, shared by every terr
 import { perfAdd, perfEvent } from './perf.js'  // ?hitch / ?prof timing buckets (no-op otherwise)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
 import { smooth01 as _smooth01 } from './seed.js'
+import { gateSunInBore } from './shadow-fade.js'   // BUG-259: no sun deep in a bore (the bore floor)
 
 // FEAT-05/FEAT-85: the vegetation share of a ground sample — flat enough (below grassSlopeMax,
 // feathered from half of it) AND below the treeline (feathered lo→hi). One definition, two
@@ -496,6 +497,11 @@ export class TerrainSystem {
                             '\t\tdirectLight.color *= rsBakedShade;\n' +
                             '\t\t#endif')
                     )
+                    // BUG-259: the bore floor (boreFloorMaterial, below: this one program) takes no sun deep in a bore. Its
+                    // colour is the cut bench's × the bore shade (road-mesh.js buildTunnelTube); on the terrain the gate is 0.
+                    const cutR = _hexLin(params.terrainCutoutColor ?? 0x757066)[0]
+                    shader.uniforms.uBoreSunGate = { value: 0 }
+                    shader.fragmentShader = 'uniform float uBoreSunGate;\n' + gateSunInBore(shader.fragmentShader, `( vColor.r / ${cutR.toFixed(5)} )`, 'uBoreSunGate')
                 } else {
                     console.warn('[terrain] lights_fragment_begin shape changed — baked prop shadows not applied')
                 }
@@ -529,6 +535,7 @@ export class TerrainSystem {
         this.boreFloorMaterial.onBeforeCompile = (shader, renderer) => {
             this._material.onBeforeCompile(shader, renderer)
             shader.uniforms.uTunnelN = { value: 0 }
+            shader.uniforms.uBoreSunGate = { value: 1 }   // BUG-259: no sun deep in the bore
         }
         this.boreFloorMaterial.customProgramCacheKey = this._material.customProgramCacheKey
 

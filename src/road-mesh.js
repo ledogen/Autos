@@ -35,6 +35,7 @@ import { crownProfile, potholeNoise, earClip, padFillDelaunay } from './road-car
 import { roadQuality } from './road-quality.js'
 import { perfAdd, perfEvent } from './perf.js'  // ?hitch / ?prof timing buckets (no-op otherwise)
 import { streamScore } from './stream-priority.js'   // PERF-33: near-then-ahead queue ordering
+import { gateSunInBore } from './shadow-fade.js'      // BUG-259: no sun deep in a bore
 
 // ── Ribbon mesh constants ─────────────────────────────────────────────────────
 // CROSS_SEGS: number of lateral segments across the road width.
@@ -215,6 +216,10 @@ export class RoadMeshSystem {
                     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(edgeB),   edgeAlpha);
                 }`
             )
+            // BUG-259: no sun deep in a bore. The shade is read back off the asphalt's colour as the paint does, and only
+            // where the colour IS the asphalt's (0.15, 0.15, 0.17) × shade: a dirt skirt keeps its sun, in the open and in a bore.
+            shader.fragmentShader = gateSunInBore(shader.fragmentShader,
+                '( abs( vColor.r - vColor.g ) < 0.002 && abs( vColor.b - vColor.g * 1.1333 ) < 0.002 ? vColor.g / 0.15 : 1.0 )')
         }
         this._material.customProgramCacheKey = () => 'bug28-road-markings'
     }
@@ -1420,6 +1425,9 @@ export class RoadMeshSystem {
                 color: 0xaaa7a0, roughness: 0.95, metalness: 0,
                 side: THREE.DoubleSide, vertexColors: true,
             })
+            // BUG-259: the arch's vertex colour IS the bore shade (the foot's apron tint reads it 20 % low, so darker)
+            this._tunnelMaterial.onBeforeCompile = (sh) => { sh.fragmentShader = gateSunInBore(sh.fragmentShader, 'vColor.r') }
+            this._tunnelMaterial.customProgramCacheKey = () => 'bug259-bore-lining'
         }
         return this._tunnelMaterial
     }
