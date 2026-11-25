@@ -538,6 +538,9 @@ export class RoadMeshSystem {
         for (const [v, w] of bottom) {
             pos[w * 3] = positions[v * 3]; pos[w * 3 + 1] = positions[v * 3 + 1] - depth; pos[w * 3 + 2] = positions[v * 3 + 2]
             this._skirtColor(positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2], params, col, w * 3)
+            // BUG-259: darkened in a bore like the ribbon's skirt (BUG-112): the shade is the top vertex's, off its asphalt green
+            const sh = Math.min(1, colors[v * 3 + 1] / 0.15)
+            for (let c = 0; c < 3; c++) col[w * 3 + c] *= sh
             mrk[w * 4] = marks[v * 4]                        // markEnable (w) stays 0 — no stripes on the wall
         }
         const out = new Uint32Array(tris.length + edges.length * 3)
