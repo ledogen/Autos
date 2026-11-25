@@ -95,3 +95,5 @@ Read from the item setup page's database by the orchestrator. These replace the 
 Changed against the built placeholders: Duffel reach 15 → 30 m, Rucksack reach 60 → 80 m. Mass was not asked on the page.
 
 **Conflict to settle before building (asked the owner in chat 11-24):** the Rucksack. The page says sold "nowhere" at $25. DEC-487 (11-24 morning) set its shop price to $20, and in chat the same evening the owner said the shop always sells it at the auto shop ("rucksack, auto store").
+
+**Settled (owner, 2026-11-24 night, in chat):** "rucksack should be for sale at the general store only. $20". So: Rucksack $20 (DEC-487 stands), sold at the general store only, never the auto shop; the page's "nowhere" and $25 are replaced. The orchestrator reads "for sale" as an always row (applied on the arc trial build); the owner can say if it should stay a rarely rolled slot.
