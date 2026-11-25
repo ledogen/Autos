@@ -13,7 +13,8 @@
 //      climbed out of the node itself, 61-162 m of cut);
 //   4. every leg's steepest 5 m within 60 m of the node is under the 38 % ceiling: the deck hold's recovery was pinned to
 //      the bore floor and shipped by the ceiling pass at 48 % on a leg solved at 20 % (DEC-409's design maximum now);
-//   5. the bore shade at the node is a tunnel's (< 0.5), not a portal's daylight (main 1.0);
+//   5. the bore shade at the node is a tunnel's (< 0.5, or the ramp's value at its portal distance under 13 m), not a
+//      portal's daylight (main 1.0);
 //   6. MESH == PHYSICS on the pad: a probe in the chamber still rides the pad (analyticHeight with the probe's Y equals
 //      sampleRoadTopY within 1 cm), and a probe above the apex reads the skin.
 // Slice 2 (the owner: "the junction pads do bleed outside of the tunnels sometimes which Looks weird because the gravel
@@ -100,7 +101,10 @@ for (const [s, wantUg, wantX] of SEEDS) {
         }
         ok(steep < CEIL, `${tag}: steepest 5 m within 60 m ${(100 * steep).toFixed(1)} % (${at}; ceiling ${100 * CEIL} %)`)
         const sh = road.boreShadeAt(x, y + 1, z)
-        ok(sh < 0.5, `${tag}: bore shade at the node ${sh.toFixed(2)} (a tunnel's, < 0.5)`)
+        // a tunnel's: no brighter than the bore dMouth inside its portal (BUG-112's ramp, 0.25 deep over 25 m; < 0.5 past
+        // 13 m). BUG-262 lets a junction sit 10 m in, where the ramp reads 0.74.
+        const tq = Math.min(1, dMouth / 25), shMax = Math.max(0.5, 1 - 0.75 * tq * tq * (3 - 2 * tq) + 0.02)
+        ok(sh < shMax, `${tag}: bore shade at the node ${sh.toFixed(2)} (a tunnel's ${dMouth.toFixed(0)} m from its portal, < ${shMax.toFixed(2)})`)
         const top = road.sampleRoadTopY(x + 2, z + 1), inBore = T.analyticHeight(x + 2, z + 1, undefined, y + 1)
         const sky = T.analyticHeight(x + 2, z + 1, undefined, y + R + 2)
         ok(Math.abs(inBore - top) < 0.01 && sky > y + R, `${tag}: pad probe rides the pad (${inBore.toFixed(3)} vs drawn ${top.toFixed(3)}), above the apex reads the skin (${(sky - y).toFixed(1)} m over the deck)`)
