@@ -44,8 +44,10 @@ export const CAMPFIRE_PARAMS = {
   lightIntensity: 24,      // cd at full night; authored against the ACES scene, same scale as tail lamps
   lightDistance:  22,      // m — cutoff radius of the point light
   lightDecay:     2,       // physical inverse-square
-  lightHeight:    0.6,     // m above the flame anchor. Higher than the flames on purpose: inverse-square
-                           // blows the nearest stones to white if the light sits inside the fire
+  lightHeight:    0.4,     // m above the flame anchor. Higher than the flames' bases on purpose: inverse-square
+                           // blows the nearest stones to white if the light sits inside the fire. BUG-264: it must
+                           // stay under the cooking kit's pot (base 0.59 m above the ground = 0.5 above the anchor),
+                           // or the pot is lit from above
   dayScale:       0.1,     // fraction of full intensity in daylight (nightFactor 0)
   flicker:        0.18,    // ± fraction of intensity the flicker swings
   jitterM:        0.04,    // m — light position wobble
