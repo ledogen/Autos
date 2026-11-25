@@ -38,7 +38,7 @@ export const USED_COND = [0.4, 0.85]  //   condition, uniform
 // Arc trial (owner, 2026-11-24: "always stock standard instead of old"): the standard tire is the always-stocked tire;
 // the old tire is now a mission reward only.
 // Owner, 2026-11-24: "the auto shop should stock all basic consumables so stock pads and shoes".
-export const ALWAYS = ['tireStandard', 'airFilterStock', 'brakesFrontStd', 'brakesRearStd', 'tirePlugKit', 'wheelSteel', 'engineStock', 'rucksack']   // rucksack: owner 2026-11-24, the next pack up is always at the auto shop
+export const ALWAYS = ['tireStandard', 'airFilterStock', 'brakesFrontStd', 'brakesRearStd', 'tirePlugKit', 'wheelSteel', 'engineStock']
 
 /** Shelf items that aren't parts: no condition, priced here. */
 export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireIron: 30,   // tireIron: FEAT-203 [DEFAULT] = the quick-jack's price
@@ -91,8 +91,8 @@ export const STOREFRONT = {
     // FEAT-260 (owner, 2026-11-17: "This store needs to carry more than just groceries"): the salad, the deli sandwich,
     // the cookies and the bread.
     generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato', 'cannedBeans', 'groceries', 'apple', 'beefJerky', 'salad', 'deliSandwich', 'cookies', 'bread', 'blanket', 'airMattress', 'sleepingPad', 'sleepingBag',
-                             'ice', 'cooler'],
-                    weights: { deluxeSleepingPad: 0.25, rucksack: 1, iceKing: 0.25 } },
+                             'ice', 'cooler', 'rucksack'],   // arc trial (owner, 2026-11-24): "rucksack should be for sale at the general store only. $20": always there, not a rolled slot
+                    weights: { deluxeSleepingPad: 0.25, iceKing: 0.25 } },
     farm:         { always: ['groceries', 'apple'] },   // FEAT-230 slice 3: a farm sells for the first time (items.md, Groceries)
     gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar', 'beefJerky', 'breakfastBurrito', 'ice'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
     foodVendor:   { always: ['coffee', 'chiliDog', 'burger', 'dinnerMeal', 'friedChicken'] },
