@@ -199,6 +199,15 @@ const MANUAL = { ...RANGER_PARAMS, transmissionType: 'manual' }
   const slide = fresh(); slide.velocity.x = 15; key(' ', true); step(slide, RANGER_PARAMS, 50); key(' ', false); step(slide)
   check('   a handbrake slide at 15 m/s never latches, so it never holds the clock',
     !slide.parked && !clockHeld(false, false, false, slide.parked))
+  // BUG-241 (DEC-497): main.js passes mapAtRest = map open && opened under PARK_SPEED (_parkLocked's latch-on-open).
+  const { PARK_SPEED: PS } = await import('../src/park-brake.js')
+  const mapHeld = (open, speed) => clockHeld(false, false, false, false, open && speed < PS)
+  check('   BUG-241: map open at rest holds the clock; opened rolling it runs; map closed (brake free) it runs',
+    mapHeld(true, 0) && !mapHeld(true, 10) && !mapHeld(false, 0) && PS > 1.38 && PS < 1.4, `PARK_SPEED ${PS}`)
+  const m0 = day.clockH(); const mt = job(Infinity)
+  for (let i = 0; i < 400; i++) { if (!clockHeld(false, false, false, false, true)) day.update(DT); else mt.spendParked(DT / secPerGameH()); mt.update(DT) }
+  check('   …held by the map, the world clock stands still while the job\'s elapsed runs on (DEC-289)',
+    day.clockH() === m0 && Math.abs(mt.elapsed - 400 * DT) < 0.05, `clock ${m0}→${day.clockH()}, elapsed ${mt.elapsed.toFixed(2)}`)
 }
 
 // 7.
