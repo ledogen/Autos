@@ -32,10 +32,10 @@ where each one comes from (shop shelf, rewards).
 
 ## Acceptance
 
-- [ ] The four packs are items (`data/items.js`, kind `pack`), each with `packSlots` and `reachM` as the owner rules
-      them, with thumbnails. **Built with placeholder figures** (below); the owner's figures are still owed.
+- [x] The four packs are items (`data/items.js`, kind `pack`), each with `packSlots` and `reachM` as the owner rules
+      them (DEC-500), with thumbnails (all four in `assets/items/`). Mass is still the built [DEFAULT].
 - [x] An equipped pack sets the night's tether to its reach, capped at 120 m.
-- [ ] Each comes from where the owner rules (shelf and/or reward categories).
+- [x] Each comes from where the owner rules (shelf and/or reward categories), DEC-500. Open: the "rare roadside find" (no roadside-find source in code).
 - [x] Gates: the inventory gate covers packing up to the slots and the tether following the equipped pack.
 
 ## Built (2026-11-07, Lane C, for the owner's test)
@@ -97,3 +97,6 @@ Changed against the built placeholders: Duffel reach 15 → 30 m, Rucksack reach
 **Conflict to settle before building (asked the owner in chat 11-24):** the Rucksack. The page says sold "nowhere" at $25. DEC-487 (11-24 morning) set its shop price to $20, and in chat the same evening the owner said the shop always sells it at the auto shop ("rucksack, auto store").
 
 **Settled (owner, 2026-11-24 night, in chat):** "rucksack should be for sale at the general store only. $20". So: Rucksack $20 (DEC-487 stands), sold at the general store only, never the auto shop; the page's "nowhere" and $25 are replaced. The orchestrator reads "for sale" as an always row (applied on the arc trial build); the owner can say if it should stay a rarely rolled slot.
+
+## Log
+- 2026-11-25 Lane c (`land/feat-182-packs`): DEC-500 live. Reach 30/80 m; Daypack $15 + Duffel $20 rolled at the general store (weights 1 / 0.25), Rucksack stays a rolled slot (1) at the general store only; Frame pack not sold; per-pack reward categories (`packDaypack` etc.) on the owner's givers and ranks; gates in test/inventory.mjs. Roadside find not built: no source exists.
