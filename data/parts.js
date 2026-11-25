@@ -285,7 +285,7 @@ export const PARTS = {
                      patch: {}, desc: 'The factory radiator. Keeps the engine cool when it isn’t leaking.' },
     // items.md's ratified "Spare air filter" is this part: 15 min to fit at the roadside (`roadside`: src/recovery.js
     // fitRoadside) or at the shop, carries its own condition. $10 → $7 (owner, 2026-11-06 playtest: "reduced by 30%"); $7 → $3.50 (DEC-482: "air filter cost should be halved").
-    airFilterStock:{ name: 'Air filter',           slot: 'airFilter', family: 'oem', rarity: 'common', price: 3.5, massKg: 0.5, stock: true,
+    airFilterStock:{ name: 'Air filter',           slot: 'airFilter', family: 'oem', rarity: 'common', price: 2.5, massKg: 0.5, stock: true,
                      roadside: true, patch: {}, desc: 'A paper filter. A clean one lets the engine breathe. Swaps in by hand, no shop needed.' },
     headlightStock:{ name: 'Headlight',            slot: 'headlight', family: 'oem', rarity: 'common', price: 6, massKg: 1.5, stock: true,
                      patch: {}, desc: 'A sealed beam lamp, either side.' },
@@ -401,7 +401,7 @@ export const REPAIR_STEP = 0.05
 export const PATCH = { price: 5, hours: 0.5 }
 /** FEAT-202 (owner, 2026-11-13): the oil change — every auto shop, always; a flat job straight back to
  *  new oil, never a part on the shelf. owner $6 (FEAT-69, 2026-11-17) / 30 min. */
-export const OIL_CHANGE = { price: 6, hours: 0.5 }
+export const OIL_CHANGE = { price: 4, hours: 0.5 }   // arc trial (owner, 2026-11-24): was 6
 
 /** Tire work at the shop is two jobs, and every corner action is a count of them (owner, 2026-10-23):
  *  a BEAD job mounts or unmounts a tire on a wheel; a HUB swap takes a mounted tire off a corner or

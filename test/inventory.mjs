@@ -370,10 +370,10 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
 {
   const pool = (cats, gate) => rewardsIn(cats, 0).filter(r => r.gates.includes(gate)).map(r => r.id)
   const givers = (gate) => Object.entries(REWARD_CATS).filter(([k, v]) => k !== 'larrysHouse' && pool(v.cats, gate).includes('groceries')).map(([k]) => k).sort().join()
-  check('groceries: raw is no meal, cooked gives 10 h', !ITEMS.groceries.use && ITEMS.groceriesCooked.use === 'eat' && ITEMS.groceriesCooked.satiety === 10)
-  check('groceries: the kit\'s +20 % does NOT apply on top (10 h with or without), the potato still gets it',
-    foodSatietyH('groceriesCooked', true) === 10 && foodSatietyH('groceriesCooked', false) === 10 && Math.abs(foodSatietyH('potatoCooked', true) - 4.8) < 1e-9)
-  check('groceries: on the price line at the general store and the farm', ITEM_PRICE.groceries === 2.5 && STOREFRONT.generalStore.always.includes('groceries') && STOREFRONT.farm.always.includes('groceries'))
+  check('groceries: raw is no meal, cooked gives 12 h', !ITEMS.groceries.use && ITEMS.groceriesCooked.use === 'eat' && ITEMS.groceriesCooked.satiety === 12)
+  check('groceries: the kit\'s +20 % does NOT apply on top (12 h with or without), the potato still gets it',
+    foodSatietyH('groceriesCooked', true) === 12 && foodSatietyH('groceriesCooked', false) === 12 && Math.abs(foodSatietyH('potatoCooked', true) - 4.8) < 1e-9)
+  check('groceries: on the price line at the general store and the farm', ITEM_PRICE.groceries === 2.95 && STOREFRONT.generalStore.always.includes('groceries') && STOREFRONT.farm.always.includes('groceries'))
   check('groceries: a B-A reward from the farm and the general store only', REWARD_LIST.find(r => r.id === 'groceries')?.gates.join('') === 'BA'
     && givers('B') === 'farm,generalStore' && givers('A') === 'farm,generalStore')
   check('groceries: never a find, no other shelf', Object.entries(STOREFRONT).every(([k, s]) => ['generalStore', 'farm'].includes(k) || !s.always.includes('groceries'))

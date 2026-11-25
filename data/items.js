@@ -85,10 +85,10 @@ export const ITEMS = {
                     desc: 'Crisp enough.' },
     breakfastBurrito: { name: 'Breakfast burrito', kind: 'food', massKg: 0.3, use: 'eat', satiety: 5, freshH: 8, thumb: 'packedLunch',
                     desc: 'Foil-wrapped, warm for a little while.' },
-    // Like the potato: raw it is no meal; heated on a camp fire (main.js, 30 min, no kit) it holds 6 h and keeps 24 h.
+    // Like the potato: raw it is no meal; heated on a camp fire (main.js, 30 min, no kit) it holds 5 h (arc trial, owner 2026-11-24: was 6) and keeps 24 h.
     cannedBeans:  { name: 'Can of beans',  kind: 'food',       massKg: 0.5, stack: 4, thumb: 'groceries',
                     desc: 'Beans. Cold from the can is no meal. Heat it over a campfire.' },
-    beansHeated:  { name: 'Heated beans',  kind: 'food',       massKg: 0.5, stack: 4, use: 'eat', satiety: 6, freshH: 24, thumb: 'groceries',
+    beansHeated:  { name: 'Heated beans',  kind: 'food',       massKg: 0.5, stack: 4, use: 'eat', satiety: 5, freshH: 24, thumb: 'groceries',
                     desc: 'Beans, hot enough.' },
     friedChicken: { name: 'Fried chicken bucket', kind: 'food', massKg: 0.9, use: 'eat', satiety: 12, freshH: 16, thumb: 'burger',
                     desc: 'A whole bucket. You will not need lunch.' },
@@ -215,13 +215,13 @@ export const ITEMS = {
                     desc: 'An iron A-frame and a Dutch oven to hang over the fire. Whatever you eat at camp with it holds you a little longer. Heavy.' },
 
     // FEAT-230 slice 3: a bag of groceries, one meal. Raw it is no meal; cooked at camp ONLY with the cooking kit deployed
-    // (main.js _cookGroceries, +30 min) it holds 10 h. `noKit`: the kit's +20 % is the cooking, not a bonus on top
+    // (main.js _cookGroceries, +30 min) it holds 12 h (arc trial, owner 2026-11-24: was 10). `noKit`: the kit's +20 % is the cooking, not a bonus on top
     // (DEC-310). One bag a slot, mass 2 kg [DEFAULT]. The bag keeps 24 h, chilled like fish (items.md §1b); the cooked
     // meal keeps 24 h too, chilled in a cooler (DEC-379, owner 2026-11-17: "Cooked groceries should also spoil in 24h
     // outside a cooler").
     groceries:    { name: 'Groceries',     kind: 'food',       massKg: 2,   stack: 1, freshH: 24,
                     desc: 'A bag of groceries. Not a meal until it is cooked over a campfire with a cooking kit.' },
-    groceriesCooked: { name: 'Groceries, cooked', kind: 'food', massKg: 2,  stack: 1, use: 'eat', satiety: 10, freshH: 24, noKit: true, thumb: 'groceries',
+    groceriesCooked: { name: 'Groceries, cooked', kind: 'food', massKg: 2,  stack: 1, use: 'eat', satiety: 12, freshH: 24, noKit: true, thumb: 'groceries',
                     desc: 'Fresh and goes together easy.' },
 
     // ── Vehicle parts (data/parts.js), owned UNFITTED: a slot each, and the entry carries the part's

@@ -1318,9 +1318,15 @@ const _MACHINE_WORD = [
   ...(_CORNER_NAME.map(c => [null, `the ${c} tire is flat`, `the ${c} tire failed`])),
   [null, 'the air filter is dirty', 'the air filter is very dirty'],
   [null, 'the oil is dirty', 'the oil is very dirty'],
+  // Arc trial (owner, 2026-11-24: a warning when dampers or springs get low; a run ended on front shocks at 2 %
+  // with no word said). Same thresholds as the filter and the oil (wearLevel: 50 % and 30 %). Words [DEFAULT].
+  [null, 'the front springs are worn', 'the front springs are badly worn'],
+  [null, 'the rear springs are worn', 'the rear springs are badly worn'],
+  [null, 'the front shocks are worn', 'the front shocks are badly worn'],
+  [null, 'the rear shocks are worn', 'the rear shocks are badly worn'],
 ]
 // FEAT-216 / DEC-327: critical failures stay up while true (a failed wheel, a flat or failed tire); the other words
-// re-report at each further 10 % lost. Slots: 0 engine · 1-4 wheel · 5-8 bent · 9-12 tire · 13 filter · 14 oil.
+// re-report at each further 10 % lost. Slots: 0 engine · 1-4 wheel · 5-8 bent · 9-12 tire · 13 filter · 14 oil · 15-16 springs · 17-18 shocks.
 const _isCrit = (i, l) => (i === 0 && l > 0) || (i >= 1 && i <= 4 && l === 2) || (i >= 9 && i <= 12 && l > 0)
 // DEC-287: #machine-word is the general alerts area. Every alert opens into `_alerts`, which shows ONE at a time, 2 s
 // each, round-robin. A machine word stays open ALERT_WORD_S (its old 4 s fade) or until its level falls back; "Wrong way.
@@ -1337,11 +1343,12 @@ function _machineWords () {
   }
   const lv = (c) => c <= 0 ? 2 : c < KNOCK_FROM ? 1 : 0
   const cond = [damageModel.get('engine'), ...WHEEL_IDS.map(id => damageModel.get(id)), ...WHEEL_IDS.map(id => damageModel.get(id)),
-    ...TIRE_IDS.map(id => damageModel.get(id)), damageModel.get('airFilter'), damageModel.get('oil')]
+    ...TIRE_IDS.map(id => damageModel.get(id)), damageModel.get('airFilter'), damageModel.get('oil'),
+    damageModel.get('springFront'), damageModel.get('springRear'), damageModel.get('damperFront'), damageModel.get('damperRear')]
   const now = [engineLevel(cond[0], KNOCK_FROM), ...WHEEL_IDS.map((id, i) => lv(cond[1 + i])),
     ...WHEEL_IDS.map((id, i) => cond[5 + i] <= 0.9 ? 1 : 0),
     ...TIRE_IDS.map((id, i) => cond[9 + i] <= 0 ? 2 : damageModel.flat[i] ? 1 : 0),
-    wearLevel(cond[13]), wearLevel(cond[14])]
+    wearLevel(cond[13]), wearLevel(cond[14]), wearLevel(cond[15]), wearLevel(cond[16]), wearLevel(cond[17]), wearLevel(cond[18])]
   const steps = cond.map(stepOf)
   pollWords(_alerts, _wordExpiry, _wordState, now, steps, _isCrit, _MACHINE_WORD, performance.now(), ALERT_WORD_S, serviceScreen.isOpen)
 }
