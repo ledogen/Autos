@@ -20,13 +20,15 @@ import { cpus, loadavg } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHROME, launchChrome, connect, sleep, freezeProbe } from './lib/cdp.mjs'
-import { ECONOMY_PARAMS } from '../src/economy.js'
+import { ECONOMY_PARAMS, dayTier, econDayOf } from '../src/economy.js'
 import { DAY_PARAMS } from '../src/day.js'
 import { summarize, parseLines, report } from '../tools/run-log-summary.mjs'   // the runlog step reads its real log back
 import { TUTORIAL, FIRING_CAM } from '../data/tutorial.js'   // FEAT-184: the tutorial seed's world (DEC-402)
 import { FIRING, PHONE } from '../data/dialogue.js'   // FEAT-288 P8: the firing's cards, framed, to count what was shown
 import { DialogueSystem } from '../src/dialogue.js'
-import { SHOP_TYPES } from '../src/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
+import { SHOP_TYPES } from '../src/shop-stock.js'
+import { PARTS } from '../data/parts.js'
+import { ITEM_PRICE } from '../data/shop-stock.js'   // FEAT-104: the brake at any of these opens its shop screen
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 if (!existsSync(CHROME)) { console.log(`SKIP (no Chrome at ${CHROME})`); process.exit(0) }
@@ -1363,6 +1365,21 @@ const STEPS = [
     await tap('Tab'); await sleep(300)
     if (await js('document.getElementById("inv-screen").classList.contains("open")')) { await each('inventory'); await tap('Tab') }
     await js('document.documentElement.dataset.uiScale = "small"')
+  }],
+  ['shopprice', async () => {
+    // BUG-263: on a late day the shelf column prints the day-tier price (list price x tier), and the cart line it adds is the shelf price + labour.
+    const p = await js(`(() => { const q = window.__map2d()._getPois().find(q => q.type === 'autoShop' && !q.hidden)
+      return q ? { h: Math.atan2(-q.tx, -q.tz), ...${PAD_SEAT}(q) } : null })()`)
+    if (!p) { console.log('  shopprice: no auto shop in this region — step skipped'); return }
+    await seat(p.x, p.z, p.h); await park(true)
+    check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 2000), 'shopprice: no service screen')
+    await js('window.__day().advanceMinutes(4 * 24 * 60)'); await sleep(500)   // day 5
+    await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
+    const tier = dayTier(econDayOf(await js('window.__day().day()')))
+    const rows = await js(`[...document.querySelectorAll('#svc-screen [data-act=node][data-item]')].map(n => [n.dataset.item, n.querySelector('.sv-each')?.textContent])`)
+    const std = rows.find(([id]) => id === 'tireStandard' || id === 'wheelSteel' || id === 'tirePlugKit')
+    check(!!std && Math.abs(parseFloat(std[1].slice(1)) - ({ tireStandard: PARTS.tireStandard.price, wheelSteel: PARTS.wheelSteel.price, tirePlugKit: ITEM_PRICE.tirePlugKit })[std[0]] * tier) < 0.011,
+      `BUG-263: the shelf prints ${JSON.stringify(std)} on day 5 (tier ${tier})`)
   }],
   ['service', async () => {
     // SM-3: park at an auto shop → the service screen; both tabs render; Esc closes it.
