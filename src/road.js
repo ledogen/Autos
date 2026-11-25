@@ -9186,7 +9186,7 @@ export class RoadSystem {
         // step the two straight legs leave at a sharp kink (the walls at the asphalt edge); it feathers
         // (co.blendW→0) back to the run grade at the connector toe, C0. Off a connector co is null → run
         // surface unchanged. Both inputs continuous → no dithering.
-        const co = this._connectorCarve(wx, wz, rawAmp)
+        const co = this._connectorCarve(wx, wz, rawAmp, queryY)
         if (co) {
             // Connector grade is the design target across its WHOLE footprint (flat core + smoothstep
             // shoulder + toe); blendW = max(run, connector) feathers it to raw at the toe. This replaces
@@ -9444,7 +9444,7 @@ export class RoadSystem {
         const L = this._network?.get(runKey)?.polyCum?.at(-1)
         if (!(L > 0) || (s > 1 && s < L - 1)) return null
         const key = runKey + (s <= 1 ? '|A' : '|B'), node = this._undergroundNodes().get(key)
-        if (!node) return null
+        if (!node || node.boreJoin) return null   // a join's two tubes meet as BUG-67's siblings do
         if (!node.miter) {
             node.miter = new Map()
             const u = node.legs.map((l) => {
@@ -9491,20 +9491,45 @@ export class RoadSystem {
      * flags each such node record `underground`. Over one, the mouth-funnel notch does not measure from the node and the
      * pad carve leaves the skin raw: before, both cut the hill down toward the deck (seed 1960791808's X: 61 m deep,
      * the leg's camber laid on the skin and up through the other road's ribbon). Memoised per network revision.
+     * BUG-259 slice 3: a JOIN inside the hill is one too, flagged `boreJoin` instead (it has no pad): two runs meeting end to
+     * end — a kinked deg-2 node (its connector record) or a straight pass-through (no record: a bare {pos, legs, boreJoin}) —
+     * both leaving in a bore that is no mouth there. Before, the join read as a portal: the shade was daylight (1.0) there, the
+     * connector and a leg past its end carved the skin down into the tube, and the tube's floor and the hill covered the road
+     * (seed 515997046 (2918, 517): the skin 15-25 m under the raw hill, down to the deck; 2311041641 (−1583, 436)).
      */
     _undergroundNodes() {
         const nodes = this._detectNodeJunctions()
         if (this._ugNodes?.nodes === nodes && this._ugNodes.rev === this._networkRev) return this._ugNodes.map
         const map = new Map()
+        const boreEnd = (l) => {   // 'runKey|A' / '|B' when the run leaves this end in a bore that is no mouth there
+            const e = this._network.get(l.runKey), L = e?.polyCum?.at(-1) ?? 0, atA = l.arc < 1e-6
+            const sp = (e?.tunnelSpans || []).find((s) => atA ? s.s0 <= 1 : s.s1 >= L - 1)
+            return sp && !this.isMouth(l.runKey, atA ? sp.s0 : sp.s1) ? l.runKey + (atA ? '|A' : '|B') : null
+        }
+        const deg2At = new Map()
         for (const node of nodes?.values() ?? []) {
-            if (node.deg2 || !node.legs || node.legs.length < 3) continue
-            const ends = node.legs.map((l) => {
-                const e = this._network.get(l.runKey), L = e?.polyCum?.at(-1) ?? 0, atA = l.arc < 1e-6
-                const sp = (e?.tunnelSpans || []).find((s) => atA ? s.s0 <= 1 : s.s1 >= L - 1)
-                return sp && !this.isMouth(l.runKey, atA ? sp.s0 : sp.s1) ? l.runKey + (atA ? '|A' : '|B') : null
-            })
+            if (node.deg2) { for (const l of node.legs) deg2At.set(l.runKey + (l.arc < 1e-6 ? '|A' : '|B'), node); continue }
+            if (!node.legs || node.legs.length < 3) continue
+            const ends = node.legs.map(boreEnd)
             if (!ends.every(Boolean)) continue
             node.underground = true
+            for (const k of ends) map.set(k, node)
+        }
+        const cells = new Map()   // graph site → the run ends on it
+        for (const [runKey, e] of this._network) {
+            if (!e.cellA || !e.cellB || !e.points?.length) continue
+            for (const atA of [true, false]) {
+                const c = String(atA ? e.cellA : e.cellB), l = { runKey, arc: atA ? 0 : e.polyCum.at(-1), p: atA ? e.points[0] : e.points.at(-1) }
+                const list = cells.get(c); if (list) list.push(l); else cells.set(c, [l])
+            }
+        }
+        for (const legs of cells.values()) {
+            if (legs.length !== 2 || legs[0].runKey === legs[1].runKey) continue
+            const ends = legs.map(boreEnd)
+            if (!ends.every(Boolean) || ends.some((k) => map.has(k))) continue
+            const node = deg2At.get(ends[0]) ?? { pos: { x: legs[0].p.x, y: legs[0].p.y, z: legs[0].p.z }, legs: legs.map(({ runKey, arc }) => ({ runKey, arc })) }
+            node.boreJoin = true
+            if (node.deg2) node.deg2.boreJoin = true   // _connectorCarve reads it off the arc
             for (const k of ends) map.set(k, node)
         }
         this._ugNodes = { nodes, rev: this._networkRev, map }
@@ -9995,6 +10020,7 @@ export class RoadSystem {
         // underground reads the bores (isMouth → runProfile), which needs the junctions above: so they are flagged
         // now, and their rings and welds rebuilt.
         for (const node of new Set(this._undergroundNodes().values())) {
+            if (node.boreJoin) continue
             this._setJunctionRing(node)
             for (const a of node.legs) for (const r of carveArcs.get(a.runKey) ?? []) if (r.node === node && r.arc === a.arc) r.mouth = a.weld ? a.mouth : undefined
         }
@@ -11720,7 +11746,7 @@ export class RoadSystem {
      * the ribbon surface (sampleRoadTopY) — mesh == collision depends on the two never drifting.
      */
     _withConnectorTop(runTop, wx, wz, clearanceMargin) {
-        const co = this._connectorCarve(wx, wz)
+        const co = this._connectorCarve(wx, wz, undefined, -Infinity)   // the asphalt top: the deck, in a bore too
         if (!co) return runTop
         const coTop = co.gradeY + clearanceMargin
         const w = runTop != null ? co.blendW * co.dom : 1
@@ -11743,7 +11769,7 @@ export class RoadSystem {
      * @param {number} [rawAmp] raw terrain height here. Omitted ⇒ the coarse field,
      *   sampled only once a connector is actually in reach (most callers are nowhere near one).
      */
-    _connectorCarve(wx, wz, rawAmp) {
+    _connectorCarve(wx, wz, rawAmp, queryY) {
         if (this._nodeJunctionsRev !== this._networkRev) this._detectNodeJunctions()   // arcs belong to THIS network
         if (!this._deg2ArcTiles || !this._deg2ArcTiles.size) return null
         const p = this._params
@@ -11783,6 +11809,9 @@ export class RoadSystem {
         if (bestLat > latCeiling) return null
         const cd = this._connectorDesignAt(bestArc, wx, wz, _CD_OUT, bestPr)
         if (cd == null) return null
+        // BUG-259 slice 3: a connector at a join inside the hill (_undergroundNodes, boreJoin) owns only probes in its bore,
+        // as a bored run does; the skin over it (a Y-less probe: the terrain mesh) stays the hill's.
+        if (bestArc.boreJoin && !(queryY < cd.grade + (p.tunnelBoreRadius ?? 8))) return null
         if (rawAmp === undefined) rawAmp = this._coarseH(wx, wz)
         const designY = cd.grade - clearanceMargin
         const fillSlope = p.roadFillSlope ?? 3.0, cutSlope = p.roadCutSlope ?? 1.0

@@ -42,6 +42,7 @@ import { CHUNK_SIZE } from './terrain-height.js'   // FEAT-223: the prop-shadow 
 import { camberLean, toeOffset } from './alignment.js'
 import { carcassRadialOffset, wheelRunoutOf, runoutAtContact } from './suspension.js'
 import { REV_THRESHOLD } from './drivetrain.js'
+import { gateSunInBore } from './shadow-fade.js'   // BUG-259: no sun deep in a bore
 
 // The imported GLB (described by a spec from data/vehicle-models.js) replaces the primitive truck.
 // The primitives stay as an automatic fallback if the load fails (offline, 404, parse error).
@@ -1069,6 +1070,7 @@ float rsBakedShade () {
             .replace('#include <lights_pars_begin>', '#include <lights_pars_begin>\n' + BAKED_FN)
             .replace('#include <lights_fragment_begin>', 'float rsBaked = rsBakedShade();\n' + LFB.replace(LFB_HOOK,
               LFB_HOOK + '\n\t\t#if UNROLLED_LOOP_INDEX == 1\n\t\tdirectLight.color *= rsBaked;\n\t\t#endif'))
+          sh.fragmentShader = gateSunInBore(sh.fragmentShader, 'uBoreShade')   // BUG-259: no sun on the truck deep in a bore
         }
         m.customProgramCacheKey = () => key0 + '|bore'
         m.needsUpdate = true

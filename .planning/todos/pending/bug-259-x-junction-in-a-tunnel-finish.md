@@ -12,7 +12,7 @@ lane: engine & world
 # BUG-259: X junctions inside tunnels are unfinished
 
 ## Next steps
-All five items are fixed on `land/bug-259-tunnel-x` (gate `tunnel-x-junction`, checks 1-9). Left: the owner's drive (sheet `wip/bug-259/sheet-2.jpg`).
+All five items and slice 3 are fixed on `land/bug-259-tunnel-x` (gates `tunnel-x-junction`, `bore-floor-clear`). Left: the owner's drive (sheets `wip/bug-259/sheet-2.jpg`, `sheet-3.jpg`); tunnels are now darker (no sun deep in a bore), his eye decides.
 
 ## Summary
 BUG-234 made crossing roads meet at an X junction. The owner drove two of them and approved landing as "a strict improvement", with five defects left, mostly where the X sits underground.
@@ -31,14 +31,14 @@ From the owner's drive (words in `source:`):
 - [x] No terrain through the ribbon at the X
 - [x] Roof sections miter
 - [x] No earthwork above an underground X; earthwork only near portals
-- [ ] Slice 3 (owner, 11-24 evening): inside tunnels, no ground texture over the road surface and no z-fighting (two surfaces at the same depth flickering)
+- [x] Slice 3 (owner, 11-24 evening): inside tunnels, no ground texture over the road surface and no z-fighting (two surfaces at the same depth flickering)
 - [ ] Owner's drive
 
 ## Decisions
 - 2026-11-24, owner: "There should be no earthwork at the intersection. There should only be earthwork near the portals." Recorded as DEC-494.
 
 ## Files
-`src/road.js` (`_junctionRingWeld`, `_setJunctionRing`, `tubeMiterPlane`, `siblingTubeTest`), `src/road-mesh.js` (`buildTunnelTube`), `test/tunnel-x-junction.mjs`
+`src/road.js` (`_junctionRingWeld`, `_setJunctionRing`, `tubeMiterPlane`, `siblingTubeTest`, `_undergroundNodes`, `_connectorCarve`), `src/road-mesh.js` (`buildTunnelTube`), `src/shadow-fade.js` (`gateSunInBore`), `src/terrain.js`, `src/vehicle-model.js`, `test/tunnel-x-junction.mjs`, `test/bore-floor-clear.mjs`
 
 ## Log
 - 2026-11-24: opened from the owner's answer on card bug234-built-drive.
@@ -47,3 +47,4 @@ From the owner's drive (words in `source:`):
 - 2026-11-24 slice 2 (items 1, 4). Pad: an underground junction's ring is its legs' own pavement (no fillet, no straight back chord; two legs still overlapping at their mouths share one chord), so the bore floor's 3 m gravel shoulder runs round the chamber. Worst ring point past a lane edge 1.57 / 7.29 / 4.37 m → 0.00 (1960791808; 2280440363 (−52, 29), (19, −42)); the 8 underground Ts 0.00; collider vs drawn pad 0.00 cm. Roof: the lines were each tube's R run-on standing proud where it crossed another tube's wall. Partner legs (most nearly opposite, > 135°) now meet on the bisecting plane (`tubeMiterPlane`): each tube is cut past it, each bore volume is its span + run-on on its own side. Rays seeing a lining past its plane 16 / 130 / 71 of 2000 → 0. Not fixed: seed 94567479's T bore shade 0.74 (slice-1 census, a portal near the node).
 - Residual (lighting, not geometry; a headless ray-cast of the linings shows them closed, vertex shade 0.20-0.25 throughout): one faint seam line at 1960791808's through/cross miter, and the lit right wall at 2280440363 (19, −42) (present on main too); both look like direct sun reaching the lining through the shadow maps. Freecam shots with the truck parked away exaggerate both (the near shadow box follows the truck). Sheet `wip/bug-259/sheet-2.jpg`.
 - 2026-11-24 evening, owner in chat: "one more thing for the tunnel fix. a lot of the road surface inside the tunnels is covered by ground texure / there is z fighting. make an effort to clean that up too". Added as slice 3; no seed given, so the lane censuses tunnels on random seeds for terrain at or above the ribbon inside a bore.
+- 2026-11-25 slice 3. Census (`wip/bug-259/bore-skin.mjs`, 20 random seeds, 1.66 M samples: every bore 2 m × 0.5 m, terrain chunk mesh + every bore floor vs the asphalt top): plain bores clean; 21 sites, all at nodes in a bore. Over the lane 622 samples (floors up to 1.45 m, terrain 7.1 m into the arch), 178 within ±5 cm → 0 and 0 (worst now 6.9 cm under). Causes: (1) a JOIN inside the hill (two runs end to end, both bored) read as a portal: connector + leg-past-end carved the skin into the tube, shade 1.0 → `_undergroundNodes` flags it `boreJoin`; (2) the bore floor was one 8 m plank a side at its own camber, run on 8 m past the node → its own mesh, 1 m across, run-ons in 3 m rings, every vertex held under any asphalt over it. Deck 0.000 m vs main (446 k points × 3, 6 seeds). (3) Lit wall / miter seam: the BUG-217 coupling gives 40 % sun to anything the far map shades, a tube included → `gateSunInBore` fades both sun lights out with the bore-shade ramp on lining, floor, asphalt, truck; junction skirts now bore-shaded. Gate `bore-floor-clear` (main 12 fails). Fingerprint: tiles only. Sheet `wip/bug-259/sheet-3.jpg`.
