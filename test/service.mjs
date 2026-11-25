@@ -128,6 +128,14 @@ damage.set('damperRear', 0.2)
 stock(['dampersHD'], ['tireSport', 0.5], ['tirePlugKit'])
 check('a used part is priced by its condition, × tier', near(svc.shelfPrice(1), PARTS.tireSport.price * 0.5)
   && (tier = 2, near(svc.shelfPrice(1), PARTS.tireSport.price)) && (tier = 1) && svc.shelfPrice(2) > 0)
+// BUG-263: a new Standard tire on a late day: the shelf figure, the carry quote and the fitted quote all carry the day tier,
+// part AND labour; the fitted quote is exactly the shelf figure plus the fitting.
+stock(['tireStandard'])
+check('BUG-263: Standard tire on day 5 (tier 1.21): shelf, carry and fit quotes all scaled, fit = shelf + labour',
+  [1, 1.21].every(t => (tier = t, near(svc.shelfPrice(0), PARTS.tireStandard.price * t) && near(svc.buyQuote(0).price, svc.shelfPrice(0))
+    && near(svc.buyQuote(0, 'tireFL').price, svc.shelfPrice(0) + svc.fitLabour('tireStandard', 'tireFL').price)
+    && svc.fitLabour('tireStandard', 'tireFL').price > 0)) && (tier = 1))
+stock(['dampersHD'], ['tireSport', 0.5], ['tirePlugKit'])
 check('FEAT-212: the Shop tab\'s quotes — to carry is the shelf price in no time; fitted adds the fitting\'s price and hours',
   near(svc.buyQuote(0).price, PARTS.dampersHD.price) && svc.buyQuote(0).hours === 0
   && near(svc.buyQuote(0, 'dampersRear').price, PARTS.dampersHD.price + SU.price) && svc.buyQuote(0, 'dampersRear').hours === 0.75)
@@ -431,7 +439,7 @@ check('split needs a free slot', si >= 0 && !tight.split(si) && full.list()[si].
     check('cart: the free repair covers the first repair only', once.queue('repair', ['engine', 0.7], 'e') && once.queue('repair', ['radiator', 0.7], 'r')
         && once.cart[0].price === 0 && once.cart[1].price > 0 && owed === 1)
     check('…mom\'s tire is free once in the cart', once.shelfPrice(0) === 0 && once.queue('buyAndFit', [0, 'tireFL'], 't') && once.cart[2].price === 0
-        && once.fitLabour('tireSport', 'tireFR').price > 0 && owes.part && owes.labour)
+        && once.fitLabour('tireSport', 'tireFL').price > 0 && owes.part && owes.labour)
     once.discard()
     check('…a discard owes them again', owed === 1 && owes.part && once.shelfPrice(0) === 0)
     once.queue('repair', ['engine', 0.7], 'e'); once.queue('buyAndFit', [0, 'tireFL'], 't')

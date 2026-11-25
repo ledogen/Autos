@@ -154,8 +154,9 @@ export const HUNGER_COLOR = {
  * job in hand does NOT stand still under the latch — main.js hands its parked steps to spendParked() on the
  * mission, the paper route and the board, so its elapsed, rank and deadline run on at the driving rate. The latch is its own stop test (park-brake.js: a Space tap under PARK_SPEED), so there is no
  * second speed threshold here: a handbrake slide never latches, so it never holds the clock.
+ * BUG-241 (DEC-497): the map opened at rest holds it too (`mapAtRest`: main.js _parkLocked's own at-rest test, PARK_SPEED); opened rolling, the clock runs.
  */
-export const clockHeld = (camp, service, tutorial, parked) => !!(camp || service || tutorial || parked)
+export const clockHeld = (camp, service, tutorial, parked, mapAtRest = false) => !!(camp || service || tutorial || parked || mapAtRest)
 
 export const runState = {
     day: 1,   // 1-based day index of the current run; increments at each midnight crossed
