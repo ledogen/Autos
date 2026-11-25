@@ -1115,6 +1115,8 @@ const _promotedId = (x, z) => [Math.round(x * 1000), Math.round(z * 1000), PROMO
 // m — a bore shorter than this reads as noise and is dropped (_v2GradePts); BUG-58 re-solves a
 // profile that would leave one, so a dropped stub never ships as an open cut past cutMax.
 const MIN_BORE_M = 12
+// BUG-262 (DEC-495, owner: "10m"): the least distance along a leg from an underground junction to a tunnel portal
+const UG_PORTAL_M = 10
 // BUG-63: the key suffix of a mid-span side half that shares its node pair with a trunk piece
 // (_v2MidSpanKeys). Such a run is in the world but not in the abstract graph (networkGraph).
 const PARALLEL_SUFFIX = '~p'
@@ -5791,9 +5793,10 @@ export class RoadSystem {
             if (legs.length < 3) continue
             const tubes = legs.filter((l) => l.bored)
             if (!tubes.length) continue
+            const want = new Map()
             for (const leg of legs) {
                 if (leg.bored) continue
-                const { k, e, L, atStart } = leg
+                const { k, L, atStart } = leg
                 const inTube = (x, z) => tubes.some((t) => {
                     const h = _nearestOnPolyXZ(x, z, t.e.points, t.e.polyCum)
                     return h && h.d < R && (t.e.tunnelSpans || []).some((sp) => h.cum >= sp.s0 && h.cum <= sp.s1)
@@ -5803,6 +5806,21 @@ export class RoadSystem {
                     const s = atStart ? d : L - d, p = this.runPointAt(k, s)
                     if (!p) break
                     if (!inTube(p.x, p.z) && this._coarseH(p.x, p.z) - this.runProfile(s, k).gradeY < dStop) break
+                }
+                if (d >= 1) want.set(leg, d)
+            }
+            // BUG-262 (DEC-495: an underground junction sits at least "10m" from a portal): where every leg now leaves
+            // the node in a bore, each bore opens its mouth no nearer than UG_PORTAL_M along the leg. The junction keeps
+            // its place in the hill and the portal moves out into the open (2143977503 at (2994, 508): a T promoted 8.3 m
+            // inside its trunk's bore, the slice leaving an 8.3 m bore; 94567479: 9.9 m). Spans only, as above.
+            const ug = legs.every((l) => l.bored || want.has(l))
+            for (const leg of legs) {
+                const { e, L, atStart } = leg
+                let d = want.get(leg) ?? 0
+                if (ug) {
+                    const own = (e.tunnelSpans || []).find((sp) => atStart ? sp.s0 <= 1 : sp.s1 >= L - 1)
+                    const have = own ? (atStart ? own.s1 : L - own.s0) : 0
+                    if (have < UG_PORTAL_M) d = Math.max(d, Math.min(UG_PORTAL_M, L / 2))
                 }
                 if (d < 1) continue
                 const sp = atStart ? { s0: 0, s1: d } : { s0: L - d, s1: L }
