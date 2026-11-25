@@ -196,7 +196,7 @@ export const DAMAGE_PARAMS = {
   // 1.5x FASTER on 2026-10-03 (owner): ten minutes of peel became ~6.7 — 16100 / 1.5.
   // 50% LONGER on 2026-11-03 (owner, "tires should last 50% longer"): 10700 × 1.5, ~10 min of peel again.
   // 20% LONGER on 2026-11-18 (owner, FEAT-284 / DEC-418): 16050 × 1.2. The slip wear rate and the shelf (shop-stock LIFE_H, a different thing) agree: one constant.
-  durTire:        19260,     // m of accumulated sliding to destroy a tire
+  durTire:        25680,     // m of accumulated sliding to destroy a tire (arc trial, owner 2026-11-24: "reduce tire wear by 25%": 19260 / 0.75)
   tireWCorner:    2.0e-4,    // N·s → m-equivalent. At 5 kN cornering that is 1 m/s of "slip".
   tireSlipFloor:  0.15,      // m/s — no-harm floor. Rolling slip is not abrasion.
 
