@@ -163,14 +163,13 @@ export const ITEMS = {
     //    at 120 m).
     pack:         { name: 'Pack',          kind: 'pack',       massKg: 1.5, packSlots: 2, reachM: 40,
                     desc: 'An old canvas pack. Whatever is in it comes to camp.' },
-    // FEAT-182: the other four. Slots, reach and mass are [DEFAULT] placeholders, owed by the owner; only
-    // the Rucksack's place (between the Duffel and the Frame pack) is ruled. No source yet: the debug
-    // grant hands them out until the owner rules shelf and/or rewards.
+    // FEAT-182: the other four. Slots and reach are the owner's (item setup page, 2026-11-24, DEC-500); mass is
+    // still a [DEFAULT]. Sources: data/shop-stock.js (shelf) and data/offers.js (REWARDS, REWARD_CATS).
     daypack:      { name: 'Daypack',       kind: 'pack',       massKg: 0.8, packSlots: 2, reachM: 100,
                     desc: 'A light nylon daypack. Not much room, but it lets you camp a long way off the road.' },
-    duffel:       { name: 'Duffel',        kind: 'pack',       massKg: 3,   packSlots: 6, reachM: 15,
+    duffel:       { name: 'Duffel',        kind: 'pack',       massKg: 3,   packSlots: 6, reachM: 30,
                     desc: 'A big canvas duffel. Takes it all, but you won\'t haul it far from the road.' },
-    rucksack:     { name: 'Rucksack',      kind: 'pack',       massKg: 2,   packSlots: 4, reachM: 60,
+    rucksack:     { name: 'Rucksack',      kind: 'pack',       massKg: 2,   packSlots: 4, reachM: 80,
                     desc: 'An old canvas rucksack with a top flap. Room for a proper camp.' },
     framePack:    { name: 'Frame pack',    kind: 'pack',       massKg: 3.5, packSlots: 6, reachM: 120,
                     desc: 'A serious solution for campers who need to go far.' },
