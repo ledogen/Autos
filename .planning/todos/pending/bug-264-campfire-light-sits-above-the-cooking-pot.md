@@ -21,7 +21,7 @@ The camp fire's point light is higher than the cooking kit's pot, so the pot is 
 (See Summary and the owner's words in `source:`.)
 
 ## Tracker
-- [ ] Built
+- [x] Built
 - [ ] Owner's look
 
 ## Decisions
@@ -38,3 +38,4 @@ the camp fire light in `src/` (camp gear / fire code) · `data/prop-models.js` c
 
 ## Log
 - 2026-11-24: minted by the orchestrator from the owner's inbox.
+- 2026-11-25: built (lane c, land/ui-small-1125). Light was 0.685 m above the ground (anchor 0.085 + lightHeight 0.6), inside the pot (kit pot spans 0.59-0.99 m). `CAMPFIRE_PARAMS.lightHeight` 0.6 -> 0.4 (0.485 m, 0.1 m under the pot base); intensity/reach unchanged, ground pool visibly the same. Sheet: `wip/bug-264/sheet.jpg` (top before/after near, bottom far). Plain fire shares the height; flames top out at 0.5 m so the light stays in them.

@@ -76,7 +76,7 @@ const MAP_RADIUS_MAX = 2000
 // intent were "the region exactly, no margin" the factor is 1.0, not 0.96.
 //
 // Still read from REGION_RADIUS_M rather than written out, so moving the region moves this with it.
-const MIN_VIEW_SPAN_M  = 2 * REGION_RADIUS_M * 0.96   // 4800 m — the widest view the map will give
+const MIN_VIEW_SPAN_M  = 2 * REGION_RADIUS_M          // 5000 m — the widest view the map will give (FEAT-329, owner 2026-11-24: was x 0.96 = 4800 m)
 // BUG-68: how far past a story region's wall the map builds. The COVERAGE requirement is the
 // region radius itself; these are cosmetic fringe, so the drawn boundary ring sits on drawn road
 // instead of on the ragged edge of the built network.
@@ -1135,7 +1135,7 @@ export class Map2D {
         if (best.id !== this._hoverPoi) { this._hoverPoi = best.id; this._hoverIdx = 0 }
         const v = board.view(best.id, this._hoverIdx)
         if (v) this._hoverIdx = v.idx ?? 0
-        this._hoverView = v ? { ...v, x: best.x, z: best.z } : null
+        this._hoverView = v ? { ...v, x: best.x, z: best.z, name: board.name?.(best.id) ?? null } : null   // FEAT-328: the card's title
     }
 
     // ── RoadSystem (the map's own read-only instance) ────────────────────────────────────────
@@ -2973,8 +2973,9 @@ export class Map2D {
         // Base units (k = 1).
         // Body 13 → 11 for full names (owner, 2026-09-28): measured over 174 k sentences on 30 seeds, 11 is
         // the largest size at which no sentence needs a fourth line (11.5 overflowed 44).
-        const B = { W: 340, PAD: 14, LH: 17, HEAD: 16, FS: 11, FSS: 10.5, BAR: 6, INSET: 4, BONUS: 42 }
-        const baseH = B.PAD * 2 + B.HEAD + 5 * B.LH
+        const B = { W: 340, PAD: 14, LH: 17, HEAD: 16, FS: 11, FSS: 10.5, BAR: 6, INSET: 4, BONUS: 42, TITLE: 18 }
+        const titleH = v.name ? B.TITLE : 0     // FEAT-328: the POI's name, the card's title line
+        const baseH = B.PAD * 2 + B.HEAD + 5 * B.LH + titleH
         const baseFull = baseH + B.BONUS
         // FEAT-211 (owner, 2026-11-14): 0.46 of the sheet's width bound the card at k = 1 once the sheet shared the window
         // with the list column; 0.75 gives back the 1.4x it had full screen at the owner's 1045 x 700.
@@ -3065,6 +3066,21 @@ export class Map2D {
         ctx.textBaseline = 'top'; ctx.textAlign = 'left'
         const inL = x + PAD + B.BAR * k
         let ty = y + PAD
+        // FEAT-328 (owner, 2026-11-24): the POI's name tops its card — the Story family's title: uppercase, bold, spaced,
+        // the story blue (UI-STYLE §4). One line; a long name is cut with an ellipsis short of the offer keys' corner.
+        if (v.name) {
+            ctx.font = `700 ${12 * k}px ${MAP_LABEL_FONT}`; ctx.fillStyle = DEED_INK
+            ctx.letterSpacing = `${1 * k}px`
+            let t = v.name.toUpperCase()
+            const maxT = W - 2 * PAD - B.BAR * k - (v.count > 1 ? 56 * k : 0)
+            if (ctx.measureText(t).width > maxT) {
+                while (t.length > 1 && ctx.measureText(t + '…').width > maxT) t = t.slice(0, -1)
+                t = t.trimEnd() + '…'
+            }
+            ctx.fillText(t, inL, ty)
+            ctx.letterSpacing = '0px'
+            ty += B.TITLE * k
+        }
         // Header: the family in small caps, the offer counter on the right.
         ctx.font = fS
         ctx.fillStyle = '#6a6458'
