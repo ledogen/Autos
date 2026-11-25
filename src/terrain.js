@@ -1603,7 +1603,7 @@ export class TerrainSystem {
                 while (nr) {
                     const adx = wx - nr.point.x, adz = wz - nr.point.z
                     const aArc = (nr.arcS ?? 0) + adx * nr.tangent.x + adz * nr.tangent.z
-                    if (!this._roadSystem.tunnelSpanAt(nr.runKey ?? '', aArc)) break
+                    if (!this._roadSystem.boreSpanAt(nr.runKey ?? '', aArc)) break   // BUG-259: an underground junction's chamber too
                     // FEAT-40: skin vertex over a bore — mouth-funnel notch (same rule as the
                     // Y-less physics path in _sampleCarveWorld), else fall through to the
                     // next-nearest surface run / raw hill.

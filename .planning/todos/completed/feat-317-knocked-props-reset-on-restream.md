@@ -1,7 +1,7 @@
 ---
 id: FEAT-317
 type: feature
-status: open
+status: closed
 severity: minor
 opened: 2026-11-20
 source: owner, 2026-11-20 — "Right now when you knock down lawn furniture, it stays down for the remainder of the run. It would cost less memory and be more fun for the player if it reset every time that area of the world restreamed."
@@ -54,3 +54,4 @@ already stand again past 200 m (FEAT-154).
 - 2026-11-20: built on land/props-1120 @ 0003abf9. Affected gates 42/42 green (serial, 2598 s); cdp-smoke 42 steps PASS
   (first run hit a CDP timeout in "demolition" at load 8-9, retry green); pad-e2e ALL OK. No headless gate reaches
   main.js's poll and no smoke step knocks an ornament: the stand-again itself is unverified until the owner's drive.
+- 2026-11-24: CLOSED. Owner drove it, card feat317-props-reset-drive: "Works".

@@ -86,7 +86,7 @@ import { MissionSystem, REGION_MARGIN, secPerGameH, routeLeftM } from './mission
 import { LabSystem } from './lab.js'                     // FEAT-31: isolated flat testing lab + timing gates
 import { StorySystem } from './story.js'                 // FEAT-43: sandboxed Story Mode gamemode (seed entry + frozen region)
 import { validateArea, discArea, unplayableReason } from './world-validate.js'   // BUG-56 C: is this seed playable at all?
-import { PoiSystem, POI_PARAMS, poiTopY, dropZoneWorld, overDropZone, satSolid, knockMass, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
+import { PoiSystem, POI_PARAMS, poiTopY, dropZoneWorld, overDropZone, onPoiGround, satSolid, knockMass, towSeat, startSeat } from './poi.js'         // FEAT-46: story-mode POIs on lay-by pads
 import { HAUL_PAR_SLACK, HAUL_BUNDLE_KG, FREIGHT_PAR_SLACK_PER_KG, FREIGHT_TIP_MULT, BONUS_LEG_MIN_M, THINGS, LINE_SUPPLY } from '../data/offers.js'   // FEAT-88/96: a loaded job's par is longer
 import { FREIGHT } from '../data/freight.js'          // FEAT-96 scaffolding: the debug "Load Cargo" list
 import { PROP_MODELS } from '../data/prop-models.js'   // …and each load's strap-free width
@@ -115,7 +115,7 @@ import { TUTORIAL, PACK_TOSS, flatRadius, FIRING_CAM } from '../data/tutorial.js
 import { launchVelocity, PaperThrows, THROW_PARAMS } from './throw.js'   // FEAT-61/277: the thrown roll
 // FEAT-61: the paper route — Larry's route, its one par, and the flat-rate settlement.
 import { PaperRouteSystem, runPaper, resetPaperRun, stockForTier,
-         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, TourGuide, accuracyTier } from './paper-route.js'
+         planRoundJob, customersForTier, PAPER_PARAMS, RR_PARAMS, roadOrigin, TourGuide, StrayGuide, routeEndDoor, accuracyTier } from './paper-route.js'
 import { AlertCycle, pollWords, wordAction, stepOf, wearLevel, engineLevel } from './alerts.js'   // DEC-287: the HUD alerts area cycles its open alerts
 import { GpsSystem, addGpsGui } from './gps.js' // FEAT-39: GPS assist (in-world route arrows)
 import { formatTime, RANK_THRESHOLDS_DEFAULT, amountGrade } from './par.js'   // FEAT-29 par time formatting; FEAT-87 rank bar fallback bands; FEAT-138 haul/freight/fragile letter
@@ -1636,7 +1636,7 @@ const SELECTORS = {
   abs:          { name: 'anti-lock brakes', opts: [[true, 'on'], [false, 'off']] },
   throttleAssist:  { name: 'throttle assist',  opts: [[true, 'on'], [false, 'off']] },   // FEAT-159 (src/traction.js)
   tractionControl: { name: 'traction control', opts: [[true, 'on'], [false, 'off']] },
-  stickDeadzone: { name: 'stick deadzone', opts: [0.04, 0.08, 0.12, 0.16].map(v => [v, `${v * 100} %`]) },
+  stickDeadzone: { name: 'stick deadzone', opts: Array.from({ length: 11 }, (_, i) => [i * 2 / 100, `${i * 2} %`]) },   // DEC-490: 0–20 % in 2 % steps
   vibration:    { name: 'controller vibration', opts: [[0, 'off'], [0.5, 'low'], [1, 'normal'], [1.5, 'high']] },   // FEAT-247 (src/pad-rumble.js)
   padLayout:    { name: 'pad layout', opts: [['Professor', 'Professor'], ['Ventura Highway', 'Ventura Highway']] },   // DEC-431 (gamepad.js PAD_LAYOUTS)
   uiScale:      { name: 'UI size', opts: [['small', 'small'], ['big', 'big']] },   // FEAT-248: index.html `html[data-ui-scale=big]`
@@ -2476,7 +2476,7 @@ const _hudHtml = (el, s) => { if (!el || (el._html === s && el.innerHTML === el.
 // boot (see the bootstrap, before the route-cache import), so the preset table is authoritative.
 // PERF-11: resHeight caps Normal at 1200 lines (~1.5× ratio on the Air's Retina panel — native 2×
 // shades ~4× the fragments of 1× for no perceptible gain at game viewing distance; user-approved
-// thermal lever 2026-07-13). High/Ultra stay native as the "I have GPU to burn" tiers.
+// thermal lever 2026-07-13). High caps at 1400 lines (DEC-485); Ultra stays native as the "I have GPU to burn" tier.
 // PERF-12: shadowMap/shadowExtent scale with the tier. What matters is only their RATIO — the world
 // size of one shadow texel (extent·2 / mapSize), which is what makes the truck's shadow crisp or
 // mushy.
@@ -2536,7 +2536,7 @@ const _hudHtml = (el, s) => { if (!el || (el._html === s && el.innerHTML === el.
 const QUALITY_PRESETS = {
   Low:    { ring: 1, warm: 1, fogDensity: 0.008, detailScale: 0,   shadows: false, propRing: 1, lodRing: 0, bbRing: 2, resHeight: 720,  shadowMap: 1024, shadowExtent: 20, shadowTilePx: 0,   cover: false, coverFade: [0, 0],     coverDensity: 0,   terrainBake: false },
   Normal: { ring: 2, warm: 1, fogDensity: 0.004, detailScale: 1.0, shadows: true,  propRing: 2, lodRing: 1, bbRing: 3, resHeight: 1200, shadowMap: 3072, shadowExtent: 40, shadowTilePx: 256, cover: true,  coverFade: [50, 110],  coverDensity: 1.0, terrainBake: true  },
-  High:   { ring: 3, warm: 3, fogDensity: 0.0027, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6, terrainBake: true  },
+  High:   { ring: 3, warm: 3, fogDensity: 0.0027, detailScale: 1.0, shadows: true,  propRing: 3, lodRing: 2, bbRing: 6, resHeight: 1400, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 384, cover: true,  coverFade: [80, 150],  coverDensity: 1.6, terrainBake: true  },
   Ultra:  { ring: 4, warm: 4, fogDensity: 0.002, detailScale: 1.0, shadows: true,  propRing: 4, lodRing: 2, bbRing: 8, resHeight: null, shadowMap: 4096, shadowExtent: 40, shadowTilePx: 512, cover: true,  coverFade: [100, 190], coverDensity: 2.2, terrainBake: true  },
 }
 
@@ -3276,13 +3276,13 @@ scene.add(_poiGroup)
 const _poiCubeGeo = new THREE.BoxGeometry(POI_PARAMS.poiCubeSize, POI_PARAMS.poiCubeSize, POI_PARAMS.poiCubeSize)
 const _poiCubeMat = new THREE.MeshStandardMaterial({ color: 0xff7a18, emissive: 0x3a1a00, roughness: 0.55 })
 
-// The INTERACTION ring (owner, 2026-08-02): a translucent orange curtain standing at
-// poiInteractR, so the spot where parking actually opens the offer is something you can see and
-// aim at rather than a radius you discover by trial — the first step toward the marker being a
-// highlighted parking spot you pull into. Drawn on every marker out to the drawn terrain (poiRingShowR);
-// it is part of what a POI looks like, not a UI state.
+// The INTERACTION curtain (owner, 2026-08-02): a translucent orange curtain standing round the POI's parking spot,
+// so the spot where parking actually opens the offer is something you can see and aim at rather than a radius you
+// discover by trial. FEAT-318 (DEC-474): it is always a box now, never a circle: the model's PARK box, else the
+// shoulder strip in front of the pad (poi.js _shoulderStrip). Drawn on every marker out to the drawn terrain
+// (poiRingShowR); it is part of what a POI looks like, not a UI state.
 //
-// Deliberately dumb geometry: an open-ended unit cylinder, scaled to the radius and sunk into the
+// Deliberately dumb geometry: an open-ended unit cylinder (a box for the spots: _parkBoxGeo), scaled and sunk into the
 // ground so undulating terrain can never open a gap under it. depthWrite off + DoubleSide so it
 // reads as a light curtain from both approaches instead of a solid bucket. Lit like the world round it
 // (see _ringMat), so the headlights pick it out at night.
@@ -3334,16 +3334,15 @@ const _ringMat = (color, opacity = 0.28) => {
 const _poiRingMat = _ringMat(0xff7a18)     // orange — park here to be offered a job
 const _pumpZoneMat = _ringMat(0x4fc8ff)    // FEAT-50: blue — pull alongside and park to use the pump
 const _pumpZoneMarks = []                  // the pump zones' curtains (two per island), rebuilt with the markers
-// ASSET-74: the same curtain round a PARK box instead of a circle — the ring with four sides. A unit
+// ASSET-74: the same curtain round a PARK box instead of a circle — the ring with four sides (FEAT-318: every POI's). A unit
 // square (side 1, open top and bottom): 4 radial segments started at 45°, at radius √½. Shares the
 // ring's material and alpha ramp, so it reads as the same signal in a different shape.
 const _parkBoxGeo = new THREE.CylinderGeometry(Math.SQRT1_2, Math.SQRT1_2, 1, 4, 1, true, Math.PI / 4)
 const PARK_SLACK = 0.3         // m the park box grows by for the trigger — a truck half a wheel over the line still counts
-// The STAGING ring (owner, 2026-08-02): taking the job swaps the marker's orange circle for the
+// The STAGING ring (owner, 2026-08-02): taking the job swaps the marker's orange spot for the
 // green start threshold. One ring at a time, and its colour is the state — orange means "this is
-// where you stop", green means "this is where the clock starts". Same geometry, same style, wider
-// radius (START_ZONE_R vs poiInteractR) and taller in proportion so a 25 m circle still reads as a
-// wall rather than a puddle.
+// where you stop", green means "this is where the clock starts". Same material and style, a 25 m
+// circle (START_ZONE_R), taller in proportion so it still reads as a wall rather than a puddle.
 const _stageRingMat = _ringMat(0x3ddc6b)   // green — cross this and you're running
 const _STAGE_RING_H = 8.0      // m
 const _STAGE_RING_SINK = 3.0   // m
@@ -3408,7 +3407,6 @@ function _rebuildPoiMarkers () {
   _clutter.reset()
   const clutterKeys = new Set()
   const half = POI_PARAMS.poiCubeSize * 0.5
-  const r = POI_PARAMS.poiInteractR
   for (const q of poiSystem.list()) {
     const yard = new THREE.Group()
     yard.userData.x = q.x; yard.userData.z = q.z
@@ -3458,22 +3456,19 @@ function _rebuildPoiMarkers () {
       _pumpZoneMarks.push(m)
     }
 
-    // The ring means "park here and something happens", so it belongs only to markers where
+    // The curtain means "park here and something happens", so it belongs only to markers where
     // something does: a job giver, and mom's house (FEAT-288, DEC-422: "Mom's house should have a marked parking spot
-    // just like everyone else" — her door, camp.js atMoms, answers 25 m round her marker, so the 10 m ring sits inside it).
+    // just like everyone else" — her door, camp.js atMoms, answers in it).
     if (!q.jobs && q.type !== 'momsHouse') continue
-    // FEAT-88: a haul giver's "park here" is its drop zone, not a ring round the pad.
+    // FEAT-88: a haul giver's "park here" is its drop zone.
     if (q.drop) { _addDropMark(q); continue }
-    const box = q.park ? dropZoneWorld(q, q.park) : null
-    const ring = new THREE.Mesh(box ? _parkBoxGeo : _ringGeo, _poiRingMat)
-    if (box) {   // ASSET-74: the general store's lot — a box curtain round every stall
-      ring.scale.set(2 * box.halfX, _POI_RING_H, 2 * box.halfZ)
-      ring.position.set(box.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, box.z)
-      ring.rotation.y = box.yaw
-    } else {
-      ring.scale.set(r, _POI_RING_H, r)
-      ring.position.set(q.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, q.z)
-    }
+    if (!q.park) continue   // none: poi.js gives every other such POI a spot (FEAT-318)
+    // ASSET-74 / FEAT-318: a box curtain round the parking spot — the store's stalls, the lift, or the shoulder strip
+    const box = dropZoneWorld(q, q.park)
+    const ring = new THREE.Mesh(_parkBoxGeo, _poiRingMat)
+    ring.scale.set(2 * box.halfX, _POI_RING_H, 2 * box.halfZ)
+    ring.position.set(box.x, q.y - _POI_RING_SINK + _POI_RING_H * 0.5, box.z)
+    ring.rotation.y = box.yaw
     ring.renderOrder = 5
     _poiGroup.add(ring)
     _poiRings.set(q.id, ring)
@@ -4108,12 +4103,11 @@ function _serviceInReach () {
   // is charged off the wallet (_takeItem) and needs room in the truck, so a purchase made first could take either
   // away. Only this ordering: with no result card up the shop is open as ever (DEC-051).
   if (missionSystem?.state === 'done' || paperRouteSystem?.state === 'done') return null
-  const vp = vehicleState.position
-  const q = poiSystem.nearest(vp.x, vp.z, POI_PARAMS.poiInteractR)
+  const q = poiSystem.list().find(q => SHOP_TYPES.has(q.type) && !q.hidden && _inPoiSpot(q))
   // FEAT-104: a storefront's shop too, except on the tutorial's firing day (the givers' rule, _poiInReach) — but for
   // the snack's station at its stop (DEC-304).
   if (!SHOP_TYPES.has(q?.type) || (q.type !== 'autoShop' && _firingDay() && !(_dayStop() === 'snack' && q === _snackShop()))) return null
-  return _inPoiSpot(q) ? q : null   // FEAT-178: on the lift (its park box), not just near
+  return q   // FEAT-178: on the lift (its park box), not just near
 }
 
 /** Open the screen of `shop` (a SHOP_TYPES POI): its service screen, or a storefront's (FEAT-104). Returns `store`. */
@@ -4893,7 +4887,7 @@ function _tutWaypointOk (p) {
  *  wallet is topped up to it from her hand-over until the bag is bought, so spending it on something else first cannot
  *  strand the errand. */
 const _momCash = () => Math.ceil(shelfPrice({ id: TUT_SNACK }) * economySystem.tierNow()) + TUT_PARAMS.gasCash
-/** The camping area's door: the road point nearest the centre of the camp zone nearest the station (inside its disc), as
+/** The camping area's door: the road point the camp zone nearest the station was grown from (its middle, FEAT-299), as
  *  the waypoint's door is (`_setWaypoint`). Looked for until found, then kept for the region (onRegionLive clears it). */
 let _snackCampDoor = null
 function _campDoor () {
@@ -4901,7 +4895,7 @@ function _campDoor () {
   if (_snackCampDoor || !shop || !roadSystem) return _snackCampDoor
   let best = null, bz = null, bd = Infinity
   for (const zn of campSystem.zones()) {
-    const o = roadOrigin(roadSystem, zn, zn.r), d = o ? Math.hypot(o.x - shop.x, o.z - shop.z) : Infinity
+    const o = roadOrigin(roadSystem, zn, 5), d = o ? Math.hypot(o.x - shop.x, o.z - shop.z) : Infinity
     if (d < bd) { bd = d; best = o; bz = zn }
   }
   return (_snackCampDoor = best && { ...best, id: 'camp', label: 'the old McGill ranch', zone: bz })   // DEC-345: Katie's picnic spot
@@ -4974,42 +4968,36 @@ function _planEvePump () {
 // trigger), the line is re-planned from the truck's own road point to the same door. It is guidance only:
 // the job's route, par and arrival never read it. A re-plan waits until the truck has moved offM from the
 // last one, so a truck parked off the tarmac does not plan every 2 s.
-let _tutDetour = null   // { base, route, x, z }: the line for `base`, planned with the truck at (x, z); or null
-let _tutOffAt = 0       // performance.now() when the truck left the line; 0 while on it
+const _stray = new StrayGuide()   // BUG-260: one for every guided line (the tutorial's, the waypoint's, a job's)
 
-/** The tutorial leg in play: the route its GPS would show and the door that route ends at, or null. */
+/** The leg in play: the route its GPS would show and the door that route ends at (null door = the route's own end), or null. */
 function _tutLeg () {
   if (_tutDrive()) { const base = _homeGuide(), door = _eveTarget(); return base && door ? { base, door } : null }
+  // BUG-260: a running job's line follows the truck too (it was fixed at accept). A multi-drop and a demolition site
+  // have their own re-planning guide (TourGuide) and a paper round its own (FEAT-63).
+  const ms = missionSystem
+  if (ms?.state === 'running' && !ms.mission?.approach && !ms._anyOrder() && !paperRouteSystem?.isCarrying() && _site?.mission !== ms.mission) {
+    const base = ms.guideRoute()
+    return base?.segments?.length ? { base, door: null } : null
+  }
   return _waypointOn() ? { base: _waypoint.route, door: _waypoint.door } : null   // FEAT-211: the waypoint's line follows the truck too
 }
 
 /** The line the GPS shows for `base`: its re-plan from the truck when there is one. */
-const _tutLine = base => _tutDetour && _tutDetour.base === base ? _tutDetour.route : base   // DEC-475: no leg (undefined) with no detour (null) is no line, not a throw
+const _tutLine = base => _stray.line(base)   // DEC-475: no leg (undefined) with no detour (null) is no line, not a throw
 
-/** On the run-HUD poll: re-plan the tutorial's GPS from the truck once it is off the line. */
+/** On the run-HUD poll: re-plan the GPS line from the truck once it is off it. */
 function _tutDetourTick () {
-  const leg = _tutLeg(), v = vehicleState.position
-  if (!leg) { _tutDetour = null; _tutOffAt = 0; return }
-  const poly = _tutLine(leg.base)?.poly
-  if (!poly?.length) return
-  let off = Infinity
-  for (const p of poly) off = Math.min(off, Math.hypot(p.x - v.x, p.z - v.z))
-  if (off <= RR_PARAMS.offM) { _tutOffAt = 0; return }
-  const now = performance.now()
-  _tutOffAt ||= now
-  if (now - _tutOffAt < RR_PARAMS.offS * 1000) return
-  if (_tutDetour?.base === leg.base && Math.hypot(v.x - _tutDetour.x, v.z - _tutDetour.z) < RR_PARAMS.offM) return
-  _tutOffAt = 0
-  const route = _planFromTruck(leg.door)
-  // No plan (the truck off every road; on the door's own road it is a straight stretch since BUG-125): keep the line,
-  // and the spot it failed at.
-  _tutDetour = { base: leg.base, route: route?.segments?.length ? route : _tutLine(leg.base), x: v.x, z: v.z }
+  _stray.tick(_tutLeg(), vehicleState.position, performance.now(), leg => {
+    const r = _planFromTruck(leg.door ?? routeEndDoor(roadSystem, leg.base))
+    return r && leg.base.objective ? { ...r, objective: leg.base.objective } : r   // FEAT-218: the destination's own spot, for the turn arrow
+  })
 }
 
 /** The shortest line by road from the truck's own road point to `door` (a POI, or anything with its { id, aId, bId, s }), or null. */
 function _planFromTruck (door) {
   const from = roadOrigin(roadSystem, vehicleState.position)
-  return from && missionSystem.planOffer(from, { rng: Math.random,
+  return from && door && missionSystem.planOffer(from, { rng: Math.random,
     dest: { kind: 'poi', pois: [door], strict: true, anyLeg: true, nearest: true } })
 }
 
@@ -5120,9 +5108,9 @@ function _eveningBeats () {
     _eveningLessons(q, vp, stop)
   }
   // FEAT-184 (DEC-151): off the road, brake off, for TUT_PARAMS.offRoadS of play, the truck goes back on it. A place's
-  // ring (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
+  // ground (the pumps, the shop, her yard) and a parked truck (the flat, on the shoulder) are never "off". Play time
   // (_playedS), so a pause or a card never counts.
-  const off = !vehicleState.parked && !_inPoiRing() && !poiSystem.nearest(vp.x, vp.z, TUT_PARAMS.safeNearPoiM)
+  const off = !vehicleState.parked && !_atPoi() && !poiSystem.nearest(vp.x, vp.z, TUT_PARAMS.safeNearPoiM)
     && campSystem.nearRoadInfo(vp.x, vp.z).lateral > (RANGER_PARAMS.roadHalfWidth ?? 5) + TUT_PARAMS.offRoadM
   _eveOffAt = off ? (_eveOffAt ?? _playedS) : null
   const left = off ? TUT_PARAMS.offRoadS - (_playedS - _eveOffAt) : 0
@@ -5892,13 +5880,12 @@ function _poiInReach () {
   // FEAT-61: a route is a job in flight, same as any other — you cannot take work while doing work,
   // and Larry's own marker must not re-offer the route you are three houses into.
   if (paperRouteSystem.isActive()) return null
-  // jobsOnly (FEAT-60): only a job source answers the park trigger. Without this the roster's
-  // other six types would each win the trigger and then have nothing to say — and mom's house,
-  // which outranks her own front door in the precedence below, would offer freight instead of bed.
-  const q = poiSystem.nearest(vehicleState.position.x, vehicleState.position.z,
-                             POI_PARAMS.poiInteractR, true)
+  // Only a job source answers the park trigger (FEAT-60). Without this the roster's other types would each win the
+  // trigger and then have nothing to say — and mom's house, which outranks her own front door in the precedence below,
+  // would offer freight instead of bed. FEAT-318: the one whose parking spot the truck is in.
+  const q = poiSystem.list().find(q => q.jobs && !q.hidden && _inPoiSpot(q))
   if (q && _jointQuiet(q.id, daySystem.clockH())) return null
-  return q && _inPoiSpot(q) ? q : null
+  return q ?? null
 }
 
 /** A giver's card opens on its live offers. */
@@ -5908,14 +5895,12 @@ function _openOffers (poi, offers) {
 
 /**
  * Is the truck in POI `q`'s parking spot? FEAT-88: a haul giver's is its drop zone, with your BED
- * over it — that is where the load lands. ASSET-74: a POI with a PARK box (the general store's lot)
- * wants the truck inside it; poiInteractR still reaches it (the box's far corner is 8.8 m from the
- * pad centre). Anything else: the ring.
+ * over it — that is where the load lands. Anything else (FEAT-318, DEC-474): the truck's centre in its PARK box —
+ * the model's (the store's stalls, the lift) or the shoulder strip in front of the pad. A POI with neither has no spot.
  */
 function _inPoiSpot (q) {
   const vp = vehicleState.position
-  if (Math.hypot(q.x - vp.x, q.z - vp.z) > POI_PARAMS.poiInteractR) return false
-  return q.drop ? _bedOverDrop(q) : !q.park || overDropZone(q, vp.x, vp.z, PARK_SLACK, q.park)
+  return q.drop ? _bedOverDrop(q) : overDropZone(q, vp.x, vp.z, PARK_SLACK, q.park)
 }
 
 /** FEAT-103: the source of a line taken at the camp while the truck is still on its way there, or null. */
@@ -5969,11 +5954,9 @@ function _updateFetchPrompt (poiEl, pulled) {
   const pickIds = missionSystem?.pickupPoiIds() ?? []
   if (pickIds.length) {
     const vp = vehicleState.position
-    // Same reach as the giver trigger: the interaction radius, and — at a POI with a PARK box (the
-    // general store's lot, ASSET-74) — inside the box, whose curtain is the halo you park in.
+    // Same reach as the giver trigger: the stop's parking spot, whose curtain is the halo you park in (FEAT-318).
     // FEAT-291: whichever owed stop the truck is at — a multi-drop's are handed over in any order.
-    const pq = poiSystem.list().find(q => pickIds.includes(q.id) && Math.hypot(q.x - vp.x, q.z - vp.z) <= POI_PARAMS.poiInteractR
-      && (!q.park || overDropZone(q, vp.x, vp.z, PARK_SLACK, q.park)))
+    const pq = poiSystem.list().find(q => pickIds.includes(q.id) && _inPoiSpot(q))
     const near = !!pq
     const j = missionSystem.mission, at = j.atPickup
     if (near && pulled && missionSystem.acquire(pq.id)) {
@@ -6114,10 +6097,11 @@ _menu('camp', () => !!_campUi, () => _closeCampUi())
 // player says "I'm shopping for ground now". It stays on until they turn it off, or break camp (BUG-142).
 let _campSeek = false
 
-/** Inside a POI's ring, the radius its park trigger answers: the place does the work there, so the
+/** On a POI's ground (its pad or its parking spot, FEAT-318): the place does the work there, so the
  *  tent and the tow stand down (owner, 2026-10-23). Mom's door is its own test (_atMomsHouse). */
-function _inPoiRing () {
-  return !!poiSystem.nearest(vehicleState.position.x, vehicleState.position.z, POI_PARAMS.poiInteractR)
+function _atPoi () {
+  const vp = vehicleState.position
+  return poiSystem.list().some(q => !q.hidden && onPoiGround(q, vp.x, vp.z, PARK_SLACK))   // FEAT-318: its pad or its spot
 }
 
 function _campPromptState () {
@@ -6129,7 +6113,7 @@ function _campPromptState () {
   if (missionSystem && missionSystem.state !== 'idle' && !missionSystem.isOnJob()) return null
   if (paperRouteSystem.isActive() && !paperRouteSystem.isCarrying()) return null
   if (_campUi || _campBusy) return null
-  if (_inPoiRing()) return null
+  if (_atPoi()) return null
   // Collapsed: nothing is paid at all — no zone scan, no ray, no grading.
   if (!_campSeek) return { collapsed: true }
   // FEAT-308 (DEC-451): at speed the card still says whether this is camping ground (the disc scan is
@@ -6490,8 +6474,8 @@ function _recoveryState () {
 /** FEAT-162: parked at a service center, the least its bench or shelf charges to cure a seized engine
  *  (the ×3 rebuild, or an engine off the shelf) and to put on one wheel, fitting included. Else null. */
 function _shopCures () {
-  const vp = vehicleState.position, q = poiSystem.nearest(vp.x, vp.z, POI_PARAMS.poiInteractR)
-  if (q?.type !== 'autoShop') return null
+  const vp = vehicleState.position, q = poiSystem.list().find(q => q.type === 'autoShop' && onPoiGround(q, vp.x, vp.z, PARK_SLACK))
+  if (!q) return null
   const tier = economySystem.tierNow(), onShelf = shelf(q.id, daySystem.clockH())
   const buy = (slot, socket) => Math.min(...onShelf.filter(e => PARTS[e?.id]?.slot === slot)
     .map(e => shelfPrice(e) * tier + serviceCenter.fitLabour(e.id, socket).price))
@@ -6526,7 +6510,7 @@ function _checkStranded () {
 function _updateRecovery () {
   const row = document.getElementById('recovery-row')
   if (!row) return
-  const show = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !fuelStop.isOpen && !serviceScreen.isOpen && !_inPoiRing()
+  const show = storySystem.isActive() && !storySystem.isEntering() && !_runEnded && !fuelStop.isOpen && !serviceScreen.isOpen && !_atPoi()
   row.style.display = show ? 'flex' : 'none'
   const live = show && !!vehicleState.parked && !damageScreen.blocked
   const icon = document.getElementById('recovery-icon')
@@ -10001,9 +9985,10 @@ const storySystem = new StorySystem({
     // ORDER MATTERS: the roster decides where mom lives, and camping is handed that answer.
     // Mom's house is a POI with a building on it, not a camp — you can sleep there, and sleeping
     // there reuses the camp module's sleep path, which is the whole of the relationship (FEAT-60).
-    campSystem.build(center, radius, poiSystem.list().find(q => q.type === 'momsHouse') ?? null)
-    // FEAT-164: then zones until no road the planners use is more than campReachM from one.
-    campSystem.fillReach(mainNodes, p => Math.hypot(p.x - center.x, p.z - center.z) <= radius - REGION_MARGIN)
+    { const mom = poiSystem.list().find(q => q.type === 'momsHouse'); campSystem.build(center, radius, mom?.park ? dropZoneWorld(mom, mom.park) : null) }   // FEAT-318: her parking spot
+    // FEAT-299: then the zones grow along the planners' roads, and FEAT-164 adds zones until no road is more
+    // than campReachM from one.
+    campSystem.growAreas(mainNodes, p => Math.hypot(p.x - center.x, p.z - center.z) <= radius - REGION_MARGIN)
     _rebuildPoiMarkers()
     _placeBarricades()   // FEAT-154: the road closures
     // Only the chunks a pad reaches: pads are the one carve input that changed here. Pads never bump
@@ -10668,7 +10653,7 @@ function _listenerInBore () {
   const c = camera.position, nr = roadSystem.carveHint(c.x, c.z)
   if (!nr?.point || !nr.tangent) return false
   const arc = (nr.arcS ?? 0) + (c.x - nr.point.x) * nr.tangent.x + (c.z - nr.point.z) * nr.tangent.z
-  if (!roadSystem.tunnelSpanAt(nr.runKey ?? '', arc)) return false
+  if (!roadSystem.boreSpanAt(nr.runKey ?? '', arc)) return false   // BUG-259: an underground junction's chamber too
   return c.y < roadSystem.runProfile(arc, nr.runKey, _boreProf).gradeY + (RANGER_PARAMS.tunnelBoreRadius ?? 8)
 }
 const _boreProf = { gradeY: 0, tx: 1, tz: 0 }

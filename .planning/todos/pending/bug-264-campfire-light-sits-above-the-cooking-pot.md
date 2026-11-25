@@ -1,0 +1,40 @@
+---
+id: BUG-264
+type: bug
+status: open
+severity: minor
+opened: 2026-11-24
+source: owner, 2026-11-24 (inbox) — "the campfire point light is above the cooking kit pot so it illuminates the pot from above which looks weird. either move pot higher or move light lower"
+relates: FEAT-230, FEAT-66
+---
+lane: free lane
+
+# BUG-264: The campfire's light sits above the cooking kit's pot
+
+## Next steps
+A routine lane (Sonnet): lower the fire's point light below the pot's base, or raise the pot, whichever keeps the fire lighting the ground and the camp as now. One before/after screenshot.
+
+## Summary
+The camp fire's point light is higher than the cooking kit's pot, so the pot is lit from above instead of from the fire under it.
+
+## Description
+(See Summary and the owner's words in `source:`.)
+
+## Tracker
+- [ ] Built
+- [ ] Owner's look
+
+## Decisions
+None yet.
+
+## Open questions
+None.
+
+## Links
+FEAT-230, FEAT-66
+
+## Files
+the camp fire light in `src/` (camp gear / fire code) · `data/prop-models.js` cookingKit
+
+## Log
+- 2026-11-24: minted by the orchestrator from the owner's inbox.

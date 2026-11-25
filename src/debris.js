@@ -489,7 +489,8 @@ export class DebrisSystem {
     this._live.push({ body, mesh: spawned, kind, cargo: false, dragK: spec.dragK ?? 0, mass: spec.dragK ? this._eng.getMass(body) : 0, pinned: !!opts.pinned, ownMaterials: !!opts.ownMaterials,
       prevP: new THREE.Vector3(position.x, position.y, position.z),
       prevQ: opts.quaternion ? new THREE.Quaternion(opts.quaternion.x, opts.quaternion.y, opts.quaternion.z, opts.quaternion.w)
-        : new THREE.Quaternion() })
+        : new THREE.Quaternion(),
+      snapRev: -1, drawnRev: -1 })   // FEAT-326: the engine poseRev prevP was read at / the mesh was last posed at rest at
     this._enforceCap()
     return body
   }
@@ -614,7 +615,9 @@ export class DebrisSystem {
       _cqi.copy(_cq).invert()
     }
     for (const rec of this._live) {
-      this._eng.getTransform(rec.body, rec.prevP, rec.prevQ)
+      // FEAT-326: a body the last step did not move still holds the pose prevP was read at.
+      const rev = this._eng.poseRev(rec.body)
+      if (rev !== rec.snapRev) { this._eng.getTransform(rec.body, rec.prevP, rec.prevQ); rec.snapRev = rev }
       if (rec.dragK) {
         // FEAT-277: quadratic air drag F = −m·k·|v|·v, held over the coming step (the engine clears forces after it).
         this._eng.getVelocity(rec.body, _vl, _va)
@@ -629,14 +632,19 @@ export class DebrisSystem {
   }
 
   /**
-   * Frame-loop sync: engine transform → mesh. Every live body, no culling: ≤ DEBRIS_CAP loose
-   * debris plus the pinned bodies the cap does not count (the barrel-cube lab, haul and freight loads).
+   * Frame-loop sync: engine transform → mesh, for every live body (≤ DEBRIS_CAP loose debris plus the
+   * pinned bodies the cap does not count: slide rocks, the barrel-cube lab, haul and freight loads)
+   * except one at rest. FEAT-326: a body the last step did not move sits at prevP for any alpha, so
+   * once its mesh is posed there it is left alone until the engine moves it again.
    * @param {number} [alpha=1] - render interpolation between the beforeStep() snapshot (0) and the
    *   current pose (1). Pass the truck's own render alpha so cargo and truck are drawn at the same
    *   instant; a caller that draws its truck un-interpolated (the menu stage) leaves it at 1.
    */
   update (alpha = 1) {
     for (const rec of this._live) {
+      const rev = this._eng.poseRev(rec.body)
+      if (rev === rec.drawnRev) continue
+      rec.drawnRev = rev === rec.snapRev ? rev : -1
       this._eng.getTransform(rec.body, _p, _q)
       if (alpha >= 1) { rec.mesh.position.copy(_p); rec.mesh.quaternion.copy(_q); continue }
       rec.mesh.position.copy(rec.prevP).lerp(_p, alpha)

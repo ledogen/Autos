@@ -19,7 +19,7 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   ruleHunger: 'normal',     // off · low · normal
   ruleCost: 'normal',       // off · low · normal ("medium" before DEC-475: main.js reads it as normal)
   ruleFuel: 'normal',       // off · low · normal (DEC-475)
-  ruleTows: '1',            // free tows a run: 1 · 3 · 5 · 10 · infinite (DEC-475)
+  ruleTows: '0',            // free tows a run: 0 · 1 · 3 · 5 · 10 · infinite (DEC-475)
   ruleDeath: 'on',          // on · off (DEC-475)
   ruleEndless: 'off',       // off · on
   gearbox: 'auto',          // 'auto' = the truck's own automatic · 'manual' = the M5OD-R1 (FEAT-126)
@@ -28,8 +28,8 @@ export const SETTINGS_DEFAULTS = Object.freeze({
   abs: true,                // RANGER_PARAMS.abs — anti-lock brakes (src/abs.js)
   throttleAssist: true,     // RANGER_PARAMS.throttleAssist — the skilled foot (src/traction.js, FEAT-159; owner 2026-11-02: on)
   tractionControl: false,   // RANGER_PARAMS.tractionControl — brake + torque traction control (FEAT-159; owner: off)
-  stickDeadzone: 0.08,      // PAD_PARAMS.stickDeadzone — keep equal to gamepad.js's default
-  steerShape: 0,            // PAD_PARAMS.steerShape — likewise (0 linear … 1 parabolic … 1.5)
+  stickDeadzone: 0.10,      // PAD_PARAMS.stickDeadzone — keep equal to gamepad.js's default
+  steerShape: 1,            // PAD_PARAMS.steerShape — likewise, 100 % when first toggled on (DEC-489) (0 linear … 1 parabolic … 1.5)
   padLayout: 'Professor',   // PAD_PARAMS.padLayout — DEC-431: 'Professor' · 'Ventura Highway' (gamepad.js PAD_LAYOUTS)
   vibration: 1,             // RUMBLE_PARAMS.vibration — controller vibration master: 0 off · 0.5 low · 1 normal · 1.5 high (FEAT-247)
   uiScale: 'small',         // FEAT-248: the 2D layer's size — 'small' (today's, the default) · 'big' (a TV): index.html `html[data-ui-scale=big]` zooms it

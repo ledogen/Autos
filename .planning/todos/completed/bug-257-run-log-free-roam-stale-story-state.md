@@ -1,7 +1,7 @@
 ---
 id: BUG-257
 type: bug
-status: open
+status: closed
 severity: minor
 opened: 2026-11-23
 source: owner's perf log wip/run-logs/perf-1123 (a story run ended broke, then free roam in the same tab)
@@ -35,3 +35,4 @@ Fix: story fields exist only in `story`/`scenario` mode; a changed seed or mode 
 
 ## Files
 `src/run-log.js` · `test/run-log.mjs`
+- 2026-11-24: CLOSED. Owner, card bug257-runlog-look: "Good, keep logging free roam" (DEC-484).

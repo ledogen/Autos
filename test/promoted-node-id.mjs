@@ -14,9 +14,10 @@
 //   1. IDENTICAL ID — byte-for-byte, including the `${a},${b},${c}` spelling those modules key on.
 //   2. IDENTICAL POSITION AND DECK HEIGHT — the id names a point ON a built road; if two windows
 //      put the same T at different heights, the trunk they split is not window-invariant either.
-//   3. DEGREE 3 — a promoted node that is not a three-way junction is a T that lost a leg.
+//   3. DEGREE 3 — a promoted node that is not a three-way junction is a T that lost a leg. BUG-234 (DEC-471): or 4, an
+//      X junction the assembly cut at a crossing — and the same degree from every window.
 //   4. NO COLLISION with a real site id (structural: real k >= 0), asserted rather than assumed.
-//   5. BUG-63, over the whole road battery: every promoted node that exists has three legs.
+//   5. BUG-63, over the whole road battery: every promoted node that exists has three legs (four at an X).
 //
 // Windows per seed are concentric-ish: the same ground reached from four different centres, which
 // is exactly how the streamer meets a T in play.
@@ -77,7 +78,7 @@ for (const seed of SEEDS) {
       fails++; continue
     }
     for (const o of core) {
-      if (o.deg !== 3) { console.log(`  FAIL ${seed}: T ${k} has degree ${o.deg} from centre ${o.c} (want 3)`); fails++ }
+      if ((o.deg !== 3 && o.deg !== 4) || o.deg !== core[0].deg) { console.log(`  FAIL ${seed}: T ${k} has degree ${o.deg} from centre ${o.c} (want 3, or 4 at an X, and ${core[0].deg} as from ${core[0].c})`); fails++ }
       const d = o.pos.distanceTo(core[0].pos)
       if (d > 1e-9) { console.log(`  FAIL ${seed}: T ${k} moved ${d.toExponential(2)} m between centres ${core[0].c} and ${o.c}`); fails++ }
     }
@@ -119,7 +120,8 @@ for (const { seed, c } of FAR) {
     const d = hit.pos.distanceTo(rec.pos)
     if (d > 1e-9) { console.log(`  FAIL ${seed}: T ${k} moved ${d.toExponential(2)} m between the ${RADIUS} m band and the ${PLAY_R} m play window`); fails++ }
     const deg = (play._proto.nodeInc.get(k) || []).length
-    if (deg !== 3) { console.log(`  FAIL ${seed}: T ${k} has degree ${deg} in the ${PLAY_R} m play window (want 3)`); fails++ }
+    const wantDeg = (wide._proto.nodeInc.get(k) || []).length
+    if (deg !== wantDeg || (deg !== 3 && deg !== 4)) { console.log(`  FAIL ${seed}: T ${k} has degree ${deg} in the ${PLAY_R} m play window (want ${wantDeg} as in the band: 3, or 4 at an X)`); fails++ }
   }
   console.log(`seed ${seed} @ (${c[0]},${c[1]}): ${core.length} core T nodes in the far band, ${judged} re-streamed at play radius`)
   if (!judged) { console.log(`  FAIL ${seed}: the far band built no core T — the dissimilar-window sweep proved nothing`); fails++ }
@@ -136,7 +138,7 @@ for (const W of WINDOWS) {
   for (const [k] of road._promoted) {
     batteryTs++
     const deg = (road._proto.nodeInc.get(k) || []).length
-    if (deg !== 3) { console.log(`  FAIL ${W.name}: T ${k} has ${deg} registered legs (want 3)`); fails++ }
+    if (deg !== 3 && deg !== 4) { console.log(`  FAIL ${W.name}: T ${k} has ${deg} registered legs (want 3, or 4 at an X)`); fails++ }
   }
   for (const k of road._network.keys()) if (k.endsWith('~p')) parallel++
 }

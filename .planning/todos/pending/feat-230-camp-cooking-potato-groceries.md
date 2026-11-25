@@ -70,3 +70,4 @@ Ice, Ice King, Packed lunch). In short:
   of 72 / 120 h, `freshLeft` → the `.sl-fresh` bar in inventory-screen.js. Main merged in. Gates: inventory, shop-stock + the
   affected set; smoke step `freshBar` (wip/fresh/). Unverified: the bar's look by the owner.
 2026-11-16 (bookkeeping sweep): next steps rewritten (slice 2 merged e22a2d35, groceries 56a949e8, DEC-339 tutorial hold e45af4fb). Ready to close after the two look cards.
+- 2026-11-24: DEC-487: Rucksack shop price $20 (data/shop-stock.js); the other placeholder prices are the owner's.

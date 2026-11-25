@@ -1,31 +1,32 @@
 // ── FEAT-45: dispersed camping zones ───────────────────────────────────────────────────────
 //
-// A dispersed-camping ZONE is a permission, not a place: a big soft area of the map (BLM/forest-
-// service style) inside which pulling off the road and sleeping is allowed. It carries no quality
+// A dispersed-camping ZONE (a "camping area") is a permission, not a place: a stretch of road
+// (BLM/forest-service style) beside which pulling off and sleeping is allowed. It carries no quality
 // judgement at all — how good a given spot is comes from the LIVE grading in Phase D (flatness /
-// view / shade / water), never from the zone. That split is deliberate and it is what makes SM-INV-12
-// cheap to honour: with no suitability test at zone level, a zone is a pure function of
-// (worldSeed, its macro cell, CAMP_PARAMS) and nothing else.
+// view / shade / water), never from the zone.
 //
-// THE WINDOW-INVARIANCE RULE (SM-INV-12, and the poi.js discipline restated): a zone's existence,
-// centre and radius may depend ONLY on the seed and the macro cell it was rolled in. Never on the
-// region centre, never on the streaming window, never on what this system did a minute ago. The
-// region clip is applied as a POST-FILTER in build() — see the comment there — exactly as
-// PoiSystem.build() clips its POIs, and for the same reason: a reject test folded into generation
-// would let the region centre decide WHICH zones exist, and a zone 400 m inside the wall would
-// move when the window moved.
+// A ZONE IS ONE CONTINUOUS RUN OF ROAD (FEAT-299, DEC-437). It was a disc laid over the network, and
+// a disc broke into several pieces wherever roads crossed its rim. Now each zone is grown along the
+// planners' roads from a seed point to a target length (growArea): every road within some driving
+// distance of the seed, so it is one piece by construction and carries on down every leg of a
+// junction it meets. The target is campAreaMeanM ± campAreaVar, rolled per zone.
 //
-// WHAT THE PLAYER SEES: never the disc. On the 2D map a zone renders only as a yellow casing along
-// the roads that run through it (map2d._drawCampZones), and camping is tethered to within
-// `campRoadEdgeM` of the road edge — the player is not meant to wander off-road hunting spots.
-// So the disc is a road-corridor selector, not a blob of terrain, and its exact boundary is never
-// drawn or driven into.
+// THE WINDOW-INVARIANCE RULE (SM-INV-12, and the poi.js discipline restated): a zone's SEED (whether
+// a cell has one, where, and its size roll) may depend ONLY on the seed and the macro cell it was
+// rolled in. The region clip is a POST-FILTER in build() — see the comment there — exactly as
+// PoiSystem.build() clips its POIs. The run itself is grown over the region's built network in
+// growAreas(), a region-build pass as cold as that network (the POI roster reads it the same way):
+// nothing of it is saved, a resume rebuilds it.
+//
+// WHAT THE PLAYER SEES: the run's road, as a yellow casing on the 2D map (map2d._drawCampZones), and
+// camping is tethered to within `campRoadEdgeM` of the road edge — the player is not meant to wander
+// off-road hunting spots. zoneAt() is that corridor: within the tether of the run's road.
 //
 // MOM'S HOUSE IS NOT A CAMP (FEAT-60, owner 2026-08-05). It is a POI — a sited building on a
 // lay-by, one per region, placed by the roster in poi.js and wearing a trailer model. All this
 // module does for it is lend it the sleep path, because a bed is a bed and there was no reason to
-// write sleeping twice. So: `_moms` holds where the roster put her (handed in to build(),
-// never derived here), `atMoms()` gates her doorstep, and nothing about camping's zone permission,
+// write sleeping twice. So: `_moms` holds her parking spot (FEAT-318: the box poi.js gives her, handed in to
+// build(), never derived here), `atMoms()` gates her doorstep, and nothing about camping's zone permission,
 // road tether, pad digging or vibe grading applies to the place. FEAT-45 originally pinned her to
 // the region centre as a stand-in, which is how the world briefly had two mom's houses several
 // hundred metres apart — one on the map, one with the trailer on it.
@@ -36,18 +37,20 @@
 import { hash32, mulberry32, clamp01 } from './seed.js'
 import { runLog } from './run-log.js'   // FEAT-242: the opt-in run log (every hook is behind runLog.on)
 
+const MOMS_SLACK = 0.3   // m — her spot grows by this for the knock: main.js PARK_SLACK, a wheel over the line still counts
+
 /**
  * Tunables. Zone siting + the road tether only — none of this may ever enter RANGER_PARAMS
  * (a camp* key landing in it would re-route the whole world for a camping knob). Same reason
  * POI_PARAMS and DAY_PARAMS stand apart.
  */
 export const CAMP_PARAMS = {
-    campCellM:      1024,   // m — macro cell; one zone roll per cell
-    campZoneChance: 0.26,   // P(a cell carries a zone) — see THE COVERAGE ARITHMETIC below
-    campMinRadiusM: 350,    // zone radius ~ U[min, max]; mean diameter ≈ 1 km (RATIFIED)
-    campMaxRadiusM: 650,
+    campCellM:      1024,   // m — macro cell; one zone seed roll per cell
+    campZoneChance: 0.26,   // P(a cell carries a zone) — the FEAT-45 density, kept by FEAT-299
+    campAreaMeanM:  930,  // m of road in a zone, mean — FEAT-299: the measured median of the old discs
+    campAreaVar:    0.5, // ± fraction: a zone's target is mean × (1 ± var), uniform, rolled per zone
     campReachM:     2000,   // m — FEAT-164: the longest drive from any road in the region to a camp zone;
-                            // fillReach adds zones until it holds (owner 2026-11-05: "i like the 2000m
+                            // growAreas adds zones until it holds (owner 2026-11-05: "i like the 2000m
                             // spacing between camping zones best")
     campRoadEdgeM:  40,    // m past the shoulder edge that dispersed camping is allowed (owner
                             // 2026-07-31: was 20 — the wider tether roughly doubles the siting
@@ -77,7 +80,6 @@ export const CAMP_PARAMS = {
                             // probes, so its outer ring is ~39 m between spokes — a narrow stream
                             // grazing the far edge can slip through; add rings if that shows up.
     campWaterBestM:  5,     // m — at or inside this, full water credit (camping ON the bank is best)
-    campMomsRadiusM: 25,    // m — park-trigger radius at mom's house
 
     // ── The view (the field-of-vision scan — see skylineView) ─────────────────────────────────
     campViewR:        2000, // m — outer reach of the scan. "Extremely far away" has to mean km, not
@@ -186,21 +188,12 @@ const CAMP_REACH_CAP_M = 120
 // which is correct: its bench would bite into the shoulder.
 const CAMP_ROAD_CLEAR_TOL_M = 0.25
 
-// THE COVERAGE ARITHMETIC (target ≈ 20% of map area, owner-ratified).
-//   cell area                = 1024²                       = 1.0486 km²
-//   E[r²] for r ~ U[350,650] = (a² + ab + b²)/3             = 257 500 m²
-//   E[zone area | rolled]    = π · E[r²]                    = 0.8090 km²
-//   expected coverage        = chance · 0.8090 / 1.0486     = chance · 0.7715   (before overlap)
-// So chance 0.26 gives ~20.1% expected, and discs that overlap each other or spill across cell
-// borders pull the MEASURED figure a little under that (a Poisson-ish 1 − e^−0.20 ≈ 18%).
-// MEASURED (20 k Monte-Carlo samples, 2026-07-30): 20.0% over seed 6's 2.5 km story region, and
-// 17.8–19.5% as a global density across seeds 1/6/7/42 over a 60 km box. Acceptance band is
-// [15%, 25%]; do not "tidy" this constant without re-measuring.
-
-// Radius max (650 m) < cell (1024 m), so a disc whose centre sits in cell C can reach at most one
-// cell beyond C in each direction. Every point query therefore only has to scan the 3×3 cell
-// neighbourhood around the query's own cell. Keep this true if the radii are ever retuned.
-const NEIGHBOR_CELLS = 1
+// THE COVERAGE (FEAT-299). The disc layer was tuned to ~20% of the map's AREA (owner-ratified, FEAT-45);
+// a zone is road now, so what it covers is road. The cell chance stayed and the mean target is the
+// measured median road length of the old discs (930 m), so a zone is the size a typical disc was.
+// MEASURED (test/camp-area-census.mjs, 400 random regions, 2026-11-21): the discs held a median 25 % of
+// a region's road (mean 26 %, their road per zone right-skewed: mean 1181 m), the runs 22 % (mean 23 %),
+// 9.2 zones a region against 8.9.
 
 /**
  * How epic the outlook from (x,z) is, 0..1 — the raw view score, before VIBE_W.view scales it.
@@ -294,47 +287,149 @@ export function skylineView (sampleH, x, z, P) {
     return t * t * (3 - 2 * t)   // smoothstep
 }
 
-/**
- * FEAT-164: the worst drive from any point of a road network to a camp zone, and where it is.
- * `segs` are the roads as `{ka, kb, pts, cum, L}` (end-node keys, the ka → kb polyline, its arc). A road
- * point inside a zone disc is campable. Multi-source Dijkstra over the nodes, each road seeding its ends
- * with the arc to its first / last in-zone point; then the worst POINT of each road: a zone-less road's
- * is (dA + dB + L) / 2, the stretch before its first in-zone point (dA + s0) / 2, a gap between two
- * in-zone stretches half the gap. A piece with no zone at all is Infinity, at a road's midpoint.
- * test/camp-reach.mjs measures the same thing independently.
- *
- * @returns {{ d:number, at:{x:number,z:number}|null }}
- */
-export function campReach (segs, zones) {
-    const inZone = (p) => zones.some((q) => (p.x - q.x) ** 2 + (p.z - q.z) ** 2 <= q.r * q.r)
-    const dist = new Map(), adj = new Map()
-    const node = (k) => { if (!adj.has(k)) { adj.set(k, []); dist.set(k, Infinity) } }
-    const spans = segs.map((s) => {
-        node(s.ka); node(s.kb)
-        adj.get(s.ka).push({ to: s.kb, w: s.L }); adj.get(s.kb).push({ to: s.ka, w: s.L })
-        let s0 = null, s1 = null, gap = 0, gapAt = 0
-        for (let i = 0; i < s.pts.length; i++) {
-            if (!inZone(s.pts[i])) continue
-            if (s1 !== null && s.cum[i] - s1 > gap) { gap = s.cum[i] - s1; gapAt = (s.cum[i] + s1) / 2 }
-            if (s0 === null) s0 = s.cum[i]
-            s1 = s.cum[i]
-        }
-        if (s0 !== null) {
-            dist.set(s.ka, Math.min(dist.get(s.ka), s0))
-            dist.set(s.kb, Math.min(dist.get(s.kb), s.L - s1))
-        }
-        return { s0, s1, gap, gapAt }
-    })
-    // A linear-scan queue (mission.js graphDijkstra's shape): a region is a few dozen nodes.
+/** Multi-source Dijkstra over the roads `segs` from the node distances already in `dist` (filled in place).
+ *  A linear-scan queue (mission.js graphDijkstra's shape): a region is a few dozen nodes. */
+function driveDist (segs, dist) {
+    const adj = new Map()
+    for (const s of segs) for (const [k, to] of [[s.ka, s.kb], [s.kb, s.ka]]) {
+        if (!adj.has(k)) adj.set(k, [])
+        if (!dist.has(k)) dist.set(k, Infinity)
+        adj.get(k).push({ to, w: s.L })
+    }
     const queue = [...dist].filter(([, d]) => d < Infinity).map(([k, d]) => ({ k, d }))
     while (queue.length) {
         queue.sort((p, q) => p.d - q.d)
         const { k, d } = queue.shift()
         if (d > dist.get(k)) continue
-        for (const e of adj.get(k)) {
+        for (const e of adj.get(k) ?? []) {
             if (d + e.w < dist.get(e.to)) { dist.set(e.to, d + e.w); queue.push({ k: e.to, d: d + e.w }) }
         }
     }
+    return dist
+}
+
+/** Sorted, merged copy of arc intervals `[[s0, s1], …]`. */
+function mergeSpans (iv) {
+    const out = []
+    for (const [a, b] of [...iv].sort((p, q) => p[0] - q[0])) {
+        if (out.length && a <= out[out.length - 1][1]) out[out.length - 1][1] = Math.max(out[out.length - 1][1], b)
+        else out.push([a, b])
+    }
+    return out
+}
+
+/** The polyline of `pts` (arc `cum`) between arcs a < b. */
+function arcSlice (pts, cum, a, b) {
+    const at = (s) => {
+        let i = 1
+        while (i < cum.length - 1 && cum[i] < s) i++
+        const t = clamp01((s - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1))
+        return { i, x: pts[i - 1].x + t * (pts[i].x - pts[i - 1].x), z: pts[i - 1].z + t * (pts[i].z - pts[i - 1].z) }
+    }
+    const A = at(a), B = at(b), out = [{ x: A.x, z: A.z }]
+    for (let i = A.i; i < B.i; i++) out.push({ x: pts[i].x, z: pts[i].z })
+    out.push({ x: B.x, z: B.z })
+    return out
+}
+
+/** Squared XZ distance from (x,z) to segment p→q, and the fraction along it of the nearest point. */
+function segNear (p, q, x, z) {
+    const dx = q.x - p.x, dz = q.z - p.z
+    const t = clamp01(((x - p.x) * dx + (z - p.z) * dz) / ((dx * dx + dz * dz) || 1))
+    return { d2: (p.x + t * dx - x) ** 2 + (p.z + t * dz - z) ** 2, t }
+}
+
+/**
+ * FEAT-299 (DEC-437): one camping area, grown along the roads `segs` ({ka, kb, pts, cum, L, tun}: pts[0] sits
+ * on ka, `tun` its bores) from the road point nearest `from`: every road within driving distance ρ of that
+ * point, ρ found by bisection so the area holds `target` metres of road (a road piece smaller than that is
+ * taken whole). A ball in driving distance is ONE piece by construction — every point's shortest drive to
+ * the seed runs inside the ball — and at a junction it carries on down every leg: the junction is absorbed.
+ * `spans` are the road it covers, per road; `lines` the same road minus its bores (you cannot camp in a
+ * tunnel), the geometry zoneAt and the map read.
+ *
+ * @returns {{ x:number, z:number, L:number, len:number, spans:Array<{ka,kb,L,s0,s1}>,
+ *             lines:Array<Array<{x,z}>>, bb:number[] } | null}
+ */
+export function growArea (segs, from, target) {
+    let best = Infinity, si = -1, ss = 0, sx = 0, sz = 0
+    segs.forEach((s, k) => {
+        for (let i = 1; i < s.pts.length; i++) {
+            const n = segNear(s.pts[i - 1], s.pts[i], from.x, from.z)
+            if (n.d2 >= best) continue
+            best = n.d2; si = k; ss = s.cum[i - 1] + n.t * (s.cum[i] - s.cum[i - 1])
+            sx = s.pts[i - 1].x + n.t * (s.pts[i].x - s.pts[i - 1].x); sz = s.pts[i - 1].z + n.t * (s.pts[i].z - s.pts[i - 1].z)
+        }
+    })
+    if (si < 0) return null
+    const home = segs[si]
+    const dist = driveDist(segs, new Map([[home.ka, ss], [home.kb, Math.min(home.L - ss, home.ka === home.kb ? ss : Infinity)]]))
+    const cover = (rho) => {
+        const out = []
+        segs.forEach((s, k) => {
+            const iv = [], dA = dist.get(s.ka), dB = dist.get(s.kb)
+            if (dA < rho) iv.push([0, Math.min(s.L, rho - dA)])
+            if (dB < rho) iv.push([Math.max(0, s.L - (rho - dB)), s.L])
+            if (k === si) iv.push([Math.max(0, ss - rho), Math.min(s.L, ss + rho)])
+            for (const [s0, s1] of mergeSpans(iv)) if (s1 > s0) out.push({ ka: s.ka, kb: s.kb, L: s.L, s0, s1, seg: s })
+        })
+        return out
+    }
+    const length = (sp) => sp.reduce((t, q) => t + q.s1 - q.s0, 0)
+    let lo = 0, hi = Math.max(...[...dist.values()].filter(Number.isFinite)) + Math.max(...segs.map((s) => s.L))
+    let spans = cover(hi)
+    if (length(spans) > target) {
+        while (hi - lo > 0.5) { const mid = (lo + hi) / 2; if (length(cover(mid)) > target) hi = mid; else lo = mid }
+        spans = cover(lo)
+    }
+    const lines = []
+    for (const q of spans) {
+        let s = q.s0
+        for (const t of [...(q.seg.tun ?? [])].sort((p, r) => p.s0 - r.s0)) {
+            if (t.s1 <= s || t.s0 >= q.s1) continue
+            if (t.s0 > s) lines.push(arcSlice(q.seg.pts, q.seg.cum, s, t.s0))
+            s = Math.max(s, t.s1)
+        }
+        if (q.s1 > s) lines.push(arcSlice(q.seg.pts, q.seg.cum, s, q.s1))
+        delete q.seg
+    }
+    const bb = [Infinity, -Infinity, Infinity, -Infinity]
+    for (const l of lines) for (const p of l) {
+        bb[0] = Math.min(bb[0], p.x); bb[1] = Math.max(bb[1], p.x); bb[2] = Math.min(bb[2], p.z); bb[3] = Math.max(bb[3], p.z)
+    }
+    return { x: sx, z: sz, L: target, len: length(spans), spans, lines, bb }
+}
+
+/**
+ * FEAT-164: the worst drive from any point of a road network to a camp zone, and where it is.
+ * `segs` are the roads as `{ka, kb, pts, cum, L}` (end-node keys, the ka → kb polyline, its arc); a zone's
+ * `spans` (growArea) are the road it covers. Multi-source Dijkstra over the nodes, each road seeding its
+ * ends with the arc to its first / last covered point; then the worst POINT of each road: a zone-less
+ * road's is (dA + dB + L) / 2, the stretch before its first covered point (dA + s0) / 2, a gap between
+ * two covered stretches half the gap. A piece with no zone at all is Infinity, at a road's midpoint.
+ * test/camp-reach.mjs measures the same thing independently.
+ *
+ * @returns {{ d:number, at:{x:number,z:number}|null }}
+ */
+export function campReach (segs, zones) {
+    const on = new Map()   // road ka|kb → its covered arcs, every zone together
+    for (const q of zones) for (const sp of q.spans) {
+        const k = sp.ka + '|' + sp.kb
+        if (!on.has(k)) on.set(k, [])
+        on.get(k).push([sp.s0, sp.s1])
+    }
+    const dist = new Map()
+    const spans = segs.map((s) => {
+        const iv = mergeSpans(on.get(s.ka + '|' + s.kb) ?? [])
+        if (!iv.length) return { s0: null }
+        let gap = 0, gapAt = 0
+        for (let i = 1; i < iv.length; i++) if (iv[i][0] - iv[i - 1][1] > gap) { gap = iv[i][0] - iv[i - 1][1]; gapAt = (iv[i][0] + iv[i - 1][1]) / 2 }
+        const s0 = iv[0][0], s1 = iv[iv.length - 1][1]
+        dist.set(s.ka, Math.min(dist.get(s.ka) ?? Infinity, s0))
+        dist.set(s.kb, Math.min(dist.get(s.kb) ?? Infinity, s.L - s1))
+        return { s0, s1, gap, gapAt }
+    })
+    driveDist(segs, dist)
     let d = 0, at = null
     segs.forEach((s, i) => {
         const { s0, s1, gap, gapAt } = spans[i], dA = dist.get(s.ka), dB = dist.get(s.kb)
@@ -387,8 +482,9 @@ export class CampSystem {
      */
     constructor (deps) {
         this._d = deps
-        this._list = []
-        this._built = null      // {x,z,r,seed} the current list was built for
+        this._list = []         // the zones, grown by growAreas()
+        this._seeds = []        // the cell grid's zone seeds for the built region (build)
+        this._built = null      // {x,z,r,seed} the current seeds were rolled for
         this._camps = []        // pads dug this run (see makeCampAt) — run state, not worldgen
         this._moms = null       // {x,z} mom's house — the POI's position, handed to build()
         this._eval = null       // memoized grade (see evaluate)
@@ -397,27 +493,30 @@ export class CampSystem {
         this._read = null
     }
 
-    /** Every zone in the built region, `{x, z, r}`. Read-only to callers. */
+    /** Every zone in the built region (growArea's shape, plus `fill: true` on a reach-fill zone), empty until
+     *  growAreas(). Read-only to callers. */
     zones () { return this._list }
 
     /**
-     * Materialise the zone list for a region disc. Idempotent for the same (centre, radius, seed) —
-     * the same discipline poiSystem.build() uses, so a re-entry into the same region is free.
+     * Roll the zone SEEDS for a region disc, `{x, z, u}` (u the size roll). Idempotent for the same
+     * (centre, radius, seed) — the same discipline poiSystem.build() uses, so a re-entry into the same
+     * region is free. The zones themselves grow from these over the network in growAreas().
      *
      * Cost: one roll per macro cell overlapping the region (a 2.5 km region is ~7×7 cells). No
-     * terrain, no water, no network reads — zones are permission, not placement.
+     * terrain, no water, no network reads.
      *
-     * @param momsAt {x,z} of mom's house, from the POI roster (FEAT-60). MOM'S HOUSE IS NOT A CAMP
+     * @param momsAt mom's parking spot in world space, { x, z, yaw, halfX, halfZ } (poi.js dropZoneWorld of her park
+     *   box, FEAT-318), from the POI roster (FEAT-60). MOM'S HOUSE IS NOT A CAMP
      *   — it is a POI with a building on it, and sleeping there merely reuses this module's sleep
      *   path because a bed is a bed. Passing it in (rather than assuming the region centre, as
      *   FEAT-45 did) is what stops the world from having two mom's houses in two places.
      */
     build (center, radius, momsAt = null) {
-        if (!center) return this._list
+        if (!center) return this._seeds
         const seed = this._d.getSeed()
         if (this._built && this._built.seed === seed
             && this._built.r === radius
-            && Math.hypot(this._built.x - center.x, this._built.z - center.z) < 1e-6) return this._list
+            && Math.hypot(this._built.x - center.x, this._built.z - center.z) < 1e-6) return this._seeds
 
         const P = this._P()
         const S = P.campCellM
@@ -430,17 +529,15 @@ export class CampSystem {
                 const zone = this._cellZone(cx, cz, seed, P)
                 if (!zone) continue
                 // THE REGION CLIP IS A POST-FILTER, NEVER PART OF GENERATION. Membership is decided
-                // by the zone's CENTRE, not by whether its disc grazes the wall: the centre is a
-                // pure fn of (seed, cell), so two regions that both contain a centre agree on that
-                // zone exactly — which is window-invariance (SM-INV-12). Testing disc overlap would
-                // be window-invariant too, but the centre rule keeps the kept-set a clean function
-                // of the cell grid and is what the gate asserts.
+                // by the seed's position, a pure fn of (seed, cell), so two regions that both contain
+                // it agree on that seed exactly — which is window-invariance (SM-INV-12).
                 if (Math.hypot(zone.x - center.x, zone.z - center.z) > radius) continue
                 out.push(zone)
             }
         }
 
-        this._list = out
+        this._seeds = out
+        this._list = []
         this._built = { x: center.x, z: center.z, r: radius, seed }
         // A new region is a new run's ground: last region's camps are gone, and mom's house is
         // wherever this region's roster put it. FEAT-45 sited it at the region centre because
@@ -448,7 +545,7 @@ export class CampSystem {
         // region, and puts a trailer on it. Null only if a pool too small to fill even the first
         // roster slot left the region without one — better no marker than a phantom bed.
         this._camps = []
-        this._moms = momsAt ? { x: momsAt.x, z: momsAt.z } : null
+        this._moms = momsAt ? { x: momsAt.x, z: momsAt.z, yaw: momsAt.yaw, halfX: momsAt.halfX, halfZ: momsAt.halfZ } : null
         this._rev++
         return out
     }
@@ -456,6 +553,7 @@ export class CampSystem {
     /** Drop the region's zones and everything hung off them (leaving story mode). */
     clear () {
         this._list = []
+        this._seeds = []
         this._built = null
         this._camps = []
         this._moms = null
@@ -464,57 +562,62 @@ export class CampSystem {
     }
 
     /**
-     * FEAT-164: THE REACH FILL — after build(), no road in the region is more than `campReachM` of
-     * driving from a camp zone. The cell grid cannot promise that on its own: it is a coin per cell, and
-     * seed 4194356868's region drew 3 zones for 37 km of road, its worst drive 5.7 km (seeds 1–20:
-     * 2.3–5.9 km, median ~3.7 km).
-     *
-     * Farthest-point greedy: measure every road's drive to the nearest zone (campReach), put a
-     * campMinRadiusM zone on the worst point, repeat. A fill zone is a disc like any other (`fill: true`),
-     * so the map casing, zoneAt and the site grading need nothing new.
+     * FEAT-299 (DEC-437): grow the zones over the region's planners' roads — one run of road from each of
+     * build()'s seeds (growArea, target campAreaMeanM × (1 ± campAreaVar) by the seed's roll) — then
+     * FEAT-164's REACH FILL, so no road in the region is more than `campReachM` of driving from a zone. The
+     * cell grid cannot promise that on its own: it is a coin per cell, and seed 4194356868's region drew 3
+     * zones for 37 km of road, its worst drive 5.7 km (seeds 1–20: 2.3–5.9 km, median ~3.7 km).
+     * The fill is farthest-point greedy: measure every road's drive to the nearest zone (campReach), grow a
+     * zone from the worst point, repeat; a fill zone carries `fill: true`.
      *
      * NOT a pure f(seed, cell), deliberately: it reads the region's built network, as the POI roster
      * does — a region-build pass behind the loading screen, as cold as the network it reads (nothing
-     * saved; a resume rebuilds it). Idempotent: a second call finds the cap already met.
+     * saved; a resume rebuilds it). Idempotent: a second call returns the same list.
      *
      * @param {Set<string>} mainNodes  the region's main piece (BUG-85) — the roads the planners use
      * @param {(p:{x:number,z:number})=>boolean} inside  the planners' wall test
      */
-    fillReach (mainNodes, inside) {
+    growAreas (mainNodes, inside) {
         const P = this._P(), road = this._d.getRoad(), g = road?.networkGraph()
-        if (!g || !this._built || !mainNodes) return this._list
+        if (!g || !this._built || !mainNodes || this._list.length) return this._list
         const segs = []
         for (const [a, b, runKey] of g.edges) {
             if (!mainNodes.has(g.key(a)) || !mainNodes.has(g.key(b)) || !inside(g.pos(a)) || !inside(g.pos(b))) continue
-            const { points: pts, polyCum: cum } = road._network.get(runKey)
+            const { points: pts, polyCum: cum, tunnelSpans: tun } = road._network.get(runKey)
             // Orient the polyline a → b: its first point sits on one end node.
             const pa = g.pos(a), n = pts.length - 1
             const fwd = Math.hypot(pts[0].x - pa.x, pts[0].z - pa.z) <= Math.hypot(pts[n].x - pa.x, pts[n].z - pa.z)
-            segs.push({ ka: g.key(fwd ? a : b), kb: g.key(fwd ? b : a), pts, cum, L: cum[n] })
+            segs.push({ ka: g.key(fwd ? a : b), kb: g.key(fwd ? b : a), pts, cum, L: cum[n], tun })
         }
+        if (!segs.length) return this._list
         // A canonical order, so a tie for the worst point breaks the same way however the network
         // was registered (Worker adopt vs synchronous build).
         segs.sort((p, q) => (p.ka + '|' + p.kb < q.ka + '|' + q.kb ? -1 : 1))
-        const list = [...this._list]
+        const size = (u) => P.campAreaMeanM * (1 + P.campAreaVar * (2 * u - 1))
+        const list = this._seeds.map((q) => growArea(segs, q, size(q.u)))
         for (let i = 0; i < 64; i++) {   // ponytail: each pass re-measures the whole region (~ms); a guard, never reached
             const w = campReach(segs, list)
             if (w.d <= P.campReachM || !w.at) break
-            list.push({ x: w.at.x, z: w.at.z, r: P.campMinRadiusM, fill: true })
+            // The i-th fill rolls its size like any zone: the fill order is canonical (segs sorted above).
+            list.push({ ...growArea(segs, w.at, size(mulberry32(hash32(`campfill:${this._built.seed}:${i}`))())), fill: true })
         }
-        // A NEW array when it grew: map2d memoises its casing on the list's identity.
-        if (list.length !== this._list.length) { this._list = list; this._rev++ }
+        // A NEW array: map2d memoises its casing on the list's identity.
+        this._list = list
+        this._rev++
         return this._list
     }
 
     /**
-     * The zone containing (x,z), or null. Scans the built region list — the region IS the play
-     * surface (the wall is hard), so there is no lazy out-of-region cell fallback to want.
-     * A few dozen discs at 10 Hz; a spatial index would be ceremony.
+     * The zone whose road (x,z) is within the camping tether of, or null: the corridor beside the run that
+     * camping is allowed in. Scans the built region list — the region IS the play surface (the wall is
+     * hard). A few dozen runs at 10 Hz behind a box test; a spatial index would be ceremony.
      */
     zoneAt (x, z) {
+        const t = this.tetherM(), t2 = t * t
         for (const q of this._list) {
-            const dx = q.x - x, dz = q.z - z
-            if (dx * dx + dz * dz <= q.r * q.r) return q
+            const b = q.bb
+            if (x < b[0] - t || x > b[1] + t || z < b[2] - t || z > b[3] + t) continue
+            for (const l of q.lines) for (let i = 1; i < l.length; i++) if (segNear(l[i - 1], l[i], x, z).d2 <= t2) return q
         }
         return null
     }
@@ -914,12 +1017,13 @@ export class CampSystem {
         return this._camps
     }
 
-    /** Is (x,z) close enough to mom's house to knock? */
+    /** Is (x,z) in mom's parking spot (FEAT-318: her strip, grown by MOMS_SLACK), close enough to knock? The box test
+     *  is poi.js overDropZone's, on the world box. */
     atMoms (x, z) {
         const m = this._moms
         if (!m) return false
-        const r = this._k('campMomsRadiusM', CAMP_PARAMS.campMomsRadiusM)
-        return Math.hypot(m.x - x, m.z - z) <= r
+        const cs = Math.cos(m.yaw), sn = Math.sin(m.yaw), dx = x - m.x, dz = z - m.z
+        return Math.abs(cs * dx - sn * dz) <= m.halfX + MOMS_SLACK && Math.abs(sn * dx + cs * dz) <= m.halfZ + MOMS_SLACK
     }
 
     // ── generation ──────────────────────────────────────────────────────────────────────────
@@ -936,12 +1040,10 @@ export class CampSystem {
     _P () { return { ...CAMP_PARAMS, ...(this._d.getParams?.() || {}) } }
 
     /**
-     * The one zone roll for macro cell (cx,cz), or null. PURE f(seed, cell, params) — this is the
-     * whole of SM-INV-12 for camping. The draw order (chance → centre x → centre z → radius) is
-     * part of the layout of every seed: do not reorder it.
-     *
-     * The centre lands anywhere in the cell and the disc may spill across cell borders; that is
-     * what breaks up the grid, and it is why queries scan a 3×3 neighbourhood (NEIGHBOR_CELLS).
+     * The one zone seed roll for macro cell (cx,cz), or null. PURE f(seed, cell, params) — this is
+     * the whole of SM-INV-12 for camping. The draw order (chance → x → z → size) is part of the
+     * layout of every seed: do not reorder it. The fourth draw was the old disc's radius; FEAT-299
+     * spends it on the size roll `u` (0..1), so every seed point stands where its disc centre stood.
      */
     _cellZone (cx, cz, seed, P) {
         const rnd = mulberry32(hash32(`camp:${seed}:${cx},${cz}`))
@@ -949,8 +1051,7 @@ export class CampSystem {
         const S = P.campCellM
         const x = (cx + rnd()) * S
         const z = (cz + rnd()) * S
-        const r = P.campMinRadiusM + rnd() * (P.campMaxRadiusM - P.campMinRadiusM)
-        return { x, z, r }
+        return { x, z, u: rnd() }
     }
 
     /**
@@ -983,10 +1084,9 @@ export class CampSystem {
         f.add(CAMP_PARAMS, 'campShadeR', 3, 30, 1).name('shade reach (m)')
         f.add(CAMP_PARAMS, 'campPadHalfM', 1, 8, 0.5).name('pad half (m)')
         f.add(CAMP_PARAMS, 'campPadGapM', 0, 3, 0.1).name('pad gap (m)')
-        f.add(CAMP_PARAMS, 'campMomsRadiusM', 5, 100, 5).name("mom's radius (m)")
-        // The zone GENERATOR knobs (campCellM / campZoneChance / radius range) are deliberately not
-        // sliders: zones are laid out once at region entry, so a live tweak would silently lie until
-        // the next re-entry — and the camp-zones gate pins the density they produce.
+        // The zone GENERATOR knobs (campCellM / campZoneChance / campAreaMeanM / campAreaVar) are
+        // deliberately not sliders: zones are laid out once at region entry, so a live tweak would
+        // silently lie until the next re-entry — and the camp-zones gate pins the density they produce.
         if (acts.openCamp) f.add({ go: acts.openCamp }, 'go').name('skip to camp dialogue')
         return f
     }
@@ -1003,27 +1103,5 @@ export class CampSystem {
         r.water = isFinite(g.waterDist) ? g.waterDist.toFixed(1) : '—'
         r.vibe = g.vibe.toFixed(2)
         for (const c of this._ctrls) c.updateDisplay()
-    }
-
-    /**
-     * Zone at (x,z) computed straight from the cell grid, ignoring the built region list. Used by
-     * offline verification (coverage sampling / window-invariance) — gameplay goes through zoneAt.
-     * Scans the 3×3 neighbourhood, which is sufficient because campMaxRadiusM < campCellM.
-     */
-    zoneAtRaw (x, z) {
-        const P = this._P()
-        if (P.campMaxRadiusM > P.campCellM) throw new Error('camp: radius exceeds cell — 3x3 scan unsound')
-        const seed = this._d.getSeed()
-        const S = P.campCellM
-        const bx = Math.floor(x / S), bz = Math.floor(z / S)
-        for (let cx = bx - NEIGHBOR_CELLS; cx <= bx + NEIGHBOR_CELLS; cx++) {
-            for (let cz = bz - NEIGHBOR_CELLS; cz <= bz + NEIGHBOR_CELLS; cz++) {
-                const q = this._cellZone(cx, cz, seed, P)
-                if (!q) continue
-                const dx = q.x - x, dz = q.z - z
-                if (dx * dx + dz * dz <= q.r * q.r) return q
-            }
-        }
-        return null
     }
 }

@@ -98,8 +98,12 @@ for (const s of SEEDS) {
     const bad = { plan: [], same: [], full: [], count: [], over: [], deck: [], off: [], site: [], junction: [], water: [], slope: [], ground: [], u: [], stops: [], reach: [], back: [], on: [] }
     let msTour = 0, nTour = 0, nBack = 0
     for (const o of offers) {
-        const spc = board.spec(o)
         const m = board.planDistinct(o, planOne)
+        // BUG-88: a newcomer repeating an older sibling's thing is re-rolled to another job (planDistinct writes the
+        // new spec), so it is judged as what it became: seed 8's second work-site oldSignLine became a memo once
+        // BUG-234's X junction reshuffled the roster. A job that is no longer demolition is not this gate's.
+        const spc = board.spec(o)
+        if (spc.family !== 'demolition') { console.log(`       re-rolled off demolition: ${o.poiId.slice(-12)} → ${spc.thingId}`); continue }
         const tag = `${spc.thingId}@${o.poiId.slice(-12)}`
         if (!m || m.endPoiId) { bad.plan.push(`${tag}${m ? ' (ends at a POI)' : ' (no plan)'}`); continue }
         if (o === line && Math.hypot(m.poly[0].x - camp.roadX, m.poly[0].z - camp.roadZ) > 30) bad.plan.push(`${tag} (does not leave from the camp)`)

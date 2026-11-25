@@ -1,7 +1,7 @@
 ---
 id: BUG-198
 type: bug
-status: open
+status: done
 severity: minor
 opened: 2026-11-17
 source: owner, 2026-11-17 — "Let's make sure we get the three free meals when starting a new game."
@@ -37,3 +37,4 @@ Larry's call: count the packed lunches, grant the shortfall to three. Found by r
 
 ## Log
 - 2026-11-17: built on land/food-1117 (lane C). No headless gate reaches `_checkOpeningEnd` (main.js); the smoke does.
+- 2026-11-24 closed by the orchestrator after a tracker audit: on main since the food batch (merge 1b27af99); the main smoke has been green many times since, so the last box is met.

@@ -41,6 +41,7 @@ export const DIFFICULTY_ROWS = {
     normal: { burn: 1 },                                // today
   },
   tows: {                                               // DEC-475: free tows (integer-like keys list in this order)
+    0:        { n: 0 },                                 // DEC-486: none; Classic's level
     1:        { n: 1 },
     3:        { n: 3 },
     5:        { n: 5 },
@@ -58,7 +59,7 @@ export const DIFFICULTY_ROWS = {
 }
 
 /** Each row's level when a value is missing or unknown (an old save, a junk setting): today's. */
-export const CLASSIC_RULES = Object.freeze({ damage: 'medium', hunger: 'normal', cost: 'normal', fuel: 'normal', tows: '1', death: 'on', endless: 'off' })
+export const CLASSIC_RULES = Object.freeze({ damage: 'medium', hunger: 'normal', cost: 'normal', fuel: 'normal', tows: '0', death: 'on', endless: 'off' })
 /** Level names a row used to have, read as today's (an old save or setting): DEC-475 renamed cost "medium" to "normal". */
 export const RULE_ALIASES = { cost: { medium: 'normal' } }
 
@@ -66,7 +67,7 @@ export const RULE_ALIASES = { cost: { medium: 'normal' } }
  *  low damage, and every other setting will be the same as classic", endless on. Easiest first. */
 export const DIFFICULTY_PRESETS = {
   zen:     { world: 'classic', ...CLASSIC_RULES, damage: 'low', cost: 'low', endless: 'on' },
-  // DEC-475: Casual's fuel is low; its 3 free tows are a [DEFAULT] (Classic's 1 is the row's least).
+  // DEC-475: Casual's fuel is low; its 3 free tows are a [DEFAULT] (Classic's 0 is the row's least).
   casual:  { world: 'casual',  ...CLASSIC_RULES, damage: 'low', hunger: 'low', cost: 'low', fuel: 'low', tows: '3' },
   classic: { world: 'classic', ...CLASSIC_RULES },
 }

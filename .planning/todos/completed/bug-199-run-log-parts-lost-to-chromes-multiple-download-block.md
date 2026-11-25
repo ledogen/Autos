@@ -1,7 +1,7 @@
 ---
 id: BUG-199
 type: bug
-status: open
+status: done
 severity: major
 opened: 2026-11-17
 source: owner, 2026-11-17 — "I actually had a much longer much more typical gameplay log But lost it because chrome freaked out about downloading multiple files"
@@ -33,3 +33,4 @@ Workaround today: Chrome → the site's settings → Automatic downloads → All
 
 ## Log
 - 2026-11-17 lane a: fixed on land/rumble-runlog; DEC-392; gate run-log updated; the smoke's runlog step updated but not run on a branch.
+- 2026-11-24 closed by the orchestrator after a tracker audit: on main (merge 0d93fca1), every box ticked.

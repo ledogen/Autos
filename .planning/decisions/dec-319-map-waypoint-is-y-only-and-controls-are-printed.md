@@ -1,6 +1,6 @@
 ---
 id: DEC-319
-status: standing
+status: superseded
 decided: 2026-11-16
 area: ui
 governs: FEAT-234, FEAT-211, src/map2d.js, map, waypoint, legend, controls

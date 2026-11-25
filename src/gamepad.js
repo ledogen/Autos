@@ -28,14 +28,14 @@ export const PAD_PARAMS = {
   // the same envelope the keyboard gets. OFF = full stick is full lock at any speed, linear — for a
   // driver who wants the stick to be the wheel.
   steerAssist: true,
-  stickDeadzone:   0.08,  // |x| below this reads 0; the rest is rescaled so travel still spans 0..1
+  stickDeadzone:   0.10,  // |x| below this reads 0; the rest is rescaled so travel still spans 0..1
   triggerDeadzone: 0.03,
   // Center softening k, 0 … 1.5: out = sign(x)·|x|^(1+k) (steerCurve). 0 = linear, 1 = the parabola x·|x|,
   // 1.5 = |x|^2.5 — always through ±1, so full stick is still full lock. Owner 2026-10-20: 100 % was
   // "almost perfect" and wanted room past it, so the old blend (1−k)·x + k·x·|x| — which goes
   // negative-slope at centre past k = 1 — became a power law; 0 % and 100 % are unchanged. Only with
   // the steering assist OFF: the assist's speed-scaled envelope is the shaping when it is on.
-  steerShape:      0,
+  steerShape:      1,
   steerSlewRate:   4.8,   // rad/s (6.0 → 4.8, −20 % 2026-10-21) — max wheel-angle rate, so a flicked stick can't step the physics
   // Right stick = camera orbit RATE (not a 1:1 map of the mouse drag): full deflection turns the
   // view at orbitRate; orbitHold seconds after the stick is let go the chase cam takes back over.

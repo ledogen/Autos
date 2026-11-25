@@ -108,8 +108,8 @@ console.log('fuel, tows, death (DEC-475)')
 const burn = (lv) => { applyRules({ ...CLASSIC_RULES, fuel: lv }); const b = RANGER_PARAMS.fuelBurnScale; applyRules(CLASSIC_RULES); return b }
 check(burn('normal') === P0.r.fuelBurnScale && burn('low') === P0.r.fuelBurnScale * resolveRules({ fuel: 'low' }).fuel.burn && burn('low') < burn('normal') && burn('off') === 0,
   `fuel burn: normal ×${burn('normal')}, low ×${burn('low')}, off ×0`)
-check(['1', '3', '5', '10', 'infinite'].join() === Object.keys(DIFFICULTY_ROWS.tows).join() && resolveRules({ tows: 'infinite' }).tows.n === Infinity && resolveRules({}).tows.n === 1,
-  'free tows list 1 / 3 / 5 / 10 / infinite, Classic 1')
+check(['0', '1', '3', '5', '10', 'infinite'].join() === Object.keys(DIFFICULTY_ROWS.tows).join() && resolveRules({ tows: 'infinite' }).tows.n === Infinity && resolveRules({}).tows.n === 0,
+  'free tows list 0 / 1 / 3 / 5 / 10 / infinite, Classic 0 (DEC-486)')
 check(resolveRules({}).death.on && !resolveRules({ death: 'off' }).death.on, 'death: on by default, off resolves off')
 
 console.log('endless and the presets')
