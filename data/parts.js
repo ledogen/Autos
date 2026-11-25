@@ -139,7 +139,7 @@ export const PARTS = {
     // FEAT-165 (owner, 2026-11-05: "Old $8 · Standard $18"): Old 7 → 8, Standard 15 → 18 — the price of
     // always being on the shelf. FEAT-168 then took the standard tire back into rotation.
     // FEAT-325 (arc trial, owner 2026-11-23): Old $6, Standard $10, Sport $15, All-terrain $15.
-    tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 6, massKg: 12, grip: 0.9,
+    tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 5, massKg: 12, grip: 0.9,
                      patch: {}, desc: 'Cracked and dry rotted rubber. Slippery and fragile.' },
     tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 8, massKg: 12, grip: 1, stock: true,
                      durability: 0.9, patch: {}, desc: 'The factory all-season. Fine everywhere, great nowhere.' },
