@@ -12,6 +12,8 @@ lane: engine & world (world-gen; Opus)
 # FEAT-302: Rework POI pads: set back 2-3 m, a little bigger, a real driveway; parking lots get a logical driveway
 
 ## Next steps
+**Rework 3 (owner, 2026-11-24 evening, DEC-498):** the grey marking is out. Try the driveway inheriting the ground texture it covers; if that reads badly, gravel. The driveway ribbon is a physics surface. Driveways are allowed through the story-poi check (amend the gate for driveway mouths only). The driveway meets the POI's parking lot when it has one. A lone trailer home gets a driveway parallel to the road, level with the home, whose ends slope to meet the road. "make it make sense!" Build on proto/feat-302-pad-driveway (CarGame-feat302), sheet-3, then a look card.
+
 REWORK (owner, 2026-11-24): the prototype's look was rejected. A world-gen lane (Opus) rebuilds the driveway as a junction-like connection and marks the whole drivable area, then shows the owner a new sheet. Option B's numbers (set back 3 m, pad 16 x 9) are "okay in theory". FEAT-318 lands first.
 
 ## Summary
@@ -57,3 +59,4 @@ BUG-243, BUG-214, FEAT-71. Needs a sweep and a screenshot sheet (feedback_screen
 
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
+- 2026-11-24 evening: the owner answered card feat302-driveway-rework-pick with "Change": see DEC-498 and Next steps (rework 3).

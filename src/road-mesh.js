@@ -1197,7 +1197,12 @@ export class RoadMeshSystem {
         // curving run adds about 1 cm more
         const INSET = R * (1 - Math.cos(Math.PI / (2 * SEG))) + 0.015
         const sibT = road.siblingTubeTest?.(runKey)
-        const sib = sibT && ((x, y, z) => sibT(x, y, z, INSET))
+        // BUG-259: at an underground junction the tube meets its partner on a miter plane (road.tubeMiterPlane): past it
+        // (by the same inset) the run-on is the partner's bore, and what stood there was a strip of lining wherever it
+        // crossed another tube's wall, a thin line over the chamber (seed 1960791808).
+        const own = [span.s0, span.s1].map((s) => road.tubeMiterPlane?.(runKey, s)).filter(Boolean)
+        const sib = (sibT || own.length) ? (x, y, z) => own.some((m) => (x - m.x) ** 2 + (z - m.z) ** 2 < 4 * R * R &&
+            (x - m.x) * m.nx + (z - m.z) * m.nz < -INSET) || !!sibT?.(x, y, z, INSET) : null
         const nv0 = rings * vpr
         const xPos = [], xCol = [], xFcol = [], xUv = []   // vertices the miter adds, after the nv0 ring vertices
         const attr = (i, a, src, ext, n) => (i < nv0 ? src[n * i + a] : ext[n * (i - nv0) + a])

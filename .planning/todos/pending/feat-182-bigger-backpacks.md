@@ -80,3 +80,20 @@ of the items all at once instead of loading up one at a time."
 
 ## Owner, 2026-11-14
 Owner, card feat182-try: "good" — note: "the flavor text for the backpacks should hint at the daypack's function/superpower". The figures stand; the flavour text is queued for Lane C.
+
+## Owner's figures (item setup page, 2026-11-24 22:22–22:25 local)
+
+Read from the item setup page's database by the orchestrator. These replace the placeholders.
+
+| Pack | Slots | Reach | Price | Rarity | Sold at | Reward ranks | Reward from | Roadside |
+|---|---|---|---|---|---|---|---|---|
+| Daypack | 2 | 100 m | $15 | Rare | General store | B–A | Larry's house, General store, Residence, Stranded motorist, Farm | Rare roadside find |
+| Duffel | 6 | 30 m | $20 | Epic | General store | A–S | Larry's house, Firewood yard, Work site, Residence, Farm, Stranded motorist, General store | (not marked) |
+| Rucksack | 4 | 80 m | $25 | Rare | "nowhere" | A–S | Larry's house, General store, Stranded motorist, Work site, Residence, Farm | Rare roadside find |
+| Frame pack | 6 | 120 m | $35 | Legendary | "nowhere" | S only | Larry's house, General store, Residence, Farm, Stranded motorist | Rare roadside find |
+
+Changed against the built placeholders: Duffel reach 15 → 30 m, Rucksack reach 60 → 80 m. Mass was not asked on the page.
+
+**Conflict to settle before building (asked the owner in chat 11-24):** the Rucksack. The page says sold "nowhere" at $25. DEC-487 (11-24 morning) set its shop price to $20, and in chat the same evening the owner said the shop always sells it at the auto shop ("rucksack, auto store").
+
+**Settled (owner, 2026-11-24 night, in chat):** "rucksack should be for sale at the general store only. $20". So: Rucksack $20 (DEC-487 stands), sold at the general store only, never the auto shop; the page's "nowhere" and $25 are replaced. The orchestrator reads "for sale" as an always row (applied on the arc trial build); the owner can say if it should stay a rarely rolled slot.

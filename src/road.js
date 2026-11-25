@@ -9377,7 +9377,8 @@ export class RoadSystem {
                 let v = ends.get(sp)
                 if (!v) ends.set(sp, v = [[sp.s0, -1], [sp.s1, 1]].map(([s, dir]) => {
                     const p = this.runPointAt(k, s), g = this.runProfile(s, k, { gradeY: 0, tx: 1, tz: 0 })
-                    return p && { x: p.x, z: p.z, tx: g.tx * dir, tz: g.tz * dir, lip: this.isMouth(k, s) ? 1.5 : 0 }
+                    // BUG-259: an end that meets its partner on a miter plane carries its run-on (R, as the tube is built)
+                    return p && { x: p.x, z: p.z, tx: g.tx * dir, tz: g.tz * dir, lip: this.isMouth(k, s) ? 1.5 : this.tubeMiterPlane(k, s) ? R : 0 }
                 }))
                 return v
             }
@@ -9392,12 +9393,15 @@ export class RoadSystem {
                     i1 = i
                     for (const p of [pts[i - 1], pts[i]]) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z) }
                 }
-                return { k, sp, pts, cum, i0, i1, x0: x0 - 2 * R, x1: x1 + 2 * R, z0: z0 - 2 * R, z1: z1 + 2 * R }
+                const mps = basic ? [] : [this.tubeMiterPlane(k, sp.s0), this.tubeMiterPlane(k, sp.s1)].filter(Boolean)
+                return { k, sp, pts, cum, i0, i1, mps, x0: x0 - 2 * R, x1: x1 + 2 * R, z0: z0 - 2 * R, z1: z1 + 2 * R }
             }))
             test = (x, y, z, inset = 0) => {
                 const R2 = (R - inset) * (R - inset)
-                for (const { k, sp, pts, cum, i0, i1, x0, x1, z0, z1 } of spans) {
+                for (const { k, sp, pts, cum, i0, i1, mps, x0, x1, z0, z1 } of spans) {
                     if (x < x0 || x > x1 || z < z0 || z > z1) continue
+                    // BUG-259: near a miter plane the bore is only its own side of it (shrunk by the inset like the rest)
+                    if (mps.some((m) => (x - m.x) ** 2 + (z - m.z) ** 2 < 4 * R * R && (x - m.x) * m.nx + (z - m.z) * m.nz < inset)) continue
                     // nearest point of the span's centreline (the run polyline over [s0, s1])
                     let best = Infinity, bs = 0
                     for (let i = i0; i <= i1; i++) {
@@ -9425,6 +9429,37 @@ export class RoadSystem {
         }
         this._sibTests.set(memo, test)
         return test
+    }
+
+    /**
+     * BUG-259 (item 4, "the roof sections also dont miter perfectly"): at an UNDERGROUND junction (_undergroundNodes) a leg's
+     * bore meets its PARTNER — the leg leaving the node most nearly opposite it (over 135°: the same road through the node)
+     * — on the plane bisecting the two, the pipe miter. Each tube runs on R past the node (buildTunnelTube) to close the
+     * wedge outside the bend, but siblingTubeTest ended every bore flat at the node: the wedge was nobody's, so the
+     * crossing road's lining and the partners' own run-ons stood in it (seed 1960791808: thin lines of lining over the
+     * chamber). With the plane, each bore is its span plus its run-on, on its own side of the plane. Returns the plane
+     * {x, z, nx, nz} (n toward this leg's side) for the span end at run-arc `s`, or null.
+     */
+    tubeMiterPlane(runKey, s) {
+        const L = this._network?.get(runKey)?.polyCum?.at(-1)
+        if (!(L > 0) || (s > 1 && s < L - 1)) return null
+        const key = runKey + (s <= 1 ? '|A' : '|B'), node = this._undergroundNodes().get(key)
+        if (!node) return null
+        if (!node.miter) {
+            node.miter = new Map()
+            const u = node.legs.map((l) => {
+                const atA = l.arc < 1e-6, f = this.runFrameAt(l.arc, l.runKey), sg = atA ? 1 : -1, n = Math.hypot(f.tx, f.tz) || 1
+                return { key: l.runKey + (atA ? '|A' : '|B'), x: f.tx * sg / n, z: f.tz * sg / n }
+            })
+            const opp = (a) => u.reduce((b, c) => (c !== a && (!b || a.x * c.x + a.z * c.z < a.x * b.x + a.z * b.z) ? c : b), null)
+            for (const a of u) {
+                const b = opp(a)
+                if (!b || opp(b) !== a || a.x * b.x + a.z * b.z > -Math.SQRT1_2) continue
+                const nx = a.x - b.x, nz = a.z - b.z, n = Math.hypot(nx, nz)
+                node.miter.set(a.key, { x: node.pos.x, z: node.pos.z, nx: nx / n, nz: nz / n })
+            }
+        }
+        return node.miter.get(key) ?? null
     }
 
     /**
@@ -9941,16 +9976,7 @@ export class RoadSystem {
                 const id = e && e.cellA && e.cellB ? (a.arc < 1e-6 ? e.cellA : e.cellB) : null
                 a.through = !!id && _isPromotedId(id) && this._v2PromotedRole(id, a.runKey) === 'through'
             }
-            node.ring = node.deg2 ? null : this._buildJunctionRing(node)
-            if (node.ring) {
-                let mr = 0
-                for (const rp of node.ring) { const r = Math.hypot(rp.x - c.x, rp.z - c.z); if (r > mr) mr = r }
-                node.ringMaxR = mr
-                // The ribbon-pad WELD: a leg's ribbon ends exactly on its mouth chord only where the ring
-                // really carries that chord as one of its edges (the weld rung always; the hull floor for 98 %
-                // of legs). Anywhere else the ribbon keeps its cutback overlap under the pad.
-                for (const a of c.legs) a.weld = a.mouth !== undefined && this._ringHasMouth(node.ring, a, halfWidth)
-            }
+            this._setJunctionRing(node)
             nodes.set(`${Math.round(c.x)},${Math.round(c.z)}`, node)
             for (const a of c.legs) {
                 let arr = carveArcs.get(a.runKey); if (!arr) { arr = []; carveArcs.set(a.runKey, arr) }
@@ -9965,7 +9991,28 @@ export class RoadSystem {
         this._junctionCarveArcs = carveArcs
         this._deg2ArcTiles = deg2ArcTiles
         this._nodeJunctionsRev = this._networkRev
+        // BUG-259: an underground junction's pad is paved to its legs' pavement (_junctionRingWeld). Which nodes are
+        // underground reads the bores (isMouth → runProfile), which needs the junctions above: so they are flagged
+        // now, and their rings and welds rebuilt.
+        for (const node of new Set(this._undergroundNodes().values())) {
+            this._setJunctionRing(node)
+            for (const a of node.legs) for (const r of carveArcs.get(a.runKey) ?? []) if (r.node === node && r.arc === a.arc) r.mouth = a.weld ? a.mouth : undefined
+        }
         return nodes
+    }
+
+    /** node.ring (the welded pad boundary), its reach ringMaxR and each leg's weld flag. */
+    _setJunctionRing(node) {
+        node.ring = node.deg2 ? null : this._buildJunctionRing(node)
+        if (!node.ring) return
+        let mr = 0
+        for (const rp of node.ring) { const r = Math.hypot(rp.x - node.pos.x, rp.z - node.pos.z); if (r > mr) mr = r }
+        node.ringMaxR = mr
+        // The ribbon-pad WELD: a leg's ribbon ends exactly on its mouth chord only where the ring
+        // really carries that chord as one of its edges (the weld rung always; the hull floor for 98 %
+        // of legs). Anywhere else the ribbon keeps its cutback overlap under the pad.
+        const halfWidth = this._params.roadHalfWidth ?? 5
+        for (const a of node.legs) a.weld = a.mouth !== undefined && this._ringHasMouth(node.ring, a, halfWidth)
     }
 
     // ── Junction pad boundary + carve (single source of truth, shared by mesh + collision) ──────
@@ -10104,12 +10151,19 @@ export class RoadSystem {
         // The real correctness gate is _ringSelfIntersects() in _buildJunctionRing.
 
         const edgePt = (l, side) => ({ x: l.cx + (-l.dz) * side * halfWidth, z: l.cz + (l.dx) * side * halfWidth })
-        const filletR = params.roadFilletRadius ?? 5
+        // BUG-259: an UNDERGROUND junction (_undergroundNodes) is paved as exactly the legs' own pavement: no fillet,
+        // no straight back chord, so the bore floor's gravel shoulder runs on round the chamber and the pad never
+        // reaches the lining (seed 2280440363: the hull pad 4.3 m past the wall; 1960791808: fillets 1.5 m into the
+        // 3 m shoulder).
+        const ug = !!node.underground
+        const filletR = ug ? 0 : params.roadFilletRadius ?? 5
         const ring = []
+        let merged = false   // underground: the previous corner merged its two legs' mouths (see below)
         for (let i = 0; i < n; i++) {
             const A = legs[i], B = legs[(i + 1) % n]
             // Mouth chord of A: arriving-corner edge (+1) → departing-corner edge (−1) — the exact weld.
-            ring.push(edgePt(A, 1))
+            if (!merged) ring.push(edgePt(A, 1))
+            merged = false
             const eA = edgePt(A, -1)
             ring.push(eA)
             const eB = edgePt(B, 1)
@@ -10126,7 +10180,7 @@ export class RoadSystem {
                 // 2.1 m inside the pavement — dirt bitten out of the road beside the node (seed 917338424 (−111, −464);
                 // 0.84 m on main at (101, −987)). Where any true-edge point stands more than 0.3 m outside the chord
                 // (away from the node), the ring walks the true edges instead, as an open back does.
-                if (A.dx * B.dx + A.dz * B.dz < -0.85) {
+                if (!ug && A.dx * B.dx + A.dz * B.dz < -0.85) {
                     const lx = eB.x - eA.x, lz = eB.z - eA.z, ll = Math.hypot(lx, lz) || 1
                     const side = (p) => ((p.x - eA.x) * lz - (p.z - eA.z) * lx) / ll
                     const inward = Math.sign(side(node.pos)) || 1
@@ -10152,6 +10206,15 @@ export class RoadSystem {
             // edges to the real crotch apex. _ringSelfIntersects remains the gate.
             const ce = this._cornerEdgeFillet(A, B, halfWidth, filletR, T, n === 2)
             if (ce) { for (const p of ce) ring.push(p); continue }
+            // BUG-259: underground, two legs whose facing edges never cross before their mouths still overlap there
+            // (two roads crossing at 3°, seed 2280440363): their mouth chords lie over each other and any corner
+            // between them crosses itself. One chord from A's outer corner to B's spans both; neither ribbon welds.
+            if (ug) {
+                ring.pop()
+                merged = true
+                if (i === n - 1) ring.shift()
+                continue
+            }
             for (const p of this._cornerJoin(eA, A, eB, B, filletR, T)) ring.push(p)
         }
         // Drop consecutive duplicates (incl. the wrap seam).
@@ -10285,6 +10348,8 @@ export class RoadSystem {
             }
             return [...pA.slice(bi, -1).reverse(), ...pB.slice(bj, -1)]
         }
+        // BUG-259: no fillet (an underground junction): down A's true edge to the apex, back up B's.
+        if (!(filletR > 0)) return [...pA.slice(0, -1).filter((p) => p.ext > best.extA).reverse(), { x: best.x, z: best.z }, ...pB.slice(0, -1).filter((p) => p.ext > best.extB)]
         const extMaxA = pA[pA.length - 1].ext, extMaxB = pB[pB.length - 1].ext
         // Hand the fillet off to the straight-line builder a few metres up each edge from the apex,
         // using the LOCAL sample positions/tangents there (the edges are locally straight over ≤6 m).
