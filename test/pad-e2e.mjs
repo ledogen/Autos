@@ -678,5 +678,8 @@ check(await gear() === 0, `VH manual, assist OFF: B without LB is rejected (gear
 await js('__fp.b[4] = 1'); await sleep(200); await press(B); await sleep(400); await js('__fp.b[4] = 0')
 check(await gear() === 1, `VH manual, assist OFF: LB + B shifts N → 1 (gear ${await gear()})`)
 await js('__R.clutchAssist = true')
+// BUG-265: the brake tap (RB's Space on the Professor layout) on an open result card never closes it or takes its cash.
+await js(`(() => { const m = __mission(); m.state = 'done'; m.result = { award: { stowed: 'dinner', cost: 5 } }; document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true })); window.__r265 = m.state; m.state = 'idle'; m.result = null })()`)
+check(await js('__r265') === 'done', `BUG-265: Space on an open result card leaves it open (state ${await js('__r265')})`)
 console.log(fails ? `${fails} FAILED` : 'ALL OK', '| console errors:', errs.length ? errs : 'none')
 c.close(); cleanup(); process.exit(fails ? 1 : 0)
