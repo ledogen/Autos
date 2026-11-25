@@ -61,8 +61,9 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     // Was (DEC-377, $0.35 flat): chili dog 3.5, burger 2.8, dinner meal 2.8, groceries 3.5, potato 1.4, gummy worms 0.7,
     // spicy chips 1.05, candy bar 1.05, salad 1.2, deli sandwich 2.45 (7 h), cookies 0.8, bread 2.4 (6 h); peanuts 3 (DEC-293).
     // Arc trial (owner, 2026-11-24: beans nerfed a little, groceries buffed): heated beans 6 → 5 h, cooked groceries 10 → 12 h.
-    // Prices follow so DEC-407 still holds: beans 1.5 → 1.25 ($0.25 an hour), groceries 2.5 → 2.95 ($0.246, the band's floor).
-    potato: 1, cannedBeans: 1.25, groceries: 2.95,
+    // Beans 1.5 → 1.25 keeps them at $0.25 an hour. Groceries stay 2.5: $0.21 an hour, UNDER DEC-407's $0.245 floor on purpose
+    // (owner, 2026-11-24: "i want groceries at the proposed .21 an hr").
+    potato: 1, cannedBeans: 1.25, groceries: 2.5,
     apple: 0.4, cookies: 0.6, salad: 1.1, bread: 1.5, deliSandwich: 1.65,
     dinnerMeal: 4, burger: 4.4, chiliDog: 5.8, friedChicken: 7.2,
     gummyWorms: 1.4, spicyChips: 2, bagOfPeanuts: 2, candyBar: 2.1, beefJerky: 2.1, breakfastBurrito: 3.35,
