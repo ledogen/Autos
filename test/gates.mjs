@@ -39,7 +39,7 @@ export const GATES = [
   { file: 'junction-recovery-grade.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-200 (DEC-409): a junction recovery is held to the design maximum grade — seed 688224244\'s hairpin ≤ 25 % (38.8 % before), and ceilings on runs at the 38 % ceiling / over 30 % on three seeds' },
   { file: 'junction-bank-cliff.mjs', subsystem: 'terrain', cost: 'heavy', extraDeps: [],
-    desc: 'BUG-258 (A): a junction leg\'s bank never ends in a cliff at the resolver footprint (36 m). Every junction leg of three story regions (308883464, the owner-measured site (-557, 163); 662660690; 2426652846), within the widen reach, both sides: no ground step > 0.5 m within 0.1 m whose carved side resolves >= 34 m off its run (main: 45 / 65 / 49 cliffs, worst 6.41 / 5.67 / 6.35 m; 3.20 m at the site); the road deck unchanged against the pre-fix carve (0.000 m)' },
+    desc: 'BUG-258 (A): a junction leg\'s bank never ends in a cliff at the resolver footprint (36 m). Every junction leg of three story regions (308883464, the owner-measured site (-557, 163); 662660690; 2426652846), within the widen reach, both sides: no ground step > 0.5 m within 0.1 m whose carved side resolves >= 34 m off its run (main: 45 / 61 / 46 cliffs, 187 / 257 / 191 m of step, worst 6.41 / 5.67 / 6.35 m; 3.20 m at the site); the road deck unchanged against the pre-fix carve (0.000 m)' },
   { file: 'road-minradius.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
     desc: 'BUG-12: DENSE realized centerline min-radius the ribbon sweeps, every run of the headless graph network over several stream centres — the fold metric' },
   { file: 'centerline-curvature.mjs', subsystem: 'road', cost: 'heavy', extraDeps: [],
