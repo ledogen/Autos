@@ -1117,24 +1117,48 @@ export class RoadMeshSystem {
         // inside the sibling is dropped with the rest of the overlap below.
         const lipA = extA && road.isMouth && !road.isMouth(runKey, span.s0) ? R : 1.5
         const lipB = extB && road.isMouth && !road.isMouth(runKey, span.s1) ? R : 1.5
-        const rings = inner + (extA ? 1 : 0) + (extB ? 1 : 0)
+        // BUG-259 slice 3: an R run-on is cut in ≤ 3 m rings like the rest, so its floor follows the chamber's asphalt
+        // (underAsphalt below): one 8 m ring left 8 m floor triangles standing 0.19-0.37 m over a pad between two held corners.
+        const nA = extA ? Math.ceil(lipA / 3) : 0, nB = extB ? Math.ceil(lipB / 3) : 0
+        const rings = inner + nA + nB
         const vpr = SEG + 5                  // apronR(2) + (SEG+1 arch verts) + apronL(2)
 
         let pos = new Float32Array(rings * vpr * 3)   // let: the BUG-67 miter appends its cut vertices
         let col = new Float32Array(rings * vpr * 3)
-        let fcol = new Float32Array(rings * vpr * 3)   // BUG-112: the floor's colour — the cut bench's, shaded
+        // BUG-259 slice 3: the FLOOR is its own mesh, FLOOR_N + 1 vertices a side (1 m apart), each held under whatever asphalt
+        // lies over it (underAsphalt). Two vertices a side, the floor was one 8 m plank at its own run's camber and grade, and
+        // where two bores meet (a junction chamber, a join, a fork) a leg's floor and its R run-on past the node stood over the
+        // other legs' asphalt: ground texture over the road, and z-fighting where they crossed (20 random seeds: 21 sites, up to
+        // 1.4 m over the deck). The asphalt there is the ribbon, pad or connector the tires ride (sampleRoadTopY), so the floor
+        // only goes down, under the deck; on its own lane the hold is the floor's own formula (the deck less the apron's
+        // clearance), so a plain bore is unchanged but for a curve's few cm.
+        const FLOOR_N = 8
+        const fpos = new Float32Array(rings * 2 * (FLOOR_N + 1) * 3), fcol = new Float32Array(fpos.length)
+        // Under ANOTHER road's asphalt (the hold bites by > 2 cm) it is held under the lowest top within 1.5 m, the reach of the
+        // vertex's own triangles: a pad meets its legs' ribbons on a crease up to 13 cm deep (seed 2781682411's T), and a floor
+        // held at its corners alone stood 4 cm over the asphalt in the crease.
+        const underAsphalt = (x, z, y, drop) => {
+            let t = road.sampleRoadTopY?.(x, z)
+            if (t == null) return y
+            if (t - clearance - drop < y - 0.02) for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+                const u = (i || j) ? road.sampleRoadTopY(x + 1.5 * i, z + 1.5 * j) : null
+                if (u != null && u < t) t = u
+            }
+            return Math.min(y, t - clearance - drop)
+        }
+        let fi = 0
         let uv  = new Float32Array(rings * vpr * 2)
         const CUT = _hexLin(params.terrainCutoutColor ?? 0x757066)   // terrain.js's cut-face colour, same convention
         const prof = { gradeY: 0, tx: 1, tz: 0 }, lipProf = { gradeY: 0, tx: 1, tz: 0 }
         let vi = 0, ui = 0
         for (let r = 0; r < rings; r++) {
-            const ir = Math.min(inner - 1, Math.max(0, r - (extA ? 1 : 0)))
+            const ir = Math.min(inner - 1, Math.max(0, r - nA))
             const s = sA + (sB - sA) * (ir / (inner - 1))
             const c = road.runPointAt(runKey, s)
             if (!c) return null
             road.runProfile(s, runKey, prof)
             // Extrusion rings reuse the end frame, pushed out along the tangent.
-            const ext = (extA && r === 0) ? -lipA : (extB && r === rings - 1) ? lipB : 0
+            const ext = r < nA ? -lipA * (nA - r) / nA : r >= nA + inner ? lipB * (r - nA - inner + 1) / nB : 0
             if (ext) { c.x += prof.tx * ext; c.z += prof.tz * ext }
             // rightDir chosen so a vertex at lateral L has signedLat = L (matches the carve frame).
             const rx = prof.tz, rz = -prof.tx
@@ -1150,7 +1174,7 @@ export class RoadMeshSystem {
             // masonry ring (buildPortalRing), and at lateral ±R it is off the road.
             const sF = s + ext, floorY = ext ? road.runProfile(sF, runKey, lipProf).gradeY : prof.gradeY
             const sinCam = Math.sin(road.camberProfile(sF, runKey))
-            const drop = ext ? -LIP_RISE : APRON_DROP
+            const drop = ext && (ext < 0 ? lipA : lipB) < R ? -LIP_RISE : APRON_DROP   // the lip rises at a MOUTH; an R run-on lies under a chamber's asphalt
             const dirtH = (L) => crownProfile(L, halfWidth, crownH) + L * sinCam - clearance - drop
             for (let k = 0; k < vpr; k++) {
                 let lat, h, y0 = floorY
@@ -1165,15 +1189,21 @@ export class RoadMeshSystem {
                 pos[vi]     = c.x + rx * lat
                 pos[vi + 1] = y0 + h
                 pos[vi + 2] = c.z + rz * lat
+                if (k === 1 || k === vpr - 2) pos[vi + 1] = underAsphalt(pos[vi], pos[vi + 2], pos[vi + 1], drop)   // the wall's foot meets the floor's edge
                 // Apron verts tint dirt-brown (vertex color × concrete base ≈ shoulder dirt) — on the lining
                 // that is now only the foot of the wall's step down to the floor.
                 const apron = k < 2 || k > vpr - 3
                 col[vi]     = shade * (apron ? 0.80 : 1)
                 col[vi + 1] = shade * (apron ? 0.66 : 1)
                 col[vi + 2] = shade * (apron ? 0.52 : 1)
-                fcol[vi] = shade * CUT[0]; fcol[vi + 1] = shade * CUT[1]; fcol[vi + 2] = shade * CUT[2]
                 vi += 3
                 uv[ui] = s * 0.08; uv[ui + 1] = k / (vpr - 1); ui += 2
+            }
+            for (const side of [1, -1]) for (let j = 0; j <= FLOOR_N; j++) {   // right 0 → R, left −R → 0 (the old strips' winding)
+                const lat = side > 0 ? R * j / FLOOR_N : -R + R * j / FLOOR_N, x = c.x + rx * lat, z = c.z + rz * lat
+                fpos[fi] = x; fpos[fi + 1] = underAsphalt(x, z, floorY + dirtH(lat), drop); fpos[fi + 2] = z
+                fcol[fi] = shade * CUT[0]; fcol[fi + 1] = shade * CUT[1]; fcol[fi + 2] = shade * CUT[2]
+                fi += 3
             }
         }
         const idx = [], fidx = []
@@ -1204,7 +1234,7 @@ export class RoadMeshSystem {
         const sib = (sibT || own.length) ? (x, y, z) => own.some((m) => (x - m.x) ** 2 + (z - m.z) ** 2 < 4 * R * R &&
             (x - m.x) * m.nx + (z - m.z) * m.nz < -INSET) || !!sibT?.(x, y, z, INSET) : null
         const nv0 = rings * vpr
-        const xPos = [], xCol = [], xFcol = [], xUv = []   // vertices the miter adds, after the nv0 ring vertices
+        const xPos = [], xCol = [], xUv = []   // vertices the miter adds, after the nv0 ring vertices
         const attr = (i, a, src, ext, n) => (i < nv0 ? src[n * i + a] : ext[n * (i - nv0) + a])
         const P3 = (i, a) => attr(i, a, pos, xPos, 3)
         const vin = []   // vertex id → inside the sibling (memo: each vertex is a corner of up to six triangles)
@@ -1212,7 +1242,7 @@ export class RoadMeshSystem {
         const ekey = (i, j) => (i < j ? i * 1e7 + j : j * 1e7 + i)
         const addV = (o, n, t) => {   // a new vertex at t along o → n, every attribute interpolated
             const lerp = (src, ext, n2) => { for (let a = 0; a < n2; a++) ext.push(attr(o, a, src, ext, n2) + (attr(n, a, src, ext, n2) - attr(o, a, src, ext, n2)) * t) }
-            lerp(pos, xPos, 3); lerp(col, xCol, 3); lerp(fcol, xFcol, 3); lerp(uv, xUv, 2)
+            lerp(pos, xPos, 3); lerp(col, xCol, 3); lerp(uv, xUv, 2)
             return nv0 + xPos.length / 3 - 1
         }
         const cut = new Map(), mids = new Map()   // edge key → its vertex on the sibling's surface / its midpoint (shared by both triangles on it)
@@ -1258,17 +1288,21 @@ export class RoadMeshSystem {
             const near = ringIn[r - 1] || ringIn[r] || ringIn[r + 1] || ringIn[r + 2]
             for (let k = 0; k < vpr - 1; k++) {
                 const a = r * vpr + k, b = a + vpr
-                if (k === 0 || k === vpr - 2) { fidx.push(a, b, a + 1, a + 1, b, b + 1); continue }   // the two apron strips are the floor
+                if (k === 0 || k === vpr - 2) continue   // the two apron strips: the floor (below)
                 tri(idx, a, b, a + 1, near)
                 tri(idx, a + 1, b, b + 1, near)
             }
         }
+        const fpr = 2 * (FLOOR_N + 1)
+        for (let r = 0; r < rings - 1; r++) for (let side = 0; side < 2; side++) for (let j = 0; j < FLOOR_N; j++) {
+            const a = r * fpr + side * (FLOOR_N + 1) + j, b = a + fpr
+            fidx.push(a, b, a + 1, a + 1, b, b + 1)
+        }
         if (!idx.length && !fidx.length) return null
         if (xPos.length) {   // the miter's vertices join the ring vertices (the index already names them)
             const grow = (src, ext) => { const g = new Float32Array(src.length + ext.length); g.set(src); g.set(ext, src.length); return g }
-            pos = grow(pos, xPos); col = grow(col, xCol); fcol = grow(fcol, xFcol); uv = grow(uv, xUv)
+            pos = grow(pos, xPos); col = grow(col, xCol); uv = grow(uv, xUv)
         }
-        const nv = pos.length / 3
         const P = new THREE.BufferAttribute(pos, 3)
         const mk = (ix, c) => {
             if (!ix.length) return null
@@ -1278,11 +1312,16 @@ export class RoadMeshSystem {
             g.setIndex(ix)
             return g
         }
-        const tube = mk(idx, col), floor = mk(fidx, fcol)
+        const tube = mk(idx, col)
         if (tube) { tube.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); tube.computeVertexNormals() }
-        if (floor) {
+        let floor = null
+        if (fidx.length) {
+            floor = new THREE.BufferGeometry()
+            floor.setAttribute('position', new THREE.BufferAttribute(fpos, 3))
+            floor.setAttribute('color', new THREE.BufferAttribute(fcol, 3))
+            floor.setIndex(fidx)
             // (grass, dirt, rock, engineered) = (0, 0, 1, 1): terrain.js's weights on a fully cut bench.
-            const surf = new Float32Array(nv * 4)
+            const surf = new Float32Array(fpos.length / 3 * 4)
             for (let i = 2; i < surf.length; i += 4) { surf[i] = 1; surf[i + 1] = 1 }
             floor.setAttribute('aSurf', new THREE.BufferAttribute(surf, 4))
             floor.computeVertexNormals()
