@@ -37,7 +37,8 @@ export const USED_COND = [0.4, 0.85]  //   condition, uniform
 // FEAT-325 (arc trial, owner 2026-11-23: "The shop should always carry the v6 engine"): engineStock is the V6.
 // Arc trial (owner, 2026-11-24: "always stock standard instead of old"): the standard tire is the always-stocked tire;
 // the old tire is now a mission reward only.
-export const ALWAYS = ['tireStandard', 'airFilterStock', 'tirePlugKit', 'wheelSteel', 'engineStock']
+// Owner, 2026-11-24: "the auto shop should stock all basic consumables so stock pads and shoes".
+export const ALWAYS = ['tireStandard', 'airFilterStock', 'brakesFrontStd', 'brakesRearStd', 'tirePlugKit', 'wheelSteel', 'engineStock']
 
 /** Shelf items that aren't parts: no condition, priced here. */
 export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireIron: 30,   // tireIron: FEAT-203 [DEFAULT] = the quick-jack's price

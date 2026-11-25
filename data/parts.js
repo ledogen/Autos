@@ -141,7 +141,7 @@ export const PARTS = {
     // FEAT-325 (arc trial, owner 2026-11-23): Old $6, Standard $10, Sport $15, All-terrain $15.
     tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 6, massKg: 12, grip: 0.9,
                      patch: {}, desc: 'Cracked and dry rotted rubber. Slippery and fragile.' },
-    tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 10, massKg: 12, grip: 1, stock: true,
+    tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 8, massKg: 12, grip: 1, stock: true,
                      durability: 0.9, patch: {}, desc: 'The factory all-season. Fine everywhere, great nowhere.' },
     spareTire:     { name: 'Mounted tire',         slot: 'tire', family: 'oem', rarity: 'common', price: 25, massKg: 21, grip: 1, mounted: { tire: 'tireStandard', wheel: 'wheelSteel' },
                      patch: {}, desc: 'A tire mounted on a wheel.' },
@@ -409,8 +409,8 @@ export const OIL_CHANGE = { price: 6, hours: 0.5 }
  *  old part off its partner, the new one on); a mounted tire is 2 hub; split or combine is 1 bead.
  *  The roadside has no bead tools: only the spare's hub swap (src/recovery.js). [DEFAULT] numbers,
  *  owner-approved. */
-export const BEAD = { price: 2, hours: 0.25 }
-export const HUB = { price: 1, hours: 1 / 6 }
+export const BEAD = { price: 1, hours: 0.25 }   // arc trial (owner, 2026-11-24: "a tire change is like $3 in labor"): was 2
+export const HUB = { price: 0.5, hours: 1 / 6 }   // arc trial (owner, 2026-11-24: "swapping corners is like $1"): was 1
 
 /** A part sold back to the shop fetches half its price × its condition (owner, 2026-10-20). */
 export const SELL_FRACTION = 0.5
