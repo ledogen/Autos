@@ -55,6 +55,7 @@ BUG-259 (slice 2 and its card `bug259-slice2-weld-pick`) · BUG-234 · DEC-068 �
 - 2026-11-24: minted by the orchestrator from the owner's two rulings in chat.
 - 2026-11-25 (lane s): the overlap join takes bores and shared-node crossing stretches (throat 30 m out), and tries the
   longer road as the side when the shorter cannot reach its deck; every bore of an underground junction opens ≥ 10 m out
-  (the portal moves, the junction stays). 24 random seeds: underground legs < 12° 2 → 0, X from a shallow crossing 3 → 0
-  sites changed 4/24, ug junctions < 10 m from a portal 2 → 0, hull pads 5 → 3. Gate tunnel-x-junction (4 seeds) red on
-  BUG-259 (5 fails) → green. fingerprint-world vs e345fd63 identical. Head and gates: see the branch.
+  (the portal moves, the junction stays). 24 random seeds: underground legs < 12° 2 → 0, X junctions from a shallow-graze pair 4 → 0;
+  4 of 24 seeds change, ug junctions < 10 m from a portal 2 → 0, hull pads 5 → 3. Gate tunnel-x-junction (4 seeds) red on
+  BUG-259 (5 fails) → green. fingerprint-world vs e345fd63 identical. The join's Ts still ship ranked residuals
+  ("a T always beats no T"): deck gaps 0.5-1.3 m vs the X's 0.2-4.2 m; one shows as a seam at 3780529195. Sheet wip/bug-262/sheet.jpg.
