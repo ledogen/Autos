@@ -68,3 +68,4 @@ DEC-442, DEC-443, DEC-444.
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
 - 2026-11-20: built on land/feat-305-tutorial-r5 (35d7bb98..056fd10c). Affected gates 16/16 green (tut-gate, tutorial-seed re-run after the last fixes); cdp-smoke green (every step; pad re-run on its own after a label fix), pad-e2e ALL OK. New smoke checks: wrong corner refused, inventory shut under Katie's talk, A on a locked shop row inert, the patch path ringed row by row. Sheet wip/feat-305/sheet.jpg. Dev server :3936. Unverified: a real pad, Ventura Highway's A on the pump line.
+- 2026-11-24 night: the owner answered card feat305-tutorial-r5-play "Good: land it" (it was already on main, c80e9647). The card's four questions were not answered; they stay in Open questions.

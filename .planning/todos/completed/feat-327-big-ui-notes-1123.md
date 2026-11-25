@@ -1,7 +1,7 @@
 ---
 id: FEAT-327
 type: feature
-status: open
+status: done
 severity: major
 opened: 2026-11-24
 source: owner, 2026-11-23 — four inbox notes on the big UI mode, quoted in the Description; and card feat239-look, 2026-11-24 — "put the controls hint in the legend instead. also the legend should be collapsable and align to the bottom so it can be out of the way. open by default"
@@ -40,3 +40,4 @@ Map:
 ## Log
 - 2026-11-24: opened from the inbox and the 11-24 card answers.
 - 2026-11-24 lane u: all six built, gates 5/5. Tooltip root cause: fixed-position tips got zoomed left/top (placeTip, park-badge.js). D-pad root cause: menu-nav nearest() let a next-row button beat a same-row neighbour; sideways now stays in its row. Legend: CONTROLS rows + fold (mouse click on the band; pad has no fold, no new button). Camp casing 10 px.
+- 2026-11-24 night: closed on the owner's "All good" (card landed-1124-look).
