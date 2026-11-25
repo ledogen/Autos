@@ -155,3 +155,4 @@ data/parts.js for those parts. The V6 keeps main's description ("The factory six
 ## Log
 - 2026-11-23: built on `proto/arc-trial` (6a53e12d, 1a9b74fa, …). The parts gate pins a mod carried over the I4 → V6 swap
   and a putTruck/loadTruck round-trip of the engine and mods. Not verified by a drive.
+- 2026-11-24 evening, owner in chat while playing :8005: "always stock standard instead of old". data/shop-stock.js ALWAYS: tireOld → tireStandard; the old tire is now a mission reward only (it stays REWARD_ONLY at weight 30). shop-stock gate ALL OK. Contradicts DEC-408 (the old tire always on the shelf, the standard tire rotates) for the trial only; a record is written if the trial's numbers are kept.

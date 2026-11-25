@@ -139,9 +139,9 @@ for (const seed of [1, 2, 3, 4, 5]) {
   }
 }
 check(`every shop, every half hour of 12 days × 5 seeds, has ${ALWAYS.join(' and ')}, new`, always)
-check('the old tire and the air filter are always stocked; the standard tire rotates',
-  ALWAYS.includes('tireOld') && ALWAYS.includes('airFilterStock') && !ALWAYS.includes('tireStandard') && STOCK_WEIGHT.tireStandard === 15)   // DEC-408 (owner: 15)
-check('DEC-408: the old tire is a reward weight only (it is always on the shelf); its reward share about equals the standard tire\'s',
+check('arc trial: the standard tire and the air filter are always stocked; the old tire is not',
+  ALWAYS.includes('tireStandard') && ALWAYS.includes('airFilterStock') && !ALWAYS.includes('tireOld') && STOCK_WEIGHT.tireStandard === 15)   // DEC-408 (owner: 15)
+check('DEC-408: the old tire is a reward weight only (arc trial: it is no longer on the shelf); its reward share about equals the standard tire\'s',
   REWARD_ONLY.has('tireOld') && STOCK_WEIGHT.tireOld === 30)
 startShelves(3)
 const at = shelf('autoShop:a', 50).length - 1

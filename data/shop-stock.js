@@ -35,7 +35,9 @@ export const USED_COND = [0.4, 0.85]  //   condition, uniform
  *  FEAT-162 (2026-11-06): and the steel wheel — a collapsed wheel is replaced, never straightened, so a
  *  tow to any shop is a way out of one [DEFAULT]. */
 // FEAT-325 (arc trial, owner 2026-11-23: "The shop should always carry the v6 engine"): engineStock is the V6.
-export const ALWAYS = ['tireOld', 'airFilterStock', 'tirePlugKit', 'wheelSteel', 'engineStock']
+// Arc trial (owner, 2026-11-24: "always stock standard instead of old"): the standard tire is the always-stocked tire;
+// the old tire is now a mission reward only.
+export const ALWAYS = ['tireStandard', 'airFilterStock', 'tirePlugKit', 'wheelSteel', 'engineStock']
 
 /** Shelf items that aren't parts: no condition, priced here. */
 export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireIron: 30,   // tireIron: FEAT-203 [DEFAULT] = the quick-jack's price
