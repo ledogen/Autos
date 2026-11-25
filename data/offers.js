@@ -766,6 +766,7 @@ export const REWARD_VALUE = {
     zipTies: 8, stopLeak: 8,
     // FEAT-168 [DEFAULT]: the school lunch and the camp gear the shelf doesn't price
     schoolLunch: 2.8, blanket: 4, airMattress: 5, sleepingPad: 8, quilt: 8, sleepingBag: 10, deluxeSleepingPad: 15,
+    framePack: 35,   // FEAT-182 (owner, DEC-500): its price on the setup page; sold nowhere, so no shelf price
 }
 
 /**
