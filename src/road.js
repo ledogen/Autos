@@ -11992,7 +11992,12 @@ export class RoadSystem {
         // instead of compressing into a near-vertical staircased face at the base cap. Shallow
         // banks never reach the base cap, so this only widens genuinely deep walls. Must stay
         // ≤ the _resolveRoadSurface interior footprint (same constant folded there).
-        const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe + DEEP_BANK_TOE_EXTRA * leafTaper)
+        // BUG-258: near a junction carveHalfWidth carries jc.widen, which pushed this cap past that footprint
+        // (_resolveFootHW, 36 m): the resolver stopped at 36 m while the bank still had weight, and the fill
+        // ended in a standing cliff (3.03 m at seed 308883464 (−557, 163)). Capping the toe at the footprint
+        // brings blendW to 0 inside the resolved region. The core (≤ minRadius + R) stays far inside it.
+        const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe + DEEP_BANK_TOE_EXTRA * leafTaper,
+            this._resolveFootHW())
         if (radDist > toeExt) return null   // beyond the fill/cut toe — unaffected terrain
 
         const ramp = Math.max(shoulderWidth, toeExt - carveHalfWidth)
