@@ -21,7 +21,7 @@ A POI's card on the map does not show the POI's name. It should, at the top.
 (See Summary and the owner's words in `source:`.)
 
 ## Tracker
-- [ ] Built
+- [x] Built
 - [ ] Owner's look
 
 ## Decisions
@@ -38,3 +38,4 @@ FEAT-327, DEC-492
 
 ## Log
 - 2026-11-24: minted by the orchestrator from the owner's inbox.
+- 2026-11-25: built (lane c, land/ui-small-1125). Name = board.name(poiId) (the Missions list's source) as the card's first line: uppercase bold story blue (DEED_INK), ellipsis when long; offer, multi-offer, no-work and shop shelf cards checked at Small and Big. Sheet wip/feat-328/sheet.jpg.

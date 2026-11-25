@@ -21,7 +21,7 @@ A previewed route sometimes does not fit on the map at the widest zoom. The owne
 (See Summary and the owner's words in `source:`.)
 
 ## Tracker
-- [ ] Built
+- [x] Built
 - [ ] Owner's look
 
 ## Decisions
@@ -38,3 +38,4 @@ PERF-38, PERF-46
 
 ## Log
 - 2026-11-24: minted by the orchestrator from the owner's inbox.
+- 2026-11-25: built (lane c). MIN_VIEW_SPAN_M 4800 -> 5000 m (the full 2500 m radius circle; short edge). At the 579x464 sheet: 4800 m x 5990 m -> 5000 m x 6239 m. Map render median 0.2 ms both, background rebuild ~9 ms both (no cost change).
