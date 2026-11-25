@@ -23,9 +23,9 @@ On day 5 the service shop listed a Standard tire at $10. The checkout charged $1
 - Wanted: every price the shop shows is the price it charges today, part and labour both.
 
 ## Tracker
-- [ ] Reproduced: which shown figure stays at the day-1 price on day 5
-- [ ] Every shown price equals the charged price (part, labour, total)
-- [ ] A check in test/service.mjs or the smoke's service step: shown price = quote on a late day
+- [ ] Reproduced: NOT reproducible on main or proto/arc-trial (2026-11-25): every shop figure scales on day 5; see Log
+- [x] Every shown price equals the charged price (part, labour, total): holds today, pinned by the checks below
+- [x] A check in test/service.mjs (BUG-263: shelf, carry, fit quotes at tier 1.21) and the smoke's `shopprice` step (shelf text on day 5)
 - [ ] Owner's look
 
 ## Decisions
@@ -42,3 +42,4 @@ FEAT-325 (the arc trial, where it was seen) · FEAT-168 (the day tier)
 
 ## Log
 - 2026-11-24: minted by the orchestrator at the owner's word.
+- 2026-11-25 (lane c): real-browser read on main and on proto/arc-trial, day 1 vs day 5 (advanced 4 days with the shop screen open). Shelf column: Standard tire $8.00 -> $9.68 (x1.21), steel wheel $8 -> $9.68, plug kit $5 -> $6.05, V6 $60 -> $72.60. Cart line for the tire fitted front-left: $13.31 = 9.68 + 3.63 labour (3 x 1.21), subtotal the same. The screen re-renders on the day change; `tier` is wired to `economySystem.tierNow()` (main.js 3990). Nothing is stale in the shop on either build. Only $10 on the screen is the wallet, top right (the owner had $10?). Other unscaled prices by design: the offer card's reward value (`rewardValue`, "day-1 dollar value"). Added the checks, no src change. Owner's look needed: if it recurs, note the day, the screen and which row.
