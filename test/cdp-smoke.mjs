@@ -1373,13 +1373,14 @@ const STEPS = [
     if (!p) { console.log('  shopprice: no auto shop in this region — step skipped'); return }
     await seat(p.x, p.z, p.h); await park(true)
     check(await until(() => js('document.getElementById("svc-screen").checkVisibility()'), 2000), 'shopprice: no service screen')
-    await js('window.__day().advanceMinutes(4 * 24 * 60)'); await sleep(500)   // day 5
+    await js('window.__smokeDay = window.__day().snapshot(); window.__day().advanceMinutes(4 * 24 * 60)'); await sleep(500)   // day 5
     await js('document.querySelector("#svc-screen [data-tab=shop]")?.click()')
     const tier = dayTier(econDayOf(await js('window.__day().day()')))
     const rows = await js(`[...document.querySelectorAll('#svc-screen [data-act=node][data-item]')].map(n => [n.dataset.item, n.querySelector('.sv-each')?.textContent])`)
     const std = rows.find(([id]) => id === 'tireStandard' || id === 'wheelSteel' || id === 'tirePlugKit')
     check(!!std && Math.abs(parseFloat(std[1].slice(1)) - ({ tireStandard: PARTS.tireStandard.price, wheelSteel: PARTS.wheelSteel.price, tirePlugKit: ITEM_PRICE.tirePlugKit })[std[0]] * tier) < 0.011,
       `BUG-263: the shelf prints ${JSON.stringify(std)} on day 5 (tier ${tier})`)
+    await js('window.__day().restore(window.__smokeDay)'); await sleep(300)   // the later steps price on the day they found (vendor's $4 dinner)
   }],
   ['service', async () => {
     // SM-3: park at an auto shop → the service screen; both tabs render; Esc closes it.
