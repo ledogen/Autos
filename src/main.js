@@ -10909,9 +10909,9 @@ document.addEventListener('keydown', e => {
   // it, so the brake release is the obvious way out — and vehicle.js drops the park latch on that
   // same tap, which leaves the truck ready to roll AND re-arms the trigger, so another pull re-offers.
   // preventDefault so the tap can't ALSO activate whichever panel button last took focus.
-  // The dinner invitation's DECLINE is the same tap (owner, 2026-10-23).
-  if (e.key === ' ' && (missionSystem?.state === 'offer'
-      || (missionSystem?.state === 'done' && missionSystem.result?.award?.stowed === 'dinner'))) { e.preventDefault(); missionSystem.exit() }
+  // BUG-265 (owner, 2026-11-24): NOT the result card — the dinner invitation's decline used to be this tap too, so RB
+  // (park) on it closed the card and took the cash before the owner could weigh it. A result card closes only on its own button.
+  if (e.key === ' ' && missionSystem?.state === 'offer') { e.preventDefault(); missionSystem.exit() }
   // BUG-95 (owner, 2026-10-26): the same tap on a camp card is its BACK — Esc / pad B's button: no
   // thanks, release the brake, drive off. A MADE camp has no back: leaving it is "break camp", which
   // the player picks, never a stray tap (_cardBackButton). Not mid-fade — the night is under way —
