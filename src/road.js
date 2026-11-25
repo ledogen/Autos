@@ -6745,8 +6745,8 @@ export class RoadSystem {
      * trunk's pavement for the shared stretch, a T where they part. Both ends are built by _v2BuildDeparture and
      * committed together by _v2CommitMidSpan, so every connection stays and only the duplicate pavement goes.
      * The plan never sees these pairs: the one in 240 census windows is seed 1394642004 (683, 1286), a promoted
-     * T's departure made after the plan, 1.2 m beside g:1,1,1:1,2,1 for ~80 m. Bores and T departure blends are
-     * excluded as in test/lib/close-pairs.mjs. Pure in the two registered runs, so window-invariant wherever they are.
+     * T's departure made after the plan, 1.2 m beside g:1,1,1:1,2,1 for ~80 m. T departure blends are excluded as in
+     * test/lib/close-pairs.mjs; bores and a shared node are not (BUG-262, _v2OverlapStretch). Pure in the two registered runs, so window-invariant wherever they are.
      */
     _v2JoinOverlaps(g) {
         const NEAR = 2 * (this._params?.roadHalfWidth ?? 5), JOIN_MIN_M = 20
@@ -6763,13 +6763,17 @@ export class RoadSystem {
             const a = boxes.get(keys[i]), b = boxes.get(keys[j])
             if (a[0] > b[1] || b[0] > a[1] || a[2] > b[3] || b[2] > a[3]) continue
             const A = this._network.get(keys[i]), B = this._network.get(keys[j])
-            if (cells(A).some((c) => cells(B).includes(c))) continue
+            const shared = cells(A).filter((c) => cells(B).includes(c))
             const [sk, wk] = A.polyCum.at(-1) <= B.polyCum.at(-1) ? [keys[i], keys[j]] : [keys[j], keys[i]]
-            const st = this._v2OverlapStretch(this._network.get(sk), this._network.get(wk), NEAR)
-            if (st && st.len >= JOIN_MIN_M) found.push({ sk, wk, ...st })
+            const S = this._network.get(sk), W = this._network.get(wk)
+            const thr = shared.length ? (e) => cells(e).map((c) => shared.includes(c)) : null
+            const st = this._v2OverlapStretch(S, W, NEAR, thr)
+            // BUG-262: the longer road rides the shorter one's deck when the shorter cannot reach the longer's (two
+            // bores crossing 55 m apart in height: seed 2280440363's side road would climb 62 m in 228 m to its T)
+            if (st && st.len >= JOIN_MIN_M) found.push({ sk, wk, ...st, alt: () => { const a = this._v2OverlapStretch(W, S, NEAR, thr); return a && a.len >= JOIN_MIN_M ? { sk: wk, wk: sk, ...a } : null } })
         }
         // ponytail: a join that cuts a run another join also names declines that one (stale); none in 240 windows.
-        for (const f of found) this._v2JoinOne(g, f)
+        for (const f of found) if (!this._v2JoinOne(g, f)) { const a = f.alt(); if (a) this._v2JoinOne(g, a) }
     }
 
     // The longest stretch of S (vertex range i0..i1) within `near` of W, with W's arcs at its two ends; null when
@@ -6777,15 +6781,23 @@ export class RoadSystem {
     // long: DEC-471 widened the join to two roads that ride each other's pavement and cross on the way (the owner's
     // 2711103901, 164 m doubled, then crossing). Two pavements near apart overlap for 2·near/sin θ across a crossing
     // at θ, so CROSS_JOIN_MIN_M = 60 m is a graze under ~19°, never a real crossing.
-    _v2OverlapStretch(S, W, near) {
-        const CROSS_JOIN_MIN_M = 60
-        const out = (e, s) => (e.tunnelSpans || []).some((sp) => s >= sp.s0 - 80 && s <= sp.s1 + 80)
+    //
+    // BUG-262 (DEC-495, owner: "match above ground behavior - merge into one road"): neither a bore nor a node the two
+    // share exempts a pair. Both used to, and both let a graze through to the X junction: seed 2280440363's two legs of
+    // node 0,-1,1 run 116 m within 2·HW in a bore, crossing twice at 3-9°, and shipped two X junctions inside the hill.
+    // A pair that shares a node joins only on a crossing stretch clear of that node's throat (MINREG, as the X pass);
+    // a stretch that rides from the node is the plan's fork merge, not this backstop's. `sharedEnds(e)` names which of
+    // e's two ends sit on a shared node, null when there is none.
+    _v2OverlapStretch(S, W, near, sharedEnds = null) {
+        const CROSS_JOIN_MIN_M = 60, MINREG = 30
+        const thrS = sharedEnds?.(S), thrW = sharedEnds?.(W)
+        const out = (e, s, thr) => (thr && ((thr[0] && s < MINREG) || (thr[1] && e.polyCum.at(-1) - s < MINREG)))
             || (e.offCurveSpans || []).some((sp) => s >= sp.s0 - 2 && s <= sp.s1 + 2)
         let best = null, cur = null
         for (let i = 0; i <= S.points.length; i++) {
             const p = S.points[i]
-            const h = p && !out(S, S.polyCum[i]) ? _nearestWithinXZ(p.x, p.z, W.points, W.polyCum, near) : null
-            if (h && h.d < near && !out(W, h.cum)) {
+            const h = p && !out(S, S.polyCum[i], thrS) ? _nearestWithinXZ(p.x, p.z, W.points, W.polyCum, near) : null
+            if (h && h.d < near && !out(W, h.cum, thrW)) {
                 const side = Math.sign((p.x - h.fx) * h.tz - (p.z - h.fz) * h.tx)
                 if (!cur) cur = { i0: i, wIn: h.cum, side, crosses: false }
                 else if (side && cur.side && side !== cur.side && !cur.crosses) { cur.crosses = true; cur.iX = i; cur.wX = h.cum }
@@ -6794,7 +6806,8 @@ export class RoadSystem {
             }
             if (cur) {
                 cur.len = S.polyCum[cur.i1] - S.polyCum[cur.i0]
-                if ((!cur.crosses || cur.len >= CROSS_JOIN_MIN_M) && (!best || cur.len > best.len)) best = cur
+                const ok = cur.crosses ? cur.len >= CROSS_JOIN_MIN_M : !sharedEnds
+                if (ok && (!best || cur.len > best.len)) best = cur
             }
             cur = null
         }
