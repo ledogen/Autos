@@ -75,14 +75,15 @@ console.log('\n§2 the floor is absolute, and the curve saturates')
   // The reference hit is per axle too: the front's jounce bumper is a long progressive elastomer
   // that takes most of a landing, the rear's is a short snubber that hands it to the pack.
   const ref = fresh(); bump(ref, D.springBumpRefNFront)
-  ok(Math.abs((1 - ref.get('springFront')) - D.springBumpRefDmg) < 1e-9,
-    `one hit at ${D.springBumpRefNFront / 1000} kN costs a FRONT corner exactly ${D.springBumpRefDmg * 100}% — the capture's slam`)
+  // FEAT-325 (arc trial): every spring event costs 1 / springDurability of main's (2: "double the durability").
+  ok(Math.abs((1 - ref.get('springFront')) - D.springBumpRefDmg / D.springDurability) < 1e-9,
+    `one hit at ${D.springBumpRefNFront / 1000} kN costs a FRONT corner exactly ${D.springBumpRefDmg / D.springDurability * 100}% — the capture's slam, halved`)
   const refR = fresh(); bump(refR, D.springBumpRefNRear, 2)
-  ok(Math.abs((1 - refR.get('springRear')) - D.springBumpRefDmg) < 1e-9,
+  ok(Math.abs((1 - refR.get('springRear')) - D.springBumpRefDmg / D.springDurability) < 1e-9,
     `one hit at ${D.springBumpRefNRear / 1000} kN costs a REAR corner the same ${D.springBumpRefDmg * 100}%`)
   ok(D.springBumpRefNFront > D.springBumpRefNRear, 'the front takes a harder hit for the same cost than the rear')
   const huge = fresh(); bump(huge, 5e6)
-  ok(huge.get('springFront') >= 0 && huge.get('springFront') < 0.5, 'an absurd 5 MN hit takes more than half the spring, and the track never goes below 0')
+  ok(huge.get('springFront') >= 0 && huge.get('springFront') < 1 - 0.5 / D.springDurability, 'an absurd 5 MN hit takes more than half the spring (÷ springDurability, FEAT-325), and the track never goes below 0')
 }
 
 console.log('\n§3 the hit lands on the axle that took it')
@@ -150,7 +151,7 @@ console.log('\n§5 the drop anchors, re-measured after the progressive tire carc
   for (const [h, peakN, lo, hi] of [[0.5, 2400, 0, 0.01], [1.0, 23000, 1, 2.5], ['capture', 31500, 2.1, 2.3], [2.0, 75600, 3.5, 6], [10.0, 294000, 9, 14]]) {
     const d = fresh()
     bump(d, peakN)
-    const lost = (1 - d.get('springFront')) * 100
+    const lost = (1 - d.get('springFront')) * 100 * D.springDurability   // FEAT-325: the bands are main's, before the ÷2
     console.log(`  ${typeof h === 'number' ? `a ${h} m drop` : `the ${h} hit`} (${(peakN / 1000).toFixed(1)} kN on the stops) costs the front springs ${lost.toFixed(1)}%`)
     ok(lost >= lo && lost <= hi, `...within the intended ${lo}-${hi}% band`)
   }

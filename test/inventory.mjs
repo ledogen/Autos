@@ -392,9 +392,9 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
 {
   const pool = (cats, gate) => rewardsIn(cats, 0).filter(r => r.gates.includes(gate)).map(r => r.id)
   const givers = (gate) => Object.entries(REWARD_CATS).filter(([k, v]) => k !== 'larrysHouse' && pool(v.cats, gate).includes('groceries')).map(([k]) => k).sort().join()
-  check('groceries: raw is no meal, cooked gives 10 h', !ITEMS.groceries.use && ITEMS.groceriesCooked.use === 'eat' && ITEMS.groceriesCooked.satiety === 10)
-  check('groceries: the kit\'s +20 % does NOT apply on top (10 h with or without), the potato still gets it',
-    foodSatietyH('groceriesCooked', true) === 10 && foodSatietyH('groceriesCooked', false) === 10 && Math.abs(foodSatietyH('potatoCooked', true) - 4.8) < 1e-9)
+  check('groceries: raw is no meal, cooked gives 12 h', !ITEMS.groceries.use && ITEMS.groceriesCooked.use === 'eat' && ITEMS.groceriesCooked.satiety === 12)
+  check('groceries: the kit\'s +20 % does NOT apply on top (12 h with or without), the potato still gets it',
+    foodSatietyH('groceriesCooked', true) === 12 && foodSatietyH('groceriesCooked', false) === 12 && Math.abs(foodSatietyH('potatoCooked', true) - 4.8) < 1e-9)
   check('groceries: on the price line at the general store and the farm', ITEM_PRICE.groceries === 2.5 && STOREFRONT.generalStore.always.includes('groceries') && STOREFRONT.farm.always.includes('groceries'))
   check('groceries: a B-A reward from the farm and the general store only', REWARD_LIST.find(r => r.id === 'groceries')?.gates.join('') === 'BA'
     && givers('B') === 'farm,generalStore' && givers('A') === 'farm,generalStore')
@@ -414,8 +414,8 @@ check('the starting Pack is a pack with room beside the bed', ITEMS.pack.kind ==
   if (process.env.FOOD_TABLE) for (const r of [...rows].sort((a, b) => a.perH - b.perH)) console.log(`${r.id.padEnd(18)} ${r.c.padEnd(7)} $${ITEM_PRICE[r.id].toFixed(2)} ${String(r.h).padStart(4)} h  $${r.perH.toFixed(3)}/h`)
   const of = (c) => rows.filter(r => r.c === c), mn = (c) => Math.min(...of(c).map(r => r.perH)), mx = (c) => Math.max(...of(c).map(r => r.perH))
   const mean = (c) => of(c).reduce((a, r) => a + r.h, 0) / of(c).length
-  const out = rows.filter(r => r.perH < 0.245 - 1e-9 || r.perH > 0.70 + 1e-9)
-  check("DEC-407: every sold food is inside the band, $0.245-0.70 an hour (DEC-388's $0.35 less 30 % to plus 100 %)", out.length === 0, out.map(r => r.id).join())
+  const out = rows.filter(r => (r.id !== 'groceries' && r.perH < 0.245 - 1e-9) || r.perH > 0.70 + 1e-9)
+  check("DEC-407: every sold food is inside the band, $0.245-0.70 an hour (DEC-388's $0.35 less 30 % to plus 100 %); arc trial: groceries sit under it at $0.21 (owner, 2026-11-24)", out.length === 0, out.map(r => r.id).join())
   check('DEC-407 rule 1: grocery staples and cookables are cheaper an hour than the food vendor', Math.max(mx('staple'), mx('cook')) < mn('vendor'))
   check('DEC-407 rule 2: a cookable is the cheapest an hour (the cooking act is its price) and holds more than a staple',
     mx('cook') <= mn('staple') && mean('cook') > mean('staple') && of('staple').every(r => r.h <= 5))

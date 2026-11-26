@@ -19,13 +19,15 @@
 //      with the lift kit instead of overwriting it (owner, 2026-10-22).
 //
 // Pure node: no THREE, no DOM.
-import { stepDrivetrain } from '../src/drivetrain.js'
+import { stepDrivetrain, engineTorqueAt } from '../src/drivetrain.js'
 import { PARTS, SLOTS, FAMILY_DURABILITY, RARITY_COLOR, takes, socketsFor, partChoices } from '../data/parts.js'
 import { RANGER_PARAMS } from '../data/ranger.js'
 import { DEFAULT_VEHICLE_MODEL } from '../data/vehicle-models.js'
 import { PartsSystem, runParts } from '../src/parts.js'
 import { DamageModel } from '../src/damage.js'
 import { truckConfig, massLimits } from '../src/load-verdict.js'
+import { ENGINES } from '../data/engines.js'
+import { putTruck, loadTruck } from '../src/save.js'
 
 let fails = 0
 const check = (label, ok, detail = '') => {
@@ -166,6 +168,36 @@ check('back to stock restores the factory geometry', ['RestLength', 'Travel', 'B
   const missing = Object.keys(PARTS).filter(id => !PARTS[id].mounted && !offered.has(id))
   check('debug selector: every fittable part is offered', !missing.length, missing.join())
   parts.start()
+}
+
+// ── 8. FEAT-325 (arc trial): the engine is a fitted part, the power mods carry over a swap, a save keeps both ─────
+{
+  const peak = () => Math.max(...params.engineTorqueCurve.map(([, t]) => t))
+  const at = (rpm) => engineTorqueAt(rpm, params.engineTorqueCurve)
+  parts.start()
+  check('engine: the stock part is the V6, its curve untouched', params.engine === 'vulcan30' && peak() === 250
+    && params.engineInertia === ENGINES.vulcan30.engineInertia)
+  parts.fit('engineI4', null, 'engine')
+  check('engine: the I4 fits, detuned 10 % (209 → 188.1 N·m)', params.engine === 'duratec23' && params.cylinders === 4
+    && Math.abs(peak() - 209 * 0.9) < 1e-9, `${peak()}`)
+  for (const id of ['exhaustMod', 'chipTune', 'flywheelLight']) parts.fit(id)
+  const i4 = at(3750)
+  check('mods: exhaust × chip compound on the I4 (+5 % × +3 %)', Math.abs(i4 - 209 * 0.9 * 1.05 * 1.03) < 1e-9, `${i4}`)
+  parts.fit('engineStock', null, 'engine')
+  check('mods: they carry over the V6 swap', runParts.fitted.exhaustMod === undefined && runParts.fitted.exhaust === 'exhaustMod'
+    && Math.abs(at(3750) - 250 * 1.05 * 1.03) < 1e-9 && Math.abs(params.engineInertia - ENGINES.vulcan30.engineInertia * 0.6) < 1e-12, `${at(3750)}`)
+  parts.fit('turbo')
+  check('turbo: nothing at 1500 rpm, +25 % from 3000', Math.abs(at(1500) / engineTorqueAt(1500, ENGINES.vulcan30.engineTorqueCurve) - 1.05 * 1.03) < 1e-9
+    && Math.abs(at(3750) - 250 * 1.05 * 1.03 * 1.25) < 1e-9)
+  const want = JSON.stringify([params.engine, params.engineTorqueCurve, params.engineInertia])
+  const mem = new Map(), st = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: k => mem.delete(k) }
+  putTruck({ parts: parts.snapshot(), gearbox: 'auto' }, st)
+  const p2 = { ...RANGER_PARAMS }, ps2 = new PartsSystem({ params: p2, damage: new DamageModel({ params: p2 }) })
+  ps2.start(); ps2.restore(loadTruck(st).parts)
+  check('save: a saved truck restores its engine and its mods', JSON.stringify([p2.engine, p2.engineTorqueCurve, p2.engineInertia]) === want)
+  parts.start()
+  check('engine: back to stock puts the V6 curve back exactly', JSON.stringify(params.engineTorqueCurve.filter(([r]) => ENGINES.vulcan30.engineTorqueCurve.some(([q]) => q === r)))
+    === JSON.stringify(ENGINES.vulcan30.engineTorqueCurve))
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed')

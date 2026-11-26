@@ -440,7 +440,12 @@ export const PART_REWARD_CAT = {
     // FEAT-204 bolt-ons [DEFAULT] (DEC-342 draft): with the bed upgrades (FEAT-115 files the rack and light bar there; DEC-028
     // the bull bar beside them), so the haul givers — the work site and the firewood yard — hand them out
     roofRack: 'bed', bullBar: 'bed', lightBar: 'bed',
+    // FEAT-325 power mods: the engine category's givers (the auto shop, the gas station, the stranded motorist)
+    intake: 'engine', exhaust: 'engine', flywheel: 'engine', cams: 'engine', chip: 'engine', induction: 'engine',
 }
+/** FEAT-325 (arc trial, owner 2026-11-23: tires stay as mission rewards, "slightly reduce the frequency"): a tire's
+ *  reward weight × this (src/offer-board.js pickReward); the shelf's weights are untouched. [DEFAULT] */
+export const TIRE_REWARD_X = 0.75
 /** FEAT-168: a part's gates from its rarity, unless a REWARDS row overrides them. */
 export const RARITY_GATES = { common: ['B', 'A'], uncommon: ['A', 'S'], rare: ['S'], legendary: ['S'] }
 

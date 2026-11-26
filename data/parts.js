@@ -83,6 +83,15 @@ export const SLOTS = {
     roofRack:     { name: 'Roof rack',         hours: 1,    tracks: [], bolton: true },
     bullBar:      { name: 'Bull bar',          hours: 1.5,  tracks: [], bolton: true, guards: 'armorFront' },
     lightBar:     { name: 'Light bar',         hours: 1,    tracks: [], bolton: true },
+    // FEAT-325 (arc trial, owner 2026-11-23: "mods fit both engines. they also carry over if you upgrade the engine"): the
+    // power mods. No wear track; `mod`: the service screen's Power mods node lists them. One forced-induction socket:
+    // a turbo OR a supercharger. Labour hours [DEFAULT].
+    intake:       { name: 'Intake',            hours: 0.5,  tracks: [], mod: true },
+    exhaust:      { name: 'Exhaust',           hours: 1,    tracks: [], mod: true },
+    flywheel:     { name: 'Flywheel',          hours: 3,    tracks: [], mod: true },
+    cams:         { name: 'Cams',              hours: 4,    tracks: [], mod: true },
+    chip:         { name: 'Engine tune',       hours: 0.25, tracks: [], mod: true },
+    induction:    { name: 'Forced induction',  hours: 4,    tracks: [], mod: true },
 }
 
 /** FEAT-222: every part id a socket takes (the debug part selector's dropdown; the inverse of socketsFor). */
@@ -129,15 +138,16 @@ export const PARTS = {
     //    never fitted as itself: `mounted` names what goes on the corner (src/recovery.js fitSpare).
     // FEAT-165 (owner, 2026-11-05: "Old $8 · Standard $18"): Old 7 → 8, Standard 15 → 18 — the price of
     // always being on the shelf. FEAT-168 then took the standard tire back into rotation.
-    tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 8, massKg: 12, grip: 0.9,
+    // FEAT-325 (arc trial, owner 2026-11-23): Old $6, Standard $10, Sport $15, All-terrain $15.
+    tireOld:       { name: 'Old tire',             slot: 'tire', family: 'old', rarity: 'common', price: 5, massKg: 12, grip: 0.9,
                      patch: {}, desc: 'Cracked and dry rotted rubber. Slippery and fragile.' },
-    tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 18, massKg: 12, grip: 1, stock: true,
+    tireStandard:  { name: 'Standard tire',        slot: 'tire', family: 'oem', rarity: 'common', price: 8, massKg: 12, grip: 1, stock: true,
                      durability: 0.9, patch: {}, desc: 'The factory all-season. Fine everywhere, great nowhere.' },
     spareTire:     { name: 'Mounted tire',         slot: 'tire', family: 'oem', rarity: 'common', price: 25, massKg: 21, grip: 1, mounted: { tire: 'tireStandard', wheel: 'wheelSteel' },
                      patch: {}, desc: 'A tire mounted on a wheel.' },
-    tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 20, massKg: 11.5, grip: 1.1, durability: 0.8,
+    tireSport:     { name: 'Sport tire',           slot: 'tire', family: 'sport', rarity: 'uncommon', price: 15, massKg: 11.5, grip: 1.1, durability: 0.8,
                      patch: {}, desc: 'Good grip on road. Worse off road.' },   // owner's words, 2026-11-05 (FEAT-167)
-    tireOffroad:   { name: 'All-terrain tire',     slot: 'tire', family: 'offroad', rarity: 'uncommon', price: 25, massKg: 14.4, grip: 1,
+    tireOffroad:   { name: 'All-terrain tire',     slot: 'tire', family: 'offroad', rarity: 'uncommon', price: 15, massKg: 14.4, grip: 1,
                      patch: {}, desc: 'Chunky tread. At home on dirt, no worse on pavement. Heavy.' },
     tireLT:        { name: 'Load-range E tire',    slot: 'tire', family: 'hd', rarity: 'uncommon', price: 10, massKg: 15, grip: 0.95,
                      patch: {}, load: LT_LOAD,
@@ -262,13 +272,20 @@ export const PARTS = {
     //    the bench's cap ($64, REPAIRS.engine × REPAIR_CAP), radiator $22, the same as a weld to it,
     //    headlight $6; the filter is items.md's spare air filter. A crate engine is ~180 kg of load.
     //    (A different transmission is deferred: the gearbox type is the run-setup preset, FEAT-125/126.)
-    engineStock:   { name: 'Stock engine',         slot: 'engine', family: 'oem', rarity: 'common', price: 60, massKg: 180, stock: true,
-                     patch: {}, desc: 'The factory six, on a pallet. A long day to swap.' },
+    // FEAT-325 (arc trial): the engine is a real choice. `engine` names its data/engines.js entry and `torqueX` scales its
+    // curve; src/parts.js engineFor() lays the entry, the power mods and the scale over params. The V6 stays the stock part
+    // (data/ranger.js's own engine, free roam's), and the jalopy fits the I4 (src/jalopy.js). The V6 is $60 ("about 3 good
+    // days of income") and every auto shop always carries it (data/shop-stock.js ALWAYS): "it's the tried and true boss prep
+    // item". The I4 is detuned 10 % ("approved": 209 → 188 N·m); its torqueX is a debug slider (Story · Parts).
+    engineStock:   { name: '3.0 L V6 engine',      slot: 'engine', family: 'oem', rarity: 'common', price: 60, massKg: 180, stock: true,
+                     engine: 'vulcan30', torqueX: 1, patch: {}, desc: 'The factory six, on a pallet. A long day to swap.' },
+    engineI4:      { name: '2.3 L four-cylinder engine', slot: 'engine', family: 'oem', rarity: 'common', price: 30, massKg: 150,
+                     engine: 'duratec23', torqueX: 0.9, patch: {}, desc: 'A tired four-cylinder. It runs.' },
     radiatorStock: { name: 'Stock radiator',       slot: 'radiator', family: 'oem', rarity: 'common', price: 22, massKg: 7, stock: true,
                      patch: {}, desc: 'The factory radiator. Keeps the engine cool when it isn’t leaking.' },
     // items.md's ratified "Spare air filter" is this part: 15 min to fit at the roadside (`roadside`: src/recovery.js
     // fitRoadside) or at the shop, carries its own condition. $10 → $7 (owner, 2026-11-06 playtest: "reduced by 30%"); $7 → $3.50 (DEC-482: "air filter cost should be halved").
-    airFilterStock:{ name: 'Air filter',           slot: 'airFilter', family: 'oem', rarity: 'common', price: 3.5, massKg: 0.5, stock: true,
+    airFilterStock:{ name: 'Air filter',           slot: 'airFilter', family: 'oem', rarity: 'common', price: 2.5, massKg: 0.5, stock: true,
                      roadside: true, patch: {}, desc: 'A paper filter. A clean one lets the engine breathe. Swaps in by hand, no shop needed.' },
     headlightStock:{ name: 'Headlight',            slot: 'headlight', family: 'oem', rarity: 'common', price: 6, massKg: 1.5, stock: true,
                      patch: {}, desc: 'A sealed beam lamp, either side.' },
@@ -303,6 +320,40 @@ export const PARTS = {
                      model: 'mod-light-bar-solo', modelWith: { roofRack: 'mod-light-bar-rack' }, icon: 'headlight',
                      patch: { headlightGain: 2, headlightReach: 1.47 },
                      desc: 'Four round lamps on a bar, wired to the high beams. Night roads open up.' },
+
+    // ── FEAT-325 power mods (arc trial). `torque`: a GAIN curve over rpm, [[rpm, gain], …], read the way the engine's own
+    //    torque curve is (src/drivetrain.js engineTorqueAt: linear between points, flat past the ends); the engine's curve is
+    //    multiplied by (1 + gain) at every rpm, mods compounding. `inertiaX` scales the engine's inertia (the manual gearbox's
+    //    engine-speed state; the automatics' engine follows the converter with no inertia of its own). No boost lag: a turbo
+    //    makes its gain the instant the rpm is there. Every number is a debug slider (Story · Parts). The starting numbers
+    //    are the orchestrator's drafts; the first three prices follow "reduce costs by $5 for each". Names and descriptions
+    //    are placeholders awaiting the owner's words. Icons: the engine's thumbnail until their own exist.
+    intakeStock:   { name: 'Stock intake',         slot: 'intake', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
+                     icon: 'engine', patch: {}, desc: 'The factory air box.' },
+    intakeMod:     { name: 'Intake',               slot: 'intake', family: 'sport', rarity: 'uncommon', price: 10, massKg: 3,
+                     icon: 'engine', torque: [[2000, 0], [4500, 0.04]], patch: {}, desc: 'A freer air box and pipe. A little more pull up high.' },
+    exhaustStock:  { name: 'Stock exhaust',        slot: 'exhaust', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
+                     icon: 'engine', patch: {}, desc: 'The factory pipes and muffler.' },
+    exhaustMod:    { name: 'Exhaust',              slot: 'exhaust', family: 'sport', rarity: 'uncommon', price: 15, massKg: 12,
+                     icon: 'engine', torque: [[0, 0.05]], patch: {}, desc: 'Wider pipes and a straight-through muffler. More pull everywhere.' },
+    flywheelStock: { name: 'Stock flywheel',       slot: 'flywheel', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
+                     icon: 'engine', patch: {}, desc: 'The factory flywheel.' },
+    flywheelLight: { name: 'Light flywheel',       slot: 'flywheel', family: 'sport', rarity: 'uncommon', price: 10, massKg: 6,
+                     icon: 'engine', inertiaX: 0.6, patch: {}, desc: 'Less spinning mass. The engine revs up and down quicker.' },
+    camsStock:     { name: 'Stock cams',           slot: 'cams', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
+                     icon: 'engine', patch: {}, desc: 'The factory camshafts.' },
+    camsMod:       { name: 'Cams',                 slot: 'cams', family: 'sport', rarity: 'uncommon', price: 15, massKg: 5,
+                     icon: 'engine', torque: [[2500, -0.03], [4000, 0.06]], patch: {}, desc: 'Longer valve timing. Pulls harder up high, softer down low.' },
+    chipStock:     { name: 'Stock tune',           slot: 'chip', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
+                     icon: 'engine', patch: {}, desc: 'The factory engine computer.' },
+    chipTune:      { name: 'Chip tune',            slot: 'chip', family: 'sport', rarity: 'uncommon', price: 10, massKg: 0.2,
+                     icon: 'engine', torque: [[0, 0.03]], patch: {}, desc: 'A reflashed engine computer. A little more pull everywhere.' },
+    inductionNone: { name: 'No forced induction',  slot: 'induction', family: 'oem', rarity: 'common', price: 0, massKg: 0, stock: true,
+                     icon: 'engine', patch: {}, desc: 'The engine breathes on its own.' },
+    turbo:         { name: 'Turbo',                slot: 'induction', family: 'sport', rarity: 'legendary', price: 60, massKg: 15,
+                     icon: 'engine', torque: [[1500, 0], [3000, 0.25]], patch: {}, desc: 'Exhaust-driven boost. Much more pull from the middle up.' },
+    supercharger:  { name: 'Supercharger',         slot: 'induction', family: 'sport', rarity: 'legendary', price: 60, massKg: 20,
+                     icon: 'engine', torque: [[0, 0.2]], patch: {}, desc: 'Belt-driven boost. Much more pull everywhere.' },
 }
 
 /** The stock part for a socket. */
@@ -350,7 +401,7 @@ export const REPAIR_STEP = 0.05
 export const PATCH = { price: 5, hours: 0.5 }
 /** FEAT-202 (owner, 2026-11-13): the oil change — every auto shop, always; a flat job straight back to
  *  new oil, never a part on the shelf. owner $6 (FEAT-69, 2026-11-17) / 30 min. */
-export const OIL_CHANGE = { price: 6, hours: 0.5 }
+export const OIL_CHANGE = { price: 4, hours: 0.5 }   // arc trial (owner, 2026-11-24): was 6
 
 /** Tire work at the shop is two jobs, and every corner action is a count of them (owner, 2026-10-23):
  *  a BEAD job mounts or unmounts a tire on a wheel; a HUB swap takes a mounted tire off a corner or
@@ -358,8 +409,8 @@ export const OIL_CHANGE = { price: 6, hours: 0.5 }
  *  old part off its partner, the new one on); a mounted tire is 2 hub; split or combine is 1 bead.
  *  The roadside has no bead tools: only the spare's hub swap (src/recovery.js). [DEFAULT] numbers,
  *  owner-approved. */
-export const BEAD = { price: 2, hours: 0.25 }
-export const HUB = { price: 1, hours: 1 / 6 }
+export const BEAD = { price: 1, hours: 0.25 }   // arc trial (owner, 2026-11-24: "a tire change is like $3 in labor"): was 2
+export const HUB = { price: 0.5, hours: 1 / 6 }   // arc trial (owner, 2026-11-24: "swapping corners is like $1"): was 1
 
 /** A part sold back to the shop fetches half its price × its condition (owner, 2026-10-20). */
 export const SELL_FRACTION = 0.5

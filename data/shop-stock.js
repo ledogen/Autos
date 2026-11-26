@@ -34,7 +34,11 @@ export const USED_COND = [0.4, 0.85]  //   condition, uniform
  *  of "patch kit"]. The standard tire went back to the rotating slots.
  *  FEAT-162 (2026-11-06): and the steel wheel — a collapsed wheel is replaced, never straightened, so a
  *  tow to any shop is a way out of one [DEFAULT]. */
-export const ALWAYS = ['tireOld', 'airFilterStock', 'tirePlugKit', 'wheelSteel']
+// FEAT-325 (arc trial, owner 2026-11-23: "The shop should always carry the v6 engine"): engineStock is the V6.
+// Arc trial (owner, 2026-11-24: "always stock standard instead of old"): the standard tire is the always-stocked tire;
+// the old tire is now a mission reward only.
+// Owner, 2026-11-24: "the auto shop should stock all basic consumables so stock pads and shoes".
+export const ALWAYS = ['tireStandard', 'airFilterStock', 'brakesFrontStd', 'brakesRearStd', 'tirePlugKit', 'wheelSteel', 'engineStock']
 
 /** Shelf items that aren't parts: no condition, priced here. */
 export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireIron: 30,   // tireIron: FEAT-203 [DEFAULT] = the quick-jack's price
@@ -56,7 +60,10 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     // food vendor $0.50–0.60; gas-station snacks $0.67–0.70. The band is $0.245–0.70; test/inventory.mjs holds it and the order.
     // Was (DEC-377, $0.35 flat): chili dog 3.5, burger 2.8, dinner meal 2.8, groceries 3.5, potato 1.4, gummy worms 0.7,
     // spicy chips 1.05, candy bar 1.05, salad 1.2, deli sandwich 2.45 (7 h), cookies 0.8, bread 2.4 (6 h); peanuts 3 (DEC-293).
-    potato: 1, cannedBeans: 1.5, groceries: 2.5,
+    // Arc trial (owner, 2026-11-24: beans nerfed a little, groceries buffed): heated beans 6 → 5 h, cooked groceries 10 → 12 h.
+    // Beans 1.5 → 1.25 keeps them at $0.25 an hour. Groceries stay 2.5: $0.21 an hour, UNDER DEC-407's $0.245 floor on purpose
+    // (owner, 2026-11-24: "i want groceries at the proposed .21 an hr").
+    potato: 1, cannedBeans: 1.25, groceries: 2.5,
     apple: 0.4, cookies: 0.6, salad: 1.1, bread: 1.5, deliSandwich: 1.65,
     dinnerMeal: 4, burger: 4.4, chiliDog: 5.8, friedChicken: 7.2,
     gummyWorms: 1.4, spicyChips: 2, bagOfPeanuts: 2, candyBar: 2.1, beefJerky: 2.1, breakfastBurrito: 3.35,

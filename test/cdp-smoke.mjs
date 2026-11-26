@@ -1061,7 +1061,7 @@ const STEPS = [
     await js('window.__day()._fedUntilH = window.__day().clockH() - 1')
     check(await js('window.__inv.use("groceriesCooked")'), 'the cooked groceries could not be eaten')
     const gHeld = await fedLeft()
-    check(Math.abs(gHeld - 10) < 0.01, `cooked groceries at camp with the kit: held ${gHeld.toFixed(3)} h, not 10 (no x1.2)`)
+    check(Math.abs(gHeld - 12) < 0.01, `cooked groceries at camp with the kit: held ${gHeld.toFixed(3)} h, not 12 (no x1.2; arc trial: cooked groceries hold 12 h)`)
     // The same meal without the kit packed.
     await js(`(() => { const i = window.__inv; i.unpackItem(i.equippedIndex(), i.packed().indexOf('cookingKit')); i.consume('cookingKit')
       i.grant('potatoCooked'); window.__day()._fedUntilH = window.__day().clockH() - 1 })()`)

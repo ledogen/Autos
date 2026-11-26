@@ -26,13 +26,13 @@ const gameH = (e) => (e.day ?? 0) * 24 + (e.hr ?? 0)
 const clock = (e) => `day ${e.day} ${String(Math.floor(e.hr ?? 0)).padStart(2, '0')}:${String(Math.floor(((e.hr ?? 0) % 1) * 60)).padStart(2, '0')}`
 const tireOf = (id) => /^(tire|spareTire)/.test(id ?? '')
 const CORNERS = ['FL', 'FR', 'RL', 'RR']
-// src/main.js _MACHINE_WORD slots: 0 engine · 1-4 wheel · 5-8 wheel bent · 9-12 tire · 13 air filter · 14 oil. The only
+// src/main.js _MACHINE_WORD slots: 0 engine · 1-4 wheel · 5-8 wheel bent · 9-12 tire · 13 air filter · 14 oil · 15-16 springs · 17-18 shocks. The only
 // tracks that ever raise an alert; a log line carries the slot id ('w13') and the words, not the track.
 export function alertTrack (id) {
   const m = /^w(\d+)$/.exec(id ?? '')
   if (!m) return null
   const i = +m[1]
-  return i === 0 ? 'engine' : i <= 4 ? `wheel${CORNERS[i - 1]}` : i <= 8 ? `wheel${CORNERS[i - 5]}` : i <= 12 ? `tire${CORNERS[i - 9]}` : i === 13 ? 'airFilter' : i === 14 ? 'oil' : null
+  return i === 0 ? 'engine' : i <= 4 ? `wheel${CORNERS[i - 1]}` : i <= 8 ? `wheel${CORNERS[i - 5]}` : i <= 12 ? `tire${CORNERS[i - 9]}` : i === 13 ? 'airFilter' : i === 14 ? 'oil' : i === 15 ? 'springFront' : i === 16 ? 'springRear' : i === 17 ? 'damperFront' : i === 18 ? 'damperRear' : null
 }
 /** FEAT-138: the axis a job is lettered on when it is NOT time (main.js onSettle) — fragile on its condition against
  *  its tier's lines, haul on the pieces aboard, freight on the kg. null = a time job (courier, papers, fetch, demolition). */

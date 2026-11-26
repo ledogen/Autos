@@ -456,6 +456,8 @@ export class ServiceScreen {
         this._part('engine', 'Engine', { socket: 'engine', track: 'engine', acts: rs, c: Math.min(d.get('engine'), d.get('oil')),   // old oil bands its section
           info: pctIn('filter', d.get('airFilter')) + pctIn('oil', d.get('oil')),
           pre: [this._act('Oil change', oil, btn('oil', 'change', d.get('oil') < 1, '', ' ok'))] }),
+        // FEAT-325: the power mods, every socket data/parts.js marks `mod` (the Bolt-ons pattern).
+        node('mods', 'Power mods', Object.keys(SLOTS).filter(k => SLOTS[k].mod).map(k => this._part(k, SLOTS[k].name, { socket: k, acts: sw }))),
       ]),
       node('drive', 'Drivetrain', [
         // The outline lists no action under the transmission; its rebuild stays, or synchro wear could never be fixed.

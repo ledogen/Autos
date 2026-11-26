@@ -225,9 +225,10 @@ export function plugTire (damage, inventory, how, { corner = null, index = null 
  * service center's own ceiling [DEFAULT — no field cap was ruled].
  */
 const PANELS = ['armorFront', 'armorLeft', 'armorRight', 'armorRear']
+// FEAT-325 (arc trial, owner 2026-11-23: "We might want to make them instant use" — "everywhere"): no time cost (was 15 min).
 export const FIELD_REPAIR = {
-  zipTies:  { gain: 0.10, hours: 0.25, tracks: [...PANELS, 'headlightL', 'headlightR'] },
-  ductTape: { gain: 0.20, hours: 0.25, tracks: PANELS },
+  zipTies:  { gain: 0.10, hours: 0, tracks: [...PANELS, 'headlightL', 'headlightR'] },
+  ductTape: { gain: 0.20, hours: 0, tracks: PANELS },
 }
 export const fieldRepairable = (damage, track) => damage.get(track) < REPAIR_CAP - 1e-9
 export const fieldRepairTo = (damage, id, track) => Math.min(REPAIR_CAP, damage.get(track) + FIELD_REPAIR[id].gain)
