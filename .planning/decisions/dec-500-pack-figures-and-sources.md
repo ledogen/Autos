@@ -1,6 +1,6 @@
 ---
 id: DEC-500
-status: standing
+status: superseded
 decided: 2026-11-24
 area: economy
 governs: FEAT-182, data/items.js, data/shop-stock.js, data/offers.js, daypack, duffel, rucksack, framePack, backpacks

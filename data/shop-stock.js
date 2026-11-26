@@ -65,7 +65,7 @@ export const ITEM_PRICE = { tirePlugKit: 5, compressor: 20, quickJack: 30, tireI
     // FEAT-121 camp gear on the general-store shelf [DEFAULT]: the reward worths (data/offers.js REWARD_VALUE) as the
     // price, the owner sets the numbers; the Rucksack is "mid-priced" (items.md), $20 (owner, DEC-487)
     blanket: 4, airMattress: 5, sleepingPad: 8, sleepingBag: 10, deluxeSleepingPad: 15, rucksack: 20,
-    daypack: 15, duffel: 20,   // FEAT-182 (owner, DEC-500); the Frame pack is sold nowhere
+    daypack: 15, duffel: 20, framePack: 35,   // FEAT-182 (owner, DEC-503): all four packs are on the general store's shelf
     jerryCan: 30 }              // owner, 2026-10-22: "sold at the gas station, rarely, $30" — sold full
 
 /**
@@ -85,10 +85,10 @@ export const STOREFRONT = {
     // FEAT-260 (owner, 2026-11-17: "This store needs to carry more than just groceries"): the salad, the deli sandwich,
     // the cookies and the bread.
     generalStore: { always: ['coffee', 'energyDrink', 'zipTies', 'ductTape', 'potato', 'cannedBeans', 'groceries', 'apple', 'beefJerky', 'salad', 'deliSandwich', 'cookies', 'bread', 'blanket', 'airMattress', 'sleepingPad', 'sleepingBag',
-                             'ice', 'cooler'],
-                    weights: { deluxeSleepingPad: 0.25, rucksack: 1, iceKing: 0.25,
-                               // FEAT-182 (DEC-500): Rare = Rarely (1), Epic = Hardly ever (0.25); the Legendary Frame pack is not sold
-                               daypack: 1, duffel: 0.25 } },
+                             'ice', 'cooler', 'rucksack'],   // DEC-503: the Rucksack is always on the shelf
+                    weights: { deluxeSleepingPad: 0.25, iceKing: 0.25,
+                               // FEAT-182 (owner, DEC-503): the Daypack, the Duffel and the Frame pack are rare rolls (Rarely = 1)
+                               daypack: 1, duffel: 1, framePack: 1 } },
     farm:         { always: ['groceries', 'apple'] },   // FEAT-230 slice 3: a farm sells for the first time (items.md, Groceries)
     gasStation:   { always: ['coffee', 'energyDrink', 'stopLeak', 'emergencyGas', 'bagOfPeanuts', 'gummyWorms', 'spicyChips', 'candyBar', 'beefJerky', 'breakfastBurrito', 'ice'], weights: { jerryCan: 1 } },   // Rarely; peanuts: items.md §1d, sold at the gas station
     foodVendor:   { always: ['coffee', 'chiliDog', 'burger', 'dinnerMeal', 'friedChicken'] },

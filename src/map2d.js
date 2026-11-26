@@ -76,7 +76,7 @@ const MAP_RADIUS_MAX = 2000
 // intent were "the region exactly, no margin" the factor is 1.0, not 0.96.
 //
 // Still read from REGION_RADIUS_M rather than written out, so moving the region moves this with it.
-const MIN_VIEW_SPAN_M  = 2 * REGION_RADIUS_M          // 5000 m — the widest view the map will give (FEAT-329, owner 2026-11-24: was x 0.96 = 4800 m)
+const MIN_VIEW_SPAN_M  = 2.4 * REGION_RADIUS_M        // 6000 m — the widest view the map will give (FEAT-329, owner 2026-11-25: "Zoom out further, to about 6000 m"; was 5000, before that 4800)
 // BUG-68: how far past a story region's wall the map builds. The COVERAGE requirement is the
 // region radius itself; these are cosmetic fringe, so the drawn boundary ring sits on drawn road
 // instead of on the ragged edge of the built network.
