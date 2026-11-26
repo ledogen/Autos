@@ -482,9 +482,9 @@ const ofType = (t) => POIS.filter(q => q.type === t).map(q => q.id)
     const lsd = { early: 0, late: 0 }   // helical-LSD bonuses on offers born before / from day 3
     const catOf = Object.fromEntries(REWARD_LIST.map(w => [w.id, w.cat]))
     const home = { bonus: 0, garage: 0 }, lunch = { school: 0, elsewhere: 0 }   // FEAT-168 off-list pulls
-    for (let seed = 1; seed <= 200; seed++) {
+    for (let seed = 1; seed <= 800; seed++) {   // 800: an LSD offer is a few per hundred worlds now that the packs and power mods share its pools
         const b = make(seed)
-        for (let t = T0; t < T0 + 24 * 4; t += 2) for (const q of POIS) {
+        for (let t = T0; t < T0 + 24 * 6; t += 2) for (const q of POIS) {   // 6 days: with the packs and power mods in the pools, 4 days sampled no LSD at all
             for (const o of b.offers(q.id, t)) {
                 const bonus = b.spec(o).bonus
                 if (bonus?.rewardId === 'diffLSD') lsd[o.bornH < 72 ? 'early' : 'late']++
