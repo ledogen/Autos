@@ -1,7 +1,7 @@
 ---
 id: BUG-266
 type: bug
-status: open
+status: cancelled
 severity: minor
 opened: 2026-11-25
 source: orchestrator, 2026-11-25, from the BUG-258 (B) measurement (lane s, branch proto/bug-258-jagged-edges @ 83d1108a)
@@ -44,3 +44,4 @@ BUG-258 · card `bug258-ridges-b-pick`
 
 ## Log
 - 2026-11-25: minted from the BUG-258 (B) agent's report.
+- 2026-11-25: declined by the owner (DEC-502): "real mountains have grain too. i like that artifact of our generation. B does what i need". The measurement and the off-by-default knob stay on proto/bug-258-jagged-edges.

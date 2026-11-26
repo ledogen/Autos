@@ -1,7 +1,7 @@
 ---
 id: BUG-241
 type: bug
-status: open
+status: done
 severity: major
 opened: 2026-11-19
 source: owner, 2026-11-19 (inbox) — "After paying for gas, I opened the map and checked out a mission and realized theclock was still running."
@@ -55,3 +55,4 @@ DEC-024 (superseded), DEC-289.
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
 - 2026-11-24: lane reproduced it headlessly (table in Description). No src touched; owner card drafted at wip/bug-241/card.json.
 - 2026-11-24: built (DEC-497): `clockHeld` takes `mapAtRest` (map open and opened under PARK_SPEED = 1.389 m/s = 5 km/h, the same flag `_parkLocked` uses), main.js passes it and the job's parked-time spend follows it (DEC-289). Gate park-brake.mjs extended. Owner's drive open.
+- 2026-11-25: closed on the owner's "Good" (card bug241-map-clock-drive).

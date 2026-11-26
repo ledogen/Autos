@@ -1,7 +1,7 @@
 ---
 id: BUG-264
 type: bug
-status: open
+status: done
 severity: minor
 opened: 2026-11-24
 source: owner, 2026-11-24 (inbox) — "the campfire point light is above the cooking kit pot so it illuminates the pot from above which looks weird. either move pot higher or move light lower"
@@ -39,3 +39,4 @@ the camp fire light in `src/` (camp gear / fire code) · `data/prop-models.js` c
 ## Log
 - 2026-11-24: minted by the orchestrator from the owner's inbox.
 - 2026-11-25: built (lane c, land/ui-small-1125). Light was 0.685 m above the ground (anchor 0.085 + lightHeight 0.6), inside the pot (kit pot spans 0.59-0.99 m). `CAMPFIRE_PARAMS.lightHeight` 0.6 -> 0.4 (0.485 m, 0.1 m under the pot base); intensity/reach unchanged, ground pool visibly the same. Sheet: `wip/bug-264/sheet.jpg` (top before/after near, bottom far). Plain fire shares the height; flames top out at 0.5 m so the light stays in them.
+- 2026-11-25: closed on the owner's look (card landed-1125b-look, no change asked).

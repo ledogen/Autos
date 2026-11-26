@@ -1,7 +1,7 @@
 ---
 id: FEAT-328
 type: feature
-status: open
+status: done
 severity: minor
 opened: 2026-11-24
 source: owner, 2026-11-24 (inbox) — "we should display the poi name on its map card at the top."
@@ -39,3 +39,4 @@ FEAT-327, DEC-492
 ## Log
 - 2026-11-24: minted by the orchestrator from the owner's inbox.
 - 2026-11-25: built (lane c, land/ui-small-1125). Name = board.name(poiId) (the Missions list's source) as the card's first line: uppercase bold story blue (DEED_INK), ellipsis when long; offer, multi-offer, no-work and shop shelf cards checked at Small and Big. Sheet wip/feat-328/sheet.jpg.
+- 2026-11-25: closed on the owner's look (card landed-1125b-look, no change asked).

@@ -1,7 +1,7 @@
 ---
 id: BUG-262
 type: bug
-status: open
+status: done
 severity: major
 opened: 2026-11-24
 source: owner, 2026-11-24 (chat) — "match above ground behavior - merge into one road" · "10m"
@@ -59,3 +59,4 @@ BUG-259 (slice 2 and its card `bug259-slice2-weld-pick`) · BUG-234 · DEC-068 �
   4 of 24 seeds change, ug junctions < 10 m from a portal 2 → 0, hull pads 5 → 3. Gate tunnel-x-junction (4 seeds) red on
   BUG-259 (5 fails) → green. fingerprint-world vs e345fd63 identical. The join's Ts still ship ranked residuals
   ("a T always beats no T"): deck gaps 0.5-1.3 m vs the X's 0.2-4.2 m; one shows as a seam at 3780529195. Sheet wip/bug-262/sheet.jpg.
+- 2026-11-25: closed: "Land it with BUG-259 slice 3"; on main 3c9d463f.

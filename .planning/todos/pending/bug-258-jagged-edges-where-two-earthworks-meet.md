@@ -131,3 +131,4 @@ summary: `node test/bug258-crease-census.mjs census|site|summary`.
 - 2026-11-24: (A) built (lane p, `land/bug-258-bank-cliff`): `toeExt` capped at `_resolveFootHW()`, no param. Gate
   `junction-bank-cliff` (3 story regions, every junction leg): main 45 / 61 / 46 cliffs, worst 6.41 / 5.67 / 6.35 m
   (3.20 m at (−557, 163)) → 0; deck 0.000 m. Affected gates + fingerprint held at the orchestrator's word (owner playing).
+- 2026-11-25: fix (A) looked at, "All good". (B) picked at 4 m (DEC-502): landing branch next.

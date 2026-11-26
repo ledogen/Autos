@@ -1,7 +1,7 @@
 ---
 id: FEAT-182
 type: feature
-status: open
+status: done
 severity: minor
 opened: 2026-11-07
 source: FEAT-66's "Still owed" (closed 2026-11-07 in Lane A's sweep): "The starter Pack has one free slot, so today a player can bring the tent OR a shade OR the kit. The bigger packs (items.md §2c) are unbuilt."
@@ -100,3 +100,4 @@ Changed against the built placeholders: Duffel reach 15 → 30 m, Rucksack reach
 
 ## Log
 - 2026-11-25 Lane c (`land/feat-182-packs`): DEC-500 live. Reach 30/80 m; Daypack $15 + Duffel $20 rolled at the general store (weights 1 / 0.25), Rucksack stays a rolled slot (1) at the general store only; Frame pack not sold; per-pack reward categories (`packDaypack` etc.) on the owner's givers and ranks; gates in test/inventory.mjs. Roadside find not built: no source exists.
+- 2026-11-25: owner's look: Rucksack always on the shelf, Duffel and Frame pack rare rolls, roadside finds post alpha (DEC-503, 78819fbe). Closed.
