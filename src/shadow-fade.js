@@ -30,6 +30,7 @@
  *   the ±40 m near frustum, gone by 40 m.
  */
 import * as THREE from 'three'
+import { BORE_SHADE_DEEP } from './road.js'
 
 export function installShadowEdgeFade(opts = {}) {
     const fadeStart = opts.fadeStart ?? 0.72
@@ -118,4 +119,23 @@ export function installNearShadowCoupling() {
             '\t\tdirectLight.color *= rsFarShadow * rsNearShadow;\n' +
             '\t\t#else\n\t\t' + apply + '\n' +
             '\t\t#endif')
+}
+
+/**
+ * BUG-259 slice 3: no sun inside a bore. Deep in the hill the far map shades everything (s_f = 0), so by the coupling
+ * above the near light still lights it at n = 1 − SHADOW_FAR_SPLIT of the key, whatever the near map says: 40 % of the
+ * sun on the lining, the floor and the deck, by N·L. That was the lit wall facing the sun inside seed 2280440363's chamber
+ * (19, −42) and the seam where two tubes' facets meet at a miter (1960791808): in the open that floor is the look
+ * (BUG-217), in a tube nothing reaches. A bore material hands over the GLSL of its bore shade (RoadSystem.boreShade: 1 at
+ * a portal, BORE_SHADE_DEEP deep in), and both directional lights scale by (shade − deep) / (1 − deep), the same ramp, so
+ * the sun fades out as the tube darkens. The headlights are spots, untouched. `gate` (GLSL, default 1) lets a material
+ * that shares one program with ground outside the bores switch it off (terrain.js's bore floor).
+ * @param {string} fs        fragment shader text at onBeforeCompile (the chunk inlined already, or its #include)
+ * @param {string} shadeExpr GLSL float: the fragment's bore shade
+ */
+export function gateSunInBore(fs, shadeExpr, gate = '1.0') {
+    const hook = 'getDirectionalLightInfo( directionalLight, directLight );'
+    if (!fs.includes(hook)) fs = fs.replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin)
+    if (!fs.includes(hook)) { console.warn('[shadow-fade] lights_fragment_begin shape changed — bore sun gate not installed'); return fs }
+    return fs.replace(hook, hook + `\n\t\tdirectLight.color *= mix( 1.0, clamp( ( ${shadeExpr} - ${BORE_SHADE_DEEP.toFixed(3)} ) / ${(1 - BORE_SHADE_DEEP).toFixed(3)}, 0.0, 1.0 ), ${gate} );`)
 }

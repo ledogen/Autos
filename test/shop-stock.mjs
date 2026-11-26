@@ -171,7 +171,7 @@ check('buying from a store leaves the line', shelf('foodVendor:a', 50, 'foodVend
 const gsw = STOREFRONT.generalStore
 check('the general store always has the blanket, air mattress, sleeping pad and sleeping bag',
   ['blanket', 'airMattress', 'sleepingPad', 'sleepingBag'].every(id => gsw.always.includes(id)))
-check('arc trial: the general store rolls only the deluxe pad and the Ice King; the Rucksack is an always row', Object.keys(gsw.weights).join() === 'deluxeSleepingPad,iceKing' && gsw.always.includes('rucksack'))
+check('the general store rolls only the deluxe pad, the Ice King, the Daypack, the Duffel and the Frame pack (DEC-503)', Object.keys(gsw.weights).join() === 'deluxeSleepingPad,iceKing,daypack,duffel,framePack')
 let gen = true, seen = new Set()
 for (const seed of [1, 2, 3]) {
   startShelves(seed)
@@ -181,7 +181,7 @@ for (const seed of [1, 2, 3]) {
     if (s.length !== SHELF_SLOTS + gsw.always.length || s.slice(SHELF_SLOTS).some((e, k) => e.id !== gsw.always[k] || e.cond !== null)) gen = false
   }
 }
-check('a general store lists its slots (only its rolled lines) then its always rows; the pad turns up in 12 days × 3 seeds', gen && seen.has('deluxeSleepingPad'), [...seen].join())
+check('a general store lists its slots (only its rolled lines) then its always rows; the pad, the Daypack, the Duffel and the Frame pack turn up in 12 days × 3 seeds', gen && seen.has('deluxeSleepingPad') && seen.has('daypack') && seen.has('duffel') && seen.has('framePack'), [...seen].join())
 startShelves(12345)
 let gsRolls = 0, cans = 0, other = 0
 for (let shop = 0; shop < 40; shop++) for (let h = 0; h < 20000; h++) {

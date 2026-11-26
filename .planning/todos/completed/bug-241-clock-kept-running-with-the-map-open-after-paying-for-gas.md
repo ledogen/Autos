@@ -1,7 +1,7 @@
 ---
 id: BUG-241
 type: bug
-status: open
+status: done
 severity: major
 opened: 2026-11-19
 source: owner, 2026-11-19 (inbox) — "After paying for gas, I opened the map and checked out a mission and realized theclock was still running."
@@ -35,10 +35,10 @@ Inputs of `clockHeld(camp, service, tutorial, parked)` in (b)/(c): all four fals
 Verdict: code matches DEC-024/DEC-289 (the clock holds only under the latched brake). Not a bug against a standing record; a rule question. Mismatch worth the owner's eye: the lamp is on (handbrake held) while time passes. Card: wip/bug-241/card.json.
 
 ## Tracker
-- [ ] Reproduced: pump, release, map, clock
-- [ ] Decide the rule (Open questions) and record it in a DEC
-- [ ] The clock holds (or the owner confirms it should not) while the map is open
-- [ ] A check in `test/` for `clockHeld` with the chosen input
+- [x] Reproduced: pump, release, map, clock
+- [x] Decide the rule (Open questions) and record it in a DEC (DEC-497)
+- [x] The clock holds while the map is open at rest (under 5 km/h); rolling it runs
+- [x] A check in `test/` for `clockHeld` with the chosen input (park-brake.mjs section 6)
 - [ ] Owner has looked
 
 ## Open questions
@@ -54,3 +54,5 @@ DEC-024 (superseded), DEC-289.
 ## Log
 - 2026-11-19: minted by the intake scribe from the owner's inbox note. No code touched.
 - 2026-11-24: lane reproduced it headlessly (table in Description). No src touched; owner card drafted at wip/bug-241/card.json.
+- 2026-11-24: built (DEC-497): `clockHeld` takes `mapAtRest` (map open and opened under PARK_SPEED = 1.389 m/s = 5 km/h, the same flag `_parkLocked` uses), main.js passes it and the job's parked-time spend follows it (DEC-289). Gate park-brake.mjs extended. Owner's drive open.
+- 2026-11-25: closed on the owner's "Good" (card bug241-map-clock-drive).

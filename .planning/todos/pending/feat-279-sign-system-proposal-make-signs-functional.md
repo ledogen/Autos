@@ -44,3 +44,4 @@ FEAT-72 (road-furniture placement) · assets/models/sign-*.glb
 ## Log
 - 2026-11-17 minted by the scribe from the owner's inbox (20261118013441-v9hd).
 - 2026-11-18 lane u: proposal written as a deep dive (14 questions). Census of 12 random seeds' story regions (552 km): the world places 0 signs; the demolition old sign line is ~1 in 8 true; per km per direction 1.48 bends need ≥ 15 km/h of slowing (0.85 at ≥ 30), 0.23 hairpins/km, ≥ 15 % grade for ≥ 150 m 0.36/km, 51 % of junction approaches hidden at stopping distance. Script `wip/feat-279/sign-census.mjs` + `sum.mjs` in CarGame-spare-base (git-invisible). Unverified: T-sign truth counts every 3-way approach (stem vs through not split); sag counts on runs only (pads not seen).
+- 2026-11-25 orchestrator: the dive was SUBMITTED on 11-20 and sat unseen for five days (no .taken). Picks recorded as DEC-501. Next: FEAT-72's build brief from DEC-501 (Tier 1 first), queued behind the road.js jobs.

@@ -285,3 +285,4 @@ make it 7: an InstancedMesh draws many copies of one mesh in a single call.
 GPU time and draw-call cost; browser timing (node only; the truck's browser cost comes from PERF-40); the two JavaScript fixes
 (grid walk, move-event sync), which are not built; `b3World_Explode`; a truck stopped by an intact blocking heap; contact
 manifold points; seven-size piles over ~800 rocks (they ran off the harness's collider).
+- 2026-11-25: owner on slice 2: "Blocks now, feels right". Next slice: the route pick (a slide needs a hillside or a drop beside the road).

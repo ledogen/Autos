@@ -13,9 +13,32 @@
 //      climbed out of the node itself, 61-162 m of cut);
 //   4. every leg's steepest 5 m within 60 m of the node is under the 38 % ceiling: the deck hold's recovery was pinned to
 //      the bore floor and shipped by the ceiling pass at 48 % on a leg solved at 20 % (DEC-409's design maximum now);
-//   5. the bore shade at the node is a tunnel's (< 0.5), not a portal's daylight (main 1.0);
+//   5. the bore shade at the node is a tunnel's (< 0.5, or the ramp's value at its portal distance under 13 m), not a
+//      portal's daylight (main 1.0);
 //   6. MESH == PHYSICS on the pad: a probe in the chamber still rides the pad (analyticHeight with the probe's Y equals
 //      sampleRoadTopY within 1 cm), and a probe above the apex reads the skin.
+// Slice 2 (the owner: "the junction pads do bleed outside of the tunnels sometimes which Looks weird because the gravel
+// texture on the shoulder disappears"):
+//   7. the pad is the legs' own pavement: no point of its ring stands more than 0.1 m outside every leg's lane
+//      (halfWidth from the centreline, the leg run on straight R past the node as its tube is), so the bore floor's
+//      gravel shoulder (R − halfWidth = 3 m) runs on round the chamber. Main: fillets 1.5 m into the shoulder at
+//      1960791808, the convex-hull pad 4.3 m past the WALL at 2280440363 (two roads crossing at 3°);
+//   8. MESH == PHYSICS over the whole pad: on a 1 m grid inside the ring the collider (analyticHeight in the chamber) and
+//      the drawn pad (_nodeSurfaceTop, what its vertices ride) agree within 1 cm.
+// And ("the roof sections also dont miter perfectly"):
+//   9. the linings meet on the miter: a leg with a partner (the leg leaving most nearly opposite, over 135°, computed
+//      here) meets it on the plane bisecting the two, so from inside the chamber no ray's first lining belongs to a leg
+//      whose plane it is past (by more than the 4 cm the miter overlaps). Main: every tube ran on R past the node, and
+//      where that run-on crossed another tube's wall a strip of it stood proud, a thin line over the chamber (1960791808:
+//      the lines of the owner's report). Rays: 400 over the upper hemisphere from 1.5 m over the node and 6 m out each leg.
+// BUG-262 (DEC-495, the owner: a shallow crossing underground must "match above ground behavior - merge into one road";
+// an underground junction is at least "10m" from a portal). Seed 2280440363's pair is two legs of node 0,-1,1 crossing
+// twice at 3-9° in a bore, 55 m apart in height: main and BUG-259 shipped both crossings as X junctions; the overlap
+// join now merges them into one road (the longer road rides the shorter's deck between two Ts). Every underground
+// junction on the gate's seeds:
+//  10. no two legs leave it under roadCrossAngleMin (12°), judged on the legs 6 m out (BUG-259: 7.1° and 10.4°);
+//  11. its nearest portal is at least 10 m out along a leg (2143977503 at (2994, 508): 8.3 m; 94567479: 9.9 m);
+//  12. its pad is the exact weld, never the convex-hull fallback (DEC-068).
 import * as THREE from 'three'
 import { RoadSystem } from '../src/road.js'
 import { RANGER_PARAMS as P } from '../data/ranger.js'
@@ -24,19 +47,23 @@ import { REGION_WARM_RADIUS_M } from '../src/story.js'
 import { spawnDecision } from './lib/spawn-decision.mjs'
 import { wirePondNoGo } from './lib/pond-no-go.mjs'
 import { makeTerrainHeadless } from './lib/terrain-headless.mjs'
+import { RoadMeshSystem } from '../src/road-mesh.js'
 
-// seed, underground X junctions it must have; SEEDS=a,b,… runs the same checks on other seeds (a census, nothing required)
-const SEEDS = process.env.SEEDS ? process.env.SEEDS.split(',').map((s) => [s, 0]) : [['1960791808', 1], ['2280440363', 2]]
+// seed, underground junctions it must have, of them X junctions; SEEDS=a,b,… runs the same checks on other seeds (a census)
+const SEEDS = process.env.SEEDS ? process.env.SEEDS.split(',').map((s) => [s, 0, 0])
+    : [['1960791808', 1, 1], ['2280440363', 2, 0], ['2143977503', 1, 0], ['94567479', 1, 0]]
+const ANG_MIN = P.roadCrossAngleMin ?? 12, PORTAL_M = 10
 const R = P.tunnelBoreRadius ?? 8, FUNNEL = 1.2, CEIL = 0.38
 let fail = 0
 const ok = (c, msg) => { console.log(`[${c ? 'PASS' : 'FAIL'}] ${c ? '✓' : '✗'} ${msg}`); if (!c) fail++ }
-for (const [s, wantX] of SEEDS) {
+for (const [s, wantUg, wantX] of SEEDS) {
     const seed = parseWorldSeed(s), road = new RoadSystem(seed, P), C = spawnDecision(seed, P)
     wirePondNoGo(road, seed, P); road.setRadius(REGION_WARM_RADIUS_M); road.update(new THREE.Vector3(C.x, 0, C.z))
     const T = makeTerrainHeadless(seed, P, road)
     road._undergroundNodes()
     const nodes = [...road._detectNodeJunctions().values()].filter((n) => n.underground)
-    ok(nodes.filter((n) => n.legs.length === 4).length >= wantX, `seed ${s}: ${nodes.length} underground junctions (${nodes.filter((n) => n.legs.length === 4).length} X, want ≥ ${wantX})`)
+    const nX = nodes.filter((n) => n.legs.length === 4).length
+    ok(nodes.length >= wantUg && nX >= wantX, `seed ${s}: ${nodes.length} underground junctions (want ≥ ${wantUg}), ${nX} X (want ≥ ${wantX})`)
     for (const node of nodes) {
         const { x, z, y } = node.pos, tag = `seed ${s} (${x.toFixed(0)}, ${z.toFixed(0)}) deg ${node.legs.length}`
         const legs = node.legs.map((l) => {
@@ -46,6 +73,15 @@ for (const [s, wantX] of SEEDS) {
             return { k: l.runKey, L, atA, bore: atA ? sp.s1 : L - sp.s0, mouth }
         })
         const dMouth = Math.min(...legs.filter((l) => l.mouth).map((l) => l.bore))
+        // 10-12: BUG-262
+        const u6 = legs.map((l) => { const f = road.runFrameAt(l.atA ? Math.min(6, l.L) : Math.max(0, l.L - 6), l.k), sg = l.atA ? 1 : -1, n = Math.hypot(f.tx, f.tz) || 1; return [f.tx * sg / n, f.tz * sg / n] })
+        let ang = 180
+        for (let i = 0; i < u6.length; i++) for (let j = i + 1; j < u6.length; j++) ang = Math.min(ang, Math.acos(Math.max(-1, Math.min(1, u6[i][0] * u6[j][0] + u6[i][1] * u6[j][1]))) * 180 / Math.PI)
+        ok(ang >= ANG_MIN, `${tag}: smallest angle between two legs ${ang.toFixed(1)}° (a crossing under ${ANG_MIN}° merges into one road)`)
+        ok(dMouth >= PORTAL_M, `${tag}: nearest portal ${dMouth.toFixed(1)} m out along a leg (≥ ${PORTAL_M} m)`)
+        let weld = road._junctionRingWeld(node)
+        if (weld && road._ringSelfIntersects(weld)) weld = null
+        ok(weld && weld.length >= 3, `${tag}: pad on the exact weld (${weld ? 'weld' : 'convex-hull fallback'})`)
         let lo = Infinity, under = 0, worst = -Infinity
         const rCh = Math.max(0, Math.min(20, dMouth - 10))
         for (let dx = -20; dx <= 20; dx++) for (let dz = -20; dz <= 20; dz++) {
@@ -65,10 +101,95 @@ for (const [s, wantX] of SEEDS) {
         }
         ok(steep < CEIL, `${tag}: steepest 5 m within 60 m ${(100 * steep).toFixed(1)} % (${at}; ceiling ${100 * CEIL} %)`)
         const sh = road.boreShadeAt(x, y + 1, z)
-        ok(sh < 0.5, `${tag}: bore shade at the node ${sh.toFixed(2)} (a tunnel's, < 0.5)`)
+        // a tunnel's: no brighter than the bore dMouth inside its portal (BUG-112's ramp, 0.25 deep over 25 m; < 0.5 past
+        // 13 m). BUG-262 lets a junction sit 10 m in, where the ramp reads 0.74.
+        const tq = Math.min(1, dMouth / 25), shMax = Math.max(0.5, 1 - 0.75 * tq * tq * (3 - 2 * tq) + 0.02)
+        ok(sh < shMax, `${tag}: bore shade at the node ${sh.toFixed(2)} (a tunnel's ${dMouth.toFixed(0)} m from its portal, < ${shMax.toFixed(2)})`)
         const top = road.sampleRoadTopY(x + 2, z + 1), inBore = T.analyticHeight(x + 2, z + 1, undefined, y + 1)
         const sky = T.analyticHeight(x + 2, z + 1, undefined, y + R + 2)
         ok(Math.abs(inBore - top) < 0.01 && sky > y + R, `${tag}: pad probe rides the pad (${inBore.toFixed(3)} vs drawn ${top.toFixed(3)}), above the apex reads the skin (${(sky - y).toFixed(1)} m over the deck)`)
+        // 7: ring vs the legs' lanes
+        const HW = P.roadHalfWidth ?? 5, segD = (px, pz, a, b) => {
+            const dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz, t = L2 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (pz - a.z) * dz) / L2)) : 0
+            return Math.hypot(px - a.x - dx * t, pz - a.z - dz * t)
+        }
+        const lanes = legs.map((l) => {
+            const pts = []
+            for (let d = 0; d <= 45; d += 1) pts.push(road.runPointAt(l.k, l.atA ? d : l.L - d))
+            const ux = pts[0].x - pts[1].x, uz = pts[0].z - pts[1].z, ul = Math.hypot(ux, uz)
+            pts.unshift({ x: pts[0].x + ux / ul * R, z: pts[0].z + uz / ul * R })
+            return pts
+        })
+        let past = -Infinity
+        const ring = node.ring ?? []
+        for (let i = 0; i < ring.length; i++) {
+            const a = ring[i], b = ring[(i + 1) % ring.length], n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.25)
+            for (let k = 0; k < n; k++) {
+                const qx = a.x + (b.x - a.x) * k / n, qz = a.z + (b.z - a.z) * k / n
+                let d = Infinity
+                for (const pts of lanes) for (let j = 0; j < pts.length - 1; j++) d = Math.min(d, segD(qx, qz, pts[j], pts[j + 1]))
+                past = Math.max(past, d - HW)
+            }
+        }
+        ok(ring.length >= 3 && past <= 0.1, `${tag}: pad on the legs' pavement, worst ${past.toFixed(2)} m past a lane edge (${(past - R + HW).toFixed(2)} m past the wall; gravel shoulder ${(R - HW).toFixed(0)} m)`)
+        // 8: collider vs drawn pad over the ring
+        let pd = 0, pn = 0
+        const r = node.ringMaxR ?? 0
+        for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+            const qx = x + dx, qz = z + dz
+            if (!(road._signedRingDist(ring, qx, qz) < -0.3)) continue
+            const drawn = road._nodeSurfaceTop(node, qx, qz)
+            if (drawn == null) continue
+            pd = Math.max(pd, Math.abs(T.analyticHeight(qx, qz, undefined, drawn + 1) - drawn)); pn++
+        }
+        ok(pn > 50 && pd < 0.01, `${tag}: collider vs drawn pad over ${pn} points inside the ring, worst ${(100 * pd).toFixed(2)} cm`)
+        // 9: the miter, seen from inside
+        const rm = new RoadMeshSystem({ add() {}, remove() {} }, road, null, P, s), tris = []
+        const u = legs.map((l) => { const f = road.runFrameAt(l.atA ? 0 : l.L, l.k), sg = l.atA ? 1 : -1, n = Math.hypot(f.tx, f.tz); return { x: f.tx * sg / n, z: f.tz * sg / n } })
+        const opp = (i) => u.reduce((b, c, j) => (j !== i && (b < 0 || u[i].x * c.x + u[i].z * c.z < u[i].x * u[b].x + u[i].z * u[b].z) ? j : b), -1)
+        const plane = u.map((a, i) => { const j = opp(i); if (j < 0 || opp(j) !== i || a.x * u[j].x + a.z * u[j].z > -Math.SQRT1_2) return null
+            const nx = a.x - u[j].x, nz = a.z - u[j].z, n = Math.hypot(nx, nz); return { nx: nx / n, nz: nz / n } })
+        legs.forEach((l, li) => {
+            const e = road._network.get(l.k), sp0 = e.tunnelSpans.find((q) => l.atA ? q.s0 <= 1 : q.s1 >= l.L - 1)
+            const sp = { ...sp0, s0: Math.max(0, sp0.s0), s1: Math.min(l.L, sp0.s1) }
+            const t = rm.buildTunnelTube(l.k, l.atA ? sp.s0 : Math.max(sp.s0, sp.s1 - 30), l.atA ? Math.min(sp.s1, sp.s0 + 30) : sp.s1, sp, P)
+            for (const [g, lining] of [[t?.tube, true], [t?.floor, false]]) {
+                if (!g) continue
+                const p = g.getAttribute('position').array, ix = g.index.array
+                for (let i = 0; i < ix.length; i += 3) {
+                    const v = [ix[i], ix[i + 1], ix[i + 2]].map((j) => [p[3 * j], p[3 * j + 1], p[3 * j + 2]])
+                    if (v.every((q) => Math.hypot(q[0] - x, q[2] - z) > 18)) continue
+                    tris.push({ li, lining, v })
+                }
+            }
+        })
+        const first = (o, d) => {
+            let tb = Infinity, tr = null
+            for (const T of tris) {
+                const [a, b, c] = T.v, e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]]
+                const pv = [d[1] * e2[2] - d[2] * e2[1], d[2] * e2[0] - d[0] * e2[2], d[0] * e2[1] - d[1] * e2[0]], det = e1[0] * pv[0] + e1[1] * pv[1] + e1[2] * pv[2]
+                if (Math.abs(det) < 1e-12) continue
+                const tv = [o[0] - a[0], o[1] - a[1], o[2] - a[2]], uu = (tv[0] * pv[0] + tv[1] * pv[1] + tv[2] * pv[2]) / det
+                if (uu < 0 || uu > 1) continue
+                const qv = [tv[1] * e1[2] - tv[2] * e1[1], tv[2] * e1[0] - tv[0] * e1[2], tv[0] * e1[1] - tv[1] * e1[0]], vv = (d[0] * qv[0] + d[1] * qv[1] + d[2] * qv[2]) / det
+                if (vv < 0 || uu + vv > 1) continue
+                const tt = (e2[0] * qv[0] + e2[1] * qv[1] + e2[2] * qv[2]) / det
+                if (tt > 0.01 && tt < tb) { tb = tt; tr = T }
+            }
+            return tr && { T: tr, p: [o[0] + d[0] * tb, o[1] + d[1] * tb, o[2] + d[2] * tb] }
+        }
+        const eyes = [[x, y + 1.5, z], ...legs.map((l) => { const a = l.atA ? 6 : l.L - 6, q = road.runPointAt(l.k, a); return [q.x, road.runProfile(a, l.k).gradeY + 1.5, q.z] })]
+        let rays = 0, orphan = 0, worstPast = 0
+        const NR = 400, GA = Math.PI * (3 - Math.sqrt(5))
+        for (const o of eyes) for (let k = 0; k < NR; k++) {
+            const dy = 1 - (k + 0.5) / NR, rr = Math.sqrt(1 - dy * dy), h = first(o, [Math.cos(GA * k) * rr, dy, Math.sin(GA * k) * rr])
+            rays++
+            const pl = h?.T.lining && plane[h.T.li]
+            if (!pl) continue
+            const sd = (h.p[0] - x) * pl.nx + (h.p[2] - z) * pl.nz
+            if (sd < -0.05) { orphan++; worstPast = Math.max(worstPast, -sd) }
+        }
+        ok(orphan === 0, `${tag}: miter: ${orphan} of ${rays} rays from inside see a leg's lining past its miter plane (worst ${worstPast.toFixed(2)} m past; ${plane.filter(Boolean).length} legs paired)`)
     }
 }
 console.log(fail ? `FAIL: ${fail}` : 'PASS')

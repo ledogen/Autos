@@ -424,6 +424,11 @@ export const REWARDS = [
     // FEAT-230 (items.md §2): the cooler from the tackle shop (A–S); the Ice King from it and residences (S). Ice is never one.
     { id: 'cooler',      name: 'Cooler',       kind: 'tool', gates: ['A', 'S'], cat: 'cooler' },
     { id: 'iceKing',     name: 'Ice King',     kind: 'tool', gates: ['S'], cat: 'iceKing' },
+    // FEAT-182 (owner, item setup page 2026-11-24, DEC-500): one category per pack, so each is offered by exactly its givers.
+    { id: 'daypack',     name: 'Daypack',      kind: 'pack', gates: ['B', 'A'], cat: 'packDaypack' },
+    { id: 'duffel',      name: 'Duffel',       kind: 'pack', gates: ['A', 'S'], cat: 'packDuffel' },
+    { id: 'rucksack',    name: 'Rucksack',     kind: 'pack', gates: ['A', 'S'], cat: 'packRucksack' },
+    { id: 'framePack',   name: 'Frame pack',   kind: 'pack', gates: ['S'], cat: 'packFramePack' },
 ]
 
 /** FEAT-168: the reward category of a vehicle part with no REWARDS row, by its slot (data/parts.js). */
@@ -453,17 +458,17 @@ export const RARITY_GATES = { common: ['B', 'A'], uncommon: ['A', 'S'], rare: ['
  *          and the office's are [DEFAULT]; the school's is its lunch.
  * Larry's paper route rolls from every category (owner, 2026-10-31: "give him every item").
  */
-const ALL_CATS = ['tires', 'brakes', 'suspension', 'springs', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch', 'produce', 'groceries', 'snack', 'gasSnack', 'grill', 'homemade', 'cooler', 'iceKing']
+const ALL_CATS = ['tires', 'brakes', 'suspension', 'springs', 'engine', 'drivetrain', 'recovery', 'fuel', 'camp', 'food', 'drink', 'bed', 'lunch', 'produce', 'groceries', 'snack', 'gasSnack', 'grill', 'homemade', 'cooler', 'iceKing', 'packDaypack', 'packDuffel', 'packRucksack', 'packFramePack']
 export const REWARD_CATS = {
     autoShop:         { cats: ['tires', 'brakes', 'suspension', 'springs', 'engine', 'drivetrain', 'recovery'] },
     gasStation:       { cats: ['fuel', 'drink', 'food', 'engine', 'tires', 'snack', 'gasSnack', 'springs'] },   // springs: FEAT-321 (DEC-476)
-    strandedMotorist: { cats: ['tires', 'recovery', 'fuel', 'engine'] },
-    farm:             { cats: ['tires', 'suspension', 'springs', 'drivetrain', 'recovery', 'food', 'camp', 'produce', 'groceries', 'homemade'] },
-    workSite:         { cats: ['tires', 'suspension', 'springs', 'recovery', 'bed'] },
-    firewoodYard:     { cats: ['bed', 'recovery', 'camp'] },
-    residence:        { cats: ['food', 'homemade', 'camp', 'brakes', 'drivetrain', 'iceKing'], rare: ['tires', 'suspension', 'springs', 'engine'] },
+    strandedMotorist: { cats: ['tires', 'recovery', 'fuel', 'engine', 'packDaypack', 'packDuffel', 'packRucksack', 'packFramePack'] },
+    farm:             { cats: ['tires', 'suspension', 'springs', 'drivetrain', 'recovery', 'food', 'camp', 'produce', 'groceries', 'homemade', 'packDaypack', 'packDuffel', 'packRucksack', 'packFramePack'] },
+    workSite:         { cats: ['tires', 'suspension', 'springs', 'recovery', 'bed', 'packDuffel', 'packRucksack'] },
+    firewoodYard:     { cats: ['bed', 'recovery', 'camp', 'packDuffel'] },
+    residence:        { cats: ['food', 'homemade', 'camp', 'brakes', 'drivetrain', 'iceKing', 'packDaypack', 'packDuffel', 'packRucksack', 'packFramePack'], rare: ['tires', 'suspension', 'springs', 'engine'] },
     foodVendor:       { cats: ['food', 'drink', 'grill', 'homemade'] },
-    generalStore:     { cats: ['food', 'drink', 'snack', 'groceries', 'camp', 'recovery', 'fuel'] },
+    generalStore:     { cats: ['food', 'drink', 'snack', 'groceries', 'camp', 'recovery', 'fuel', 'packDaypack', 'packDuffel', 'packRucksack', 'packFramePack'] },
     doctor:           { cats: ['drink', 'food'] },
     tackleShop:       { cats: ['camp', 'food', 'cooler', 'iceKing'], rare: ['recovery', 'fuel'] },
     office:           { cats: ['drink', 'food', 'engine'], rare: ['camp'] },
@@ -766,6 +771,7 @@ export const REWARD_VALUE = {
     zipTies: 8, stopLeak: 8,
     // FEAT-168 [DEFAULT]: the school lunch and the camp gear the shelf doesn't price
     schoolLunch: 2.8, blanket: 4, airMattress: 5, sleepingPad: 8, quilt: 8, sleepingBag: 10, deluxeSleepingPad: 15,
+    framePack: 35,   // FEAT-182 (owner, DEC-500): its price on the setup page; sold nowhere, so no shelf price
 }
 
 /**

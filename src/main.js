@@ -10916,9 +10916,9 @@ document.addEventListener('keydown', e => {
   // it, so the brake release is the obvious way out — and vehicle.js drops the park latch on that
   // same tap, which leaves the truck ready to roll AND re-arms the trigger, so another pull re-offers.
   // preventDefault so the tap can't ALSO activate whichever panel button last took focus.
-  // The dinner invitation's DECLINE is the same tap (owner, 2026-10-23).
-  if (e.key === ' ' && (missionSystem?.state === 'offer'
-      || (missionSystem?.state === 'done' && missionSystem.result?.award?.stowed === 'dinner'))) { e.preventDefault(); missionSystem.exit() }
+  // BUG-265 (owner, 2026-11-24): NOT the result card — the dinner invitation's decline used to be this tap too, so RB
+  // (park) on it closed the card and took the cash before the owner could weigh it. A result card closes only on its own button.
+  if (e.key === ' ' && missionSystem?.state === 'offer') { e.preventDefault(); missionSystem.exit() }
   // BUG-95 (owner, 2026-10-26): the same tap on a camp card is its BACK — Esc / pad B's button: no
   // thanks, release the brake, drive off. A MADE camp has no back: leaving it is "break camp", which
   // the player picks, never a stray tap (_cardBackButton). Not mid-fade — the night is under way —
@@ -11254,14 +11254,16 @@ function loop (t) {
     // FEAT-194 part 3: the parking brake's latch holds it too (no time passes while parked). One rule: day.js clockHeld.
     // DEC-289 (owner, 2026-11-15): the latch holds the WORLD clock, not the job in hand — a parked step spends the job's
     // time at the driving rate (its elapsed, rank and deadline), whichever hold also applies (a parked menu included).
-    if (!clockHeld(!!_campUi && _campUi.mode !== 'confirm', serviceScreen.isOpen, _tutDrive(), vehicleState.parked)) daySystem.update(PHYSICS_DT)
+    // BUG-241 (DEC-497): the map opened at rest holds the world clock, exactly when it holds the handbrake (_parkLocked); the job's own time runs on as under the latch.
+    const _mapHold = map2d.isOpen() && _mapAtRest
+    if (!clockHeld(!!_campUi && _campUi.mode !== 'confirm', serviceScreen.isOpen, _tutDrive(), vehicleState.parked, _mapHold)) daySystem.update(PHYSICS_DT)
     else if (_tutDrive() && !vehicleState.parked && daySystem.stage() === 'sleepy') daySystem.blinkOnly(PHYSICS_DT)   // DEC-357: blinks, never a doze
-    else if (vehicleState.parked) _spendParked(PHYSICS_DT / secPerGameH())
+    else if (vehicleState.parked || _mapHold) _spendParked(PHYSICS_DT / secPerGameH())
     // FEAT-230 slice 2: the fresh clock follows the world clock, sleeps and skips too. DEC-339 (draft): it holds for the
     // whole tutorial, as wear does (DEC-151) — mom's packed lunches (fresh 24 h) must still be there at the next
     // morning's breakfast, 24 h after the firing.
     inventorySystem.tick(daySystem.clockH(), _inTutorial())
-    if (!vehicleState.parked && _parkSpend.size) _flushParkSpend()
+    if (!vehicleState.parked && !_mapHold && _parkSpend.size) _flushParkSpend()
     if (missionSystem?.isActive()) {
       missionSystem.update(PHYSICS_DT)
     }

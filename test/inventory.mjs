@@ -169,6 +169,28 @@ ITEMS.framePack.reachM = 500
 check('no pack reaches past 120 m', camp.reachM() === 120, String(camp.reachM()))
 ITEMS.framePack.reachM = far
 check('with no pack to ask (headless), the param', new CampSystem({}).reachM() === CAMP_PARAMS.campRoadEdgeM)
+// FEAT-182 (owner, item setup page 2026-11-24, DEC-500): the figures, the shelf, the rank gates and the givers
+{
+  const fig = { daypack: [2, 100], duffel: [6, 30], rucksack: [4, 80], framePack: [6, 120] }
+  check('DEC-500: slots and reach are the owner\'s', Object.entries(fig).every(([id, [n, r]]) => ITEMS[id].packSlots === n && ITEMS[id].reachM === r))
+  check('DEC-503: prices $15 daypack, $20 duffel, $20 rucksack, $35 frame pack', ITEM_PRICE.daypack === 15 && ITEM_PRICE.duffel === 20
+    && ITEM_PRICE.rucksack === 20 && ITEM_PRICE.framePack === 35)
+  const sold = id => Object.entries(STOREFRONT).filter(([, v]) => id in (v.weights ?? {}) || (v.always ?? []).includes(id)).map(([k]) => k).join()
+  check('DEC-503: all four packs are sold at the general store only', ['daypack', 'duffel', 'rucksack', 'framePack'].every(id => sold(id) === 'generalStore'))
+  check('DEC-503: the Rucksack is always on the shelf; the Daypack, Duffel and Frame pack are rare rolls (weight 1)',
+    STOREFRONT.generalStore.always.includes('rucksack') && !('rucksack' in STOREFRONT.generalStore.weights)
+    && ['daypack', 'duffel', 'framePack'].every(id => STOREFRONT.generalStore.weights[id] === 1 && !STOREFRONT.generalStore.always.includes(id)))
+  const gates = id => REWARD_LIST.find(r => r.id === id)?.gates.join('')
+  check('DEC-500: reward ranks B-A daypack, A-S duffel, A-S rucksack, S frame pack', gates('daypack') === 'BA' && gates('duffel') === 'AS'
+    && gates('rucksack') === 'AS' && gates('framePack') === 'S')
+  const givers = id => Object.entries(REWARD_CATS).filter(([, v]) => rewardsIn([...v.cats, ...(v.rare ?? [])], 0).some(r => r.id === id)).map(([k]) => k).sort().join()
+  const want = {
+    daypack: ['larrysHouse', 'generalStore', 'residence', 'strandedMotorist', 'farm'],
+    duffel: ['larrysHouse', 'firewoodYard', 'workSite', 'residence', 'farm', 'strandedMotorist', 'generalStore'],
+    rucksack: ['larrysHouse', 'generalStore', 'strandedMotorist', 'workSite', 'residence', 'farm'],
+    framePack: ['larrysHouse', 'generalStore', 'residence', 'farm', 'strandedMotorist'] }
+  for (const [id, w] of Object.entries(want)) check(`DEC-500: ${id} is offered by exactly its givers`, givers(id) === [...w].sort().join(), givers(id))
+}
 
 // ── 7. Catalog ────────────────────────────────────────────────────────────────────────────────
 const missing = REWARD_LIST.filter(r => !r.dineIn && !ITEMS[r.id]).map(r => r.id)

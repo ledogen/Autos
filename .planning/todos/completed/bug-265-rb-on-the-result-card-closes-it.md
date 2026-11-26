@@ -1,7 +1,7 @@
 ---
 id: BUG-265
 type: bug
-status: open
+status: done
 severity: major
 opened: 2026-11-24
 source: owner, 2026-11-24 (inbox) — "big bug. post mission card i hit rb to park and it closed the card. i think i still got the cash reward but what if i wanted to park and think about the item or the cash."
@@ -21,7 +21,7 @@ With the post-mission result card open, pressing RB to set the parking brake clo
 (See Summary and the owner's words in `source:`.)
 
 ## Tracker
-- [ ] Built
+- [x] Built (land/bug-265-rb-result-card)
 - [ ] Owner's look
 
 ## Decisions
@@ -38,3 +38,5 @@ FEAT-199, FEAT-125, DEC-176
 
 ## Log
 - 2026-11-24: minted by the orchestrator from the owner's inbox.
+- 2026-11-24 (lane p): CAUSE. RB on Professor sends Space; main.js's keydown handler (the park-tap one, near the camp-back handler) treated Space as DECLINE on the offer card AND on a result card whose award is the dinner invitation (`award.stowed === 'dinner'`), calling `missionSystem.exit()`. exit() on a done card is `continue`: the card closed and the full cash was kept (the item, the dinner, was declined). The ordinary item-or-cash card had no Space path; only the dinner card did. FIX: Space closes only the OFFER card now; a result card closes on its own button (A on the highlight or click). Offer card's Space-decline is the owner's 2026-07-29 ruling and stays. Other shared paths checked: the pad's result-card table (gamepad.js) only sends keys, run-end card is a menu (RB sends nothing there). PROOF: test/pad-e2e.mjs, Space on a forced result card leaves state 'done'. The owner's closed card paid cash (continue), per the code path; the run log would show it.
+- 2026-11-25: closed on the owner's "All good" (card landed-1125-look).

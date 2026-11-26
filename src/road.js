@@ -1115,6 +1115,8 @@ const _promotedId = (x, z) => [Math.round(x * 1000), Math.round(z * 1000), PROMO
 // m — a bore shorter than this reads as noise and is dropped (_v2GradePts); BUG-58 re-solves a
 // profile that would leave one, so a dropped stub never ships as an open cut past cutMax.
 const MIN_BORE_M = 12
+// BUG-262 (DEC-495, owner: "10m"): the least distance along a leg from an underground junction to a tunnel portal
+const UG_PORTAL_M = 10
 // BUG-63: the key suffix of a mid-span side half that shares its node pair with a trunk piece
 // (_v2MidSpanKeys). Such a run is in the world but not in the abstract graph (networkGraph).
 const PARALLEL_SUFFIX = '~p'
@@ -5791,9 +5793,10 @@ export class RoadSystem {
             if (legs.length < 3) continue
             const tubes = legs.filter((l) => l.bored)
             if (!tubes.length) continue
+            const want = new Map()
             for (const leg of legs) {
                 if (leg.bored) continue
-                const { k, e, L, atStart } = leg
+                const { k, L, atStart } = leg
                 const inTube = (x, z) => tubes.some((t) => {
                     const h = _nearestOnPolyXZ(x, z, t.e.points, t.e.polyCum)
                     return h && h.d < R && (t.e.tunnelSpans || []).some((sp) => h.cum >= sp.s0 && h.cum <= sp.s1)
@@ -5803,6 +5806,21 @@ export class RoadSystem {
                     const s = atStart ? d : L - d, p = this.runPointAt(k, s)
                     if (!p) break
                     if (!inTube(p.x, p.z) && this._coarseH(p.x, p.z) - this.runProfile(s, k).gradeY < dStop) break
+                }
+                if (d >= 1) want.set(leg, d)
+            }
+            // BUG-262 (DEC-495: an underground junction sits at least "10m" from a portal): where every leg now leaves
+            // the node in a bore, each bore opens its mouth no nearer than UG_PORTAL_M along the leg. The junction keeps
+            // its place in the hill and the portal moves out into the open (2143977503 at (2994, 508): a T promoted 8.3 m
+            // inside its trunk's bore, the slice leaving an 8.3 m bore; 94567479: 9.9 m). Spans only, as above.
+            const ug = legs.every((l) => l.bored || want.has(l))
+            for (const leg of legs) {
+                const { e, L, atStart } = leg
+                let d = want.get(leg) ?? 0
+                if (ug) {
+                    const own = (e.tunnelSpans || []).find((sp) => atStart ? sp.s0 <= 1 : sp.s1 >= L - 1)
+                    const have = own ? (atStart ? own.s1 : L - own.s0) : 0
+                    if (have < UG_PORTAL_M) d = Math.max(d, Math.min(UG_PORTAL_M, L / 2))
                 }
                 if (d < 1) continue
                 const sp = atStart ? { s0: 0, s1: d } : { s0: L - d, s1: L }
@@ -6745,8 +6763,8 @@ export class RoadSystem {
      * trunk's pavement for the shared stretch, a T where they part. Both ends are built by _v2BuildDeparture and
      * committed together by _v2CommitMidSpan, so every connection stays and only the duplicate pavement goes.
      * The plan never sees these pairs: the one in 240 census windows is seed 1394642004 (683, 1286), a promoted
-     * T's departure made after the plan, 1.2 m beside g:1,1,1:1,2,1 for ~80 m. Bores and T departure blends are
-     * excluded as in test/lib/close-pairs.mjs. Pure in the two registered runs, so window-invariant wherever they are.
+     * T's departure made after the plan, 1.2 m beside g:1,1,1:1,2,1 for ~80 m. T departure blends are excluded as in
+     * test/lib/close-pairs.mjs; bores and a shared node are not (BUG-262, _v2OverlapStretch). Pure in the two registered runs, so window-invariant wherever they are.
      */
     _v2JoinOverlaps(g) {
         const NEAR = 2 * (this._params?.roadHalfWidth ?? 5), JOIN_MIN_M = 20
@@ -6763,13 +6781,17 @@ export class RoadSystem {
             const a = boxes.get(keys[i]), b = boxes.get(keys[j])
             if (a[0] > b[1] || b[0] > a[1] || a[2] > b[3] || b[2] > a[3]) continue
             const A = this._network.get(keys[i]), B = this._network.get(keys[j])
-            if (cells(A).some((c) => cells(B).includes(c))) continue
+            const shared = cells(A).filter((c) => cells(B).includes(c))
             const [sk, wk] = A.polyCum.at(-1) <= B.polyCum.at(-1) ? [keys[i], keys[j]] : [keys[j], keys[i]]
-            const st = this._v2OverlapStretch(this._network.get(sk), this._network.get(wk), NEAR)
-            if (st && st.len >= JOIN_MIN_M) found.push({ sk, wk, ...st })
+            const S = this._network.get(sk), W = this._network.get(wk)
+            const thr = shared.length ? (e) => cells(e).map((c) => shared.includes(c)) : null
+            const st = this._v2OverlapStretch(S, W, NEAR, thr)
+            // BUG-262: the longer road rides the shorter one's deck when the shorter cannot reach the longer's (two
+            // bores crossing 55 m apart in height: seed 2280440363's side road would climb 62 m in 228 m to its T)
+            if (st && st.len >= JOIN_MIN_M) found.push({ sk, wk, ...st, alt: () => { const a = this._v2OverlapStretch(W, S, NEAR, thr); return a && a.len >= JOIN_MIN_M ? { sk: wk, wk: sk, ...a } : null } })
         }
         // ponytail: a join that cuts a run another join also names declines that one (stale); none in 240 windows.
-        for (const f of found) this._v2JoinOne(g, f)
+        for (const f of found) if (!this._v2JoinOne(g, f)) { const a = f.alt(); if (a) this._v2JoinOne(g, a) }
     }
 
     // The longest stretch of S (vertex range i0..i1) within `near` of W, with W's arcs at its two ends; null when
@@ -6777,15 +6799,23 @@ export class RoadSystem {
     // long: DEC-471 widened the join to two roads that ride each other's pavement and cross on the way (the owner's
     // 2711103901, 164 m doubled, then crossing). Two pavements near apart overlap for 2·near/sin θ across a crossing
     // at θ, so CROSS_JOIN_MIN_M = 60 m is a graze under ~19°, never a real crossing.
-    _v2OverlapStretch(S, W, near) {
-        const CROSS_JOIN_MIN_M = 60
-        const out = (e, s) => (e.tunnelSpans || []).some((sp) => s >= sp.s0 - 80 && s <= sp.s1 + 80)
+    //
+    // BUG-262 (DEC-495, owner: "match above ground behavior - merge into one road"): neither a bore nor a node the two
+    // share exempts a pair. Both used to, and both let a graze through to the X junction: seed 2280440363's two legs of
+    // node 0,-1,1 run 116 m within 2·HW in a bore, crossing twice at 3-9°, and shipped two X junctions inside the hill.
+    // A pair that shares a node joins only on a crossing stretch clear of that node's throat (MINREG, as the X pass);
+    // a stretch that rides from the node is the plan's fork merge, not this backstop's. `sharedEnds(e)` names which of
+    // e's two ends sit on a shared node, null when there is none.
+    _v2OverlapStretch(S, W, near, sharedEnds = null) {
+        const CROSS_JOIN_MIN_M = 60, MINREG = 30
+        const thrS = sharedEnds?.(S), thrW = sharedEnds?.(W)
+        const out = (e, s, thr) => (thr && ((thr[0] && s < MINREG) || (thr[1] && e.polyCum.at(-1) - s < MINREG)))
             || (e.offCurveSpans || []).some((sp) => s >= sp.s0 - 2 && s <= sp.s1 + 2)
         let best = null, cur = null
         for (let i = 0; i <= S.points.length; i++) {
             const p = S.points[i]
-            const h = p && !out(S, S.polyCum[i]) ? _nearestWithinXZ(p.x, p.z, W.points, W.polyCum, near) : null
-            if (h && h.d < near && !out(W, h.cum)) {
+            const h = p && !out(S, S.polyCum[i], thrS) ? _nearestWithinXZ(p.x, p.z, W.points, W.polyCum, near) : null
+            if (h && h.d < near && !out(W, h.cum, thrW)) {
                 const side = Math.sign((p.x - h.fx) * h.tz - (p.z - h.fz) * h.tx)
                 if (!cur) cur = { i0: i, wIn: h.cum, side, crosses: false }
                 else if (side && cur.side && side !== cur.side && !cur.crosses) { cur.crosses = true; cur.iX = i; cur.wX = h.cum }
@@ -6794,7 +6824,8 @@ export class RoadSystem {
             }
             if (cur) {
                 cur.len = S.polyCum[cur.i1] - S.polyCum[cur.i0]
-                if ((!cur.crosses || cur.len >= CROSS_JOIN_MIN_M) && (!best || cur.len > best.len)) best = cur
+                const ok = cur.crosses ? cur.len >= CROSS_JOIN_MIN_M : !sharedEnds
+                if (ok && (!best || cur.len > best.len)) best = cur
             }
             cur = null
         }
@@ -9186,7 +9217,7 @@ export class RoadSystem {
         // step the two straight legs leave at a sharp kink (the walls at the asphalt edge); it feathers
         // (co.blendW→0) back to the run grade at the connector toe, C0. Off a connector co is null → run
         // surface unchanged. Both inputs continuous → no dithering.
-        const co = this._connectorCarve(wx, wz, rawAmp)
+        const co = this._connectorCarve(wx, wz, rawAmp, queryY)
         if (co) {
             // Connector grade is the design target across its WHOLE footprint (flat core + smoothstep
             // shoulder + toe); blendW = max(run, connector) feathers it to raw at the toe. This replaces
@@ -9377,7 +9408,8 @@ export class RoadSystem {
                 let v = ends.get(sp)
                 if (!v) ends.set(sp, v = [[sp.s0, -1], [sp.s1, 1]].map(([s, dir]) => {
                     const p = this.runPointAt(k, s), g = this.runProfile(s, k, { gradeY: 0, tx: 1, tz: 0 })
-                    return p && { x: p.x, z: p.z, tx: g.tx * dir, tz: g.tz * dir, lip: this.isMouth(k, s) ? 1.5 : 0 }
+                    // BUG-259: an end that meets its partner on a miter plane carries its run-on (R, as the tube is built)
+                    return p && { x: p.x, z: p.z, tx: g.tx * dir, tz: g.tz * dir, lip: this.isMouth(k, s) ? 1.5 : this.tubeMiterPlane(k, s) ? R : 0 }
                 }))
                 return v
             }
@@ -9392,12 +9424,15 @@ export class RoadSystem {
                     i1 = i
                     for (const p of [pts[i - 1], pts[i]]) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z) }
                 }
-                return { k, sp, pts, cum, i0, i1, x0: x0 - 2 * R, x1: x1 + 2 * R, z0: z0 - 2 * R, z1: z1 + 2 * R }
+                const mps = basic ? [] : [this.tubeMiterPlane(k, sp.s0), this.tubeMiterPlane(k, sp.s1)].filter(Boolean)
+                return { k, sp, pts, cum, i0, i1, mps, x0: x0 - 2 * R, x1: x1 + 2 * R, z0: z0 - 2 * R, z1: z1 + 2 * R }
             }))
             test = (x, y, z, inset = 0) => {
                 const R2 = (R - inset) * (R - inset)
-                for (const { k, sp, pts, cum, i0, i1, x0, x1, z0, z1 } of spans) {
+                for (const { k, sp, pts, cum, i0, i1, mps, x0, x1, z0, z1 } of spans) {
                     if (x < x0 || x > x1 || z < z0 || z > z1) continue
+                    // BUG-259: near a miter plane the bore is only its own side of it (shrunk by the inset like the rest)
+                    if (mps.some((m) => (x - m.x) ** 2 + (z - m.z) ** 2 < 4 * R * R && (x - m.x) * m.nx + (z - m.z) * m.nz < inset)) continue
                     // nearest point of the span's centreline (the run polyline over [s0, s1])
                     let best = Infinity, bs = 0
                     for (let i = i0; i <= i1; i++) {
@@ -9425,6 +9460,37 @@ export class RoadSystem {
         }
         this._sibTests.set(memo, test)
         return test
+    }
+
+    /**
+     * BUG-259 (item 4, "the roof sections also dont miter perfectly"): at an UNDERGROUND junction (_undergroundNodes) a leg's
+     * bore meets its PARTNER — the leg leaving the node most nearly opposite it (over 135°: the same road through the node)
+     * — on the plane bisecting the two, the pipe miter. Each tube runs on R past the node (buildTunnelTube) to close the
+     * wedge outside the bend, but siblingTubeTest ended every bore flat at the node: the wedge was nobody's, so the
+     * crossing road's lining and the partners' own run-ons stood in it (seed 1960791808: thin lines of lining over the
+     * chamber). With the plane, each bore is its span plus its run-on, on its own side of the plane. Returns the plane
+     * {x, z, nx, nz} (n toward this leg's side) for the span end at run-arc `s`, or null.
+     */
+    tubeMiterPlane(runKey, s) {
+        const L = this._network?.get(runKey)?.polyCum?.at(-1)
+        if (!(L > 0) || (s > 1 && s < L - 1)) return null
+        const key = runKey + (s <= 1 ? '|A' : '|B'), node = this._undergroundNodes().get(key)
+        if (!node || node.boreJoin) return null   // a join's two tubes meet as BUG-67's siblings do
+        if (!node.miter) {
+            node.miter = new Map()
+            const u = node.legs.map((l) => {
+                const atA = l.arc < 1e-6, f = this.runFrameAt(l.arc, l.runKey), sg = atA ? 1 : -1, n = Math.hypot(f.tx, f.tz) || 1
+                return { key: l.runKey + (atA ? '|A' : '|B'), x: f.tx * sg / n, z: f.tz * sg / n }
+            })
+            const opp = (a) => u.reduce((b, c) => (c !== a && (!b || a.x * c.x + a.z * c.z < a.x * b.x + a.z * b.z) ? c : b), null)
+            for (const a of u) {
+                const b = opp(a)
+                if (!b || opp(b) !== a || a.x * b.x + a.z * b.z > -Math.SQRT1_2) continue
+                const nx = a.x - b.x, nz = a.z - b.z, n = Math.hypot(nx, nz)
+                node.miter.set(a.key, { x: node.pos.x, z: node.pos.z, nx: nx / n, nz: nz / n })
+            }
+        }
+        return node.miter.get(key) ?? null
     }
 
     /**
@@ -9456,20 +9522,45 @@ export class RoadSystem {
      * flags each such node record `underground`. Over one, the mouth-funnel notch does not measure from the node and the
      * pad carve leaves the skin raw: before, both cut the hill down toward the deck (seed 1960791808's X: 61 m deep,
      * the leg's camber laid on the skin and up through the other road's ribbon). Memoised per network revision.
+     * BUG-259 slice 3: a JOIN inside the hill is one too, flagged `boreJoin` instead (it has no pad): two runs meeting end to
+     * end — a kinked deg-2 node (its connector record) or a straight pass-through (no record: a bare {pos, legs, boreJoin}) —
+     * both leaving in a bore that is no mouth there. Before, the join read as a portal: the shade was daylight (1.0) there, the
+     * connector and a leg past its end carved the skin down into the tube, and the tube's floor and the hill covered the road
+     * (seed 515997046 (2918, 517): the skin 15-25 m under the raw hill, down to the deck; 2311041641 (−1583, 436)).
      */
     _undergroundNodes() {
         const nodes = this._detectNodeJunctions()
         if (this._ugNodes?.nodes === nodes && this._ugNodes.rev === this._networkRev) return this._ugNodes.map
         const map = new Map()
+        const boreEnd = (l) => {   // 'runKey|A' / '|B' when the run leaves this end in a bore that is no mouth there
+            const e = this._network.get(l.runKey), L = e?.polyCum?.at(-1) ?? 0, atA = l.arc < 1e-6
+            const sp = (e?.tunnelSpans || []).find((s) => atA ? s.s0 <= 1 : s.s1 >= L - 1)
+            return sp && !this.isMouth(l.runKey, atA ? sp.s0 : sp.s1) ? l.runKey + (atA ? '|A' : '|B') : null
+        }
+        const deg2At = new Map()
         for (const node of nodes?.values() ?? []) {
-            if (node.deg2 || !node.legs || node.legs.length < 3) continue
-            const ends = node.legs.map((l) => {
-                const e = this._network.get(l.runKey), L = e?.polyCum?.at(-1) ?? 0, atA = l.arc < 1e-6
-                const sp = (e?.tunnelSpans || []).find((s) => atA ? s.s0 <= 1 : s.s1 >= L - 1)
-                return sp && !this.isMouth(l.runKey, atA ? sp.s0 : sp.s1) ? l.runKey + (atA ? '|A' : '|B') : null
-            })
+            if (node.deg2) { for (const l of node.legs) deg2At.set(l.runKey + (l.arc < 1e-6 ? '|A' : '|B'), node); continue }
+            if (!node.legs || node.legs.length < 3) continue
+            const ends = node.legs.map(boreEnd)
             if (!ends.every(Boolean)) continue
             node.underground = true
+            for (const k of ends) map.set(k, node)
+        }
+        const cells = new Map()   // graph site → the run ends on it
+        for (const [runKey, e] of this._network) {
+            if (!e.cellA || !e.cellB || !e.points?.length) continue
+            for (const atA of [true, false]) {
+                const c = String(atA ? e.cellA : e.cellB), l = { runKey, arc: atA ? 0 : e.polyCum.at(-1), p: atA ? e.points[0] : e.points.at(-1) }
+                const list = cells.get(c); if (list) list.push(l); else cells.set(c, [l])
+            }
+        }
+        for (const legs of cells.values()) {
+            if (legs.length !== 2 || legs[0].runKey === legs[1].runKey) continue
+            const ends = legs.map(boreEnd)
+            if (!ends.every(Boolean) || ends.some((k) => map.has(k))) continue
+            const node = deg2At.get(ends[0]) ?? { pos: { x: legs[0].p.x, y: legs[0].p.y, z: legs[0].p.z }, legs: legs.map(({ runKey, arc }) => ({ runKey, arc })) }
+            node.boreJoin = true
+            if (node.deg2) node.deg2.boreJoin = true   // _connectorCarve reads it off the arc
             for (const k of ends) map.set(k, node)
         }
         this._ugNodes = { nodes, rev: this._networkRev, map }
@@ -9941,16 +10032,7 @@ export class RoadSystem {
                 const id = e && e.cellA && e.cellB ? (a.arc < 1e-6 ? e.cellA : e.cellB) : null
                 a.through = !!id && _isPromotedId(id) && this._v2PromotedRole(id, a.runKey) === 'through'
             }
-            node.ring = node.deg2 ? null : this._buildJunctionRing(node)
-            if (node.ring) {
-                let mr = 0
-                for (const rp of node.ring) { const r = Math.hypot(rp.x - c.x, rp.z - c.z); if (r > mr) mr = r }
-                node.ringMaxR = mr
-                // The ribbon-pad WELD: a leg's ribbon ends exactly on its mouth chord only where the ring
-                // really carries that chord as one of its edges (the weld rung always; the hull floor for 98 %
-                // of legs). Anywhere else the ribbon keeps its cutback overlap under the pad.
-                for (const a of c.legs) a.weld = a.mouth !== undefined && this._ringHasMouth(node.ring, a, halfWidth)
-            }
+            this._setJunctionRing(node)
             nodes.set(`${Math.round(c.x)},${Math.round(c.z)}`, node)
             for (const a of c.legs) {
                 let arr = carveArcs.get(a.runKey); if (!arr) { arr = []; carveArcs.set(a.runKey, arr) }
@@ -9965,7 +10047,29 @@ export class RoadSystem {
         this._junctionCarveArcs = carveArcs
         this._deg2ArcTiles = deg2ArcTiles
         this._nodeJunctionsRev = this._networkRev
+        // BUG-259: an underground junction's pad is paved to its legs' pavement (_junctionRingWeld). Which nodes are
+        // underground reads the bores (isMouth → runProfile), which needs the junctions above: so they are flagged
+        // now, and their rings and welds rebuilt.
+        for (const node of new Set(this._undergroundNodes().values())) {
+            if (node.boreJoin) continue
+            this._setJunctionRing(node)
+            for (const a of node.legs) for (const r of carveArcs.get(a.runKey) ?? []) if (r.node === node && r.arc === a.arc) r.mouth = a.weld ? a.mouth : undefined
+        }
         return nodes
+    }
+
+    /** node.ring (the welded pad boundary), its reach ringMaxR and each leg's weld flag. */
+    _setJunctionRing(node) {
+        node.ring = node.deg2 ? null : this._buildJunctionRing(node)
+        if (!node.ring) return
+        let mr = 0
+        for (const rp of node.ring) { const r = Math.hypot(rp.x - node.pos.x, rp.z - node.pos.z); if (r > mr) mr = r }
+        node.ringMaxR = mr
+        // The ribbon-pad WELD: a leg's ribbon ends exactly on its mouth chord only where the ring
+        // really carries that chord as one of its edges (the weld rung always; the hull floor for 98 %
+        // of legs). Anywhere else the ribbon keeps its cutback overlap under the pad.
+        const halfWidth = this._params.roadHalfWidth ?? 5
+        for (const a of node.legs) a.weld = a.mouth !== undefined && this._ringHasMouth(node.ring, a, halfWidth)
     }
 
     // ── Junction pad boundary + carve (single source of truth, shared by mesh + collision) ──────
@@ -10104,12 +10208,19 @@ export class RoadSystem {
         // The real correctness gate is _ringSelfIntersects() in _buildJunctionRing.
 
         const edgePt = (l, side) => ({ x: l.cx + (-l.dz) * side * halfWidth, z: l.cz + (l.dx) * side * halfWidth })
-        const filletR = params.roadFilletRadius ?? 5
+        // BUG-259: an UNDERGROUND junction (_undergroundNodes) is paved as exactly the legs' own pavement: no fillet,
+        // no straight back chord, so the bore floor's gravel shoulder runs on round the chamber and the pad never
+        // reaches the lining (seed 2280440363: the hull pad 4.3 m past the wall; 1960791808: fillets 1.5 m into the
+        // 3 m shoulder).
+        const ug = !!node.underground
+        const filletR = ug ? 0 : params.roadFilletRadius ?? 5
         const ring = []
+        let merged = false   // underground: the previous corner merged its two legs' mouths (see below)
         for (let i = 0; i < n; i++) {
             const A = legs[i], B = legs[(i + 1) % n]
             // Mouth chord of A: arriving-corner edge (+1) → departing-corner edge (−1) — the exact weld.
-            ring.push(edgePt(A, 1))
+            if (!merged) ring.push(edgePt(A, 1))
+            merged = false
             const eA = edgePt(A, -1)
             ring.push(eA)
             const eB = edgePt(B, 1)
@@ -10126,7 +10237,7 @@ export class RoadSystem {
                 // 2.1 m inside the pavement — dirt bitten out of the road beside the node (seed 917338424 (−111, −464);
                 // 0.84 m on main at (101, −987)). Where any true-edge point stands more than 0.3 m outside the chord
                 // (away from the node), the ring walks the true edges instead, as an open back does.
-                if (A.dx * B.dx + A.dz * B.dz < -0.85) {
+                if (!ug && A.dx * B.dx + A.dz * B.dz < -0.85) {
                     const lx = eB.x - eA.x, lz = eB.z - eA.z, ll = Math.hypot(lx, lz) || 1
                     const side = (p) => ((p.x - eA.x) * lz - (p.z - eA.z) * lx) / ll
                     const inward = Math.sign(side(node.pos)) || 1
@@ -10152,6 +10263,15 @@ export class RoadSystem {
             // edges to the real crotch apex. _ringSelfIntersects remains the gate.
             const ce = this._cornerEdgeFillet(A, B, halfWidth, filletR, T, n === 2)
             if (ce) { for (const p of ce) ring.push(p); continue }
+            // BUG-259: underground, two legs whose facing edges never cross before their mouths still overlap there
+            // (two roads crossing at 3°, seed 2280440363): their mouth chords lie over each other and any corner
+            // between them crosses itself. One chord from A's outer corner to B's spans both; neither ribbon welds.
+            if (ug) {
+                ring.pop()
+                merged = true
+                if (i === n - 1) ring.shift()
+                continue
+            }
             for (const p of this._cornerJoin(eA, A, eB, B, filletR, T)) ring.push(p)
         }
         // Drop consecutive duplicates (incl. the wrap seam).
@@ -10285,6 +10405,8 @@ export class RoadSystem {
             }
             return [...pA.slice(bi, -1).reverse(), ...pB.slice(bj, -1)]
         }
+        // BUG-259: no fillet (an underground junction): down A's true edge to the apex, back up B's.
+        if (!(filletR > 0)) return [...pA.slice(0, -1).filter((p) => p.ext > best.extA).reverse(), { x: best.x, z: best.z }, ...pB.slice(0, -1).filter((p) => p.ext > best.extB)]
         const extMaxA = pA[pA.length - 1].ext, extMaxB = pB[pB.length - 1].ext
         // Hand the fillet off to the straight-line builder a few metres up each edge from the apex,
         // using the LOCAL sample positions/tangents there (the edges are locally straight over ≤6 m).
@@ -11655,7 +11777,7 @@ export class RoadSystem {
      * the ribbon surface (sampleRoadTopY) — mesh == collision depends on the two never drifting.
      */
     _withConnectorTop(runTop, wx, wz, clearanceMargin) {
-        const co = this._connectorCarve(wx, wz)
+        const co = this._connectorCarve(wx, wz, undefined, -Infinity)   // the asphalt top: the deck, in a bore too
         if (!co) return runTop
         const coTop = co.gradeY + clearanceMargin
         const w = runTop != null ? co.blendW * co.dom : 1
@@ -11678,7 +11800,7 @@ export class RoadSystem {
      * @param {number} [rawAmp] raw terrain height here. Omitted ⇒ the coarse field,
      *   sampled only once a connector is actually in reach (most callers are nowhere near one).
      */
-    _connectorCarve(wx, wz, rawAmp) {
+    _connectorCarve(wx, wz, rawAmp, queryY) {
         if (this._nodeJunctionsRev !== this._networkRev) this._detectNodeJunctions()   // arcs belong to THIS network
         if (!this._deg2ArcTiles || !this._deg2ArcTiles.size) return null
         const p = this._params
@@ -11718,6 +11840,9 @@ export class RoadSystem {
         if (bestLat > latCeiling) return null
         const cd = this._connectorDesignAt(bestArc, wx, wz, _CD_OUT, bestPr)
         if (cd == null) return null
+        // BUG-259 slice 3: a connector at a join inside the hill (_undergroundNodes, boreJoin) owns only probes in its bore,
+        // as a bored run does; the skin over it (a Y-less probe: the terrain mesh) stays the hill's.
+        if (bestArc.boreJoin && !(queryY < cd.grade + (p.tunnelBoreRadius ?? 8))) return null
         if (rawAmp === undefined) rawAmp = this._coarseH(wx, wz)
         const designY = cd.grade - clearanceMargin
         const fillSlope = p.roadFillSlope ?? 3.0, cutSlope = p.roadCutSlope ?? 1.0
@@ -11992,7 +12117,12 @@ export class RoadSystem {
         // instead of compressing into a near-vertical staircased face at the base cap. Shallow
         // banks never reach the base cap, so this only widens genuinely deep walls. Must stay
         // ≤ the _resolveRoadSurface interior footprint (same constant folded there).
-        const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe + DEEP_BANK_TOE_EXTRA * leafTaper)
+        // BUG-258: near a junction carveHalfWidth carries jc.widen, which pushed this cap past that footprint
+        // (_resolveFootHW, 36 m): the resolver stopped at 36 m while the bank still had weight, and the fill
+        // ended in a standing cliff (3.03 m at seed 308883464 (−557, 163)). Capping the toe at the footprint
+        // brings blendW to 0 inside the resolved region. The core (≤ minRadius + R) stays far inside it.
+        const toeExt  = Math.min(Math.max(fillToe, cutToe), carveHalfWidth + maxEmbankmentToe + DEEP_BANK_TOE_EXTRA * leafTaper,
+            this._resolveFootHW())
         if (radDist > toeExt) return null   // beyond the fill/cut toe — unaffected terrain
 
         const ramp = Math.max(shoulderWidth, toeExt - carveHalfWidth)
